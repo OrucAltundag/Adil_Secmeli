@@ -1,0 +1,14 @@
+
+{
+  "weights": {
+    "wB": 0.5,
+    "wP": 0.4,
+    "wA": 0.1
+  },
+  "thresholds": {
+    "min_score": 40,
+    "max_score": 100
+  },
+  "academic_year": "2025",
+  "semester": "güz"
+}

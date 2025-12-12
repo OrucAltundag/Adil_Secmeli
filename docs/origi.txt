@@ -1,0 +1,1 @@
+python -m uvicorn src.ui.api:app --reload     ile FastAPI’yi başlatıyoruz.

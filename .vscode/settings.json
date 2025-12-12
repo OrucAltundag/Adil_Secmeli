@@ -1,0 +1,11 @@
+{
+  // VS Code'un src altındaki modülleri tanıması için
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src/core",
+    "${workspaceFolder}/src/ui",
+    "${workspaceFolder}/src/etl"
+  ],
+  
+  // İsteğe bağlı ama önerilir: Python yorumlayıcıyı sabitle
+  "python.defaultInterpreterPath": "C:\\Users\\dadil\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe"
+}
