@@ -128,7 +128,9 @@ class AdilSecmeliApp(tk.Tk):
         apply_style(self)
         self.config_data = load_config()
         self.db = Database()
+        self.db_path = self.config_data.get("db_path")
         self.current_table = None
+        
         
         # Grafik ve Cache değişkenleri
         self.chart_canvas = None
@@ -212,6 +214,9 @@ class AdilSecmeliApp(tk.Tk):
         self.nb.add(self.tab_tools, text="⚙️ Rapor & Skor")
         ttk.Label(self.tab_tools, text="Raporlar burada olacak.", justify="left").pack(anchor="w")
 
+        # 🔔 Notebook tab değişim event’i
+        self.nb.bind("<<NotebookTabChanged>>", self.on_tab_change)
+
         # =========================================================
         # 4. SEKME: HESAPLAMA & TEST (EKSİK OLAN KISIM BURASIYDI)
         # =========================================================
@@ -232,13 +237,22 @@ class AdilSecmeliApp(tk.Tk):
             self.fill_tables()
 
             # --- YENİ EKLENEN SATIR ---
-            self.setup_analysis_tab()  # Bağlantı kurulunca grafikleri çiz!
+            # self.setup_analysis_tab()  # Bağlantı kurulunca grafikleri çiz!
             self.setup_calculation_tab() # Hesaplamalar sekmesini yükle
             # --------------------------
-        except Exception as e:
-            messagebox.showwarning("Bağlantı bulunamadı",
-                                   f"Varsayılan db açılamadı: {db_path}\n\n{e}\n\nDosya seçiniz.")
+        except FileNotFoundError:
+            messagebox.showwarning(
+                "Veritabanı Bulunamadı",
+                f"Varsayılan veritabanı yok:\n{db_path}\n\nLütfen dosya seçiniz."
+            )
             self.cmd_open_db()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Başlangıç Hatası",
+                f"Uygulama başlatılırken hata oluştu:\n\n{e}"
+    )
+
             
         # --- HER DURUMDA sekmeyi yükle ---
         self.setup_calculation_tab()
@@ -376,6 +390,13 @@ class AdilSecmeliApp(tk.Tk):
     #  ANALİZ & DASHBOARD FONKSİYONLARI (YENİ EKLENECEK KISIM)
     # =========================================================
 
+    def on_tab_change(self, event):
+        selected_tab = event.widget.tab(event.widget.index("current"), "text")
+
+        if "Analiz" in selected_tab:
+            self.setup_analysis_tab()
+
+
     def fetch_dashboard_stats(self):
         """Veritabanından KPI (Anahtar Performans Göstergeleri) verilerini çeker."""
         stats = {
@@ -412,10 +433,25 @@ class AdilSecmeliApp(tk.Tk):
         return stats
 
     def setup_analysis_tab(self):
+        
+        
         """Analiz sekmesini grafiklerle doldurur."""
         # Önce eski widget'ları temizle (Yenile butonu için)
         for widget in self.tab_analysis.winfo_children():
             widget.destroy()
+
+        # Eğer performans tablosu boşsa analizi çizme
+        try:
+            res = self.db.run_sql("SELECT COUNT(*) FROM performans;")
+            if not res[1] or res[1][0][0] == 0:
+                ttk.Label(
+                    self.tab_analysis,
+                    text="📭 Analiz için yeterli veri yok.\nLütfen önce MOCK / veri yükleme çalıştırın.",
+                    font=("Segoe UI", 11)
+                ).pack(pady=50)
+                return
+        except:
+            return
 
         # --- A. ÜST KISIM: KPI KARTLARI ---
         kpi_frame = ttk.Frame(self.tab_analysis)
@@ -453,13 +489,24 @@ class AdilSecmeliApp(tk.Tk):
             """
             df_top = self.db.read_df(query_top)
             if not df_top.empty:
-                # Başarı oranını yüzdeye çevir (0.8 -> 80)
                 df_top['basari_orani'] = df_top['basari_orani'] * 100
-                sns.barplot(x='basari_orani', y='ad', data=df_top, ax=ax1, palette="viridis")
-                ax1.set_title("En Yüksek Başarı Oranına Sahip Dersler (Top 5)", fontsize=10)
+
+                sns.barplot(
+                    x='basari_orani',
+                    y='ad',
+                    data=df_top,
+                    ax=ax1,
+                    palette="viridis" if len(df_top) > 1 else None
+                )
+
+                ax1.set_title(
+                    "En Yüksek Başarı Oranına Sahip Dersler (Top 5)",
+                    fontsize=10
+                )
                 ax1.set_xlabel("Başarı (%)")
                 ax1.set_ylabel("")
                 ax1.grid(axis='x', linestyle='--', alpha=0.6)
+
             else:
                 ax1.text(0.5, 0.5, "Veri Yok", ha='center')
         except Exception as e:
@@ -513,14 +560,18 @@ class AdilSecmeliApp(tk.Tk):
         # 3. Alt Sayfaları (Frame) Tanımla
         self.page_algos = ttk.Frame(self.sub_nb)
         self.page_relations = ttk.Frame(self.sub_nb)
+        # ---  HAVUZ SAYFASI ---
+        self.page_pool = ttk.Frame(self.sub_nb)  
         
         # 4. Alt Sayfaları Notebook'a Ekle
         self.sub_nb.add(self.page_algos, text="⚙️ Algoritma Kontrol Paneli")
         self.sub_nb.add(self.page_relations, text="🔗 Ders İlişkileri & Kurallar")
+        self.sub_nb.add(self.page_pool, text="🏊 Havuz Yönetimi")
         
         # 5. Sayfaların İçeriğini Dolduran Fonksiyonları Çağır
         self.setup_algo_panel(self.page_algos)      # Eski kodları buraya taşıdık
         self.setup_relations_panel(self.page_relations) # Yeni boş sayfa
+        self.setup_pool_panel(self.page_pool)
 
     def setup_algo_panel(self, parent):
         """Eski Hesaplama Ekranını buraya taşıdık."""
@@ -660,7 +711,13 @@ class AdilSecmeliApp(tk.Tk):
         fakulte = self.cb_fakulte.get()
         if not fakulte: return
         
-        query = f"SELECT ders_id, ad FROM ders d JOIN fakulte f ON d.fakulte_id = f.fakulte_id WHERE f.ad = '{fakulte}'"
+        query = f"""
+        SELECT DISTINCT d.ders_id, d.ad
+        FROM ders d
+        JOIN fakulte f ON d.fakulte_id = f.fakulte_id
+        WHERE f.ad = '{fakulte}'
+        """
+
         res = self.db.run_sql(query)
         
         self.lst_rel_courses.delete(0, tk.END)
@@ -679,57 +736,98 @@ class AdilSecmeliApp(tk.Tk):
         if not sel: return
         
         course_id = self.course_map[sel[0]]
-        
-        # 1. NLP Motorunu Çağır
-        from app.services.similarity import SimilarityEngine
-        from app.db.database import SessionLocal
-        
-        db = SessionLocal()
-        engine = SimilarityEngine(db)
-        results, graph_data = engine.get_related_courses(course_id)
-        db.close()
-        
-        # 2. Sağ Tabloyu Doldur
+
+
+        from app.services.similarity_engine import SimilarityEngine
+
+        engine = SimilarityEngine(self.db_path)
+        engine.compute_and_save(course_id, top_n=10)
+
+        #SAĞ PANEL (LİSTE)
+        query = f"""
+        SELECT d.ad, di.skor
+        FROM ders_iliski di
+        JOIN ders d ON d.ders_id = di.hedef_ders_id
+        WHERE di.kaynak_ders_id = {course_id}
+        ORDER BY di.skor DESC
+        LIMIT 10
+        """
+        rows = self.db.run_sql(query)[1]
+
+
         self.tree_scores.delete(*self.tree_scores.get_children())
-        if results:
-            for r in results:
-                # Skoru yüzdeye çevirip gösterelim
-                score_display = f"%{r['skor']*100:.1f}"
-                self.tree_scores.insert("", tk.END, values=(r['ders'], score_display))
-        
-        # 3. Grafiği Çiz (NetworkX)
+        for ad, skor in rows:
+            self.tree_scores.insert("", tk.END, values=(ad, f"%{skor*100:.1f}"))
+
+
+        if not rows:
+            return
+
+
+        #ORTA PANEL (AĞAÇ / NETWORK)
         self.rel_fig.clear()
         ax = self.rel_fig.add_subplot(111)
-        
-        if graph_data:
-            G = nx.Graph()
-            
-            # Merkez Düğüm (Seçilen Ders)
-            center_node = graph_data[0][0] # Target course name
-            G.add_node(center_node)
-            
-            # Diğer düğümler ve kenarlar
-            for source, target, weight in graph_data:
-                G.add_edge(source, target, weight=weight)
-            
-            # Çizim Ayarları
-            pos = nx.spring_layout(G, k=0.5) # Yaylanma düzeni
-            
-            # Düğümleri Çiz
-            nx.draw_networkx_nodes(G, pos, ax=ax, node_color='#3b82f6', node_size=2000, alpha=0.8)
-            # Etiketleri Çiz
-            nx.draw_networkx_labels(G, pos, ax=ax, font_size=8, font_color='white', font_weight='bold')
-            # Kenarları Çiz (Kalınlık skora göre değişsin)
-            weights = [G[u][v]['weight'] * 5 for u,v in G.edges()]
-            nx.draw_networkx_edges(G, pos, ax=ax, width=weights, edge_color='#94a3b8')
-            
-            ax.set_title(f"'{center_node}' İçin İçerik İlişki Ağı")
-            ax.axis('off')
-        else:
-            ax.text(0.5, 0.5, "Yeterli benzerlik bulunamadı veya veri eksik.", ha='center')
-            
+
+        G = nx.Graph()
+        center_name = self.lst_rel_courses.get(sel[0])
+        G.add_node(center_name)
+
+        for ders_adi, skor in rows:
+            G.add_node(ders_adi)
+            G.add_edge(center_name, ders_adi, weight=skor)
+
+        pos = nx.spring_layout(G, k=0.7, center=(0, 0))
+
+        nx.draw_networkx_nodes(G, pos, node_color="#3b82f6", node_size=1800, ax=ax)
+        nx.draw_networkx_labels(G, pos, font_size=8, font_color="white", ax=ax)
+
+        weights = [G[u][v]['weight'] * 8 for u, v in G.edges()]
+        nx.draw_networkx_edges(G, pos, width=weights, edge_color="#94a3b8", ax=ax)
+
+        ax.set_title(f"'{center_name}' için Ders Benzerlik Ağı")
+        ax.axis("off")
+
         self.rel_canvas.draw()
+
+    def setup_pool_panel(self, parent):
+        """
+        Havuz Yönetimi Sayfası
+        Bu alan kullanıcının belirleyeceği içeriğe göre doldurulacak.
+        """
+        # --- Üst Başlık ---
+        header_frame = tk.Frame(parent, bg="#f1f5f9", pady=10)
+        header_frame.pack(fill=tk.X)
         
+        tk.Label(header_frame, 
+                 text="Ders Havuzu ve Seçim Alanı", 
+                 font=("Segoe UI", 12, "bold"), 
+                 bg="#f1f5f9", fg="#334155").pack()
+
+        # --- Ana İçerik Alanı (Şimdilik Boş) ---
+        # Buraya daha sonra listeler, tablolar vs. gelecek.
+        content_frame = tk.Frame(parent, bg="white")
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Ortada geçici bir bilgi notu
+        tk.Label(content_frame, 
+                 text="Buraya Havuz içeriği gelecek.\nPlanlamayı bekliyor...",
+                 fg="#94a3b8", bg="white").place(relx=0.5, rely=0.4, anchor="center")
+
+        # --- Alt Kontrol Alanı (Buton Burada) ---
+        bottom_frame = tk.Frame(parent, bg="#e2e8f0", pady=10)
+        bottom_frame.pack(fill=tk.X, side=tk.BOTTOM)
+
+        # İstediğin Buton
+        self.btn_pool_action = ttk.Button(
+            bottom_frame, 
+            text="Havuz İşlemi Başlat", 
+            command=self.on_pool_button_click
+        )
+        self.btn_pool_action.pack(side=tk.RIGHT, padx=20)
+
+    def on_pool_button_click(self):
+        """Butona basılınca çalışacak geçici fonksiyon"""
+        messagebox.showinfo("Havuz", "Henüz içerik planlaması yapılmadı.\nButon çalışıyor! 👍")
 
     # =========================================================
     #  İŞ MANTIĞI FONKSİYONLARI
