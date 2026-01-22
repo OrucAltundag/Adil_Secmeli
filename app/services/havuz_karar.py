@@ -1,147 +1,81 @@
 import sqlite3
 
-def muhendislik_mufredat_durumunu_esitle(
-    vt_yolu="data/adil_secmeli.db",
-    baslangic_yili=2022,
-    bitis_yili=2025
-):
-    """
-    KURAL 1:
-    Ders müfredatta ise
-        statu = 1
-        sayac = 0
-
-    KURAL 2:
-    Ders önceki yıl müfredatta idi, bu yıl yoksa
-        statu = 0
-        sayac += 1
-
-    KURAL 3:
-    sayac >= 2 ise
-        statu = -1 (dinlenmeye alınır)
-
-    NOT:
-    Eşleştirme ders_id ile DEĞİL
-    ders_adi üzerinden yapılır (senin DB yapına göre)
-    """
-
+def muhendislik_mufredat_durumunu_esitle(vt_yolu="data/adil_secmeli.db", baslangic_yili=2022, bitis_yili=2025):
     baglanti = sqlite3.connect(vt_yolu)
     baglanti.row_factory = sqlite3.Row
     imlec = baglanti.cursor()
 
-    print(f"\n🔄 Müfredat → Havuz eşitleme başladı ({baslangic_yili}-{bitis_yili})")
-
-    # -------------------------------
-    # HAFIZA
-    # -------------------------------
-    onceki_yil_dersleri = set()
+    print(f"\n🔄 Müfredat → Havuz durum eşitleme ({baslangic_yili}-{bitis_yili})")
 
     try:
-        print("🧹 Havuz sıfırlanıyor...")
-        imlec.execute("UPDATE havuz SET statu = 0, sayac = 0")
+        # Önce gelecek yılları (2024-2025) temizleyelim (Varsayılan 0 olsun)
+        # Çünkü henüz o yılların seçimi yapılmadı, kırmızı görünmesinler.
+        imlec.execute(f"UPDATE havuz SET statu = 0, sayac = 0 WHERE yil > 2023")
         baglanti.commit()
 
-        for yil in range(baslangic_yili, bitis_yili + 1):
-            print(f"\n📅 {yil} yılı işleniyor...")
+        # Ders sayaçlarını takip etmek için
+        ders_sayaclari = {} 
 
-            # -----------------------------------------
-            # 1️⃣ O yılın mühendislik müfredatındaki ders adları
-            # -----------------------------------------
+        for yil in range(baslangic_yili, 2024): # Sadece 2022 ve 2023'ü işle
+            print(f"📅 {yil} yılı kontrol ediliyor...")
+
+            # 1. O yılın müfredatını çek
             imlec.execute("""
-                SELECT DISTINCT d.ad
+                SELECT d.ders_id
                 FROM mufredat m
                 JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
                 JOIN ders d ON md.ders_id = d.ders_id
-                JOIN bolum b ON m.bolum_id = b.bolum_id
-                JOIN fakulte f ON b.fakulte_id = f.fakulte_id
-                WHERE m.akademik_yil = ?
-                  AND f.ad LIKE '%Mühendislik%'
+                JOIN fakulte f ON m.fakulte_id = f.fakulte_id
+                WHERE m.akademik_yil = ? AND f.ad LIKE '%Mühendislik%'
             """, (yil,))
+            
+            mufredattakiler = {row["ders_id"] for row in imlec.fetchall()}
+            
+            # Debug: 2022'de müfredat bulamazsa uyar
+            if yil == 2022 and not mufredattakiler:
+                print("⚠️ UYARI: 2022 Müfredatı boş görünüyor!")
 
-            mevcut_mufredat_dersleri = {
-                row["ad"].strip() for row in imlec.fetchall()
-            }
-
-            print(f"  → {len(mevcut_mufredat_dersleri)} ders müfredatta")
-
-            # -----------------------------------------
-            # 2️⃣ Havuzdaki o yıla ait dersler
-            # -----------------------------------------
-            imlec.execute("""
-                SELECT id, ders_adi, statu, sayac
-                FROM havuz
-                WHERE yil = ?
-            """, (yil,))
-
+            # 2. O yılın havuzunu çek
+            imlec.execute("SELECT id, ders_id FROM havuz WHERE yil = ?", (yil,))
             havuz_kayitlari = imlec.fetchall()
-
+            
             guncellenecekler = []
 
             for row in havuz_kayitlari:
-                havuz_id = row["id"]
-                ders_adi = row["ders_adi"].strip()
-                eski_statu = row["statu"]
-                eski_sayac = row["sayac"]
+                h_id = row["id"]
+                d_id = row["ders_id"]
+                
+                mevcut_sayac = ders_sayaclari.get(d_id, 0)
+                yeni_statu = 0
 
-                yeni_statu = eski_statu
-                yeni_sayac = eski_sayac
-                degisti = False
-
-                # -------------------------------
-                # KURAL 1 – Müfredatta
-                # -------------------------------
-                if ders_adi in mevcut_mufredat_dersleri:
-                    if eski_statu != 1 or eski_sayac != 0:
-                        yeni_statu = 1
-                        yeni_sayac = 0
-                        degisti = True
-
-                # -------------------------------
-                # Müfredatta DEĞİL
-                # -------------------------------
+                # KURAL 1: Müfredatta Var
+                if d_id in mufredattakiler:
+                    yeni_statu = 1
+                    mevcut_sayac = 0 # Seçilince sayaç sıfırlanır
+                
+                # KURAL 2: Müfredatta Yok
                 else:
-                    # Önceki yıl vardı ama bu yıl yoksa
-                    if ders_adi in onceki_yil_dersleri:
-                        yeni_sayac += 1
+                    # 2022 başlangıç yılı olduğu için sayaç artmaz
+                    if yil > baslangic_yili:
+                        mevcut_sayac += 1
+                    
+                    if mevcut_sayac >= 2:
+                        yeni_statu = -1 # Kırmızı (Dinlenme)
+                    else:
+                        yeni_statu = 0  # Havuzda
+                
+                ders_sayaclari[d_id] = mevcut_sayac
+                guncellenecekler.append((yeni_statu, mevcut_sayac, h_id))
 
-                        if yeni_sayac >= 2:
-                            yeni_statu = -1
-                        else:
-                            yeni_statu = -1
-
-                        degisti = True
-
-                if degisti:
-                    guncellenecekler.append(
-                        (yeni_statu, yeni_sayac, havuz_id)
-                    )
-
-            # -----------------------------------------
-            # 3️⃣ Veritabanına yaz
-            # -----------------------------------------
             if guncellenecekler:
-                imlec.executemany("""
-                    UPDATE havuz
-                    SET statu = ?, sayac = ?
-                    WHERE id = ?
-                """, guncellenecekler)
-
-                print(f"  💾 {len(guncellenecekler)} kayıt güncellendi")
-            else:
-                print("  ℹ️ Değişiklik yok")
+                imlec.executemany("UPDATE havuz SET statu=?, sayac=? WHERE id=?", guncellenecekler)
+                print(f"   💾 {len(guncellenecekler)} kayıt güncellendi.")
 
             baglanti.commit()
 
-            # -----------------------------------------
-            # Hafıza güncelle
-            # -----------------------------------------
-            onceki_yil_dersleri = mevcut_mufredat_dersleri.copy()
+       
 
-        print("\n✅ Eşitleme tamamlandı")
-
-    except sqlite3.Error as e:
-        print("❌ Veritabanı hatası:", e)
-        baglanti.rollback()
-
+    except Exception as e:
+        print(f"❌ Hata: {e}")
     finally:
         baglanti.close()
