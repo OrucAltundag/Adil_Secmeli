@@ -7,7 +7,7 @@ import pandas as pd
 from app.ui.tabs.pool_tab import PoolTab
 
 from app.ui.tabs.relations_tab import RelationsTab
-
+from app.ui.tabs.criteria_page import CriteriaPage  
 
 
 
@@ -33,6 +33,11 @@ class CalcTab(ttk.Frame):
         # ---- Nested Notebook ----
         self.sub_nb = ttk.Notebook(self)
         self.sub_nb.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 0) Kriter Sayfası
+        self.page_criteria = ttk.Frame(self.sub_nb)
+        self.sub_nb.add(self.page_criteria, text="📝 Kriter Girdi İşlemleri")
+        self.criteria_view = CriteriaPage(self.page_criteria, self.db)
 
         # 1) Algo tab
         self.page_algos = ttk.Frame(self.sub_nb)
@@ -65,6 +70,13 @@ class CalcTab(ttk.Frame):
         try:
             self.page_pool.db_path = self.db_path
             self.page_pool.refresh()
+        except Exception:
+            pass
+
+        # Kriter sayfasını yenile (fakülteleri tekrar yükle)
+        try:
+            if hasattr(self.criteria_view, 'load_faculties'):
+                self.criteria_view.load_faculties()
         except Exception:
             pass
 

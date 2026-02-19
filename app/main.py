@@ -20,7 +20,7 @@ from app.ui.tabs.calc_tab import CalcTab
 from app.ui.tabs.tools_tab import ToolsTab
 from app.ui.style import apply_style
 from app.core.state import AppState
-
+from app.ui.tabs.criteria_page import CriteriaPage 
 
 
 
@@ -51,6 +51,7 @@ except Exception:
 from app.services.calculation import KararMotoru, run_automatic_scoring  
 
 from app.services.havuz_karar import muhendislik_mufredat_durumunu_esitle
+
 
 
 # =============== Yapılandırma ==================
