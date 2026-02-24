@@ -73,12 +73,17 @@ class CalcTab(ttk.Frame):
         except Exception:
             pass
 
-        # Kriter sayfasını yenile (fakülteleri tekrar yükle)
+        # Kriter sayfasını yenile (fakülteler + ders listesi)
         try:
-            if hasattr(self.criteria_view, 'load_faculties'):
+            if hasattr(self.criteria_view, "load_faculties"):
                 self.criteria_view.load_faculties()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[CalcTab] load_faculties hatası: {e}")
+        try:
+            if hasattr(self.criteria_view, "load_courses"):
+                self.criteria_view.load_courses()
+        except Exception as e:
+            print(f"[CalcTab] load_courses hatası: {e}")
 
 
 
@@ -222,7 +227,7 @@ class CalcTab(ttk.Frame):
             # 2) AHP
             elif algo_id == "ahp":
                 from app.services.calculation import KararMotoru
-                motor = KararMotoru(None)
+                motor = KararMotoru()
                 agirliklar = motor.ahp_calistir()
 
                 sonuc_metni = "AHP Matrisi ve Kriter Ağırlıkları:\n==================================\n"
@@ -233,7 +238,7 @@ class CalcTab(ttk.Frame):
             # 3) TREND
             elif algo_id == "trend":
                 from app.services.calculation import KararMotoru
-                motor = KararMotoru(None)
+                motor = KararMotoru()
 
                 sorgu = """
                     SELECT d.ders_id, d.ad as ders, p.akademik_yil, p.basari_orani
@@ -272,13 +277,13 @@ class CalcTab(ttk.Frame):
                 from app.services.calculation import KararMotoru
                 import numpy as np
 
-                motor = KararMotoru(None)
+                motor = KararMotoru()
 
                 sorgu = """
                     SELECT
                         d.ders_id, d.ad as ders,
                         p.akademik_yil, p.basari_orani,
-                        pop.tercih_sayisi as populerlik
+                        pop.talep_sayisi as populerlik
                     FROM ders d
                     LEFT JOIN performans p ON d.ders_id = p.ders_id
                     LEFT JOIN populerlik pop ON d.ders_id = pop.ders_id
@@ -311,14 +316,13 @@ class CalcTab(ttk.Frame):
                             "anket": float(np.random.randint(40, 90))
                         })
 
-                    df_final = pd.DataFrame(islenmis)
+                    df_final["ders_id"] = range(len(df_final))
                     agirliklar = motor.ahp_calistir()
-                    df_sonuc, _ = motor.topsis_calistir(df_final, agirliklar)
+                    df_sonuc, meta = motor.topsis_calistir(df_final, agirliklar)
 
                     sonuc_metni = "--- NİHAİ KARAR MATRİSİ (TOPSIS) ---\n"
                     sonuc_metni += "Girdiler: Başarı + Trend + Popülerlik + Anket\n\n"
                     if not df_sonuc.empty:
-                        # Sütun isimleri projene göre değişebilir; burada en sık kullanılanı baz aldım.
                         cols = [c for c in ["Ders", "AHP_TOPSIS_Skor", "S+", "S-"] if c in df_sonuc.columns]
                         sonuc_metni += df_sonuc[cols].head(15).to_string(index=False, float_format="%.4f")
                     else:
@@ -345,8 +349,11 @@ class CalcTab(ttk.Frame):
                 basarili_mi = False
 
         except Exception as e:
+            import traceback
             basarili_mi = False
-            sonuc_metni = f"HATA OLUŞTU:\n{e}"
+            sonuc_metni = f"HATA OLUŞTU:\n{e}\n\nDetay:\n{traceback.format_exc()}"
+            print(f"[Algoritma {algo_id}] Hata: {e}")
+            traceback.print_exc()
 
         self.results_cache[algo_id] = sonuc_metni
 

@@ -1,10 +1,11 @@
-# app/database.py
+# app/db/database.py
+# ScopedSession ile bağlantı kopması önleme ve thread-safe kullanım
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-import json, os
+from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
+import json
+import os
 
 def _load_db_url():
-    # config.json varsa oradan oku; yoksa varsayılan sqlite dosyası
     cfg = {"db_url": "sqlite:///./adil_secimli.db"}
     if os.path.exists("config.json"):
         try:
@@ -22,8 +23,19 @@ DATABASE_URL = _load_db_url()
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
+SessionFactory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
+SessionLocal = scoped_session(SessionFactory)
 Base = declarative_base()
+
+
+def get_session():
+    return SessionLocal()
+
+
+def dispose_session():
+    SessionLocal.remove()

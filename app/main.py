@@ -1,7 +1,9 @@
 import json
 import os
 import sys
+import warnings
 
+warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
 
 # --- BU BLOĞU EN ÜSTE EKLE ---
 # Şu anki dosyanın (main.py) yolunu al

@@ -3,6 +3,12 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+TURKCE_STOP_WORDS = [
+    "ve", "veya", "ile", "için", "bir", "bu", "şu", "o", "da", "de", "ta", "te",
+    "mi", "mu", "mü", "mı", "ın", "in", "un", "ün", "dan", "den", "tan", "ten",
+    "olarak", "gibi", "kadar", "daha", "en", "çok", "az", "ise", "ama", "fakat",
+]
+
 
 class SimilarityEngine:
     def __init__(self, db_path: str):
@@ -34,9 +40,9 @@ class SimilarityEngine:
 
         vectorizer = TfidfVectorizer(
             lowercase=True,
-            stop_words=None,     # TR stopwords birazdan eklenebilir
+            stop_words=TURKCE_STOP_WORDS,
             max_features=5000,
-            ngram_range=(1, 2)   # akademik metinler için önemli
+            ngram_range=(1, 2)
         )
 
         tfidf_matrix = vectorizer.fit_transform(df["bilgi"])

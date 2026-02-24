@@ -180,9 +180,11 @@ class AnalysisTab(ttk.Frame):
             sns.barplot(
                 x="basari_orani",
                 y="ad",
+                hue="ad",
                 data=df_top,
                 ax=ax,
-                palette="viridis" if len(df_top) > 1 else None
+                palette="viridis" if len(df_top) > 1 else None,
+                legend=False
             )
 
             ax.set_xlabel("Başarı (%)")
@@ -203,10 +205,10 @@ class AnalysisTab(ttk.Frame):
 
         try:
             query_pop = """
-                SELECT d.ad, p.tercih_sayisi 
+                SELECT d.ad, p.talep_sayisi 
                 FROM populerlik p 
                 JOIN ders d ON p.ders_id = d.ders_id 
-                ORDER BY p.tercih_sayisi DESC LIMIT 7;
+                ORDER BY p.talep_sayisi DESC LIMIT 7;
             """
             df_pop = self.db.read_df(query_pop)
 
@@ -216,7 +218,7 @@ class AnalysisTab(ttk.Frame):
                 return
 
             ax.pie(
-                df_pop["tercih_sayisi"],
+                df_pop["talep_sayisi"],
                 labels=df_pop["ad"],
                 autopct="%1.1f%%",
                 startangle=90,

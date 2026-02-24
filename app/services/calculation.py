@@ -9,6 +9,9 @@ import traceback
 # 1. KARAR MOTORU (MANTIK DEĞİŞMEDİ)
 # =========================================================
 class KararMotoru:
+    def __init__(self, db=None):
+        self.db = db
+
     def ahp_calistir(self):
         # 4 kriter: basari, trend, populerlik, anket
         matris = [
@@ -20,33 +23,136 @@ class KararMotoru:
         sutun_top = [sum(col) for col in zip(*matris)]
         agirliklar = [sum([(r[i] / (sutun_top[i] or 1)) for i in range(4)]) / 4 for r in matris]
 
-        # normalize (garanti)
         s = sum(agirliklar) or 1.0
         agirliklar = [a / s for a in agirliklar]
+        # Garanti: toplam 1.0 olsun (float rounding)
+        toplam = sum(agirliklar)
+        if toplam and abs(toplam - 1.0) > 1e-6:
+            agirliklar = [a / toplam for a in agirliklar]
         return agirliklar
+
+    def gecmis_trend_hesapla(self, gecmis_list):
+        """
+        Geçmiş yılların ağırlıklı ortalamasını hesaplar.
+        gecmis_list: [{"yil": 2024, "oran": 0.85}, {"yil": 2023, "oran": 0.70}, ...]
+        En yeni yıl en yüksek ağırlığı alır.
+        Döner: (trend_skoru_float, log_mesaji_str)
+        """
+        if not gecmis_list:
+            return 0.0, "Geçmiş veri yok."
+
+        agirlik_sirasi = [0.50, 0.30, 0.20]
+        toplam_agirlik = 0.0
+        toplam_puan = 0.0
+        log_parcalari = []
+
+        for i, item in enumerate(gecmis_list):
+            agirlik = agirlik_sirasi[i] if i < len(agirlik_sirasi) else 0.0
+            oran = float(item.get("oran", 0) or 0)
+            puan = oran * agirlik
+            toplam_puan += puan
+            toplam_agirlik += agirlik
+            log_parcalari.append(f"{item['yil']}: %{oran*100:.1f} x {agirlik:.0%}")
+
+        trend = toplam_puan / toplam_agirlik if toplam_agirlik > 0 else 0.0
+        log = " | ".join(log_parcalari) + f"  -> Trend: {trend:.4f}"
+        return trend, log
 
     def topsis_calistir(self, df, agirliklar):
         if df.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), {}
 
         sutunlar = ["basari", "trend", "populerlik", "anket"]
-        paydalar = {c: math.sqrt(sum((float(x) ** 2) for x in df[c].fillna(0))) or 1 for c in sutunlar}
+        # Ağırlık normalizasyonu (toplam 1.0)
+        w_sum = sum(agirliklar) or 1.0
+        agirliklar = [float(a) / w_sum for a in agirliklar]
+
+        # Sıfıra bölünme koruması: payda en az 1e-10
+        def _safe_div(num, denom, default=0.0):
+            return num / denom if denom and abs(denom) > 1e-10 else default
+
+        paydalar = {}
+        for c in sutunlar:
+            sq_sum = sum((float(x) ** 2) for x in df[c].fillna(0))
+            paydalar[c] = math.sqrt(sq_sum) if sq_sum > 1e-10 else 1.0
+
+        ideal = {c: max([float(x) for x in df[c].fillna(0)] or [0.0]) for c in sutunlar}
+        anti_ideal = {c: min([float(x) for x in df[c].fillna(0)] or [0.0]) for c in sutunlar}
 
         sonuclar = []
         for _, row in df.iterrows():
-            norm = []
+            norm_agirlikli = {}
             for i, c in enumerate(sutunlar):
                 v = float(row.get(c, 0) or 0)
-                norm.append((v / paydalar[c]) * float(agirliklar[i]))
+                norm_agirlikli[c] = _safe_div(v, paydalar[c], 0.0) * float(agirliklar[i])
 
-            skor = sum(norm)
+            s_plus = math.sqrt(sum(
+                (norm_agirlikli[c] - _safe_div(ideal[c], paydalar[c], 0) * agirliklar[i]) ** 2
+                for i, c in enumerate(sutunlar)
+            ))
+            s_minus = math.sqrt(sum(
+                (norm_agirlikli[c] - _safe_div(anti_ideal[c], paydalar[c], 0) * agirliklar[i]) ** 2
+                for i, c in enumerate(sutunlar)
+            ))
+
+            denom = s_plus + s_minus
+            topsis_skor = _safe_div(s_minus, denom, 0.0)
+
             sonuclar.append({
-                "ders_id": int(row["ders_id"]),
-                "Ders": row["ders"],
-                "AHP_TOPSIS_Skor": float(skor)
+                "ders_id": int(row["ders_id"]) if "ders_id" in row else 0,
+                "Ders": row.get("ders", ""),
+                "AHP_TOPSIS_Skor": float(topsis_skor),
+                "S+": round(s_plus, 6),
+                "S-": round(s_minus, 6),
             })
 
-        return pd.DataFrame(sonuclar).sort_values(by="AHP_TOPSIS_Skor", ascending=False)
+        df_sonuc = pd.DataFrame(sonuclar).sort_values(by="AHP_TOPSIS_Skor", ascending=False)
+        meta = {"agirliklar": agirliklar, "sutunlar": sutunlar}
+        return df_sonuc, meta
+
+
+def ders_cakisma_kontrolu(ders_listesi, conn=None):
+    """
+    Aynı gün ve saatte çakışan dersleri tespit eder.
+    ders_listesi: [(ders_id, gun, baslangic_saati, bitis_saati), ...]
+    Döner: [(ders_id_a, ders_id_b), ...] çakışan çiftler
+    """
+    if not ders_listesi or len(ders_listesi) < 2:
+        return []
+
+    def _saat_dakika(s):
+        if not s:
+            return 0, 0
+        s = str(s).strip()
+        if ":" in s:
+            p = s.split(":")
+            return int(p[0] or 0), int(p[1] or 0)
+        try:
+            return int(float(s)), 0
+        except (ValueError, TypeError):
+            return 0, 0
+
+    def _cakisma(gun1, b1, e1, gun2, b2, e2):
+        if (gun1 or "").strip() != (gun2 or "").strip():
+            return False
+        sb1, sm1 = _saat_dakika(b1)
+        se1, em1 = _saat_dakika(e1)
+        sb2, sm2 = _saat_dakika(b2)
+        se2, em2 = _saat_dakika(e2)
+        dk1_bas = sb1 * 60 + sm1
+        dk1_bit = se1 * 60 + em1
+        dk2_bas = sb2 * 60 + sm2
+        dk2_bit = se2 * 60 + em2
+        return not (dk1_bit <= dk2_bas or dk2_bit <= dk1_bas)
+
+    cakisanlar = []
+    for i in range(len(ders_listesi)):
+        for j in range(i + 1, len(ders_listesi)):
+            d1, d2 = ders_listesi[i], ders_listesi[j]
+            if len(d1) >= 4 and len(d2) >= 4:
+                if _cakisma(d1[1], d1[2], d1[3], d2[1], d2[2], d2[3]):
+                    cakisanlar.append((d1[0], d2[0]))
+    return cakisanlar
 
 
 # =========================================================
@@ -156,9 +262,11 @@ def yukle_gercek_2022_mufredati(conn, excel_path):
                         "INSERT INTO performans (ders_id, akademik_yil, ortalama_not, basari_orani) VALUES (?, 2022, ?, ?)",
                         (d_id, ort, ort / 100)
                     )
+                    kontenjan = 50
+                    doluluk = min(talep / (kontenjan or 1), 1.0)
                     cursor.execute(
-                        "INSERT INTO populerlik (ders_id, akademik_yil, talep_sayisi, kontenjan, doluluk_orani) VALUES (?, 2022, ?, 50, ?)",
-                        (d_id, talep, min(talep / 50, 1.0))
+                        "INSERT INTO populerlik (ders_id, akademik_yil, talep_sayisi, kontenjan, doluluk_orani) VALUES (?, 2022, ?, ?, ?)",
+                        (d_id, talep, kontenjan, doluluk)
                     )
                     cursor.execute(
                         "INSERT INTO skor (ders_id, akademik_yil, skor_top) VALUES (?, 2022, 0)",
@@ -217,9 +325,11 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
                 "INSERT INTO performans (ders_id, akademik_yil, ortalama_not, basari_orani) VALUES (?, 2023, ?, ?)",
                 (d_id, yeni_not, yeni_not / 100)
             )
+            kontenjan = 50
+            doluluk = min(talep / (kontenjan or 1), 1.0)
             cursor.execute(
-                "INSERT INTO populerlik (ders_id, akademik_yil, talep_sayisi, kontenjan, doluluk_orani) VALUES (?, 2023, ?, 50, ?)",
-                (d_id, talep, min(talep / 50, 1.0))
+                "INSERT INTO populerlik (ders_id, akademik_yil, talep_sayisi, kontenjan, doluluk_orani) VALUES (?, 2023, ?, ?, ?)",
+                (d_id, talep, kontenjan, doluluk)
             )
         conn.commit()
 
@@ -279,7 +389,7 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
                 "anket": 0.5
             })
 
-        df_sonuc = motor.topsis_calistir(pd.DataFrame(raw_data), agirliklar)
+        df_sonuc, _ = motor.topsis_calistir(pd.DataFrame(raw_data), agirliklar)
         ders_skorlari = {int(r["ders_id"]): float(r["AHP_TOPSIS_Skor"]) for _, r in df_sonuc.iterrows()}
 
         # 5) 2023 Müfredat oluştur (bölüm bazlı)

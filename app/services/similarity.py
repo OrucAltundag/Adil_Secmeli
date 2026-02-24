@@ -5,6 +5,16 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 from app.db.models import Ders
 
+# Türkçe stop-words (gereksiz kelimeleri filtrele)
+TURKCE_STOP_WORDS = {
+    "ve", "veya", "ile", "için", "bir", "bu", "şu", "o", "da", "de", "ta", "te",
+    "mi", "mu", "mü", "mı", "ın", "in", "un", "ün", "dan", "den", "tan", "ten",
+    "na", "ne", "ni", "nu", "nü", "lar", "ler", "dır", "dir", "dur", "dür",
+    "olarak", "gibi", "kadar", "daha", "en", "çok", "az", "ise", "ama", "fakat",
+    "ancak", "yalnız", "sadece", "hem", "ya", "yani", "örneğin", "göre", "üzere",
+    "doğru", "karşı", "sonra", "önce", "içinde", "dışında", "üzerinde", "altında",
+}
+
 class SimilarityEngine:
     def __init__(self, db_session: Session):
         self.db = db_session
@@ -30,12 +40,15 @@ class SimilarityEngine:
             
         target_index = target_course.index[0]
 
-        # 2. NLP İşlemi: Metni Sayıya Çevir (TF-IDF)
-        # Türkçe stop words (ve, veya, ile...) çıkarılabilir ama şimdilik basit tutalım.
-        tfidf = TfidfVectorizer(max_features=500) 
-        
-        # İçeriklerdeki boşlukları temizle
-        df['icerik'] = df['icerik'].fillna("")
+        # 2. NLP İşlemi: Stop-words temizleme + TF-IDF
+        df['icerik'] = df['icerik'].fillna("").astype(str)
+
+        def _remove_stopwords(text):
+            words = text.lower().split()
+            return " ".join(w for w in words if w not in TURKCE_STOP_WORDS and len(w) > 1)
+
+        df['icerik'] = df['icerik'].apply(_remove_stopwords)
+        tfidf = TfidfVectorizer(max_features=500, stop_words=list(TURKCE_STOP_WORDS))
         
         tfidf_matrix = tfidf.fit_transform(df['icerik'])
 

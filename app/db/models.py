@@ -1,4 +1,5 @@
 # models.py
+# Bitirme Projesi: Engel Denetimi, Kontenjan kuralları ve ilişkiler için güncellenmiş modeller
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, Date, DateTime, Boolean, Float, Text, UniqueConstraint
 )
@@ -20,7 +21,7 @@ class Okul(Base):
 
 
 # ---------------------------
-# (Ek) BÖLÜM  -> Mufredat.Bolum_ID için asgari tablo
+# 2) BÖLÜM
 # ---------------------------
 class Bolum(Base):
     __tablename__ = "bolum"
@@ -34,7 +35,7 @@ class Bolum(Base):
 
 
 # ---------------------------
-# 2) FAKÜLTE
+# 3) FAKÜLTE
 # ---------------------------
 class Fakulte(Base):
     __tablename__ = "fakulte"
@@ -42,7 +43,7 @@ class Fakulte(Base):
     fakulte_id = Column(Integer, primary_key=True, index=True)
     ad = Column(String, nullable=False)
     okul_id = Column(Integer, ForeignKey("okul.school_id"), nullable=False)
-    tip = Column(String)                     # Lisans / Lisansüstü
+    tip = Column(String)
     kampus = Column(String)
 
     okul = relationship("Okul", back_populates="fakulteler")
@@ -53,7 +54,7 @@ class Fakulte(Base):
 
 
 # ---------------------------
-# (Ek) ÖĞRENCİ -> Ogr_ID referansları için asgari tablo
+# 4) ÖĞRENCİ
 # ---------------------------
 class Ogrenci(Base):
     __tablename__ = "ogrenci"
@@ -72,7 +73,7 @@ class Ogrenci(Base):
 
 
 # ---------------------------
-# 3) DERS
+# 5) DERS (tip/tur/DersTipi uyumluluğu için)
 # ---------------------------
 class Ders(Base):
     __tablename__ = "ders"
@@ -82,45 +83,41 @@ class Ders(Base):
     ad = Column(String, nullable=False)
     kredi = Column(Integer)
     akts = Column(Integer)
-    onkosul = Column(Integer, ForeignKey("ders.ders_id"), nullable=True)  # self-FK
-    bilgi = Column(Text)            # açıklama/bilgi
-    tip = Column(String)            # seçmeli / zorunlu vb.
+    onkosul = Column(Integer, ForeignKey("ders.ders_id"), nullable=True)
+    bilgi = Column(Text)
+    tip = Column(String)
     fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"))
+    # Kontenjan kuralı: Varsayılan kontenjan (ders_ogretim veya populerlik ile override)
+    kontenjan = Column(Integer)
 
     fakulte = relationship("Fakulte", back_populates="dersler")
     havuz_kayitlari = relationship("Havuz", back_populates="ders")
-    ders_ogretim   = relationship("DersOgretim", back_populates="ders")
-    kayitlar       = relationship("Kayit", back_populates="ders")
-    performanslar  = relationship("Performans", back_populates="ders")
-    populerlikler  = relationship("Populerlik", back_populates="ders")
-    skorlar        = relationship("Skor", back_populates="ders")
+    ders_ogretim = relationship("DersOgretim", back_populates="ders")
+    kayitlar = relationship("Kayit", back_populates="ders")
+    performanslar = relationship("Performans", back_populates="ders")
+    populerlikler = relationship("Populerlik", back_populates="ders")
+    skorlar = relationship("Skor", back_populates="ders")
     anket_cevaplari = relationship("AnketCevap", back_populates="ders")
 
 
 # ---------------------------
-# 4) HAVUZ (SENİN ESKİ HALİN)
+# 6) HAVUZ
 # ---------------------------
 class Havuz(Base):
     __tablename__ = "havuz"
 
-    # BURAYI DUZELTTİK: havuz_id yerine tekrar id yaptık
-    id = Column(Integer, primary_key=True, index=True) 
-    
+    id = Column(Integer, primary_key=True, index=True)
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=False)
-
-    # Senin eski DB'de bu alanlar varsa kalsın, yoksa hata alırsan sileriz.
-    # Muhtemelen senin DB'de yil, statu, sayac var.
     yil = Column(Integer, nullable=False)
     statu = Column(Integer, default=0)
     sayac = Column(Integer, default=0)
     skor = Column(Float, default=0.0)
 
-    # Diğer detaylar
     secilebilirlik_durumu = Column(Boolean, default=True)
-    kontenjan_durumu = Column(String)       
-    on_kosul_durumu = Column(String)        
-    ogrenci_dinlendirme_durumu = Column(String) 
+    kontenjan_durumu = Column(String)
+    on_kosul_durumu = Column(String)
+    ogrenci_dinlendirme_durumu = Column(String)
     acilis_tarihi = Column(Date)
     kapanis_tarihi = Column(Date)
     durum_degeri = Column(Float)
@@ -128,8 +125,9 @@ class Havuz(Base):
     ders = relationship("Ders", back_populates="havuz_kayitlari")
     fakulte = relationship("Fakulte", back_populates="havuz_kayitlari")
 
+
 # ---------------------------
-# 5) ÖĞRETİM GÖREVLİSİ
+# 7) ÖĞRETİM GÖREVLİSİ
 # ---------------------------
 class OgretimGorevlisi(Base):
     __tablename__ = "ogretim_gorevlisi"
@@ -140,12 +138,11 @@ class OgretimGorevlisi(Base):
     unvan = Column(String)
     email = Column(String)
     tel = Column(String)
-    durum = Column(String)           # Aktif/Pasif/İzinli vb.
+    durum = Column(String)
     bilgi = Column(Text)
     memnuniyet_puani = Column(Float)
     kidem_yil = Column(Integer)
     atanma_tarihi = Column(Date)
-
     school_id = Column(Integer, ForeignKey("okul.school_id"))
     fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"))
     basarim_ort = Column(Float)
@@ -158,7 +155,7 @@ class OgretimGorevlisi(Base):
 
 
 # ---------------------------
-# 6) DERS_ÖĞRETİM
+# 8) DERS_ÖĞRETİM (Kontenjan, gün/saat çakışma için)
 # ---------------------------
 class DersOgretim(Base):
     __tablename__ = "ders_ogretim"
@@ -166,26 +163,27 @@ class DersOgretim(Base):
     ders_ogrt_id = Column(Integer, primary_key=True, index=True)
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     ogrt_id = Column(Integer, ForeignKey("ogretim_gorevlisi.ogrt_id"), nullable=False)
-
-    rol = Column(String)           # Ana Eğitmen / Yardımcı / Asistan
-    donem = Column(String)         # Güz/Bahar
+    rol = Column(String)
+    donem = Column(String)
     akademik_yil = Column(Integer)
     ders_saati = Column(Integer)
-    katki_oran = Column(Float)     # %0-100
-    not_ortalaması = Column(Float) # eğitmenin bu dersteki ortalaması
+    katki_oran = Column(Float)
+    not_ortalaması = Column(Float)
     kontenjan = Column(Integer)
+    gun = Column(String)
+    baslangic_saati = Column(String)
+    bitis_saati = Column(String)
 
     ders = relationship("Ders", back_populates="ders_ogretim")
     ogretim_gorevlisi = relationship("OgretimGorevlisi", back_populates="ders_gorevleri")
 
     __table_args__ = (
-        UniqueConstraint("ders_id", "ogrt_id", "akademik_yil", "donem",
-                         name="uq_ders_ogrt_yil_donem"),
+        UniqueConstraint("ders_id", "ogrt_id", "akademik_yil", "donem", name="uq_ders_ogrt_yil_donem"),
     )
 
 
 # ---------------------------
-# 7) MÜFREDAT
+# 9) MÜFREDAT
 # ---------------------------
 class Mufredat(Base):
     __tablename__ = "mufredat"
@@ -194,8 +192,8 @@ class Mufredat(Base):
     fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=False)
     akademik_yil = Column(Integer, nullable=False)
     bolum_id = Column(Integer, ForeignKey("bolum.bolum_id"))
-    donem = Column(String)         # Güz/Bahar
-    durum = Column(String)         # Taslak/Onaylı vb.
+    donem = Column(String)
+    durum = Column(String)
     versiyon = Column(Integer, default=1)
 
     fakulte = relationship("Fakulte")
@@ -204,7 +202,7 @@ class Mufredat(Base):
 
 
 # ---------------------------
-# 8) MÜFREDAT–DERS
+# 10) MÜFREDAT_DERS
 # ---------------------------
 class MufredatDers(Base):
     __tablename__ = "mufredat_ders"
@@ -216,13 +214,11 @@ class MufredatDers(Base):
     mufredat = relationship("Mufredat", back_populates="dersler")
     ders = relationship("Ders")
 
-    __table_args__ = (
-        UniqueConstraint("mufredat_id", "ders_id", name="uq_mufredat_ders"),
-    )
+    __table_args__ = (UniqueConstraint("mufredat_id", "ders_id", name="uq_mufredat_ders"),)
 
 
 # ---------------------------
-# 9) KAYIT
+# 11) KAYIT (failed_before: daha önce kaldı mı)
 # ---------------------------
 class Kayit(Base):
     __tablename__ = "kayit"
@@ -232,10 +228,11 @@ class Kayit(Base):
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     akademik_yil = Column(Integer, nullable=False)
     donem = Column(String, nullable=False)
-    kayit_turu = Column(String)     # otomatik / ogrenci
+    kayit_turu = Column(String)
     kayit_tarih = Column(DateTime)
-    durum = Column(String)          # basarili/basarisiz/cikmis vb.
+    durum = Column(String)
     ogrt_id = Column(Integer, ForeignKey("ogretim_gorevlisi.ogrt_id"))
+    failed_before = Column(Boolean, default=False)
 
     ogrenci = relationship("Ogrenci", back_populates="kayitlar")
     ders = relationship("Ders", back_populates="kayitlar")
@@ -243,7 +240,7 @@ class Kayit(Base):
 
 
 # ---------------------------
-# 10) PERFORMANS (Güncellendi: Not Ortalaması Kritik)
+# 12) PERFORMANS
 # ---------------------------
 class Performans(Base):
     __tablename__ = "performans"
@@ -252,22 +249,19 @@ class Performans(Base):
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     akademik_yil = Column(Integer, nullable=False)
     donem = Column(String, default="Güz")
-
-    # Kriter Verileri
-    ortalama_not = Column(Float)       # Örn: 48.5 (50 altı ise kırmızı alarm)
-    basari_orani = Column(Float)       # Örn: 0.85 (Geçen/Kalan oranı)
-    
-    # Hesaplanan Ham Puan (0-100 arası)
+    ortalama_not = Column(Float)
+    basari_orani = Column(Float)
     ham_puan = Column(Float)
 
     ders = relationship("Ders", back_populates="performanslar")
-    
+
     __table_args__ = (
         UniqueConstraint("ders_id", "akademik_yil", "donem", name="uq_performans_yil"),
     )
 
+
 # ---------------------------
-# 11) POPÜLERLİK (Güncellendi: Kontenjan ve Fakülte Oranı)
+# 13) POPÜLERLİK (Kontenjan kuralı)
 # ---------------------------
 class Populerlik(Base):
     __tablename__ = "populerlik"
@@ -276,17 +270,11 @@ class Populerlik(Base):
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     akademik_yil = Column(Integer, nullable=False)
     donem = Column(String, default="Güz")
-
-    # Kriter Verileri
-    talep_sayisi = Column(Integer)      # Dersi seçen öğrenci sayısı
-    kontenjan = Column(Integer)         # Dersin kapasitesi
-    fakulte_mevcudu = Column(Integer)   # O an fakültede kaç öğrenci var?
-
-    # Hesaplanan Oranlar
-    doluluk_orani = Column(Float)       # talep / kontenjan (Max 1.0)
-    ilgi_orani = Column(Float)          # talep / fakulte_mevcudu
-    
-    # Hesaplanan Ham Puan (0-100 arası)
+    talep_sayisi = Column(Integer)
+    kontenjan = Column(Integer)
+    fakulte_mevcudu = Column(Integer)
+    doluluk_orani = Column(Float)
+    ilgi_orani = Column(Float)
     ham_puan = Column(Float)
 
     ders = relationship("Ders", back_populates="populerlikler")
@@ -297,7 +285,7 @@ class Populerlik(Base):
 
 
 # ---------------------------
-# 12) ANKET_FORM
+# 14) ANKET_FORM
 # ---------------------------
 class AnketForm(Base):
     __tablename__ = "anket_form"
@@ -318,7 +306,7 @@ class AnketForm(Base):
 
 
 # ---------------------------
-# 13) ANKET_CEVAP  (Top-3/Borda)
+# 15) ANKET_CEVAP
 # ---------------------------
 class AnketCevap(Base):
     __tablename__ = "anket_cevap"
@@ -327,10 +315,9 @@ class AnketCevap(Base):
     form_id = Column(Integer, ForeignKey("anket_form.form_id"), nullable=False)
     ogr_id = Column(Integer, ForeignKey("ogrenci.ogr_id"), nullable=False)
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
-
-    rank = Column(Integer)           # 1,2,3
-    siddet = Column(Integer)         # 1..5 (opsiyonel)
-    puan = Column(Float)             # hesaplanan (Borda * siddet/5)
+    rank = Column(Integer)
+    siddet = Column(Integer)
+    puan = Column(Float)
     cevap_tarihi = Column(DateTime)
     ip_hash = Column(String(128))
 
@@ -338,13 +325,11 @@ class AnketCevap(Base):
     ogrenci = relationship("Ogrenci", back_populates="anket_cevaplari")
     ders = relationship("Ders", back_populates="anket_cevaplari")
 
-    __table_args__ = (
-        UniqueConstraint("form_id", "ogr_id", "ders_id", name="uq_anket_tekoy"),
-    )
+    __table_args__ = (UniqueConstraint("form_id", "ogr_id", "ders_id", name="uq_anket_tekoy"),)
 
 
 # ---------------------------
-# 14) ANKET_SONUCLARI (özet)
+# 16) ANKET_SONUCLARI
 # ---------------------------
 class AnketSonuclari(Base):
     __tablename__ = "anket_sonuclari"
@@ -352,7 +337,6 @@ class AnketSonuclari(Base):
     anketsonuc_id = Column(Integer, primary_key=True, index=True)
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     form_id = Column(Integer, ForeignKey("anket_form.form_id"), nullable=False)
-
     toplam_puan = Column(Float)
     oy_sayisi = Column(Integer)
     ortalama_siddet = Column(Float)
@@ -362,13 +346,11 @@ class AnketSonuclari(Base):
     ders = relationship("Ders")
     form = relationship("AnketForm", back_populates="sonuclar")
 
-    __table_args__ = (
-        UniqueConstraint("form_id", "ders_id", name="uq_anket_sonuc_form_ders"),
-    )
+    __table_args__ = (UniqueConstraint("form_id", "ders_id", name="uq_anket_sonuc_form_ders"),)
 
 
 # ---------------------------
-# 15) SKOR
+# 17) SKOR
 # ---------------------------
 class Skor(Base):
     __tablename__ = "skor"
@@ -377,23 +359,20 @@ class Skor(Base):
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     akademik_yil = Column(Integer, nullable=False)
     donem = Column(String, nullable=False)
-
-    b_norm = Column(Float)     # Başarı
-    p_norm = Column(Float)     # Popülerlik
-    a_norm = Column(Float)     # Anket
-    g_norm = Column(Float)     # Geçmiş (varsa)
+    b_norm = Column(Float)
+    p_norm = Column(Float)
+    a_norm = Column(Float)
+    g_norm = Column(Float)
     skor_top = Column(Float)
     hesap_tarih = Column(DateTime)
 
     ders = relationship("Ders", back_populates="skorlar")
 
-    __table_args__ = (
-        UniqueConstraint("ders_id", "akademik_yil", "donem", name="uq_skor_dersterm"),
-    )
+    __table_args__ = (UniqueConstraint("ders_id", "akademik_yil", "donem", name="uq_skor_dersterm"),)
 
 
 # ---------------------------
-# 16) ÖĞRENCİ_ENGEL
+# 18) ÖĞRENCİ_ENGEL (Engel Denetimi: is_active)
 # ---------------------------
 class OgrenciEngel(Base):
     __tablename__ = "ogrenci_engel"
@@ -404,6 +383,7 @@ class OgrenciEngel(Base):
     engel_baslangic = Column(Date)
     engel_bitis = Column(Date)
     neden = Column(Text)
+    is_active = Column(Boolean, default=True)
 
     ogrenci = relationship("Ogrenci", back_populates="engeller")
     ders = relationship("Ders")

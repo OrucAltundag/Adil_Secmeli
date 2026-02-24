@@ -7,9 +7,36 @@ class CriteriaPage:
         self.parent = parent
         self.db = db
         self.selected_course_id = None
-        
+
+        self._ensure_table()
+
         # Arayüzü Kur
         self.setup_ui()
+
+    def _ensure_table(self):
+        """ders_kriterleri tablosu yoksa oluşturur."""
+        if not getattr(self.db, "conn", None):
+            return
+        try:
+            cur = self.db.conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ders_kriterleri (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ders_id         INTEGER NOT NULL,
+                    yil             INTEGER NOT NULL,
+                    donem           TEXT    DEFAULT 'Güz',
+                    toplam_ogrenci  INTEGER DEFAULT 0,
+                    gecen_ogrenci   INTEGER DEFAULT 0,
+                    basari_ortalamasi REAL  DEFAULT 0.0,
+                    kontenjan       INTEGER DEFAULT 0,
+                    kayitli_ogrenci INTEGER DEFAULT 0,
+                    UNIQUE(ders_id, yil),
+                    FOREIGN KEY(ders_id) REFERENCES ders(ders_id)
+                )
+            """)
+            self.db.conn.commit()
+        except Exception as e:
+            print(f"ders_kriterleri tablo oluşturma hatası: {e}")
 
     def setup_ui(self):
         # --- ANA DÜZEN: Üst (Filtre), Sol (Liste), Sağ (Form) ---
@@ -74,10 +101,10 @@ class CriteriaPage:
         self.cb_bolum = ttk.Combobox(parent, state="readonly", width=25)
         self.cb_bolum.pack(side=tk.LEFT, padx=5)
         
-        # Yıl
+        # Yıl (varsayılan 2022 - müfredat genelde bu yılda dolu)
         tk.Label(parent, text="Yıl:", **lbl_style).pack(side=tk.LEFT, padx=10)
         self.cb_yil = ttk.Combobox(parent, state="readonly", width=10, values=["2022", "2023", "2024", "2025"])
-        self.cb_yil.current(3)
+        self.cb_yil.current(0)
         self.cb_yil.pack(side=tk.LEFT, padx=5)
 
         # Dönem
@@ -147,10 +174,12 @@ class CriteriaPage:
     # --- VERİ İŞLEMLERİ ---
 
     def load_faculties(self):
+        if not getattr(self.db, "conn", None):
+            return
         try:
-            res = self.db.run_sql("SELECT ad FROM fakulte")
-            if res[1]:
-                self.cb_fakulte['values'] = [r[0] for r in res[1]]
+            _, rows = self.db.run_sql("SELECT ad FROM fakulte")
+            if rows:
+                self.cb_fakulte["values"] = [str(r[0]) for r in rows]
                 self.cb_fakulte.current(0)
                 self.on_faculty_change(None)
         except Exception as e:
@@ -158,60 +187,99 @@ class CriteriaPage:
 
     def on_faculty_change(self, event):
         fakulte = self.cb_fakulte.get()
-        if not fakulte: return
-        res_id = self.db.run_sql(f"SELECT fakulte_id FROM fakulte WHERE ad='{fakulte}'")
-        if not res_id[1]: return
-        fid = res_id[1][0][0]
-        
-        res_bolum = self.db.run_sql(f"SELECT ad FROM bolum WHERE fakulte_id={fid}")
-        vals = [r[0] for r in res_bolum[1]] if res_bolum[1] else []
-        self.cb_bolum['values'] = vals
-        if vals: self.cb_bolum.current(0)
+        if not fakulte or not getattr(self.db, "conn", None):
+            return
+        try:
+            _, res = self.db.run_sql("SELECT fakulte_id FROM fakulte WHERE ad=?", (fakulte,))
+            if not res:
+                return
+            fid = res[0][0]
+            _, res_bolum = self.db.run_sql("SELECT ad FROM bolum WHERE fakulte_id=?", (fid,))
+            vals = [str(r[0]) for r in res_bolum] if res_bolum else []
+            self.cb_bolum["values"] = vals
+            if vals:
+                self.cb_bolum.current(0)
+        except Exception as e:
+            print(f"Bölüm yükleme hatası: {e}")
 
 
     def load_courses(self):
         """Müfredattaki dersleri listeler."""
-        # 1. Önceki verileri temizle
         self.tree.delete(*self.tree.get_children())
-        
-        # 2. Seçimleri al
+
         fakulte = self.cb_fakulte.get()
         bolum = self.cb_bolum.get()
         yil = self.cb_yil.get()
-        
-        # 3. Seçim kontrolü
+
         if not (fakulte and bolum and yil):
             messagebox.showwarning("Eksik", "Lütfen Fakülte, Bölüm ve Yıl seçiniz.")
             return
 
-        # 4. SQL Sorgusu: 
-        # Sadece o bölümün ve o yılın müfredatına eklenmiş dersleri getirir.
-        # Pasif havuz dersleri gelmez.
-        query = f"""
-            SELECT d.ders_id, d.ad,
-                   CASE WHEN dk.id IS NOT NULL THEN '✅ Girildi' ELSE '❌ Boş' END as durum
-            FROM mufredat m
-            JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-            JOIN ders d ON md.ders_id = d.ders_id
-            JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = {yil})
-            WHERE b.ad = '{bolum}' AND m.akademik_yil = {yil}
-            ORDER BY d.ad
-        """
-        
+        if not getattr(self.db, "conn", None):
+            self.tree.insert("", tk.END, values=("", "Veritabanı bağlantısı yok.", ""))
+            return
+
         try:
-            # 5. Veritabanından çek ve listeye ekle
-            _, rows = self.db.run_sql(query)
-            
+            # Önce müfredattan dersleri dene
+            query = """
+                SELECT DISTINCT d.ders_id, d.ad,
+                       CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
+                FROM mufredat m
+                JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
+                JOIN ders d ON md.ders_id = d.ders_id
+                JOIN bolum b ON m.bolum_id = b.bolum_id
+                LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?)
+                WHERE b.ad = ? AND m.akademik_yil = ?
+                ORDER BY d.ad
+            """
+            _, rows = self.db.run_sql(query, (int(yil), bolum, int(yil)))
+
             if not rows:
-                # Liste boşsa bilgi ver (isteğe bağlı)
-                self.tree.insert("", tk.END, values=("", "Bu kriterlere uygun ders yok.", ""))
+                # Müfredat boşsa fakültenin tüm seçmeli derslerini göster
+                col_tip = self._ders_tip_kolonu()
+                fallback = f"""
+                    SELECT DISTINCT d.ders_id, d.ad,
+                           CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
+                    FROM ders d
+                    JOIN fakulte f ON d.fakulte_id = f.fakulte_id
+                    LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?)
+                    WHERE f.ad = ? AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%' OR LOWER(COALESCE(d.{col_tip},'')) LIKE '%secmeli%')
+                    ORDER BY d.ad
+                """
+                try:
+                    _, rows = self.db.run_sql(fallback, (int(yil), fakulte))
+                except Exception as fallback_err:
+                    print(f"Fallback ders sorgusu hatası: {fallback_err}")
+                    rows = []
+
+            if not rows:
+                self.tree.insert("", tk.END, values=("", "Bu kriterlere uygun ders bulunamadı.", ""))
             else:
                 for r in rows:
-                    self.tree.insert("", tk.END, values=r)
-                    
+                    # sqlite3.Row -> tuple (Treeview <object> hatasını önler)
+                    vals = (int(r[0]), str(r[1]), str(r[2]))
+                    self.tree.insert("", tk.END, values=vals)
+
         except Exception as e:
+            import traceback
+            print(f"[Kriter load_courses] Hata: {e}")
+            traceback.print_exc()
             messagebox.showerror("Hata", f"Dersler yüklenirken hata oluştu:\n{str(e)}")
+
+    def _has_col(self, table, col):
+        try:
+            cur = self.db.conn.cursor()
+            cur.execute(f"PRAGMA table_info({table})")
+            return any(r[1] == col for r in cur.fetchall())
+        except Exception:
+            return False
+
+    def _ders_tip_kolonu(self):
+        """Ders tablosundaki seçmeli/zorunlu sütun adını döner (DersTipi, tip veya tur)."""
+        for col in ("DersTipi", "tip", "tur"):
+            if self._has_col("ders", col):
+                return col
+        return "DersTipi"
 
 
     def on_course_select(self, event):
@@ -243,33 +311,63 @@ class CriteriaPage:
 
         self.lbl_selected_course.config(text=f"Seçilen: {course_name} ({yil})", fg="#0f172a")
         
-        # Mevcut veriyi çek (SQL Injection Riskini Azaltmak için Parametre Kullanımı Önerilir ama şimdilik ID'yi int yaparak çözdük)
-        query = f"SELECT * FROM ders_kriterleri WHERE ders_id={self.selected_course_id} AND yil={yil}"
-        
+        # Mevcut veriyi çek: önce ders_kriterleri, yoksa performans+populerlik
         try:
-            _, rows = self.db.run_sql(query)
-            
+            _, rows = self.db.run_sql(
+                "SELECT * FROM ders_kriterleri WHERE ders_id=? AND yil=?",
+                (self.selected_course_id, int(yil))
+            )
+
             if rows:
                 r = rows[0]
-                # Veritabanı sırasına göre indexler:
-                # id, ders_id, yil, donem, top_ogr, gecen, ort, kont, kayit
-                
-                # None gelme ihtimaline karşı "or 0" kontrolü ekledim
-                self.cb_donem.set(r[3] if r[3] else "Güz")
-                
-                self.ent_toplam_ogrenci.delete(0, tk.END); self.ent_toplam_ogrenci.insert(0, r[4] or "0")
-                self.ent_gecen_ogrenci.delete(0, tk.END); self.ent_gecen_ogrenci.insert(0, r[5] or "0")
-                self.ent_ortalama.delete(0, tk.END); self.ent_ortalama.insert(0, r[6] or "0.0")
-                self.ent_kontenjan.delete(0, tk.END); self.ent_kontenjan.insert(0, r[7] or "0")
-                self.ent_kayitli.delete(0, tk.END); self.ent_kayitli.insert(0, r[8] or "0")
+                # id, ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci
+                self.cb_donem.set(str(r[3]) if r[3] else "Güz")
+                self.ent_toplam_ogrenci.delete(0, tk.END)
+                self.ent_toplam_ogrenci.insert(0, str(r[4] or 0))
+                self.ent_gecen_ogrenci.delete(0, tk.END)
+                self.ent_gecen_ogrenci.insert(0, str(r[5] or 0))
+                self.ent_ortalama.delete(0, tk.END)
+                self.ent_ortalama.insert(0, str(r[6] or 0.0))
+                self.ent_kontenjan.delete(0, tk.END)
+                self.ent_kontenjan.insert(0, str(r[7] or 0))
+                self.ent_kayitli.delete(0, tk.END)
+                self.ent_kayitli.insert(0, str(r[8] or 0))
             else:
-                # Kayıt yoksa form temizle
-                self.clear_form_inputs()
+                # ders_kriterleri yoksa performans+populerlikten doldur
+                _, pr = self.db.run_sql(
+                    "SELECT ortalama_not, basari_orani FROM performans WHERE ders_id=? AND akademik_yil=? LIMIT 1",
+                    (self.selected_course_id, int(yil))
+                )
+                _, po = self.db.run_sql(
+                    "SELECT talep_sayisi, kontenjan FROM populerlik WHERE ders_id=? AND akademik_yil=? LIMIT 1",
+                    (self.selected_course_id, int(yil))
+                )
+                if pr and po:
+                    ort = float(pr[0][0] or 0)
+                    basari = float(pr[0][1] or 0)
+                    talep = int(po[0][0] or 0)
+                    kont = int(po[0][1] or 50)
+                    top_ogr = max(talep, int(talep / (basari or 0.01)) if basari else talep)
+                    gecen = int(top_ogr * basari) if basari else 0
+                    self.ent_toplam_ogrenci.delete(0, tk.END)
+                    self.ent_toplam_ogrenci.insert(0, str(top_ogr))
+                    self.ent_gecen_ogrenci.delete(0, tk.END)
+                    self.ent_gecen_ogrenci.insert(0, str(gecen))
+                    self.ent_ortalama.delete(0, tk.END)
+                    self.ent_ortalama.insert(0, f"{ort:.1f}")
+                    self.ent_kontenjan.delete(0, tk.END)
+                    self.ent_kontenjan.insert(0, str(kont))
+                    self.ent_kayitli.delete(0, tk.END)
+                    self.ent_kayitli.insert(0, str(talep))
+                else:
+                    self.clear_form_inputs()
 
             self.update_calculations()
             
         except Exception as e:
-            print(f"Veri çekme hatası: {e}")
+            import traceback
+            print(f"[Kriter on_course_select] Veri çekme hatası: {e}")
+            traceback.print_exc()
             messagebox.showerror("Hata", f"Veri okunurken hata oluştu: {e}")
 
     def clear_form_inputs(self):
@@ -302,60 +400,76 @@ class CriteriaPage:
             pass
 
     def save_data(self):
-        # 1. GÜVENLİK KONTROLÜ: Ders seçili mi?
         if not self.selected_course_id:
             messagebox.showwarning("Uyarı", "Lütfen önce listeden işlem yapılacak dersi seçiniz.")
             return
 
-        # Yıl ve Dönem bilgisini al
-        yil = self.cb_yil.get()
+        yil   = self.cb_yil.get()
         donem = self.cb_donem.get()
-        
+
         try:
-            # 2. ID GÜVENLİĞİ: ID'yi kesinlikle tam sayıya (integer) çeviriyoruz.
-            # Önceki "syntax error near <" hatasının çözümü budur.
-            c_id = int(self.selected_course_id)
-            
-            # 3. GİRDİ GÜVENLİĞİ: Kutular boşsa hata vermesin, otomatik "0" kabul etsin.
-            # "or 0" mantığı: Eğer get() boş dönerse 0 al.
+            c_id    = int(self.selected_course_id)
             top_ogr = int(self.ent_toplam_ogrenci.get().strip() or 0)
             gecen   = int(self.ent_gecen_ogrenci.get().strip() or 0)
             ort     = float(self.ent_ortalama.get().strip() or 0.0)
             kont    = int(self.ent_kontenjan.get().strip() or 0)
             kayit   = int(self.ent_kayitli.get().strip() or 0)
 
-            # 4. VERİTABANI İŞLEMİ (Eski veriyi sil -> Yenisini ekle)
-            
-            # A) Önce varsa o yıla ait eski kaydı temizle
-            del_query = f"DELETE FROM ders_kriterleri WHERE ders_id={c_id} AND yil={yil}"
-            self.db.run_sql(del_query)
-            
-            # B) Yeni veriyi ekle
-            insert_query = """
-            INSERT INTO ders_kriterleri 
-            (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            
-            # Parametre demeti (Tuple)
-            params = (c_id, yil, donem, top_ogr, gecen, ort, kont, kayit)
-            
-            # İşlemi yürüt
+            # Türetilen oranlar
+            basari_orani = (gecen / top_ogr) if top_ogr > 0 else 0.0
+            doluluk_orani = min(kayit / kont, 1.0) if kont > 0 else 0.0
+
             cur = self.db.conn.cursor()
-            cur.execute(insert_query, params)
+
+            # ── 1. ders_kriterleri: UNIQUE constraint olmayabilir, DELETE+INSERT kullan ──
+            cur.execute(
+                "DELETE FROM ders_kriterleri WHERE ders_id=? AND yil=?",
+                (c_id, int(yil))
+            )
+            cur.execute("""
+                INSERT INTO ders_kriterleri
+                    (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
+                     basari_ortalamasi, kontenjan, kayitli_ogrenci)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (c_id, int(yil), donem, top_ogr, gecen, ort, kont, kayit))
+
+            # ── 2. performans: algoritmalar buradan okur (UNIQUE yok, DELETE+INSERT) ──
+            cur.execute(
+                "DELETE FROM performans WHERE ders_id=? AND akademik_yil=? AND donem=?",
+                (c_id, int(yil), donem)
+            )
+            cur.execute("""
+                INSERT INTO performans
+                    (ders_id, akademik_yil, donem, ortalama_not, basari_orani)
+                VALUES (?, ?, ?, ?, ?)
+            """, (c_id, int(yil), donem, ort, basari_orani))
+
+            # ── 3. populerlik: algoritmalar buradan okur ──────────────────
+            cur.execute(
+                "DELETE FROM populerlik WHERE ders_id=? AND akademik_yil=? AND donem=?",
+                (c_id, int(yil), donem)
+            )
+            cur.execute("""
+                INSERT INTO populerlik
+                    (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (c_id, int(yil), donem, kayit, kont, doluluk_orani))
+
             self.db.conn.commit()
-            
-            # 5. SONUÇ VE GÜNCELLEME
-            messagebox.showinfo("Başarılı", "✅ Veriler başarıyla kaydedildi.")
-            
-            # Listeyi yenile ki yanındaki ikon (✅) güncellensin
-            self.load_courses() 
-            
+
+            messagebox.showinfo("Başarılı",
+                f"Veriler kaydedildi.\n"
+                f"Başarı oranı: %{basari_orani*100:.1f}  |  "
+                f"Doluluk: %{doluluk_orani*100:.1f}")
+
+            self.load_courses()
+
         except ValueError:
             messagebox.showerror("Hata", "Lütfen sayısal alanlara sadece rakam giriniz!")
         except Exception as e:
-            # Beklenmedik bir veritabanı hatası olursa göster
-            print(f"SQL Hatası: {e}")
+            import traceback
+            print(f"[Kriter Kaydet] SQL Hatası: {e}")
+            traceback.print_exc()
             messagebox.showerror("Kritik Hata", f"Veritabanına yazılamadı:\n{e}")
 
 
