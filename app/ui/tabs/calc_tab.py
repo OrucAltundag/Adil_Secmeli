@@ -229,11 +229,15 @@ class CalcTab(ttk.Frame):
                 from app.services.calculation import KararMotoru
                 motor = KararMotoru()
                 agirliklar = motor.ahp_calistir()
+                cr, gecerli, lambda_max = motor.ahp_tutarlilik_kontrolu(agirliklar=agirliklar)
 
                 sonuc_metni = "AHP Matrisi ve Kriter Ağırlıkları:\n==================================\n"
                 sonuc_metni += f"1. Performans (Başarı): {agirliklar[0]:.4f} (%{agirliklar[0]*100:.1f})\n"
-                sonuc_metni += f"2. Popülerlik (Talep):  {agirliklar[1]:.4f} (%{agirliklar[1]*100:.1f})\n"
-                sonuc_metni += f"3. Anket (Öğrenci):     {agirliklar[2]:.4f} (%{agirliklar[2]*100:.1f})\n"
+                sonuc_metni += f"2. Trend:               {agirliklar[1]:.4f} (%{agirliklar[1]*100:.1f})\n"
+                sonuc_metni += f"3. Popülerlik:          {agirliklar[2]:.4f} (%{agirliklar[2]*100:.1f})\n"
+                sonuc_metni += f"4. Anket:               {agirliklar[3]:.4f} (%{agirliklar[3]*100:.1f})\n\n"
+                sonuc_metni += f"Tutarlılık Oranı (CR): {cr:.4f} (λmax={lambda_max:.2f})\n"
+                sonuc_metni += f"CR < 0.10: {'✅ Geçerli' if gecerli else '⚠️ Dikkat: Matris tutarsız olabilir'}\n"
 
             # 3) TREND
             elif algo_id == "trend":
@@ -306,17 +310,22 @@ class CalcTab(ttk.Frame):
                         son_basari = gecmis[0]["oran"] if gecmis else 0.0
 
                         ort_pop = grup["populerlik"].max()
-                        ort_pop = float(ort_pop) if pd.notna(ort_pop) else 0.0
+                        ort_pop = float(ort_pop) if pd.notna(ort_pop) else 0.5
+                        pop_norm = min(1.0, ort_pop / 100) if ort_pop > 1 else max(0, min(1, ort_pop))
 
+                        ders_id_val = int(grup["ders_id"].iloc[0])
                         islenmis.append({
+                            "ders_id": ders_id_val,
                             "ders": ders_adi,
                             "basari": son_basari,
                             "trend": trend_skoru,
-                            "populerlik": ort_pop,
-                            "anket": float(np.random.randint(40, 90))
+                            "populerlik": pop_norm,
+                            "anket": float(np.random.randint(40, 90)) / 100.0
                         })
 
-                    df_final["ders_id"] = range(len(df_final))
+                    df_final = pd.DataFrame(islenmis)
+                    if "ders_id" not in df_final.columns and len(islenmis) > 0:
+                        df_final["ders_id"] = [r["ders_id"] for r in islenmis]
                     agirliklar = motor.ahp_calistir()
                     df_sonuc, meta = motor.topsis_calistir(df_final, agirliklar)
 

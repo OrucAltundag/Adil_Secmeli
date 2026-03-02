@@ -6,8 +6,11 @@ import os
 import traceback
 
 # =========================================================
-# 1. KARAR MOTORU (MANTIK DEĞİŞMEDİ)
+# 1. KARAR MOTORU (AHP + TOPSIS)
 # =========================================================
+# AHP için RI (Random Index) - 4 kriter için
+RI_4 = 0.90
+
 class KararMotoru:
     def __init__(self, db=None):
         self.db = db
@@ -22,14 +25,29 @@ class KararMotoru:
         ]
         sutun_top = [sum(col) for col in zip(*matris)]
         agirliklar = [sum([(r[i] / (sutun_top[i] or 1)) for i in range(4)]) / 4 for r in matris]
-
         s = sum(agirliklar) or 1.0
         agirliklar = [a / s for a in agirliklar]
-        # Garanti: toplam 1.0 olsun (float rounding)
-        toplam = sum(agirliklar)
-        if toplam and abs(toplam - 1.0) > 1e-6:
-            agirliklar = [a / toplam for a in agirliklar]
         return agirliklar
+
+    def ahp_tutarlilik_kontrolu(self, matris=None, agirliklar=None):
+        """
+        Tutarlılık Oranı (CR) hesaplar. CR < 0.10 kabul edilebilir.
+        Döner: (cr: float, gecerli: bool, lambda_max: float)
+        """
+        if matris is None:
+            matris = [
+                [1, 2, 4, 5], [0.5, 1, 3, 4],
+                [0.25, 0.33, 1, 2], [0.20, 0.25, 0.50, 1]
+            ]
+        if agirliklar is None:
+            agirliklar = self.ahp_calistir()
+        n = len(matris)
+        weighted_sum = [sum(matris[i][j] * agirliklar[j] for j in range(n)) for i in range(n)]
+        lambda_vals = [weighted_sum[i] / (agirliklar[i] or 1e-10) for i in range(n)]
+        lambda_max = sum(lambda_vals) / n
+        ci = (lambda_max - n) / (n - 1) if n > 1 else 0
+        cr = ci / RI_4 if RI_4 else 0
+        return cr, cr < 0.10, lambda_max
 
     def gecmis_trend_hesapla(self, gecmis_list):
         """
@@ -59,55 +77,62 @@ class KararMotoru:
         return trend, log
 
     def topsis_calistir(self, df, agirliklar):
+        """
+        TOPSIS: Veri akışı AHP'den gelen ağırlıklarla.
+        1) Karekök toplamları ile normalize
+        2) Ağırlıklı normalize matris
+        3) Pozitif/Negatif ideal çözümler
+        4) Öklid uzaklıkları
+        5) Yakınlık Katsayısı (0-1)
+        """
         if df.empty:
             return pd.DataFrame(), {}
 
+        def _safe_div(a, b, default=0.0):
+            return a / b if b and abs(b) > 1e-10 else default
+
         sutunlar = ["basari", "trend", "populerlik", "anket"]
-        # Ağırlık normalizasyonu (toplam 1.0)
         w_sum = sum(agirliklar) or 1.0
-        agirliklar = [float(a) / w_sum for a in agirliklar]
+        w = [float(a) / w_sum for a in agirliklar]
 
-        # Sıfıra bölünme koruması: payda en az 1e-10
-        def _safe_div(num, denom, default=0.0):
-            return num / denom if denom and abs(denom) > 1e-10 else default
-
-        paydalar = {}
+        # 1. Vector normalization: r_ij = x_ij / sqrt(sum(x_ij^2))
+        sqrt_sums = {}
         for c in sutunlar:
-            sq_sum = sum((float(x) ** 2) for x in df[c].fillna(0))
-            paydalar[c] = math.sqrt(sq_sum) if sq_sum > 1e-10 else 1.0
+            sq = sum((float(x) ** 2) for x in df[c].fillna(0))
+            sqrt_sums[c] = math.sqrt(sq) if sq > 1e-10 else 1.0
 
-        ideal = {c: max([float(x) for x in df[c].fillna(0)] or [0.0]) for c in sutunlar}
-        anti_ideal = {c: min([float(x) for x in df[c].fillna(0)] or [0.0]) for c in sutunlar}
+        R = df.copy()
+        for c in sutunlar:
+            R[c] = df[c].fillna(0).apply(lambda x: _safe_div(float(x), sqrt_sums[c], 0.0))
+
+        # 2. Ağırlıklı matris: V_ij = w_j * r_ij
+        V = pd.DataFrame()
+        for i, c in enumerate(sutunlar):
+            V[c] = R[c] * w[i]
+
+        # 3. İdeal çözümler (tüm kriterler "ne kadar yüksek o kadar iyi")
+        A_plus = {c: V[c].max() for c in sutunlar}
+        A_minus = {c: V[c].min() for c in sutunlar}
 
         sonuclar = []
-        for _, row in df.iterrows():
-            norm_agirlikli = {}
-            for i, c in enumerate(sutunlar):
-                v = float(row.get(c, 0) or 0)
-                norm_agirlikli[c] = _safe_div(v, paydalar[c], 0.0) * float(agirliklar[i])
-
-            s_plus = math.sqrt(sum(
-                (norm_agirlikli[c] - _safe_div(ideal[c], paydalar[c], 0) * agirliklar[i]) ** 2
-                for i, c in enumerate(sutunlar)
-            ))
-            s_minus = math.sqrt(sum(
-                (norm_agirlikli[c] - _safe_div(anti_ideal[c], paydalar[c], 0) * agirliklar[i]) ** 2
-                for i, c in enumerate(sutunlar)
-            ))
-
+        for i, (idx, row) in enumerate(df.iterrows()):
+            v_row = V.iloc[i]
+            s_plus = math.sqrt(sum((v_row[c] - A_plus[c]) ** 2 for c in sutunlar))
+            s_minus = math.sqrt(sum((v_row[c] - A_minus[c]) ** 2 for c in sutunlar))
             denom = s_plus + s_minus
-            topsis_skor = _safe_div(s_minus, denom, 0.0)
-
+            ci = _safe_div(s_minus, denom, 0.0)
+            skor_100 = ci * 100
             sonuclar.append({
                 "ders_id": int(row["ders_id"]) if "ders_id" in row else 0,
                 "Ders": row.get("ders", ""),
-                "AHP_TOPSIS_Skor": float(topsis_skor),
+                "AHP_TOPSIS_Skor": round(ci, 6),
+                "Kesinlesme_Puani": round(skor_100, 2),
                 "S+": round(s_plus, 6),
                 "S-": round(s_minus, 6),
             })
 
         df_sonuc = pd.DataFrame(sonuclar).sort_values(by="AHP_TOPSIS_Skor", ascending=False)
-        meta = {"agirliklar": agirliklar, "sutunlar": sutunlar}
+        meta = {"agirliklar": w, "sutunlar": sutunlar, "A_plus": A_plus, "A_minus": A_minus}
         return df_sonuc, meta
 
 
@@ -390,7 +415,16 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
             })
 
         df_sonuc, _ = motor.topsis_calistir(pd.DataFrame(raw_data), agirliklar)
-        ders_skorlari = {int(r["ders_id"]): float(r["AHP_TOPSIS_Skor"]) for _, r in df_sonuc.iterrows()}
+        # Kesinleşme Puanı (0-100) varsa onu kullan; yoksa AHP_TOPSIS_Skor (0-1) * 100
+        ders_skorlari = {}
+        for _, r in df_sonuc.iterrows():
+            d_id = int(r["ders_id"])
+            puani = r.get("Kesinlesme_Puani")
+            if puani is not None and not (isinstance(puani, float) and math.isnan(puani)):
+                ders_skorlari[d_id] = float(puani)
+            else:
+                raw = r.get("AHP_TOPSIS_Skor", 0.5)
+                ders_skorlari[d_id] = float(raw) * 100.0 if raw is not None else 50.0
 
         # 5) 2023 Müfredat oluştur (bölüm bazlı)
         cursor.execute("SELECT bolum_id, ad FROM bolum WHERE fakulte_id=?", (fakulte_id,))
@@ -471,9 +505,13 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
         cursor.execute(f"SELECT ders_id FROM ders WHERE fakulte_id=? AND {col_tip}='Seçmeli'", (fakulte_id,))
         all_electives = [int(r[0]) for r in cursor.fetchall()]
 
+        # havuz.ders_id TEXT tipinde olduğundan CAST(ders_id AS INTEGER) kullanılır
         updated_count = 0
         for d_id in all_electives:
-            skor = float(ders_skorlari.get(d_id, 0.5))
+            skor = ders_skorlari.get(d_id, 50.0)
+            if skor is None or (isinstance(skor, float) and math.isnan(skor)):
+                skor = 50.0
+            skor = float(skor)
 
             if d_id in tum_secilenler_db:
                 statu = 1
@@ -484,27 +522,27 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
             else:
                 statu = 0
                 sayac = 0
-                skor = 0.5
+                skor = 50.0
 
-            # --- GÜVENLİ GÜNCELLEME ---
-            # INSERT yok. Sadece havuzda hali hazırda var olan dersin durumunu güncelliyoruz.
+            # havuz.ders_id TEXT — CAST ile eşleştirme
             cursor.execute("""
                 UPDATE havuz
                 SET statu = ?, sayac = ?, skor = ?
-                WHERE ders_id = ? AND fakulte_id = ? AND yil = 2023
+                WHERE CAST(ders_id AS INTEGER) = ?
+                  AND fakulte_id = ? AND yil = 2023
             """, (statu, sayac, skor, d_id, fakulte_id))
-            
+
             if cursor.rowcount > 0:
                 updated_count += 1
 
         conn.commit()
 
-        # 6.3) ✅ ASIL GARANTİ: (Sadece var olan kayıtlar üzerinde çalışır)
+        # 6.3) Güvence: mufredat tablosundaki 2023 derslerini statu=1 garantile
         cursor.execute("""
             UPDATE havuz
             SET statu = 1, sayac = 0
             WHERE yil = 2023 AND fakulte_id = ?
-              AND ders_id IN (
+              AND CAST(ders_id AS INTEGER) IN (
                 SELECT DISTINCT md.ders_id
                 FROM mufredat m
                 JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id

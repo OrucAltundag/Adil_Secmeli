@@ -245,31 +245,45 @@ class AdilSecmeliApp(tk.Tk):
     # ---------- Havuz Tablosu Doldurma  ----------
    
     def fill_pool_table_for_years(self):
+        """
+        Havuz tablosunu 2022-2025 yılları için doldurur.
+        Sadece kayıt yoksa INSERT yapar (INSERT OR IGNORE).
+        havuz.ders_id TEXT tipindedir; str(ders_id) olarak saklanır.
+        """
         years = [2022, 2023, 2024, 2025]
 
-        # Seçmeli dersleri fakülte ile birlikte al
-        q = """
-            SELECT d.ders_id, d.ad, d.fakulte_id
-            FROM ders d
-            WHERE d.DersTipi = 'Seçmeli'
-        """
-        _, dersler = self.db.run_sql(q)
+        # Ders tipi kolon adını tespit et
+        try:
+            _, test = self.db.run_sql(
+                "SELECT 1 FROM ders WHERE DersTipi='Secmeli' LIMIT 1"
+            )
+            col_tip = "DersTipi"
+        except Exception:
+            col_tip = "tip"
+
+        q = f"SELECT d.ders_id, d.fakulte_id FROM ders d WHERE d.{col_tip} LIKE '%Seçmeli%'"
+        try:
+            _, dersler = self.db.run_sql(q)
+        except Exception:
+            _, dersler = self.db.run_sql(
+                "SELECT ders_id, fakulte_id FROM ders WHERE DersTipi LIKE '%mecmeli%'"
+            )
         if not dersler:
             return
 
+        # havuz şeması: id, ders_id(TEXT), yil, fakulte_id, bolum_id, alan, statu, sayac, skor, ders_adi
         insert_q = """
-            INSERT OR IGNORE INTO havuz (ders_id, ders_adi, fakulte_id, yil, skor, sayac, statu)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO havuz (ders_id, yil, fakulte_id, statu, sayac, skor)
+            VALUES (?, ?, ?, 0, 0, 0)
         """
 
-        cur = self.db.conn.cursor()  # Database sınıfında conn varsa
-        for ders_id, ders_adi, fakulte_id in dersler:
+        cur = self.db.conn.cursor()
+        for ders_id, fakulte_id in dersler:
             for yil in years:
-                cur.execute(insert_q, (ders_id, ders_adi, fakulte_id, yil, 0.5, 0, 0))
+                cur.execute(insert_q, (str(ders_id), yil, fakulte_id))
 
         self.db.conn.commit()
-
-    # Bu fonksiyon çağrıldığında, her yıl için fakülteye ait dersler havuza eklenecek.
+        print(f"[Pool] {len(dersler)} ders x {len(years)} yıl = havuz seed tamamlandı.")
    
    
     # ---------- Tablo listesi / görüntüleme ----------
