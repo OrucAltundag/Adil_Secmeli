@@ -5,9 +5,9 @@ from tkinter import ttk, messagebox
 import pandas as pd
 
 from app.ui.tabs.pool_tab import PoolTab
-
 from app.ui.tabs.relations_tab import RelationsTab
-from app.ui.tabs.criteria_page import CriteriaPage  
+from app.ui.tabs.criteria_page import CriteriaPage
+from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
 
 
 
@@ -39,18 +39,18 @@ class CalcTab(ttk.Frame):
         self.sub_nb.add(self.page_criteria, text="📝 Kriter Girdi İşlemleri")
         self.criteria_view = CriteriaPage(self.page_criteria, self.db)
 
-        # 1) Algo tab
+        # 1) Algoritma Kontrol + Ders Laboratuvari (Birlesik Kokpit)
         self.page_algos = ttk.Frame(self.sub_nb)
-        self.sub_nb.add(self.page_algos, text="⚙️ Algoritma Kontrol Paneli")
+        self.sub_nb.add(self.page_algos, text="Algoritma Kontrol & Ders Lab")
         self.setup_algo_panel(self.page_algos)
 
-        # 2) Relations tab (ayrı sınıf)
+        # 2) Relations tab
         self.page_relations = RelationsTab(self.sub_nb, app=self.app)
-        self.sub_nb.add(self.page_relations, text="🔗 Ders İlişkileri & Kurallar")
+        self.sub_nb.add(self.page_relations, text="Ders Iliskileri & Kurallar")
 
-        # 3) Pool tab (ayrı sınıf)
+        # 3) Pool tab
         self.page_pool = PoolTab(self.sub_nb, app=self.app)
-        self.sub_nb.add(self.page_pool, text="🏊 Havuz Yönetimi")
+        self.sub_nb.add(self.page_pool, text="Havuz Yonetimi")
 
 
     # =========================================================
@@ -73,6 +73,12 @@ class CalcTab(ttk.Frame):
         except Exception:
             pass
 
+        # Ders Analiz Lab yenile
+        try:
+            self.page_lab.refresh()
+        except Exception:
+            pass
+
         # Kriter sayfasını yenile (fakülteler + ders listesi)
         try:
             if hasattr(self.criteria_view, "load_faculties"):
@@ -91,17 +97,24 @@ class CalcTab(ttk.Frame):
     #  1) ALGO PANEL
     # =========================================================
     def setup_algo_panel(self, parent):
-        main_container = tk.Frame(parent, bg="#f0f0f0")
-        main_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Dikey bolum: Ust = Genel Kontrol, Alt = Ders Laboratuvari
+        paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, bg="#cbd5e1")
+        paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # SOL
+        # UST: Genel Algoritma Kontrolu
+        top_container = tk.Frame(paned, bg="#f0f0f0")
+        paned.add(top_container, minsize=180)
+
+        main_container = tk.Frame(top_container, bg="#f0f0f0")
+        main_container.pack(fill=tk.BOTH, expand=True)
+
         left_frame = tk.Frame(main_container, bg="#e2e8f0", width=450)
         left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
         left_frame.pack_propagate(False)
 
         tk.Label(
             left_frame,
-            text="Algoritma Kontrol Paneli",
+            text="Genel Kontrol",
             bg="#1e293b",
             fg="white",
             font=("Segoe UI", 11, "bold"),
@@ -111,13 +124,12 @@ class CalcTab(ttk.Frame):
         grid_frame = tk.Frame(left_frame, bg="#e2e8f0")
         grid_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # SAĞ
         right_frame = tk.Frame(main_container, bg="#fce7f3")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         tk.Label(
             right_frame,
-            text="SONUÇ EKRANI",
+            text="Sonuc / Log",
             bg="#be185d",
             fg="white",
             font=("Segoe UI", 11, "bold"),
@@ -134,6 +146,12 @@ class CalcTab(ttk.Frame):
             pady=10
         )
         self.result_text.pack(fill=tk.BOTH, expand=True)
+
+        # ALT: Ders Analiz Laboratuvari
+        bottom_container = tk.Frame(paned, bg="white")
+        paned.add(bottom_container, minsize=220)
+        self.page_lab = CourseAnalysisTab(bottom_container, app=self.app)
+        self.page_lab.pack(fill=tk.BOTH, expand=True)
 
         # Algoritma listesi (app'ten al, yoksa default)
         algos = getattr(self.app, "algorithms", None)
