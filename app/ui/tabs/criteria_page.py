@@ -1,6 +1,15 @@
+# =============================================================================
+# app/ui/tabs/criteria_page.py — Kriter Girdi Sayfası
+# =============================================================================
+# Ders bazlı kriter verisi girişi: toplam_ogrenci, gecen_ogrenci, ortalama,
+# kontenjan, kayitli. Kaydetme: ders_kriterleri + performans + populerlik tablolarına
+# yazar. Algoritmalar (calculation.py) performans/popülerlik'ten okur.
+# =============================================================================
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
+
 
 class CriteriaPage:
     def __init__(self, parent, db):

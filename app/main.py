@@ -1,3 +1,10 @@
+# =============================================================================
+# app/main.py — Adil Seçmeli Ana Uygulama Giriş Noktası
+# =============================================================================
+# Bu dosya masaüstü Tkinter uygulamasını başlatır.
+# İlgili modüller: app/db (veritabanı), app/ui/tabs (sekmeler), app/services (hesaplama)
+# =============================================================================
+
 import json
 import os
 import sys
@@ -5,16 +12,12 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
 
-# --- BU BLOĞU EN ÜSTE EKLE ---
-# Şu anki dosyanın (main.py) yolunu al
+# ---------- Proje kökünü Python path'e ekle ----------
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# Bir üst klasöre çık (Adil_Secmeli_Python klasörü)
 parent_dir = os.path.dirname(current_dir)
-# Bunu Python'un arama yollarına ekle
-sys.path.append(parent_dir)
-# -----------------------------
+sys.path.insert(0, parent_dir)
 
-
+# ---------- Veritabanı ve UI bileşenleri ----------
 from app.db.sqlite_db import Database
 from app.ui.tabs.view_tab import ViewTab
 from app.ui.tabs.analysis_tab import AnalysisTab
@@ -22,10 +25,6 @@ from app.ui.tabs.calc_tab import CalcTab
 from app.ui.tabs.tools_tab import ToolsTab
 from app.ui.style import apply_style
 from app.core.state import AppState
-from app.ui.tabs.criteria_page import CriteriaPage 
-
-
-
 import sqlite3
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -33,30 +32,23 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 
 
-# main.py - En üst kısım
+# ---------- Grafik kütüphaneleri (Tkinter uyumlu) ----------
 import matplotlib
-matplotlib.use("TkAgg") # Tkinter ile uyumlu backend
-
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+matplotlib.use("TkAgg")
 try:
     import seaborn as sns
 except Exception:
     sns = None
- # Grafikleri güzelleştirmek için (opsiyonel ama şık durur)
 
-# app/main.py en üst kısımlar
-from app.services.calculation import KararMotoru, run_automatic_scoring  
-
+# ---------- Servis katmanı (hesaplama, havuz kararı) ----------
+from app.services.calculation import KararMotoru, run_automatic_scoring
 from app.services.havuz_karar import muhendislik_mufredat_durumunu_esitle
 
 
 
-# =============== Yapılandırma ==================
+# =============================================================================
+# BÖLÜM 1: Yapılandırma (config.json)
+# =============================================================================
 def load_config():
     default = {
         "db_path": "./adil_secimli.db",
@@ -77,7 +69,9 @@ def load_config():
 
 
 
-# =============== Uygulama ==================
+# =============================================================================
+# BÖLÜM 2: Ana Uygulama Sınıfı (AdilSecmeliApp)
+# =============================================================================
 class AdilSecmeliApp(tk.Tk):
 
     def __init__(self):
@@ -107,7 +101,7 @@ class AdilSecmeliApp(tk.Tk):
             {"id": "dt",      "name": "Decision Tree (Karar)"}
         ]
 
-        # ---- Üst çubuk (Header) ----
+        # ---- BÖLÜM 2.1: Üst çubuk (Header) ----
         topbar = ttk.Frame(self, padding=8)
         topbar.pack(side=tk.TOP, fill=tk.X)
         ttk.Label(topbar, text="Adil Seçmeli • Masaüstü", style="Header.TLabel").pack(side=tk.LEFT)
@@ -118,32 +112,21 @@ class AdilSecmeliApp(tk.Tk):
         container = ttk.Frame(self)
         container.pack(fill=tk.BOTH, expand=True)
 
-        # =========================================================
-        # =========================================================
-        # Notebook (Sekmeler)
-        # =========================================================
-        # =========================================================
+        # ---- BÖLÜM 2.2: Sekmeler (Notebook) ----
         self.nb = ttk.Notebook(container)
         self.nb.pack(fill=tk.BOTH, expand=True)
 
-        # =========================================================
-        # 1. SEKME: TABLO GÖRÜNTÜLE (Sidebar Burada)
-        # =========================================================
-        # 1. SEKME: TABLO GÖRÜNTÜLE
+        # 1. SEKME: Tablo Görüntüle (ViewTab)
         self.tab_view = ViewTab(self.nb, app=self)
         self.nb.add(self.tab_view, text="📂 Tablo Görüntüle")
 
 
-        # =========================================================
-        # 2. SEKME: ANALİZ & GRAFİK
-        # =========================================================
+        # 2. SEKME: Analiz & Grafik (AnalysisTab)
         self.tab_analysis = AnalysisTab(self.nb, app=self)
         self.nb.add(self.tab_analysis, text="📊 Analiz & Grafik")
 
         
-        # =========================================================
-        # 3. SEKME: RAPOR & SKOR
-        # =========================================================
+        # 3. SEKME: Rapor & Skor (ToolsTab)
         self.tab_tools = ToolsTab(self.nb, app=self)
         self.nb.add(self.tab_tools, text="⚙️ Rapor & Skor")
 
@@ -151,9 +134,7 @@ class AdilSecmeliApp(tk.Tk):
         # 🔔 Notebook tab değişim event’i
         self.nb.bind("<<NotebookTabChanged>>", self.on_tab_change)
 
-        # =========================================================
-        # 4. SEKME: HESAPLAMA & TEST (EKSİK OLAN KISIM BURASIYDI)
-        # =========================================================
+        # 4. SEKME: Hesaplama & Test (CalcTab)
         self.tab_calc = CalcTab(self.nb, app=self)
         self.nb.add(self.tab_calc, text="🧮 Hesaplama & Test")
 
@@ -165,7 +146,7 @@ class AdilSecmeliApp(tk.Tk):
 
     
     
-    # ---------- Bağlantı ----------
+    # ---- BÖLÜM 3: Veritabanı bağlantısı ve başlangıç -----
 
     def auto_connect(self):
         db_path = self.config_data.get("db_path")
@@ -242,8 +223,8 @@ class AdilSecmeliApp(tk.Tk):
             messagebox.showerror("Hata", str(e))
 
 
-    # ---------- Havuz Tablosu Doldurma  ----------
-   
+    # ---- BÖLÜM 4: Havuz tablosu doldurma -----
+
     def fill_pool_table_for_years(self):
         """
         Havuz tablosunu 2022-2025 yılları için doldurur.
@@ -286,68 +267,7 @@ class AdilSecmeliApp(tk.Tk):
         print(f"[Pool] {len(dersler)} ders x {len(years)} yıl = havuz seed tamamlandı.")
    
    
-    # ---------- Tablo listesi / görüntüleme ----------
-
-    # def fill_tables(self):
-    #     self.lst_tables.delete(0, tk.END)
-    #     tables = self.db.tables()
-    #     for t in tables:
-    #         self.lst_tables.insert(tk.END, t)
-    #     if tables:
-    #         self.lst_tables.selection_clear(0, tk.END)
-    #         self.lst_tables.selection_set(0)
-    #         self.on_table_select()
-
-    # def on_table_select(self, _evt=None):
-    #     sel = self.lst_tables.curselection()
-    #     if not sel:
-    #         return
-    #     table = self.lst_tables.get(sel[0])
-    #     self.current_table = table
-
-    #     cols, rows = self.db.head(table, limit=2000)
-
-    #     # Treeview başlıkları
-    #     self.tree.delete(*self.tree.get_children())
-    #     self.tree["columns"] = cols
-    #     for c in cols:
-    #         self.tree.heading(c, text=c, command=lambda col=c: self.sort_by(col, False))
-    #         self.tree.column(c, width=140, anchor="center")
-    #     # satırlar
-    #     for r in rows:
-    #         self.tree.insert("", tk.END, values=[r[c] for c in cols])
-
-    # def sort_by(self, col, descending):
-    #     data = [(self.tree.set(child, col), child) for child in self.tree.get_children("")]
-    #     try:
-    #         data.sort(key=lambda t: float(t[0]), reverse=descending)
-    #     except Exception:
-    #         data.sort(key=lambda t: t[0], reverse=descending)
-    #     for index, item in enumerate(data):
-    #         self.tree.move(item[1], "", index)
-    #     self.tree.heading(col, command=lambda: self.sort_by(col, not descending))
-
-    # def apply_filter(self):
-    #     if not self.current_table:
-    #         return
-    #     q = self.search_var.get().strip()
-    #     if not q:
-    #         self.on_table_select()
-    #         return
-    #     cols, _ = self.db.head(self.current_table, limit=1)
-    #     like_cols = " OR ".join([f"CAST({c} AS TEXT) LIKE :kw" for c in cols])
-    #     query = f"SELECT * FROM {self.current_table} WHERE {like_cols} LIMIT 2000;"
-    #     df = self.db.read_df(query.replace(":kw", f"'%{q.replace('%','') }%'"))
-        
-    #     self.tree.delete(*self.tree.get_children())
-    #     self.tree["columns"] = list(df.columns)
-    #     for c in df.columns:
-    #         self.tree.heading(c, text=c)
-    #         self.tree.column(c, width=140, anchor="center")
-    #     for _, row in df.iterrows():
-    #         self.tree.insert("", tk.END, values=list(row.values))
-
-    # ---------- SQL Çalıştırıcı ----------
+    # ---- BÖLÜM 5: SQL Çalıştırıcı penceresi -----
 
     def open_sql_runner(self):
         win = tk.Toplevel(self)

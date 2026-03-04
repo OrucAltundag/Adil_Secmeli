@@ -193,12 +193,12 @@ class ToolsTab(ttk.Frame):
             return
 
         try:
-            res = self.db.run_sql(f"SELECT fakulte_id FROM fakulte WHERE ad = '{fakulte}'")[1]
+            res = self.db.run_sql("SELECT fakulte_id FROM fakulte WHERE ad = ?", (fakulte,))[1]
             if not res:
                 return
             fakulte_id = res[0][0]
 
-            res2 = self.db.run_sql(f"SELECT ad FROM bolum WHERE fakulte_id = {fakulte_id}")[1] or []
+            res2 = self.db.run_sql("SELECT ad FROM bolum WHERE fakulte_id = ?", (fakulte_id,))[1] or []
             bolumler = [r[0] for r in res2]
             self.cb_bolum["values"] = bolumler
             if bolumler:
@@ -222,23 +222,24 @@ class ToolsTab(ttk.Frame):
         # ---------- HAVUZ ----------
         self.tree_pool.delete(*self.tree_pool.get_children())
 
-        q_pool = f"""
+        q_pool = """
             SELECT
                 h.ders_id,
-                h.ders_adi,
+                COALESCE(h.ders_adi, d.ad, 'Ders ' || h.ders_id),
                 h.skor,
                 h.sayac,
                 h.statu,
                 h.yil
             FROM havuz h
             JOIN fakulte f ON h.fakulte_id = f.fakulte_id
-            WHERE f.ad = '{fakulte}' AND h.yil = {int(yil)}
+            LEFT JOIN ders d ON h.ders_id = d.ders_id
+            WHERE f.ad = ? AND h.yil = ?
             ORDER BY h.skor DESC, h.sayac DESC
         """
 
         pool_rows = []
         try:
-            _, pool_rows = self.db.run_sql(q_pool)
+            _, pool_rows = self.db.run_sql(q_pool, (fakulte, int(yil)))
             pool_rows = pool_rows or []
         except Exception as e:
             self.log(f"Havuz sorgu hatası: {e}")
@@ -278,7 +279,7 @@ class ToolsTab(ttk.Frame):
         if not bolum:
             return
 
-        q_curr = f"""
+        q_curr = """
             SELECT
                 d.ders_id,
                 d.ad,
@@ -288,12 +289,12 @@ class ToolsTab(ttk.Frame):
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
             LEFT JOIN havuz h ON (h.ders_id = d.ders_id AND h.yil = m.akademik_yil)
-            WHERE b.ad = '{bolum}' AND m.akademik_yil = {int(yil)}
+            WHERE b.ad = ? AND m.akademik_yil = ?
             ORDER BY d.ad
         """
 
         try:
-            _, rows_curr = self.db.run_sql(q_curr)
+            _, rows_curr = self.db.run_sql(q_curr, (bolum, int(yil)))
             rows_curr = rows_curr or []
             for ders_id, ders_adi, skor in rows_curr:
                 s = float(skor) if skor is not None else None

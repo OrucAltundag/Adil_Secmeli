@@ -5,11 +5,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox, font as tkfont
 
 
-def _sq(s: str) -> str:
-    """Basit SQL kacis (tek tirnak)."""
-    return str(s).replace("'", "''")
-
-
 # ---------------------------------------------------------------------------
 # Statu sabitleri ve gorsel esleme
 # ---------------------------------------------------------------------------
@@ -343,13 +338,13 @@ class PoolTab(ttk.Frame):
             return
         try:
             _, rows = self.db.run_sql(
-                f"SELECT fakulte_id FROM fakulte WHERE ad = '{_sq(fakulte)}'"
+                "SELECT fakulte_id FROM fakulte WHERE ad = ?", (fakulte,)
             )
             if not rows:
                 return
             fid = int(rows[0][0])
             _, rows_b = self.db.run_sql(
-                f"SELECT ad FROM bolum WHERE fakulte_id = {fid} ORDER BY ad"
+                "SELECT ad FROM bolum WHERE fakulte_id = ? ORDER BY ad", (fid,)
             )
             bolumler = [r[0] for r in (rows_b or [])]
             self.cb_bolum["values"] = bolumler
@@ -382,22 +377,17 @@ class PoolTab(ttk.Frame):
 
         q_pool = f"""
             SELECT DISTINCT
-                h.ders_id,
-                d.ad,
-                h.statu,
-                h.sayac,
-                h.skor,
-                h.yil
+                h.ders_id, d.ad, h.statu, h.sayac, h.skor, h.yil
             FROM havuz h
             JOIN ders d ON h.ders_id = d.ders_id
             JOIN fakulte f ON h.fakulte_id = f.fakulte_id
-            WHERE f.ad LIKE '%{_sq(fakulte[:10])}%'
-              AND h.yil = {int(yil)}
+            WHERE f.ad LIKE ?
+              AND h.yil = ?
               {extra_where}
             ORDER BY h.statu DESC, h.skor DESC
         """
         try:
-            _, rows = self.db.run_sql(q_pool)
+            _, rows = self.db.run_sql(q_pool, (f"%{fakulte}%", int(yil)))
             seen = set()
             for d_id, d_ad, statu, sayac, skor, y in (rows or []):
                 if d_id in seen:
@@ -424,19 +414,18 @@ class PoolTab(ttk.Frame):
         if not bolum:
             return
 
-        q_curr = f"""
+        q_curr = """
             SELECT DISTINCT d.ders_id, d.ad, h.skor
             FROM mufredat m
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
             LEFT JOIN havuz h ON (h.ders_id = d.ders_id AND h.yil = m.akademik_yil)
-            WHERE m.akademik_yil = {int(yil)}
-              AND b.ad LIKE '%{_sq(bolum[:5])}%'
+            WHERE m.akademik_yil = ? AND b.ad LIKE ?
             ORDER BY d.ad
         """
         try:
-            _, rows_r = self.db.run_sql(q_curr)
+            _, rows_r = self.db.run_sql(q_curr, (int(yil), f"%{bolum}%"))
             seen_r = set()
             for d_id, d_ad, skor in (rows_r or []):
                 if d_id in seen_r:
@@ -465,9 +454,10 @@ class PoolTab(ttk.Frame):
         try:
             for vals in selected:
                 ders_id = int(vals[0])
-                q = (f"UPDATE havuz SET statu = {int(new_status)} "
-                     f"WHERE ders_id = {ders_id} AND yil = {int(yil)}")
-                self.db.run_sql(q)
+                self.db.run_sql(
+                    "UPDATE havuz SET statu = ? WHERE ders_id = ? AND yil = ?",
+                    (int(new_status), ders_id, int(yil))
+                )
             self.load_pool_data()
         except Exception as e:
             messagebox.showerror("Guncelleme Hatasi", str(e))

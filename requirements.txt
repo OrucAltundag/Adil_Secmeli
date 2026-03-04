@@ -1,0 +1,29 @@
+# =============================================================================
+# Adil Seçmeli — Python Bağımlılıkları
+# =============================================================================
+# Kurulum: pip install -r requirements.txt
+# =============================================================================
+
+# Veritabanı
+sqlalchemy>=2.0.0
+
+# Veri işleme ve analitik
+pandas>=1.5.0
+numpy>=1.23.0
+
+# Makine öğrenmesi (AHP/TOPSIS, ML algoritmaları)
+scikit-learn>=1.2.0
+
+# Grafik
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Excel import
+openpyxl>=3.0.0
+
+# REST API (Üniversite entegrasyonu)
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+
+# Tkinter: Python standart kütüphanesi (genelde yüklü)
+# tkinter — Windows/macOS/Linux Python kurulumunda dahil

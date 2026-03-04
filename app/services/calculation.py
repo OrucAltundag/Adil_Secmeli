@@ -1,3 +1,11 @@
+# =============================================================================
+# app/services/calculation.py — Karar Motoru (AHP, TOPSIS) ve Otomatik Puanlama
+# =============================================================================
+# Bu modül: performans + populerlik tablolarından veri okuyarak AHP ağırlıkları
+# ve TOPSIS sıralaması hesaplar. run_automatic_scoring ile otomatik skor atama yapar.
+# İlgili: criteria_page (kriter girişi), havuz_karar (statü güncelleme)
+# =============================================================================
+
 import sqlite3
 import pandas as pd
 import math
@@ -5,9 +13,7 @@ import random
 import os
 import traceback
 
-# =========================================================
-# 1. KARAR MOTORU (AHP + TOPSIS)
-# =========================================================
+# ---------- BÖLÜM 1: Karar Motoru (AHP + TOPSIS) ----------
 # AHP için RI (Random Index) - 4 kriter için
 RI_4 = 0.90
 

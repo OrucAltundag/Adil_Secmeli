@@ -43,10 +43,6 @@ _SAYAC_TIPS = {
 }
 
 
-def _sq(s: str) -> str:
-    return str(s).replace("'", "''")
-
-
 # ---------------------------------------------------------------------------
 # Tooltip yardimci
 # ---------------------------------------------------------------------------
@@ -144,16 +140,16 @@ class CourseAnalysisTab(ttk.Frame):
         self.cb_fakulte.bind("<<ComboboxSelected>>", self._on_faculty_change)
 
         tk.Label(bar, text="Ders:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
-        self.cb_ders = ttk.Combobox(bar, state="normal", width=38)
+        self.cb_ders = ttk.Combobox(bar, state="readonly", width=38)
         self.cb_ders.pack(side=tk.LEFT, padx=(0, 10))
-        self.cb_ders.bind("<KeyRelease>", self._on_ders_search)
+        self.cb_ders.bind("<<ComboboxSelected>>", self._on_ders_selected)
 
         # Ilerleme cubugu (arka plan analizi icin)
         self.progress = ttk.Progressbar(bar, mode="indeterminate", length=80)
         self.progress.pack(side=tk.LEFT, padx=(0, 10))
 
         self.btn_start = tk.Button(
-            bar, text="Analizi Baslar",
+            bar, text="Analizi Başlat",
             bg="#2563eb", fg="white",
             font=("Segoe UI", 9, "bold"),
             cursor="hand2",
@@ -310,19 +306,55 @@ class CourseAnalysisTab(ttk.Frame):
             return
         try:
             _, rows = self.db.run_sql(
-                f"SELECT fakulte_id FROM fakulte WHERE ad='{_sq(fak)}'"
+                "SELECT fakulte_id FROM fakulte WHERE ad = ?", (fak,)
             )
             if not rows:
+                self._ders_list = []
+                self._ders_map = {}
+                self._update_ders_combo("")
                 return
             fid = int(rows[0][0])
 
-            _, ders_rows = self.db.run_sql(f"""
-                SELECT DISTINCT d.ders_id, d.ad
-                FROM ders d
-                WHERE d.fakulte_id = {fid}
-                ORDER BY d.ad
-            """)
-            # Format: "id — ad" (arama icin)
+            # 1) Müfredat yolu: müfredat->bolum->fakulte (Mühendislik, Tıp vb. için)
+            _, d1 = self.db.run_sql(
+                """SELECT DISTINCT d.ders_id, d.ad
+                   FROM ders d
+                   JOIN mufredat_ders md ON d.ders_id = md.ders_id
+                   JOIN mufredat m ON md.mufredat_id = m.mufredat_id
+                   JOIN bolum b ON m.bolum_id = b.bolum_id
+                   WHERE b.fakulte_id = ?
+                   ORDER BY d.ad""",
+                (fid,)
+            )
+            # 2) ders.fakulte_id ile (bazı şemalarda doğrudan bağlı)
+            _, d2 = self.db.run_sql(
+                "SELECT DISTINCT ders_id, ad FROM ders WHERE fakulte_id = ? ORDER BY ad",
+                (fid,)
+            )
+            # 3) Birleştir, tekrarları kaldır (id bazlı)
+            seen = {}
+            for r in (d1 or []) + (d2 or []):
+                k = int(r[0])
+                if k not in seen:
+                    seen[k] = (r[0], r[1])
+            ders_rows = list(seen.values())
+            ders_rows.sort(key=lambda x: (str(x[1]), x[0]))
+            # 4) Hâlâ boşsa havuz tablosundan al
+            if not ders_rows:
+                try:
+                    _, havuz_rows = self.db.run_sql(
+                        """SELECT DISTINCT h.ders_id, COALESCE(d.ad, 'Ders ' || h.ders_id)
+                           FROM havuz h
+                           LEFT JOIN ders d ON h.ders_id = d.ders_id
+                           WHERE h.fakulte_id = ?
+                           ORDER BY 2""",
+                        (fid,)
+                    )
+                    ders_rows = havuz_rows or []
+                except Exception:
+                    ders_rows = []
+
+            # Format: "id — ad" (arama ve listeleme icin)
             self._ders_list = [
                 (f"{r[0]} — {r[1]}", int(r[0])) for r in (ders_rows or [])
             ]
@@ -330,27 +362,36 @@ class CourseAnalysisTab(ttk.Frame):
             self._update_ders_combo(self.cb_ders.get().strip())
         except Exception as e:
             print(f"[CourseAnalysisTab] fakulte degisimi hatasi: {e}")
+            self._ders_list = []
+            self._ders_map = {}
+            self._update_ders_combo("")
 
-    def _on_ders_search(self, event):
-        """Arama: yazdikca liste filtrelenir (case insensitive, icerir)."""
-        q = (self.cb_ders.get() or "").strip().lower()
-        self._update_ders_combo(q)
+    def _on_ders_selected(self, event=None):
+        """Ders seçildiğinde (Analizi Başlat için hazır)."""
+        pass
 
     def _update_ders_combo(self, query: str):
         """Ders listesini query ile filtrele; combobox values guncelle."""
-        if not getattr(self, "_ders_list", []):
+        ders_list = getattr(self, "_ders_list", [])
+        if not ders_list:
+            self.cb_ders["values"] = ["(Bu fakülte için ders bulunamadı)"]
+            self.cb_ders.set("")
+            self.btn_start.config(state="disabled")
             return
+        self.btn_start.config(state="normal")
         q = (query or "").lower()
         if not q:
-            filtered = [d[0] for d in self._ders_list]
+            filtered = [d[0] for d in ders_list]
         else:
             filtered = [
-                d[0] for d in self._ders_list
+                d[0] for d in ders_list
                 if q in d[0].lower()
             ]
         self.cb_ders["values"] = filtered
-        if filtered and self.cb_ders.current() < 0:
+        if filtered:
             self.cb_ders.current(0)
+        else:
+            self.cb_ders.set("")
 
     # =========================================================
     #  ANALIZ BASLAT
@@ -378,14 +419,14 @@ class CourseAnalysisTab(ttk.Frame):
             return
 
         year = int(yil_str)
+        import os
         db_path = getattr(self.app, "db_path", None) or getattr(
             self.app, "config_data", {}
         ).get("db_path")
         if not db_path:
-            messagebox.showerror("Baglanti Yok", "Veritabani yolu belirlenemedi.")
+            messagebox.showerror("Bağlantı Yok", "Veritabanı yolu belirlenemedi.")
             return
-
-        import os
+        db_path = os.path.abspath(db_path)
         if not os.path.exists(db_path):
             messagebox.showerror("Baglanti Yok", f"Veritabani bulunamadi: {db_path}")
             return
@@ -601,7 +642,7 @@ class CourseAnalysisTab(ttk.Frame):
                 self._set_step_state(key, "running", "")
         else:
             self.progress.stop()
-            self.btn_start.config(state="normal", text="Analizi Baslar")
+            self.btn_start.config(state="normal", text="Analizi Başlat")
 
     def _mark_all_steps_error(self, msg: str):
         for key in self._step_boxes:
