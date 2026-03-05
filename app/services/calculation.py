@@ -399,6 +399,20 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
         for d_id, ort in cursor.fetchall():
             not_sozlugu[int(d_id)] = float(ort)
 
+        # Anket oranları (ders_kriterleri: anket_dersi_secen/anket_katilimci)
+        anket_sozlugu = {}
+        try:
+            cursor.execute(
+                "SELECT ders_id, anket_katilimci, anket_dersi_secen FROM ders_kriterleri WHERE yil=2023"
+            )
+            for d_id, kat, sec in cursor.fetchall():
+                if kat and kat > 0 and sec is not None:
+                    anket_sozlugu[int(d_id)] = min(1.0, max(0.0, float(sec) / float(kat)))
+                else:
+                    anket_sozlugu[int(d_id)] = 0.5
+        except sqlite3.OperationalError:
+            pass  # anket sütunları yoksa atla
+
         raw_data = []
         for (d_id, d_ad, bas, dol) in rows_main:
             d_id = int(d_id)
@@ -406,6 +420,7 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
 
             bas = float(bas) if bas is not None else 0.5
             dol = float(dol) if dol is not None else 0.5
+            anket = anket_sozlugu.get(d_id, 0.5)
 
             # dinlenmedekileri dahil etme
             if ders_gecmisi.get(d_id) == -1:
@@ -417,7 +432,7 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
                 "basari": bas,
                 "populerlik": dol,
                 "trend": 0.5,
-                "anket": 0.5
+                "anket": anket
             })
 
         df_sonuc, _ = motor.topsis_calistir(pd.DataFrame(raw_data), agirliklar)

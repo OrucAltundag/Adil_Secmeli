@@ -23,7 +23,7 @@ class CriteriaPage:
         self.setup_ui()
 
     def _ensure_table(self):
-        """ders_kriterleri tablosu yoksa oluşturur."""
+        """ders_kriterleri tablosu yoksa oluşturur; anket alanları yoksa ekler."""
         if not getattr(self.db, "conn", None):
             return
         try:
@@ -39,10 +39,19 @@ class CriteriaPage:
                     basari_ortalamasi REAL  DEFAULT 0.0,
                     kontenjan       INTEGER DEFAULT 0,
                     kayitli_ogrenci INTEGER DEFAULT 0,
+                    anket_katilimci INTEGER DEFAULT 0,
+                    anket_dersi_secen INTEGER DEFAULT 0,
                     UNIQUE(ders_id, yil),
                     FOREIGN KEY(ders_id) REFERENCES ders(ders_id)
                 )
             """)
+            # Eski tablolarda anket sütunları yoksa ekle
+            for col in ("anket_katilimci", "anket_dersi_secen"):
+                try:
+                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col} INTEGER DEFAULT 0")
+                    self.db.conn.commit()
+                except sqlite3.OperationalError:
+                    pass  # Sütun zaten varsa
             self.db.conn.commit()
         except Exception as e:
             print(f"ders_kriterleri tablo oluşturma hatası: {e}")
@@ -161,11 +170,19 @@ class CriteriaPage:
         self.lbl_doluluk_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
         self.lbl_doluluk_sonuc.grid(row=9, column=1, sticky="w")
 
+        # 3. Anket Kriteri (düşük etki; yakın puanlarda ayırıcı)
+        self.create_section_header(10, "3. Anket Tercihi")
+        self.ent_anket_katilimci = self.create_input_row(11, "Ankete Katılan Toplam Öğrenci:", "0")
+        self.ent_anket_dersi_secen = self.create_input_row(12, "Bu Dersi Seçen Öğrenci:", "0")
+        tk.Label(self.form_frame, text="Anket Tercih Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=13, column=0, sticky="w", pady=5)
+        self.lbl_anket_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
+        self.lbl_anket_sonuc.grid(row=13, column=1, sticky="w")
+
         # KAYDET BUTONU
         btn_save = tk.Button(self.form_frame, text="💾 VERİLERİ KAYDET VE GÜNCELLE", 
                              bg="#16a34a", fg="white", font=("Segoe UI", 10, "bold"),
                              command=self.save_data, cursor="hand2")
-        btn_save.grid(row=10, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
+        btn_save.grid(row=14, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
 
     def create_section_header(self, row, text):
         tk.Label(self.form_frame, text=text, bg="#f8fafc", fg="#2563eb", 
@@ -213,15 +230,14 @@ class CriteriaPage:
 
 
     def load_courses(self):
-        """Müfredattaki dersleri listeler."""
+        """Fakültedeki bütün dersleri listeler (müfredat filtresi yok)."""
         self.tree.delete(*self.tree.get_children())
 
         fakulte = self.cb_fakulte.get()
-        bolum = self.cb_bolum.get()
         yil = self.cb_yil.get()
 
-        if not (fakulte and bolum and yil):
-            messagebox.showwarning("Eksik", "Lütfen Fakülte, Bölüm ve Yıl seçiniz.")
+        if not (fakulte and yil):
+            messagebox.showwarning("Eksik", "Lütfen Fakülte ve Yıl seçiniz.")
             return
 
         if not getattr(self.db, "conn", None):
@@ -229,43 +245,22 @@ class CriteriaPage:
             return
 
         try:
-            # Önce müfredattan dersleri dene
+            # Fakültedeki tüm dersleri getir (müfredat filtresi yok)
             query = """
-                SELECT DISTINCT d.ders_id, d.ad,
+                SELECT d.ders_id, d.ad,
                        CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
-                FROM mufredat m
-                JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-                JOIN ders d ON md.ders_id = d.ders_id
-                JOIN bolum b ON m.bolum_id = b.bolum_id
+                FROM ders d
+                JOIN fakulte f ON d.fakulte_id = f.fakulte_id
                 LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?)
-                WHERE b.ad = ? AND m.akademik_yil = ?
+                WHERE f.ad = ?
                 ORDER BY d.ad
             """
-            _, rows = self.db.run_sql(query, (int(yil), bolum, int(yil)))
+            _, rows = self.db.run_sql(query, (int(yil), fakulte))
 
             if not rows:
-                # Müfredat boşsa fakültenin tüm seçmeli derslerini göster
-                col_tip = self._ders_tip_kolonu()
-                fallback = f"""
-                    SELECT DISTINCT d.ders_id, d.ad,
-                           CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
-                    FROM ders d
-                    JOIN fakulte f ON d.fakulte_id = f.fakulte_id
-                    LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?)
-                    WHERE f.ad = ? AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%' OR LOWER(COALESCE(d.{col_tip},'')) LIKE '%secmeli%')
-                    ORDER BY d.ad
-                """
-                try:
-                    _, rows = self.db.run_sql(fallback, (int(yil), fakulte))
-                except Exception as fallback_err:
-                    print(f"Fallback ders sorgusu hatası: {fallback_err}")
-                    rows = []
-
-            if not rows:
-                self.tree.insert("", tk.END, values=("", "Bu kriterlere uygun ders bulunamadı.", ""))
+                self.tree.insert("", tk.END, values=("", "Bu fakültede ders bulunamadı.", ""))
             else:
                 for r in rows:
-                    # sqlite3.Row -> tuple (Treeview <object> hatasını önler)
                     vals = (int(r[0]), str(r[1]), str(r[2]))
                     self.tree.insert("", tk.END, values=vals)
 
@@ -329,7 +324,7 @@ class CriteriaPage:
 
             if rows:
                 r = rows[0]
-                # id, ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci
+                # id, ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
                 self.cb_donem.set(str(r[3]) if r[3] else "Güz")
                 self.ent_toplam_ogrenci.delete(0, tk.END)
                 self.ent_toplam_ogrenci.insert(0, str(r[4] or 0))
@@ -341,6 +336,11 @@ class CriteriaPage:
                 self.ent_kontenjan.insert(0, str(r[7] or 0))
                 self.ent_kayitli.delete(0, tk.END)
                 self.ent_kayitli.insert(0, str(r[8] or 0))
+                # Anket alanları (indeks 9, 10 - yoksa 0)
+                self.ent_anket_katilimci.delete(0, tk.END)
+                self.ent_anket_katilimci.insert(0, str(r[9] if len(r) > 9 and r[9] is not None else 0))
+                self.ent_anket_dersi_secen.delete(0, tk.END)
+                self.ent_anket_dersi_secen.insert(0, str(r[10] if len(r) > 10 and r[10] is not None else 0))
             else:
                 # ders_kriterleri yoksa performans+populerlikten doldur
                 _, pr = self.db.run_sql(
@@ -368,6 +368,10 @@ class CriteriaPage:
                     self.ent_kontenjan.insert(0, str(kont))
                     self.ent_kayitli.delete(0, tk.END)
                     self.ent_kayitli.insert(0, str(talep))
+                    self.ent_anket_katilimci.delete(0, tk.END)
+                    self.ent_anket_katilimci.insert(0, "0")
+                    self.ent_anket_dersi_secen.delete(0, tk.END)
+                    self.ent_anket_dersi_secen.insert(0, "0")
                 else:
                     self.clear_form_inputs()
 
@@ -386,6 +390,8 @@ class CriteriaPage:
         self.ent_ortalama.delete(0, tk.END); self.ent_ortalama.insert(0, "0.0")
         self.ent_kontenjan.delete(0, tk.END); self.ent_kontenjan.insert(0, "0")
         self.ent_kayitli.delete(0, tk.END); self.ent_kayitli.insert(0, "0")
+        self.ent_anket_katilimci.delete(0, tk.END); self.ent_anket_katilimci.insert(0, "0")
+        self.ent_anket_dersi_secen.delete(0, tk.END); self.ent_anket_dersi_secen.insert(0, "0")
 
     def update_calculations(self, event=None):
         """Kullanıcı sayı girdikçe oranları anlık gösterir."""
@@ -397,7 +403,7 @@ class CriteriaPage:
                 self.lbl_basari_sonuc.config(text=f"%{basari:.1f}", fg="green")
             else:
                 self.lbl_basari_sonuc.config(text="-")
-                
+
             kontenjan = float(self.ent_kontenjan.get())
             kayitli = float(self.ent_kayitli.get())
             if kontenjan > 0:
@@ -405,6 +411,15 @@ class CriteriaPage:
                 self.lbl_doluluk_sonuc.config(text=f"%{doluluk:.1f}", fg="blue")
             else:
                 self.lbl_doluluk_sonuc.config(text="-")
+
+            # Anket tercih oranı: dersi seçen / ankete katılan
+            anket_kat = float(self.ent_anket_katilimci.get())
+            anket_secen = float(self.ent_anket_dersi_secen.get())
+            if anket_kat > 0 and anket_secen >= 0:
+                oran = min(100.0, (anket_secen / anket_kat) * 100)
+                self.lbl_anket_sonuc.config(text=f"%{oran:.1f}", fg="#7c3aed")
+            else:
+                self.lbl_anket_sonuc.config(text="-")
         except ValueError:
             pass
 
@@ -423,6 +438,8 @@ class CriteriaPage:
             ort     = float(self.ent_ortalama.get().strip() or 0.0)
             kont    = int(self.ent_kontenjan.get().strip() or 0)
             kayit   = int(self.ent_kayitli.get().strip() or 0)
+            ank_kat = int(self.ent_anket_katilimci.get().strip() or 0)
+            ank_sec = int(self.ent_anket_dersi_secen.get().strip() or 0)
 
             # Türetilen oranlar
             basari_orani = (gecen / top_ogr) if top_ogr > 0 else 0.0
@@ -430,7 +447,7 @@ class CriteriaPage:
 
             cur = self.db.conn.cursor()
 
-            # ── 1. ders_kriterleri: UNIQUE constraint olmayabilir, DELETE+INSERT kullan ──
+            # ── 1. ders_kriterleri ──
             cur.execute(
                 "DELETE FROM ders_kriterleri WHERE ders_id=? AND yil=?",
                 (c_id, int(yil))
@@ -438,9 +455,10 @@ class CriteriaPage:
             cur.execute("""
                 INSERT INTO ders_kriterleri
                     (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
-                     basari_ortalamasi, kontenjan, kayitli_ogrenci)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (c_id, int(yil), donem, top_ogr, gecen, ort, kont, kayit))
+                     basari_ortalamasi, kontenjan, kayitli_ogrenci,
+                     anket_katilimci, anket_dersi_secen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (c_id, int(yil), donem, top_ogr, gecen, ort, kont, kayit, ank_kat, ank_sec))
 
             # ── 2. performans: algoritmalar buradan okur (UNIQUE yok, DELETE+INSERT) ──
             cur.execute(

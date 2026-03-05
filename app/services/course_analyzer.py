@@ -110,13 +110,28 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
     En az basari_orani ve doluluk_orani dolu olmalı; yoksa VeriEksikHatasi.
     """
     # 1. ders_kriterleri (Kriter sayfasından girilmiş)
-    cur.execute(
-        """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                  kontenjan, kayitli_ogrenci
-           FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
-        (course_id, year)
-    )
-    row_dk = cur.fetchone()
+    anket_kat = 0
+    anket_secen = 0
+    try:
+        cur.execute(
+            """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                      kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+               FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
+            (course_id, year)
+        )
+        row_dk = cur.fetchone()
+        if row_dk and len(row_dk) >= 7:
+            anket_kat = _safe_float(row_dk[5])
+            anket_secen = _safe_float(row_dk[6])
+    except (sqlite3.OperationalError, TypeError):
+        # Eski şemada anket sütunları yoksa kısa sorgu dene
+        cur.execute(
+            """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                      kontenjan, kayitli_ogrenci
+               FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
+            (course_id, year)
+        )
+        row_dk = cur.fetchone()
 
     # 2. performans tablosu (fallback)
     cur.execute(
@@ -158,6 +173,12 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
     basari  = min(max(basari, 0.0), 1.0)
     doluluk = min(max(doluluk, 0.0), 1.0)
 
+    # Anket tercih oranı: dersi seçen / ankete katılan (0-1). Yoksa nötr 0.5
+    if anket_kat > 0 and anket_secen >= 0:
+        anket_orani = min(1.0, max(0.0, anket_secen / anket_kat))
+    else:
+        anket_orani = 0.5  # Veri yoksa nötr
+
     return {
         "toplam_ogrenci":    toplam,
         "gecen_ogrenci":     gecen,
@@ -166,6 +187,7 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
         "kayitli_ogrenci":   kayitli,
         "basari_orani":      basari,
         "doluluk_orani":     doluluk,
+        "anket_orani":       anket_orani,
     }
 
 
@@ -236,7 +258,7 @@ def _run_topsis_single(criteria: dict, ahp_weights: dict) -> dict:
         basari    = _safe_float(criteria.get("basari_orani"))
         doluluk   = _safe_float(criteria.get("doluluk_orani"))
         trend_val = _safe_float(criteria.get("_trend", basari))   # AHP adımından gelebilir
-        anket_val = 0.5   # Anket verisi yoksa nötr
+        anket_val = _safe_float(criteria.get("anket_orani", 0.5))  # Kriter sayfasından veya nötr
 
         w = ahp_weights
         w_basari    = _safe_float(w.get("basari",    0.5))
