@@ -30,6 +30,27 @@ class Database:
             raise FileNotFoundError(f"Veritabanı bulunamadı: {db_path}")
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
+        self._migrate_ders_kriterleri_anket()
+
+    def _migrate_ders_kriterleri_anket(self) -> None:
+        """ders_kriterleri tablosuna anket sütunları ekler (yoksa)."""
+        if not self.conn:
+            return
+        cur = self.conn.cursor()
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ders_kriterleri'")
+            if not cur.fetchone():
+                return
+            cur.execute("PRAGMA table_info(ders_kriterleri)")
+            cols = {row[1] for row in cur.fetchall()}
+            for col, default in [("anket_katilimci", "0"), ("anket_dersi_secen", "0")]:
+                if col not in cols:
+                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col} INTEGER DEFAULT {default}")
+            self.conn.commit()
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            print(f"[DB Migration] ders_kriterleri anket: {e}")
 
     def ensure(self) -> None:
         if not self.conn:

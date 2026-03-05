@@ -130,6 +130,20 @@ class CriteriaPage:
         self.cb_donem = ttk.Combobox(parent, state="readonly", width=10, values=["Güz", "Bahar"])
         self.cb_donem.current(0)
         self.cb_donem.pack(side=tk.LEFT, padx=5)
+
+        # Kriter durumu filtresi
+        tk.Label(parent, text="Kriter:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_kriter_filtre = ttk.Combobox(parent, state="readonly", width=12,
+                                            values=["Tümü", "Girildi", "Girilmedi"])
+        self.cb_kriter_filtre.current(0)
+        self.cb_kriter_filtre.pack(side=tk.LEFT, padx=5)
+
+        # Müfredat filtresi
+        tk.Label(parent, text="Müfredat:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_mufredat_filtre = ttk.Combobox(parent, state="readonly", width=14,
+                                              values=["Tümü", "Müfredattakiler"])
+        self.cb_mufredat_filtre.current(0)
+        self.cb_mufredat_filtre.pack(side=tk.LEFT, padx=5)
         
         # Listele Butonu
         tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
@@ -230,14 +244,20 @@ class CriteriaPage:
 
 
     def load_courses(self):
-        """Fakültedeki bütün dersleri listeler (müfredat filtresi yok)."""
+        """Fakültedeki seçmeli dersleri listeler; Güz/Bahar ve kriter filtresine göre."""
         self.tree.delete(*self.tree.get_children())
 
         fakulte = self.cb_fakulte.get()
+        bolum = self.cb_bolum.get()
         yil = self.cb_yil.get()
+        donem = self.cb_donem.get()
+        kriter_filtre = self.cb_kriter_filtre.get()
+        mufredat_filtre = getattr(self, "cb_mufredat_filtre", None)
+        muf_val = (mufredat_filtre.get() or "").strip() if mufredat_filtre else ""
+        sadece_mufredat = muf_val in ("Müfredattakiler", "Müfredattaki")
 
-        if not (fakulte and yil):
-            messagebox.showwarning("Eksik", "Lütfen Fakülte ve Yıl seçiniz.")
+        if not (fakulte and yil and donem):
+            messagebox.showwarning("Eksik", "Lütfen Fakülte, Yıl ve Dönem seçiniz.")
             return
 
         if not getattr(self.db, "conn", None):
@@ -245,20 +265,50 @@ class CriteriaPage:
             return
 
         try:
-            # Fakültedeki tüm dersleri getir (müfredat filtresi yok)
-            query = """
-                SELECT d.ders_id, d.ad,
-                       CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
-                FROM ders d
-                JOIN fakulte f ON d.fakulte_id = f.fakulte_id
-                LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?)
-                WHERE f.ad = ?
-                ORDER BY d.ad
-            """
-            _, rows = self.db.run_sql(query, (int(yil), fakulte))
+            col_tip = self._ders_tip_kolonu()
+            donem_norm = "Güz" if donem == "Güz" else "Bahar"
+
+            if sadece_mufredat:
+                # Sadece o fakülte, yıl, dönem müfredatındaki dersler
+                query = f"""
+                    SELECT DISTINCT d.ders_id, d.ad,
+                           CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
+                    FROM ders d
+                    JOIN fakulte f ON d.fakulte_id = f.fakulte_id
+                    JOIN mufredat m ON m.fakulte_id = f.fakulte_id
+                      AND m.akademik_yil = ? AND LOWER(COALESCE(m.donem,'Güz')) = LOWER(?)
+                    JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id AND md.ders_id = d.ders_id
+                    LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?
+                        AND (dk.donem = ? OR dk.donem IS NULL OR dk.donem = ''))
+                    WHERE f.ad = ?
+                      AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%'
+                           OR LOWER(COALESCE(d.{col_tip},'')) LIKE '%secmeli%')
+                    ORDER BY d.ad
+                """
+                _, rows = self.db.run_sql(query, (int(yil), donem_norm, int(yil), donem_norm, fakulte))
+            else:
+                query = f"""
+                    SELECT d.ders_id, d.ad,
+                           CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
+                    FROM ders d
+                    JOIN fakulte f ON d.fakulte_id = f.fakulte_id
+                    LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?
+                        AND (dk.donem = ? OR dk.donem IS NULL OR dk.donem = ''))
+                    WHERE f.ad = ?
+                      AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%'
+                           OR LOWER(COALESCE(d.{col_tip},'')) LIKE '%secmeli%')
+                    ORDER BY d.ad
+                """
+                _, rows = self.db.run_sql(query, (int(yil), donem_norm, fakulte))
+
+            # Kriter filtresi uygula
+            if kriter_filtre == "Girildi":
+                rows = [r for r in (rows or []) if str(r[2]) == "Girildi"]
+            elif kriter_filtre == "Girilmedi":
+                rows = [r for r in (rows or []) if str(r[2]) != "Girildi"]
 
             if not rows:
-                self.tree.insert("", tk.END, values=("", "Bu fakültede ders bulunamadı.", ""))
+                self.tree.insert("", tk.END, values=("", "Bu kriterlere uygun ders bulunamadı.", ""))
             else:
                 for r in rows:
                     vals = (int(r[0]), str(r[1]), str(r[2]))
@@ -284,6 +334,37 @@ class CriteriaPage:
             if self._has_col("ders", col):
                 return col
         return "DersTipi"
+
+    def _check_in_mufredat(self, yil: int, donem: str) -> bool:
+        """Ders bu yıl/dönem/bölüm müfredatında mı?"""
+        bolum = self.cb_bolum.get()
+        if not bolum:
+            return False
+        try:
+            _, rows = self.db.run_sql("""
+                SELECT 1 FROM mufredat m
+                JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
+                JOIN bolum b ON m.bolum_id = b.bolum_id
+                WHERE md.ders_id = ? AND m.akademik_yil = ?
+                  AND LOWER(COALESCE(m.donem,'Güz')) = LOWER(?)
+                  AND b.ad = ?
+                LIMIT 1
+            """, (self.selected_course_id, yil, donem, bolum))
+            return bool(rows)
+        except Exception:
+            return False
+
+    def _update_form_readonly(self):
+        """1 ve 2. kriterler filtreye göre; anket her zaman açık."""
+        # Müfredattakiler filtresi veya ders müfredattaysa → 1 ve 2 açık
+        readonly = not getattr(self, "_course_in_mufredat", True)
+        state = "disabled" if readonly else "normal"
+        for w in (self.ent_toplam_ogrenci, self.ent_gecen_ogrenci, self.ent_ortalama,
+                  self.ent_kontenjan, self.ent_kayitli):
+            w.config(state=state)
+        # Anket her zaman açık
+        self.ent_anket_katilimci.config(state="normal")
+        self.ent_anket_dersi_secen.config(state="normal")
 
 
     def on_course_select(self, event):
@@ -313,14 +394,31 @@ class CriteriaPage:
             messagebox.showwarning("Uyarı", "Lütfen bir yıl seçiniz.")
             return
 
-        self.lbl_selected_course.config(text=f"Seçilen: {course_name} ({yil})", fg="#0f172a")
-        
-        # Mevcut veriyi çek: önce ders_kriterleri, yoksa performans+populerlik
+        donem = self.cb_donem.get() or "Güz"
+        self.lbl_selected_course.config(text=f"Seçilen: {course_name} ({yil} {donem})", fg="#0f172a")
+
+        # Müfredattakiler filtresi seçiliyse liste zaten müfredat dersleri → 1 ve 2 açık
+        # Değilse sadece bu ders müfredattaysa 1 ve 2 açık. Anket her zaman açık.
+        muf_filtre = getattr(self, "cb_mufredat_filtre", None)
+        muf_val = (muf_filtre.get() or "").strip() if muf_filtre else ""
+        if muf_val in ("Müfredattakiler", "Müfredattaki"):
+            self._course_in_mufredat = True  # Listelenen dersler müfredatta
+        else:
+            self._course_in_mufredat = self._check_in_mufredat(int(yil), donem)
+        self._update_form_readonly()
+
+        # Mevcut veriyi çek: ders_kriterleri (donem eşleşmeli; NULL/boş eski kayıtlar her iki dönemde)
         try:
             _, rows = self.db.run_sql(
-                "SELECT * FROM ders_kriterleri WHERE ders_id=? AND yil=?",
-                (self.selected_course_id, int(yil))
+                """SELECT * FROM ders_kriterleri WHERE ders_id=? AND yil=?
+                   AND (donem = ? OR donem IS NULL OR donem = '')""",
+                (self.selected_course_id, int(yil), str(donem).strip())
             )
+            if not rows:
+                _, rows = self.db.run_sql(
+                    "SELECT * FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1",
+                    (self.selected_course_id, int(yil))
+                )
 
             if rows:
                 r = rows[0]
@@ -413,13 +511,14 @@ class CriteriaPage:
                 self.lbl_doluluk_sonuc.config(text="-")
 
             # Anket tercih oranı: dersi seçen / ankete katılan
-            anket_kat = float(self.ent_anket_katilimci.get())
-            anket_secen = float(self.ent_anket_dersi_secen.get())
-            if anket_kat > 0 and anket_secen >= 0:
+            # anket_kat=0 ise %0.0 göster (kriter alanı boş kalmasın, eksik sayılmasın)
+            anket_kat = float(self.ent_anket_katilimci.get() or 0)
+            anket_secen = float(self.ent_anket_dersi_secen.get() or 0)
+            if anket_kat > 0:
                 oran = min(100.0, (anket_secen / anket_kat) * 100)
                 self.lbl_anket_sonuc.config(text=f"%{oran:.1f}", fg="#7c3aed")
             else:
-                self.lbl_anket_sonuc.config(text="-")
+                self.lbl_anket_sonuc.config(text="%0.0", fg="#7c3aed")
         except ValueError:
             pass
 
@@ -428,67 +527,66 @@ class CriteriaPage:
             messagebox.showwarning("Uyarı", "Lütfen önce listeden işlem yapılacak dersi seçiniz.")
             return
 
-        yil   = self.cb_yil.get()
-        donem = self.cb_donem.get()
+        yil = int(self.cb_yil.get())
+        donem = (self.cb_donem.get() or "Güz").strip()
+        donem_db = "Güz" if str(donem).lower() in ("güz", "guz") else ("Bahar" if str(donem).lower() == "bahar" else donem)
+        in_mufredat = getattr(self, "_course_in_mufredat", True)
 
         try:
-            c_id    = int(self.selected_course_id)
-            top_ogr = int(self.ent_toplam_ogrenci.get().strip() or 0)
-            gecen   = int(self.ent_gecen_ogrenci.get().strip() or 0)
-            ort     = float(self.ent_ortalama.get().strip() or 0.0)
-            kont    = int(self.ent_kontenjan.get().strip() or 0)
-            kayit   = int(self.ent_kayitli.get().strip() or 0)
+            c_id = int(self.selected_course_id)
             ank_kat = int(self.ent_anket_katilimci.get().strip() or 0)
             ank_sec = int(self.ent_anket_dersi_secen.get().strip() or 0)
+            top_ogr = gecen = ort = kont = kayit = 0
+            if in_mufredat:
+                top_ogr = int(self.ent_toplam_ogrenci.get().strip() or 0)
+                gecen = int(self.ent_gecen_ogrenci.get().strip() or 0)
+                ort = float(self.ent_ortalama.get().strip() or 0.0)
+                kont = int(self.ent_kontenjan.get().strip() or 0)
+                kayit = int(self.ent_kayitli.get().strip() or 0)
 
-            # Türetilen oranlar
             basari_orani = (gecen / top_ogr) if top_ogr > 0 else 0.0
             doluluk_orani = min(kayit / kont, 1.0) if kont > 0 else 0.0
 
             cur = self.db.conn.cursor()
 
             # ── 1. ders_kriterleri ──
-            cur.execute(
-                "DELETE FROM ders_kriterleri WHERE ders_id=? AND yil=?",
-                (c_id, int(yil))
-            )
+            cur.execute("DELETE FROM ders_kriterleri WHERE ders_id=? AND yil=?", (c_id, yil))
             cur.execute("""
                 INSERT INTO ders_kriterleri
                     (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
                      basari_ortalamasi, kontenjan, kayitli_ogrenci,
                      anket_katilimci, anket_dersi_secen)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (c_id, int(yil), donem, top_ogr, gecen, ort, kont, kayit, ank_kat, ank_sec))
+            """, (c_id, yil, donem, top_ogr, gecen, ort, kont, kayit, ank_kat, ank_sec))
 
-            # ── 2. performans: algoritmalar buradan okur (UNIQUE yok, DELETE+INSERT) ──
-            cur.execute(
-                "DELETE FROM performans WHERE ders_id=? AND akademik_yil=? AND donem=?",
-                (c_id, int(yil), donem)
-            )
-            cur.execute("""
-                INSERT INTO performans
-                    (ders_id, akademik_yil, donem, ortalama_not, basari_orani)
-                VALUES (?, ?, ?, ?, ?)
-            """, (c_id, int(yil), donem, ort, basari_orani))
-
-            # ── 3. populerlik: algoritmalar buradan okur ──────────────────
-            cur.execute(
-                "DELETE FROM populerlik WHERE ders_id=? AND akademik_yil=? AND donem=?",
-                (c_id, int(yil), donem)
-            )
-            cur.execute("""
-                INSERT INTO populerlik
-                    (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (c_id, int(yil), donem, kayit, kont, doluluk_orani))
+            if in_mufredat:
+                cur.execute(
+                    "DELETE FROM performans WHERE ders_id=? AND akademik_yil=? AND donem=?",
+                    (c_id, yil, donem_db)
+                )
+                cur.execute("""
+                    INSERT INTO performans
+                        (ders_id, akademik_yil, donem, ortalama_not, basari_orani)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (c_id, yil, donem_db, ort, basari_orani))
+                cur.execute(
+                    "DELETE FROM populerlik WHERE ders_id=? AND akademik_yil=? AND donem=?",
+                    (c_id, yil, donem_db)
+                )
+                cur.execute("""
+                    INSERT INTO populerlik
+                        (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (c_id, yil, donem_db, kayit, kont, doluluk_orani))
 
             self.db.conn.commit()
 
-            messagebox.showinfo("Başarılı",
-                f"Veriler kaydedildi.\n"
-                f"Başarı oranı: %{basari_orani*100:.1f}  |  "
-                f"Doluluk: %{doluluk_orani*100:.1f}")
-
+            msg = "Veriler kaydedildi."
+            if in_mufredat:
+                msg += f"\nBaşarı oranı: %{basari_orani*100:.1f}  |  Doluluk: %{doluluk_orani*100:.1f}"
+            else:
+                msg += "\n(Müfredatta olmayan ders – sadece anket kaydedildi.)"
+            messagebox.showinfo("Başarılı", msg)
             self.load_courses()
 
         except ValueError:

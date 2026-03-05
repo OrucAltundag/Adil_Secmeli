@@ -12,6 +12,7 @@ import math
 import random
 import os
 import traceback
+from app.services.havuz_karar import calculate_next_status
 
 # ---------- BÖLÜM 1: Karar Motoru (AHP + TOPSIS) ----------
 # AHP için RI (Random Index) - 4 kriter için
@@ -577,6 +578,540 @@ def run_automatic_scoring(db_path="data/adil_secmeli.db"):
     except Exception as e:
         print(f"❌ HATA: {e}")
         traceback.print_exc()
+    finally:
+        if conn:
+            conn.close()
+
+
+
+def _safe_float2(value, default=0.0):
+    try:
+        if value is None:
+            return float(default)
+        val = float(value)
+        if math.isnan(val) or math.isinf(val):
+            return float(default)
+        return val
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _resolve_elective_col(cur):
+    cur.execute("PRAGMA table_info(ders)")
+    cols = {str(r[1]) for r in cur.fetchall()}
+    if "DersTipi" in cols:
+        return "DersTipi"
+    if "tip" in cols:
+        return "tip"
+    return None
+
+
+def _has_full_criteria(cur, ders_id, yil, donem):
+    try:
+        cur.execute(
+            """
+            SELECT toplam_ogrenci, gecen_ogrenci, kontenjan, kayitli_ogrenci
+            FROM ders_kriterleri
+            WHERE ders_id = ? AND yil = ?
+              AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
+            ORDER BY CASE WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)) THEN 0 ELSE 1 END, id DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil), str(donem), str(donem)),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        toplam = _safe_float2(row[0], 0.0)
+        gecen = _safe_float2(row[1], 0.0)
+        kontenjan = _safe_float2(row[2], 0.0)
+        kayitli = _safe_float2(row[3], 0.0)
+        return toplam > 0 and kontenjan > 0 and gecen >= 0 and kayitli >= 0
+    except Exception:
+        return False
+
+
+def _read_course_metrics(cur, ders_id, yil, donem, motor):
+    cur.execute(
+        """
+        SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+               kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+        FROM ders_kriterleri
+        WHERE ders_id = ? AND yil = ?
+          AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
+        ORDER BY CASE WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)) THEN 0 ELSE 1 END, id DESC
+        LIMIT 1
+        """,
+        (int(ders_id), int(yil), str(donem), str(donem)),
+    )
+    dk = cur.fetchone()
+
+    cur.execute(
+        """
+        SELECT basari_orani
+        FROM performans
+        WHERE ders_id = ? AND akademik_yil = ?
+        ORDER BY pfrs_id DESC
+        LIMIT 1
+        """,
+        (int(ders_id), int(yil)),
+    )
+    pf = cur.fetchone()
+
+    cur.execute(
+        """
+        SELECT doluluk_orani
+        FROM populerlik
+        WHERE ders_id = ? AND akademik_yil = ?
+        ORDER BY pop_id DESC
+        LIMIT 1
+        """,
+        (int(ders_id), int(yil)),
+    )
+    pop = cur.fetchone()
+
+    basari = _safe_float2(pf[0] if pf else None, 0.0)
+    doluluk = _safe_float2(pop[0] if pop else None, 0.0)
+    anket = 0.5
+
+    if dk:
+        toplam = _safe_float2(dk[0], 0.0)
+        gecen = _safe_float2(dk[1], 0.0)
+        kontenjan = _safe_float2(dk[3], 0.0)
+        kayitli = _safe_float2(dk[4], 0.0)
+        if toplam > 0:
+            basari = gecen / toplam
+        if kontenjan > 0:
+            doluluk = kayitli / kontenjan
+
+        anket_kat = _safe_float2(dk[5], 0.0)
+        anket_secen = _safe_float2(dk[6], 0.0)
+        if anket_kat > 0:
+            anket = max(0.0, min(1.0, anket_secen / anket_kat))
+
+    basari = max(0.0, min(1.0, basari))
+    doluluk = max(0.0, min(1.0, doluluk))
+
+    cur.execute(
+        """
+        SELECT akademik_yil, basari_orani
+        FROM performans
+        WHERE ders_id = ? AND akademik_yil <= ? AND basari_orani IS NOT NULL
+        ORDER BY akademik_yil DESC
+        LIMIT 3
+        """,
+        (int(ders_id), int(yil)),
+    )
+    gecmis = [{"yil": int(r[0]), "oran": _safe_float2(r[1], basari)} for r in cur.fetchall()]
+    trend, _ = motor.gecmis_trend_hesapla(gecmis) if gecmis else (basari, "")
+    trend = max(0.0, min(1.0, _safe_float2(trend, basari)))
+
+    return {
+        "ders_id": int(ders_id),
+        "basari": basari,
+        "trend": trend,
+        "populerlik": doluluk,
+        "anket": max(0.0, min(1.0, _safe_float2(anket, 0.5))),
+    }
+
+
+def generate_next_year_curricula(
+    db_path="data/adil_secmeli.db",
+    fakulte_id=None,
+    akademik_yil=None,
+    donem="G",
+    drop_score_threshold=40.0,
+):
+    """
+    Faculty + year + term icin bolum bazli sonraki yil mufredati olusturur.
+    - Tum bolumlerin mevcut mufredat dersleri icin kriter girisi zorunludur.
+    - Dusen dersler (skor baraj altinda) yerine kesinlesme puani en yuksek adaylar eklenir.
+    - Duser yoksa mufredat aynen bir sonraki yila tasinir.
+    - Havuz statu/sayac guncellemesi calculate_next_status ile yapilir.
+    """
+    if fakulte_id is None or akademik_yil is None:
+        return {
+            "ok": False,
+            "error": "fakulte_id ve akademik_yil zorunludur.",
+        }
+
+    fakulte_id = int(fakulte_id)
+    akademik_yil = int(akademik_yil)
+    sonraki_yil = akademik_yil + 1
+    donem = str(donem or "G")
+
+    conn = None
+    try:
+        if not os.path.exists(db_path):
+            return {"ok": False, "error": f"DB bulunamadi: {db_path}"}
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        cur.execute("SELECT ad FROM fakulte WHERE fakulte_id = ?", (fakulte_id,))
+        fak = cur.fetchone()
+        if not fak:
+            return {"ok": False, "error": f"Fakulte bulunamadi: {fakulte_id}"}
+
+        cur.execute(
+            "SELECT bolum_id, ad FROM bolum WHERE fakulte_id = ? ORDER BY bolum_id",
+            (fakulte_id,),
+        )
+        bolumler = [(int(r[0]), str(r[1] or "")) for r in cur.fetchall()]
+        if not bolumler:
+            return {"ok": False, "error": "Fakulteye ait bolum bulunamadi."}
+
+        mevcut_mufredatlar = {}
+        eksik_mufredat = []
+
+        for bolum_id, bolum_adi in bolumler:
+            cur.execute(
+                """
+                SELECT mufredat_id
+                FROM mufredat
+                WHERE fakulte_id = ? AND bolum_id = ? AND akademik_yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                ORDER BY COALESCE(versiyon, 0) DESC, mufredat_id DESC
+                LIMIT 1
+                """,
+                (fakulte_id, bolum_id, akademik_yil, donem),
+            )
+            row = cur.fetchone()
+            if not row:
+                eksik_mufredat.append({"bolum_id": bolum_id, "bolum": bolum_adi})
+                continue
+
+            mufredat_id = int(row[0])
+            cur.execute(
+                """
+                SELECT d.ders_id
+                FROM mufredat_ders md
+                JOIN ders d ON d.ders_id = md.ders_id
+                WHERE md.mufredat_id = ?
+                ORDER BY md.ders_id
+                """,
+                (mufredat_id,),
+            )
+            dersler = [int(r[0]) for r in cur.fetchall()]
+            if not dersler:
+                eksik_mufredat.append({"bolum_id": bolum_id, "bolum": bolum_adi})
+                continue
+            mevcut_mufredatlar[bolum_id] = dersler
+
+        if eksik_mufredat:
+            return {
+                "ok": False,
+                "error": "Bazi bolumlerde secilen yil/donem icin mufredat bulunamadi.",
+                "missing_curricula": eksik_mufredat,
+            }
+
+        eksik_kriter = []
+        for bolum_id, dersler in mevcut_mufredatlar.items():
+            bolum_adi = next((b[1] for b in bolumler if b[0] == bolum_id), str(bolum_id))
+            for ders_id in dersler:
+                if not _has_full_criteria(cur, ders_id, akademik_yil, donem):
+                    cur.execute("SELECT ad FROM ders WHERE ders_id = ?", (ders_id,))
+                    dr = cur.fetchone()
+                    ders_adi = str(dr[0]) if dr else str(ders_id)
+                    eksik_kriter.append(
+                        {
+                            "bolum_id": bolum_id,
+                            "bolum": bolum_adi,
+                            "ders_id": ders_id,
+                            "ders": ders_adi,
+                        }
+                    )
+
+        if eksik_kriter:
+            return {
+                "ok": False,
+                "error": "Tum bolum mufredatlarinda kriterler tamamlanmadan otomatik gecis yapilamaz.",
+                "missing_criteria": eksik_kriter,
+            }
+
+        tip_col = _resolve_elective_col(cur)
+
+        if tip_col:
+            cur.execute(
+                f"""
+                SELECT ders_id
+                FROM ders
+                WHERE fakulte_id = ?
+                  AND COALESCE({tip_col}, '') LIKE 'Se%'
+                """,
+                (fakulte_id,),
+            )
+            aday_dersler = {int(r[0]) for r in cur.fetchall()}
+        else:
+            aday_dersler = set()
+
+        for dersler in mevcut_mufredatlar.values():
+            aday_dersler.update(int(d) for d in dersler)
+
+        if not aday_dersler:
+            return {
+                "ok": False,
+                "error": "Aday ders bulunamadi (fakulte dersi veya mufredat dersi yok).",
+            }
+
+        cur.execute(
+            "SELECT ders_id, bolum_id, ad FROM ders WHERE fakulte_id = ?",
+            (fakulte_id,),
+        )
+        ders_meta = {}
+        for r in cur.fetchall():
+            d_id = int(r[0])
+            ders_meta[d_id] = {
+                "bolum_id": int(r[1]) if r[1] is not None else None,
+                "ad": str(r[2] or ""),
+            }
+
+        motor = KararMotoru()
+        agirliklar = motor.ahp_calistir()
+
+        metric_rows = []
+        metric_map = {}
+        for ders_id in sorted(aday_dersler):
+            m = _read_course_metrics(cur, ders_id, akademik_yil, donem, motor)
+            if ders_id in ders_meta:
+                m["ders"] = ders_meta[ders_id].get("ad", str(ders_id))
+            else:
+                m["ders"] = str(ders_id)
+            metric_rows.append(m)
+            metric_map[ders_id] = m
+
+        df = pd.DataFrame(metric_rows)
+        if df.empty:
+            return {"ok": False, "error": "Skor hesaplamak icin veri yok."}
+
+        df_sonuc, _ = motor.topsis_calistir(df, agirliklar)
+        skor_map = {}
+        if not df_sonuc.empty:
+            for _, r in df_sonuc.iterrows():
+                d_id = int(r.get("ders_id", 0) or 0)
+                if d_id <= 0:
+                    continue
+                kp = r.get("Kesinlesme_Puani")
+                if kp is None or (isinstance(kp, float) and math.isnan(kp)):
+                    kp = _safe_float2(r.get("AHP_TOPSIS_Skor"), 0.5) * 100.0
+                skor_map[d_id] = round(_safe_float2(kp, 50.0), 2)
+
+        cur.execute(
+            """
+            SELECT CAST(ders_id AS INTEGER) as d_id, statu, sayac
+            FROM havuz
+            WHERE yil = ? AND fakulte_id = ?
+            """,
+            (akademik_yil, fakulte_id),
+        )
+        prev_havuz = {
+            int(r[0]): {"statu": int(r[1] or 0), "sayac": int(r[2] or 0)}
+            for r in cur.fetchall()
+            if r[0] is not None
+        }
+
+        bolum_sonuc = []
+        yeni_mufredatlar = {}
+
+        def _sort_key(d_id):
+            sc = _safe_float2(skor_map.get(d_id), 0.0)
+            bas = _safe_float2(metric_map.get(d_id, {}).get("basari"), 0.0)
+            dol = _safe_float2(metric_map.get(d_id, {}).get("populerlik"), 0.0)
+            return (sc, bas, dol, -int(d_id))
+
+        tum_aday_sirali = sorted(list(aday_dersler), key=_sort_key, reverse=True)
+
+        for bolum_id, bolum_adi in bolumler:
+            mevcut = list(mevcut_mufredatlar.get(bolum_id, []))
+            hedef_adet = len(mevcut)
+
+            dusenler = []
+            kalanlar = []
+
+            for d_id in mevcut:
+                score = _safe_float2(skor_map.get(d_id), 0.0)
+                prev_statu = int(prev_havuz.get(d_id, {}).get("statu", 0))
+                if prev_statu in (-1, -2) or score < float(drop_score_threshold):
+                    dusenler.append(d_id)
+                else:
+                    kalanlar.append(d_id)
+
+            if not dusenler:
+                yeni = list(mevcut)
+                eklenenler = []
+            else:
+                yeni = list(kalanlar)
+                blok = set(yeni) | set(dusenler)
+
+                bolum_ici = [
+                    d_id
+                    for d_id in tum_aday_sirali
+                    if d_id not in blok
+                    and int(prev_havuz.get(d_id, {}).get("statu", 0)) not in (-1, -2)
+                    and ders_meta.get(d_id, {}).get("bolum_id") == bolum_id
+                ]
+                fakulte_geneli = [
+                    d_id
+                    for d_id in tum_aday_sirali
+                    if d_id not in blok
+                    and d_id not in bolum_ici
+                    and int(prev_havuz.get(d_id, {}).get("statu", 0)) not in (-1, -2)
+                ]
+
+                for d_id in bolum_ici + fakulte_geneli:
+                    if len(yeni) >= hedef_adet:
+                        break
+                    if d_id not in yeni:
+                        yeni.append(d_id)
+
+                eklenenler = [d for d in yeni if d not in mevcut]
+
+                if len(yeni) < hedef_adet:
+                    for d_id in sorted(dusenler, key=_sort_key, reverse=True):
+                        if len(yeni) >= hedef_adet:
+                            break
+                        if d_id not in yeni:
+                            yeni.append(d_id)
+
+            yeni_unique = []
+            seen = set()
+            for d_id in yeni:
+                if d_id not in seen:
+                    seen.add(d_id)
+                    yeni_unique.append(d_id)
+            yeni_unique = yeni_unique[:hedef_adet]
+
+            if len(yeni_unique) < hedef_adet:
+                for d_id in mevcut:
+                    if len(yeni_unique) >= hedef_adet:
+                        break
+                    if d_id not in yeni_unique:
+                        yeni_unique.append(d_id)
+
+            yeni_mufredatlar[bolum_id] = yeni_unique
+            bolum_sonuc.append(
+                {
+                    "bolum_id": bolum_id,
+                    "bolum": bolum_adi,
+                    "mevcut_adet": len(mevcut),
+                    "dusenler": [
+                        {
+                            "ders_id": d,
+                            "ders": ders_meta.get(d, {}).get("ad", str(d)),
+                            "score": _safe_float2(skor_map.get(d), 0.0),
+                        }
+                        for d in dusenler
+                    ],
+                    "eklenenler": [
+                        {
+                            "ders_id": d,
+                            "ders": ders_meta.get(d, {}).get("ad", str(d)),
+                            "score": _safe_float2(skor_map.get(d), 0.0),
+                        }
+                        for d in eklenenler
+                    ],
+                    "tasindi_mi": len(dusenler) == 0,
+                }
+            )
+
+        for bolum_id, bolum_adi in bolumler:
+            dersler = yeni_mufredatlar.get(bolum_id, [])
+            cur.execute(
+                """
+                SELECT mufredat_id
+                FROM mufredat
+                WHERE fakulte_id = ? AND bolum_id = ? AND akademik_yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                ORDER BY COALESCE(versiyon, 0) DESC, mufredat_id DESC
+                LIMIT 1
+                """,
+                (fakulte_id, bolum_id, sonraki_yil, donem),
+            )
+            existing = cur.fetchone()
+            if existing:
+                hedef_muf_id = int(existing[0])
+                cur.execute("DELETE FROM mufredat_ders WHERE mufredat_id = ?", (hedef_muf_id,))
+                cur.execute(
+                    "UPDATE mufredat SET durum = ? WHERE mufredat_id = ?",
+                    ("Otomatik", hedef_muf_id),
+                )
+            else:
+                cur.execute(
+                    "SELECT COALESCE(MAX(versiyon), 0) FROM mufredat WHERE fakulte_id = ? AND bolum_id = ?",
+                    (fakulte_id, bolum_id),
+                )
+                max_ver = int(cur.fetchone()[0] or 0)
+                cur.execute(
+                    """
+                    INSERT INTO mufredat (fakulte_id, bolum_id, akademik_yil, donem, durum, versiyon)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (fakulte_id, bolum_id, sonraki_yil, donem, "Otomatik", max_ver + 1),
+                )
+                hedef_muf_id = int(cur.lastrowid)
+
+            for d_id in dersler:
+                cur.execute(
+                    "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
+                    (hedef_muf_id, int(d_id)),
+                )
+
+        secilenler = set()
+        for dersler in yeni_mufredatlar.values():
+            secilenler.update(int(d) for d in dersler)
+
+        cur.execute("SELECT ders_id, bolum_id, ad FROM ders WHERE fakulte_id = ?", (fakulte_id,))
+        tum_dersler = [(int(r[0]), int(r[1]) if r[1] is not None else None, str(r[2] or "")) for r in cur.fetchall()]
+
+        upsert_count = 0
+        for ders_id, bolum_id, ders_adi in tum_dersler:
+            prev = prev_havuz.get(ders_id, {"statu": 0, "sayac": 0})
+            yeni_statu, yeni_sayac = calculate_next_status(
+                int(prev.get("statu", 0)),
+                int(prev.get("sayac", 0)),
+                ders_id in secilenler,
+            )
+            skor_val = int(round(_safe_float2(skor_map.get(ders_id), 50.0)))
+
+            cur.execute(
+                """
+                UPDATE havuz SET bolum_id=?, statu=?, sayac=?, skor=?, ders_adi=?
+                WHERE ders_id=? AND fakulte_id=? AND yil=?
+                """,
+                (bolum_id, yeni_statu, yeni_sayac, skor_val, ders_adi or "", str(ders_id), fakulte_id, sonraki_yil),
+            )
+            if cur.rowcount == 0:
+                cur.execute(
+                    """
+                    INSERT INTO havuz (ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (str(ders_id), sonraki_yil, fakulte_id, bolum_id, yeni_statu, yeni_sayac, skor_val, ders_adi or ""),
+                )
+            upsert_count += 1
+
+        conn.commit()
+
+        return {
+            "ok": True,
+            "fakulte_id": fakulte_id,
+            "fakulte": str(fak[0]),
+            "year_from": akademik_yil,
+            "year_to": sonraki_yil,
+            "donem": donem,
+            "departments": bolum_sonuc,
+            "pool_rows_upserted": upsert_count,
+        }
+
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        return {
+            "ok": False,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
     finally:
         if conn:
             conn.close()

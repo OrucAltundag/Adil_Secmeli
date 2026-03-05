@@ -98,7 +98,8 @@ class AdilSecmeliApp(tk.Tk):
             {"id": "topsis",  "name": "4. TOPSIS (Sıralama)"},
             {"id": "lr",      "name": "Lineer Regresyon (Tahmin)"},
             {"id": "rf",      "name": "Random Forest (Sınıflandırma)"},
-            {"id": "dt",      "name": "Decision Tree (Karar)"}
+            {"id": "dt",      "name": "Decision Tree (Karar)"},
+            {"id": "next_year", "name": "Sonraki Yil Mufredat Uretimi"}
         ]
 
         # ---- BÖLÜM 2.1: Üst çubuk (Header) ----

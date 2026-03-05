@@ -291,55 +291,74 @@ class CourseAnalysisTab(ttk.Frame):
 
     def _load_faculties(self):
         try:
-            _, rows = self.db.run_sql("SELECT ad FROM fakulte ORDER BY ad")
-            vals = [r[0] for r in (rows or [])]
-            self.cb_fakulte["values"] = vals
-            if vals and self.cb_fakulte.current() < 0:
-                self.cb_fakulte.current(0)
-            self._on_faculty_change(None)
-        except Exception:
-            pass
+            if not getattr(self.db, "conn", None):
+                return
+            _, rows = self.db.run_sql("SELECT fakulte_id, ad FROM fakulte ORDER BY ad")
+            vals = [str(r[1]) for r in (rows or [])]
+            self._fakulte_map = {str(r[1]): int(r[0]) for r in (rows or [])}
+            self.cb_fakulte["values"] = tuple(vals)
+            if vals:
+                try:
+                    self.cb_fakulte.current(0)
+                except tk.TclError:
+                    self.cb_fakulte.set(vals[0])
+                self._on_faculty_change(None)
+            self.update_idletasks()
+        except Exception as e:
+            print(f"[CourseAnalysisTab] _load_faculties hatasi: {e}")
 
     def _on_faculty_change(self, _event):
         fak = self.cb_fakulte.get()
         if not fak:
             return
         try:
-            _, rows = self.db.run_sql(
-                "SELECT fakulte_id FROM fakulte WHERE ad = ?", (fak,)
-            )
-            if not rows:
-                self._ders_list = []
-                self._ders_map = {}
-                self._update_ders_combo("")
-                return
-            fid = int(rows[0][0])
+            fid = getattr(self, "_fakulte_map", {}).get(fak)
+            if fid is None:
+                _, rows = self.db.run_sql(
+                    "SELECT fakulte_id FROM fakulte WHERE TRIM(ad) = TRIM(?)", (fak,)
+                )
+                if not rows:
+                    self._ders_list = []
+                    self._ders_map = {}
+                    self._update_ders_combo("")
+                    return
+                fid = int(rows[0][0])
 
+            ders_rows = []
             # 1) Müfredat yolu: müfredat->bolum->fakulte (Mühendislik, Tıp vb. için)
-            _, d1 = self.db.run_sql(
-                """SELECT DISTINCT d.ders_id, d.ad
-                   FROM ders d
-                   JOIN mufredat_ders md ON d.ders_id = md.ders_id
-                   JOIN mufredat m ON md.mufredat_id = m.mufredat_id
-                   JOIN bolum b ON m.bolum_id = b.bolum_id
-                   WHERE b.fakulte_id = ?
-                   ORDER BY d.ad""",
-                (fid,)
-            )
+            try:
+                _, d1 = self.db.run_sql(
+                    """SELECT DISTINCT d.ders_id, d.ad
+                       FROM ders d
+                       JOIN mufredat_ders md ON d.ders_id = md.ders_id
+                       JOIN mufredat m ON md.mufredat_id = m.mufredat_id
+                       JOIN bolum b ON m.bolum_id = b.bolum_id
+                       WHERE b.fakulte_id = ?
+                       ORDER BY d.ad""",
+                    (fid,)
+                )
+                ders_rows = list(d1 or [])
+            except Exception:
+                pass
+
             # 2) ders.fakulte_id ile (bazı şemalarda doğrudan bağlı)
-            _, d2 = self.db.run_sql(
-                "SELECT DISTINCT ders_id, ad FROM ders WHERE fakulte_id = ? ORDER BY ad",
-                (fid,)
-            )
-            # 3) Birleştir, tekrarları kaldır (id bazlı)
-            seen = {}
-            for r in (d1 or []) + (d2 or []):
-                k = int(r[0])
-                if k not in seen:
-                    seen[k] = (r[0], r[1])
-            ders_rows = list(seen.values())
-            ders_rows.sort(key=lambda x: (str(x[1]), x[0]))
-            # 4) Hâlâ boşsa havuz tablosundan al
+            try:
+                _, d2 = self.db.run_sql(
+                    "SELECT DISTINCT ders_id, ad FROM ders WHERE fakulte_id = ? ORDER BY ad",
+                    (fid,)
+                )
+                # Birleştir, tekrarları kaldır
+                seen = {int(r[0]): (int(r[0]), str(r[1] or "")) for r in (ders_rows or [])}
+                for r in (d2 or []):
+                    k = int(r[0])
+                    if k not in seen:
+                        seen[k] = (k, str(r[1] or ""))
+                ders_rows = sorted(seen.values(), key=lambda x: (str(x[1]), x[0]))
+            except Exception:
+                if not ders_rows:
+                    pass  # ders_rows zaten bos
+
+            # 3) Hâlâ boşsa havuz tablosundan al
             if not ders_rows:
                 try:
                     _, havuz_rows = self.db.run_sql(
@@ -359,7 +378,8 @@ class CourseAnalysisTab(ttk.Frame):
                 (f"{r[0]} — {r[1]}", int(r[0])) for r in (ders_rows or [])
             ]
             self._ders_map = {display: d_id for display, d_id in self._ders_list}
-            self._update_ders_combo(self.cb_ders.get().strip())
+            # Fakulte degisince eski ders metnini filtre olarak tasima.
+            self._update_ders_combo("")
         except Exception as e:
             print(f"[CourseAnalysisTab] fakulte degisimi hatasi: {e}")
             self._ders_list = []
@@ -377,6 +397,7 @@ class CourseAnalysisTab(ttk.Frame):
             self.cb_ders["values"] = ["(Bu fakülte için ders bulunamadı)"]
             self.cb_ders.set("")
             self.btn_start.config(state="disabled")
+            self.update_idletasks()
             return
         self.btn_start.config(state="normal")
         q = (query or "").lower()
@@ -387,11 +408,17 @@ class CourseAnalysisTab(ttk.Frame):
                 d[0] for d in ders_list
                 if q in d[0].lower()
             ]
-        self.cb_ders["values"] = filtered
+            if not filtered:
+                filtered = [d[0] for d in ders_list]
+        self.cb_ders["values"] = tuple(filtered)
         if filtered:
-            self.cb_ders.current(0)
+            try:
+                self.cb_ders.current(0)
+            except tk.TclError:
+                self.cb_ders.set(filtered[0])
         else:
             self.cb_ders.set("")
+        self.update_idletasks()
 
     # =========================================================
     #  ANALIZ BASLAT

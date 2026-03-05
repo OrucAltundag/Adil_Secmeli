@@ -52,6 +52,17 @@ class CalcTab(ttk.Frame):
         self.page_pool = PoolTab(self.sub_nb, app=self.app)
         self.sub_nb.add(self.page_pool, text="Havuz Yonetimi")
 
+        # Alt sekme degisince Ders Lab'i yenile (Combobox degerleri gosterilmeden set edilirse bos kalabilir)
+        self.sub_nb.bind("<<NotebookTabChanged>>", self._on_sub_tab_changed)
+
+    def _on_sub_tab_changed(self, event=None):
+        """Algoritma Kontrol & Ders Lab sekmesi acildiginda ders listesini yukle."""
+        try:
+            idx = self.sub_nb.index(self.sub_nb.select())
+            if idx == 1:  # Algoritma Kontrol & Ders Lab
+                self.page_lab.refresh()
+        except Exception:
+            pass
 
     # =========================================================
     #  PUBLIC
@@ -164,6 +175,7 @@ class CalcTab(ttk.Frame):
                 {"id": "lr", "name": "Lineer Regresyon (Tahmin)"},
                 {"id": "rf", "name": "Random Forest (Sınıflandırma)"},
                 {"id": "dt", "name": "Decision Tree (Karar)"},
+                {"id": "next_year", "name": "Sonraki Yıl Müfredat Üretimi"},
             ]
 
         self.ui_refs = {}
@@ -355,7 +367,102 @@ class CalcTab(ttk.Frame):
                     else:
                         sonuc_metni += "Hesaplama sonucu boş döndü."
 
-            # 5) ML
+            # 5) Sonraki yil mufredat uretimi (bolum bazli)
+            elif algo_id == "next_year":
+                from app.services.calculation import generate_next_year_curricula
+                import os
+
+                cb_fak = getattr(self.page_lab, "cb_fakulte", None)
+                cb_yil = getattr(self.page_lab, "cb_yil", None)
+
+                fakulte_adi = cb_fak.get().strip() if cb_fak and cb_fak.get() else ""
+                yil_str = cb_yil.get().strip() if cb_yil and cb_yil.get() else ""
+
+                if not fakulte_adi or not yil_str:
+                    raise ValueError("Lutfen Ders Lab alanindan fakulte ve yil secin.")
+
+                fakulte_id = getattr(self.page_lab, "_fakulte_map", {}).get(fakulte_adi)
+                if fakulte_id is None:
+                    _, rr = self.db.run_sql(
+                        "SELECT fakulte_id FROM fakulte WHERE TRIM(ad)=TRIM(?) LIMIT 1",
+                        (fakulte_adi,)
+                    )
+                    if rr:
+                        fakulte_id = int(rr[0][0])
+
+                if fakulte_id is None:
+                    raise ValueError(f"Fakulte ID bulunamadi: {fakulte_adi}")
+
+                db_path = getattr(self.app, "db_path", None) or self.db_path
+                if not db_path:
+                    raise ValueError("Veritabani yolu bulunamadi.")
+                db_path = os.path.abspath(db_path)
+
+                donem = "G"
+                sonuc = generate_next_year_curricula(
+                    db_path=db_path,
+                    fakulte_id=int(fakulte_id),
+                    akademik_yil=int(yil_str),
+                    donem=donem,
+                )
+
+                if not sonuc.get("ok"):
+                    basarili_mi = False
+                    msg = ["Sonraki yil mufredat uretimi basarisiz."]
+                    if sonuc.get("error"):
+                        msg.append(f"Hata: {sonuc['error']}")
+
+                    eksik_krit = sonuc.get("missing_criteria") or []
+                    if eksik_krit:
+                        msg.append("\nEksik kriter girisleri:")
+                        for it in eksik_krit[:20]:
+                            msg.append(f"- {it.get('bolum')} | {it.get('ders')} (ID:{it.get('ders_id')})")
+                        if len(eksik_krit) > 20:
+                            msg.append(f"... +{len(eksik_krit)-20} ders daha")
+
+                    eksik_muf = sonuc.get("missing_curricula") or []
+                    if eksik_muf:
+                        msg.append("\nEksik mufredat kayitlari:")
+                        for it in eksik_muf:
+                            msg.append(f"- {it.get('bolum')} (bolum_id={it.get('bolum_id')})")
+
+                    sonuc_metni = "\n".join(msg)
+                else:
+                    lines = []
+                    lines.append("Bolum bazli sonraki yil mufredat uretimi tamamlandi.")
+                    lines.append(
+                        f"Fakulte: {sonuc.get('fakulte')} (ID:{sonuc.get('fakulte_id')}) | "
+                        f"{sonuc.get('year_from')} -> {sonuc.get('year_to')} | Donem: {sonuc.get('donem')}"
+                    )
+                    lines.append(f"Havuz upsert: {sonuc.get('pool_rows_upserted', 0)} satir")
+                    lines.append("")
+
+                    for bol in sonuc.get("departments", []):
+                        b_ad = bol.get("bolum", "?")
+                        if bol.get("tasindi_mi"):
+                            lines.append(f"- {b_ad}: Dusen ders yok, mufredat aynen tasindi.")
+                            continue
+
+                        dusen = bol.get("dusenler", [])
+                        eklenen = bol.get("eklenenler", [])
+                        d_txt = ", ".join([f"{x.get('ders')} [{x.get('score',0):.1f}]" for x in dusen]) or "-"
+                        e_txt = ", ".join([f"{x.get('ders')} [{x.get('score',0):.1f}]" for x in eklenen]) or "-"
+                        lines.append(f"- {b_ad}:")
+                        lines.append(f"  Dusenler : {d_txt}")
+                        lines.append(f"  Eklenenler: {e_txt}")
+
+                    sonuc_metni = "\n".join(lines)
+
+                    try:
+                        self.page_pool.refresh()
+                    except Exception:
+                        pass
+                    try:
+                        self.page_lab.refresh()
+                    except Exception:
+                        pass
+
+            # 6) ML
             elif algo_id in ["lr", "rf", "dt"]:
                 from app.services.ai_engine import AIEngine
                 try:

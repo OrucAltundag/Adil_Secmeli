@@ -101,8 +101,15 @@ class PoolTab(ttk.Frame):
             width=8
         )
         self.cb_yil.pack(side=tk.LEFT, padx=4)
-        self.cb_yil.current(0)   # varsayilan 2022
+        self.cb_yil.current(0)
         self.cb_yil.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
+
+        tk.Label(top, text="Donem:", bg="#f1f5f9",
+                 font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
+        self.cb_donem = ttk.Combobox(top, state="readonly", values=["Güz", "Bahar"], width=8)
+        self.cb_donem.pack(side=tk.LEFT, padx=4)
+        self.cb_donem.current(0)
+        self.cb_donem.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
 
         ttk.Button(top, text="Getir", command=self.load_pool_data).pack(
             side=tk.LEFT, padx=14)
@@ -414,6 +421,9 @@ class PoolTab(ttk.Frame):
         if not bolum:
             return
 
+        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Güz"
+        donem_norm = str(donem).strip() or "Güz"
+
         q_curr = """
             SELECT DISTINCT d.ders_id, d.ad, h.skor
             FROM mufredat m
@@ -422,10 +432,11 @@ class PoolTab(ttk.Frame):
             JOIN bolum b ON m.bolum_id = b.bolum_id
             LEFT JOIN havuz h ON (h.ders_id = d.ders_id AND h.yil = m.akademik_yil)
             WHERE m.akademik_yil = ? AND b.ad LIKE ?
+              AND (LOWER(COALESCE(m.donem,'Güz')) = LOWER(?))
             ORDER BY d.ad
         """
         try:
-            _, rows_r = self.db.run_sql(q_curr, (int(yil), f"%{bolum}%"))
+            _, rows_r = self.db.run_sql(q_curr, (int(yil), f"%{bolum}%", donem_norm))
             seen_r = set()
             for d_id, d_ad, skor in (rows_r or []):
                 if d_id in seen_r:
