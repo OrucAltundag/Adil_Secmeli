@@ -6,15 +6,17 @@
 # yazar. Algoritmalar (calculation.py) performans/popülerlik'ten okur.
 # =============================================================================
 
+import os
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import sqlite3
 
 
 class CriteriaPage:
-    def __init__(self, parent, db):
+    def __init__(self, parent, db, app=None):
         self.parent = parent
         self.db = db
+        self.app = app
         self.selected_course_id = None
 
         self._ensure_table()
@@ -148,6 +150,9 @@ class CriteriaPage:
         # Listele Butonu
         tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
+        # Excel'den Toplu Kriter Yükle
+        tk.Button(parent, text="📂 Excel'den Toplu Yükle", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
+                  command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=10)
 
     def create_form_ui(self, parent):
         tk.Label(parent, text="KRİTER VERİ GİRİŞİ", bg="#1e293b", fg="white", 
@@ -212,6 +217,38 @@ class CriteriaPage:
         return entry
 
     # --- VERİ İŞLEMLERİ ---
+
+    def import_kriterler_excel(self):
+        """Excel'den ders kriterlerini toplu yükler."""
+        path = filedialog.askopenfilename(
+            title="Kriter Excel Seç",
+            filetypes=[("Excel", "*.xlsx *.xls"), ("Tümü", "*.*")]
+        )
+        if not path:
+            return
+        db_path = None
+        if self.app:
+            db_path = getattr(self.app, "db_path", None)
+        if not db_path:
+            import json
+            try:
+                with open("config.json", "r", encoding="utf-8") as f:
+                    db_path = json.load(f).get("db_path")
+            except Exception:
+                pass
+        if not db_path or not os.path.exists(db_path):
+            messagebox.showwarning("Uyarı", "Veritabanı bağlantısı yok.")
+            return
+        try:
+            from app.etl.import_kriterler_excel import run_import as run_kriter_import
+            ok, msg, counts = run_kriter_import(excel_path=path, db_path=db_path)
+            if ok:
+                messagebox.showinfo("Tamam", msg)
+                self.load_courses()
+            else:
+                messagebox.showerror("Hata", msg)
+        except Exception as e:
+            messagebox.showerror("Hata", f"Import hatası: {e}")
 
     def load_faculties(self):
         if not getattr(self.db, "conn", None):
@@ -580,6 +617,11 @@ class CriteriaPage:
                 """, (c_id, yil, donem_db, kayit, kont, doluluk_orani))
 
             self.db.conn.commit()
+            try:
+                from app.utils.logger import log_operation
+                log_operation("Kriter kaydedildi", f"ders_id={c_id} yil={yil}", success=True)
+            except Exception:
+                pass
 
             msg = "Veriler kaydedildi."
             if in_mufredat:

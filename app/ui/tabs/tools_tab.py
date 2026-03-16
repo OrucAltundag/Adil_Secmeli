@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 
 from app.services.havuz_karar import muhendislik_mufredat_durumunu_esitle
+from app.etl.import_mufredat_excel import run_import as run_mufredat_import
 
 
 class ToolsTab(ttk.Frame):
@@ -87,6 +88,7 @@ class ToolsTab(ttk.Frame):
         self.cb_yil.bind("<<ComboboxSelected>>", lambda e: self.load_report())
 
         ttk.Button(top, text="📌 Rapor Getir", command=self.load_report).pack(side=tk.LEFT, padx=6)
+        ttk.Button(top, text="📂 Müfredat Excel Yükle", command=self.import_mufredat_excel).pack(side=tk.LEFT, padx=6)
         ttk.Button(top, text="🔁 Statü/Yıl Eşitle", command=self.sync_status_year).pack(side=tk.LEFT, padx=6)
         ttk.Button(top, text="🧰 DB Yedekle", command=self.backup_db).pack(side=tk.LEFT, padx=6)
 
@@ -307,6 +309,32 @@ class ToolsTab(ttk.Frame):
     # =========================================================
     # ACTIONS
     # =========================================================
+    def import_mufredat_excel(self):
+        """Excel'den müfredat verisi yükler."""
+        path = filedialog.askopenfilename(
+            title="Müfredat Excel Seç",
+            filetypes=[("Excel", "*.xlsx *.xls"), ("Tümü", "*.*")]
+        )
+        if not path:
+            return
+        if not self.db_path or not os.path.exists(self.db_path):
+            messagebox.showwarning("Uyarı", "Veritabanı bağlantısı yok.")
+            return
+        try:
+            from app.utils.logger import log_operation
+            ok, msg, counts = run_mufredat_import(excel_path=path, db_path=self.db_path)
+            if ok:
+                log_operation("Müfredat Excel import", msg, success=True)
+                self.log(f"✅ {msg}")
+                messagebox.showinfo("Tamam", msg)
+                self.load_report()
+            else:
+                self.log(f"❌ {msg}")
+                messagebox.showerror("Hata", msg)
+        except Exception as e:
+            self.log(f"❌ Müfredat import hatası: {e}")
+            messagebox.showerror("Hata", str(e))
+
     def sync_status_year(self):
         if not self.db_path:
             messagebox.showwarning("Uyarı", "DB yolu bulunamadı.")

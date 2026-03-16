@@ -106,19 +106,23 @@ def find_course_id(cur, ders_adi: str):
 # -------------------------------------------------------
 # Main
 # -------------------------------------------------------
-def run_import():
-    print("🚀 Müfredat aktarımı başlıyor...")
-    print(f"📂 DB   : {DB_PATH}")
-    print(f"📂 Excel: {EXCEL_PATH}")
+def run_import(excel_path=None, db_path=None):
+    """
+    Excel'den müfredat verisi aktarır.
+    excel_path: Excel dosya yolu (None ise data/2022_mufredat.xlsx)
+    db_path: Veritabanı yolu (None ise DB_PATH)
+    Returns: (ok: bool, msg: str, counts: dict)
+    """
+    db = db_path or DB_PATH
+    excel = excel_path or EXCEL_PATH
+    result = {"mufredat": 0, "link": 0, "skipped_year": 0}
 
-    if not DB_PATH or not os.path.exists(DB_PATH):
-        print("❌ DB bulunamadı. data klasörünü ve dosya adını kontrol et.")
-        return
-    if not os.path.exists(EXCEL_PATH):
-        print("❌ Excel bulunamadı. data/2022_mufredat.xlsx yolunu kontrol et.")
-        return
+    if not db or not os.path.exists(db):
+        return False, "Veritabanı bulunamadı.", result
+    if not excel or not os.path.exists(excel):
+        return False, "Excel dosyası bulunamadı.", result
 
-    df = pd.read_excel(EXCEL_PATH)
+    df = pd.read_excel(excel)
     df.columns = [c.strip() for c in df.columns]
 
     # Kolonları esnek bul
@@ -134,11 +138,9 @@ def run_import():
     print("  Dönem   :", col_don)
 
     if not (col_fak and col_bol and col_yil):
-        print("❌ Gerekli kolonlar bulunamadı. Excel başlıklarını kontrol et.")
-        print("   Beklenen: Fakülte, Bölüm, (Akademik Yıl/Yıl), (Dönem opsiyonel)")
-        return
+        return False, "Gerekli kolonlar bulunamadı: Fakülte, Bölüm, Yıl", result
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
 
     try:
@@ -227,23 +229,23 @@ def run_import():
                     count_link += 1
 
         conn.commit()
-
-        print("\n" + "=" * 44)
-        print("🎉 AKTARIM TAMAMLANDI")
-        print(f"📘 Eklenen Müfredat : {count_muf}")
-        print(f"🔗 Bağlanan Ders    : {count_link}")
-        print(f"⚠️ Yıl atlanan satır: {skipped_year}")
-        print("=" * 44)
-
-        if count_muf == 0:
-            print("💡 Not: Müfredat 0 ise genelde 'Yıl' kolonunu yanlış yakalıyoruz demektir.")
-            print("   Excel’de yıl başlığını 'Akademik Yıl' yapmayı veya scriptteki kolon eşleşmesini kontrol etmeyi dene.")
-        if count_link == 0:
-            print("💡 Not: Bağlanan ders 0 ise ders adları DB’deki 'ders.ad' ile uyuşmuyor olabilir.")
-            print("   (Büyük/küçük harf, boşluk, farklı yazım) — bu script LIKE fallback ile bile bulamadıysa isimler çok farklıdır.")
+        result = {"mufredat": count_muf, "link": count_link, "skipped_year": skipped_year}
+        msg = f"Aktarım tamamlandı. Müfredat: {count_muf}, Bağlanan ders: {count_link}"
+        if skipped_year:
+            msg += f", Yıl atlanan: {skipped_year}"
+        return True, msg, result
 
     finally:
         conn.close()
 
+
+def _main():
+    ok, msg, counts = run_import()
+    print("Müfredat aktarımı...")
+    print(msg)
+    if not ok:
+        exit(1)
+
+
 if __name__ == "__main__":
-    run_import()
+    _main()

@@ -151,7 +151,6 @@ class OgretimGorevlisi(Base):
     fakulte = relationship("Fakulte", back_populates="ogretim_gorevlileri")
     ders_gorevleri = relationship("DersOgretim", back_populates="ogretim_gorevlisi")
     kayitlar = relationship("Kayit", back_populates="ogretim_gorevlisi")
-    performanslar = relationship("Performans", back_populates="ogretim_gorevlisi")
 
 
 # ---------------------------

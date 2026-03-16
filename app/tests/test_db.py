@@ -1,33 +1,65 @@
 # =============================================================================
-# app/tests/test_db.py — Veritabanı Bağlantı ve Temel Model Testi
+# app/tests/test_db.py — Veritabanı Bağlantı ve Temel Okuma Testi
 # =============================================================================
 # Bu test:
-# - SQLAlchemy SessionLocal ile veritabanı bağlantısını kontrol eder
-# - Mevcut modellerden (Havuz) örnek okuma yapar
+# - config.json veya varsayılan DB yolundan veritabanına bağlanır
+# - Raw SQLite ile havuz/ders tablolarından okuma yapar (ORM şemasından bağımsız)
 # =============================================================================
 
 import os
 import sys
+import json
+import sqlite3
 
 # Proje kökünü path'e ekle
 _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from app.db.database import SessionLocal
-from app.db.models import Havuz
+os.chdir(_root)
+
+
+def _get_db_path() -> str:
+    """config.json'dan veya varsayılandan DB yolunu al."""
+    default = os.path.join(_root, "data", "adil_secmeli.db")
+    cfg = os.path.join(_root, "config.json")
+    if os.path.exists(cfg):
+        try:
+            with open(cfg, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("db_path", default)
+        except Exception:
+            pass
+    for p in (default, os.path.join(_root, "adil_secmeli.db"), "./adil_secmeli.db"):
+        if p and os.path.exists(p):
+            return p
+    return default
 
 
 def test_db_connection():
-    """Veritabanı bağlantısı ve temel okuma testi."""
-    db = SessionLocal()
+    """Veritabanı bağlantısı ve temel okuma testi (raw SQLite)."""
+    db_path = _get_db_path()
+    if not os.path.exists(db_path):
+        raise AssertionError(f"DB dosyası bulunamadı: {db_path}")
+
+    conn = sqlite3.connect(db_path)
     try:
-        count = db.query(Havuz).count()
-        assert count >= 0, "Havuz tablosu okunamadı"
-    except Exception as e:
-        raise AssertionError(f"DB test hatası: {e}") from e
+        cur = conn.cursor()
+        # havuz tablosu var mı?
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='havuz'")
+        if not cur.fetchone():
+            raise AssertionError("havuz tablosu yok")
+
+        cur.execute("SELECT COUNT(*) FROM havuz")
+        count = cur.fetchone()[0]
+        assert count >= 0, "Havuz okunamadı"
+
+        # ders tablosu da kontrol
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ders'")
+        if not cur.fetchone():
+            raise AssertionError("ders tablosu yok")
     finally:
-        db.close()
+        conn.close()
 
 
 if __name__ == "__main__":

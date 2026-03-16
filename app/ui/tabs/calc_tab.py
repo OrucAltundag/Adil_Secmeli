@@ -37,7 +37,7 @@ class CalcTab(ttk.Frame):
         # 0) Kriter Sayfası
         self.page_criteria = ttk.Frame(self.sub_nb)
         self.sub_nb.add(self.page_criteria, text="📝 Kriter Girdi İşlemleri")
-        self.criteria_view = CriteriaPage(self.page_criteria, self.db)
+        self.criteria_view = CriteriaPage(self.page_criteria, self.db, app=self.app)
 
         # 1) Algoritma Kontrol + Ders Laboratuvari (Birlesik Kokpit)
         self.page_algos = ttk.Frame(self.sub_nb)
