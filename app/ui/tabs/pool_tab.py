@@ -44,7 +44,7 @@ _RENK = {
 class PoolTab(ttk.Frame):
     """
     Havuz Yonetimi sekmesi:
-    - Fakulte / Bolum / Yil filtreleri (2022-2025)
+    - Fakulte / Bolum / Yil filtreleri (dinamik)
     - Ders havuzu tablosu (statu renklendirme + strikeout iptal)
     - Mufredat tablosu
     - Aciklama / Legend kutusu
@@ -97,11 +97,11 @@ class PoolTab(ttk.Frame):
                  font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
         self.cb_yil = ttk.Combobox(
             top, state="readonly",
-            values=["2022", "2023", "2024", "2025"],
+            values=[],
             width=8
         )
         self.cb_yil.pack(side=tk.LEFT, padx=4)
-        self.cb_yil.current(0)
+        self.cb_yil.set("")
         self.cb_yil.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
 
         tk.Label(top, text="Donem:", bg="#f1f5f9",
@@ -321,16 +321,23 @@ class PoolTab(ttk.Frame):
             if faculties and self.cb_fakulte.current() < 0:
                 self.cb_fakulte.current(0)
 
-            # Yıl listesini havuz tablosundan dinamik çek; varsayılan 2022-2025
+            # Yil listesini havuz + mufredat tablolarindan dinamik cek
             try:
                 _, yil_rows = self.db.run_sql(
-                    "SELECT DISTINCT yil FROM havuz WHERE yil BETWEEN 2022 AND 2025 ORDER BY yil"
+                    """
+                    SELECT DISTINCT yil FROM (
+                        SELECT yil as yil FROM havuz
+                        UNION
+                        SELECT akademik_yil as yil FROM mufredat
+                    )
+                    ORDER BY yil
+                    """
                 )
                 if yil_rows:
                     yillar = [str(r[0]) for r in yil_rows]
                     self.cb_yil["values"] = yillar
                     if self.cb_yil.get() not in yillar:
-                        self.cb_yil.current(0)
+                        self.cb_yil.set(yillar[-1])
             except Exception:
                 pass
 
@@ -386,12 +393,12 @@ class PoolTab(ttk.Frame):
             SELECT DISTINCT
                 h.ders_id, d.ad, h.statu, h.sayac, h.skor, h.yil
             FROM havuz h
-            JOIN ders d ON h.ders_id = d.ders_id
+            JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
             JOIN fakulte f ON h.fakulte_id = f.fakulte_id
             WHERE f.ad LIKE ?
               AND h.yil = ?
               {extra_where}
-            ORDER BY h.statu DESC, h.skor DESC
+            ORDER BY h.statu DESC, CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC
         """
         try:
             _, rows = self.db.run_sql(q_pool, (f"%{fakulte}%", int(yil)))
@@ -405,7 +412,7 @@ class PoolTab(ttk.Frame):
                 tag   = _STATU_TAG.get(s_val, "havuzda")
                 etkt  = _STATU_ETIKET.get(s_val, f"{s_val}")
 
-                skor_txt  = f"{float(skor):.2f}" if skor is not None else "0.00"
+                skor_txt  = f"{float(skor):.2f}" if skor is not None else "-"
                 sayac_val = int(sayac) if sayac is not None else 0
 
                 self.tree_pool.insert(
@@ -430,7 +437,7 @@ class PoolTab(ttk.Frame):
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN havuz h ON (h.ders_id = d.ders_id AND h.yil = m.akademik_yil)
+            LEFT JOIN havuz h ON (CAST(h.ders_id AS INTEGER) = d.ders_id AND h.yil = m.akademik_yil)
             WHERE m.akademik_yil = ? AND b.ad LIKE ?
               AND (LOWER(COALESCE(m.donem,'Güz')) = LOWER(?))
             ORDER BY d.ad
@@ -442,7 +449,7 @@ class PoolTab(ttk.Frame):
                 if d_id in seen_r:
                     continue
                 seen_r.add(d_id)
-                skor_txt = f"{float(skor):.2f}" if skor is not None else "---"
+                skor_txt = f"{float(skor):.2f}" if skor is not None else "-"
                 self.tree_curr.insert("", tk.END, values=(d_id, d_ad, skor_txt))
         except Exception as e:
             print(f"UI Hata (Mufredat): {e}")

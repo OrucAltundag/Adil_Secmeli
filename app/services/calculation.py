@@ -17,6 +17,8 @@ from app.services.havuz_karar import calculate_next_status
 # ---------- BÖLÜM 1: Karar Motoru (AHP + TOPSIS) ----------
 # AHP için RI (Random Index) - 4 kriter için
 RI_4 = 0.90
+DROP_SCORE_THRESHOLD = 40.0
+DROP_AVERAGE_GRADE_THRESHOLD = 45.0
 
 class KararMotoru:
     def __init__(self, db=None):
@@ -316,6 +318,12 @@ def yukle_gercek_2022_mufredati(conn, excel_path):
 # 3. ANA OTOMASYON (GÜVENLİ MOD)
 # =========================================================
 def run_automatic_scoring(db_path="data/adil_secmeli.db"):
+    """
+    Geriye donuk ad: yeni davranis acilista kriterleri hazir olan
+    fakulte/yillar icin sonraki yil mufredatini otomatik uretir.
+    """
+    return auto_generate_next_year_curricula(db_path=db_path, donem="G")
+
     conn = None
     try:
         if not os.path.exists(db_path):
@@ -610,7 +618,7 @@ def _has_full_criteria(cur, ders_id, yil, donem):
     try:
         cur.execute(
             """
-            SELECT toplam_ogrenci, gecen_ogrenci, kontenjan, kayitli_ogrenci
+            SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci
             FROM ders_kriterleri
             WHERE ders_id = ? AND yil = ?
               AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
@@ -624,59 +632,115 @@ def _has_full_criteria(cur, ders_id, yil, donem):
             return False
         toplam = _safe_float2(row[0], 0.0)
         gecen = _safe_float2(row[1], 0.0)
-        kontenjan = _safe_float2(row[2], 0.0)
-        kayitli = _safe_float2(row[3], 0.0)
-        return toplam > 0 and kontenjan > 0 and gecen >= 0 and kayitli >= 0
+        ortalama_not = _safe_float2(row[2], 0.0)
+        kontenjan = _safe_float2(row[3], 0.0)
+        kayitli = _safe_float2(row[4], 0.0)
+        if ortalama_not <= 0:
+            cur.execute(
+                """
+                SELECT ortalama_not
+                FROM performans
+                WHERE ders_id = ? AND akademik_yil = ?
+                ORDER BY pfrs_id DESC
+                LIMIT 1
+                """,
+                (int(ders_id), int(yil)),
+            )
+            pf = cur.fetchone()
+            ortalama_not = _safe_float2(pf[0] if pf else None, 0.0)
+        return toplam > 0 and kontenjan > 0 and gecen >= 0 and kayitli >= 0 and ortalama_not > 0
     except Exception:
         return False
 
 
 def _read_course_metrics(cur, ders_id, yil, donem, motor):
-    cur.execute(
-        """
-        SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-               kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
-        FROM ders_kriterleri
-        WHERE ders_id = ? AND yil = ?
-          AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
-        ORDER BY CASE WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)) THEN 0 ELSE 1 END, id DESC
-        LIMIT 1
-        """,
-        (int(ders_id), int(yil), str(donem), str(donem)),
-    )
-    dk = cur.fetchone()
+    try:
+        cur.execute(
+            """
+            SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                   kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+            FROM ders_kriterleri
+            WHERE ders_id = ? AND yil = ?
+              AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
+            ORDER BY CASE WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)) THEN 0 ELSE 1 END, id DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil), str(donem), str(donem)),
+        )
+        dk = cur.fetchone()
+    except sqlite3.OperationalError:
+        cur.execute(
+            """
+            SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                   kontenjan, kayitli_ogrenci
+            FROM ders_kriterleri
+            WHERE ders_id = ? AND yil = ?
+              AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil), str(donem)),
+        )
+        row = cur.fetchone()
+        dk = (row[0], row[1], row[2], row[3], row[4], 0, 0) if row else None
 
-    cur.execute(
-        """
-        SELECT basari_orani
-        FROM performans
-        WHERE ders_id = ? AND akademik_yil = ?
-        ORDER BY pfrs_id DESC
-        LIMIT 1
-        """,
-        (int(ders_id), int(yil)),
-    )
+    try:
+        cur.execute(
+            """
+            SELECT ortalama_not, basari_orani
+            FROM performans
+            WHERE ders_id = ? AND akademik_yil = ?
+            ORDER BY pfrs_id DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil)),
+        )
+    except sqlite3.OperationalError:
+        cur.execute(
+            """
+            SELECT ortalama_not, basari_orani
+            FROM performans
+            WHERE ders_id = ? AND akademik_yil = ?
+            ORDER BY rowid DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil)),
+        )
     pf = cur.fetchone()
 
-    cur.execute(
-        """
-        SELECT doluluk_orani
-        FROM populerlik
-        WHERE ders_id = ? AND akademik_yil = ?
-        ORDER BY pop_id DESC
-        LIMIT 1
-        """,
-        (int(ders_id), int(yil)),
-    )
+    try:
+        cur.execute(
+            """
+            SELECT doluluk_orani
+            FROM populerlik
+            WHERE ders_id = ? AND akademik_yil = ?
+            ORDER BY pop_id DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil)),
+        )
+    except sqlite3.OperationalError:
+        cur.execute(
+            """
+            SELECT doluluk_orani
+            FROM populerlik
+            WHERE ders_id = ? AND akademik_yil = ?
+            ORDER BY rowid DESC
+            LIMIT 1
+            """,
+            (int(ders_id), int(yil)),
+        )
     pop = cur.fetchone()
 
-    basari = _safe_float2(pf[0] if pf else None, 0.0)
+    ortalama_not = _safe_float2(pf[0] if pf else None, 0.0)
+    basari = _safe_float2(pf[1] if pf else None, 0.0)
     doluluk = _safe_float2(pop[0] if pop else None, 0.0)
     anket = 0.5
 
     if dk:
         toplam = _safe_float2(dk[0], 0.0)
         gecen = _safe_float2(dk[1], 0.0)
+        ortalama_not = _safe_float2(dk[2], ortalama_not)
         kontenjan = _safe_float2(dk[3], 0.0)
         kayitli = _safe_float2(dk[4], 0.0)
         if toplam > 0:
@@ -712,7 +776,198 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         "trend": trend,
         "populerlik": doluluk,
         "anket": max(0.0, min(1.0, _safe_float2(anket, 0.5))),
+        "ortalama_not": max(0.0, min(100.0, _safe_float2(ortalama_not, 0.0))),
     }
+
+
+def evaluate_drop_reasons(
+    score_100,
+    average_grade,
+    score_threshold=DROP_SCORE_THRESHOLD,
+    average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
+):
+    reasons = []
+    if _safe_float2(score_100, 0.0) < float(score_threshold):
+        reasons.append(f"Kesinlesme puani {float(score_threshold):.0f} altinda")
+    if _safe_float2(average_grade, 0.0) < float(average_grade_threshold):
+        reasons.append(f"Gecme not ortalamasi {float(average_grade_threshold):.0f} altinda")
+    return reasons
+
+
+def should_drop_course(
+    score_100,
+    average_grade,
+    score_threshold=DROP_SCORE_THRESHOLD,
+    average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
+):
+    reasons = evaluate_drop_reasons(
+        score_100,
+        average_grade,
+        score_threshold=score_threshold,
+        average_grade_threshold=average_grade_threshold,
+    )
+    return len(reasons) > 0, reasons
+
+
+def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", include_course_ids=None):
+    fakulte_id = int(fakulte_id)
+    akademik_yil = int(akademik_yil)
+    donem = str(donem or "G")
+    include_course_ids = {int(d) for d in (include_course_ids or [])}
+
+    cur.execute("PRAGMA table_info(ders)")
+    ders_cols = {str(r[1]) for r in cur.fetchall()}
+    has_fakulte_col = "fakulte_id" in ders_cols
+    has_bolum_col = "bolum_id" in ders_cols
+    base_where = "WHERE fakulte_id = ?" if has_fakulte_col else "WHERE 1=1"
+    base_params = (fakulte_id,) if has_fakulte_col else tuple()
+
+    tip_col = _resolve_elective_col(cur)
+    aday_dersler = set()
+    if tip_col:
+        cur.execute(
+            f"""
+            SELECT ders_id
+            FROM ders
+            {base_where}
+              AND (
+                    COALESCE({tip_col}, '') LIKE 'Se%'
+                 OR LOWER(COALESCE({tip_col}, '')) LIKE '%secmeli%'
+                 OR LOWER(COALESCE({tip_col}, '')) LIKE '%seçmeli%'
+              )
+            """,
+            base_params,
+        )
+        aday_dersler.update(int(r[0]) for r in cur.fetchall())
+    else:
+        cur.execute(
+            f"SELECT ders_id FROM ders {base_where}",
+            base_params,
+        )
+        aday_dersler.update(int(r[0]) for r in cur.fetchall())
+
+    try:
+        cur.execute(
+            """
+            SELECT DISTINCT md.ders_id
+            FROM mufredat m
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            WHERE m.fakulte_id = ? AND m.akademik_yil = ?
+              AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+            """,
+            (fakulte_id, akademik_yil, donem),
+        )
+    except sqlite3.OperationalError:
+        cur.execute(
+            """
+            SELECT DISTINCT md.ders_id
+            FROM mufredat m
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            WHERE m.akademik_yil = ?
+            """,
+            (akademik_yil,),
+        )
+    aday_dersler.update(int(r[0]) for r in cur.fetchall())
+    aday_dersler.update(include_course_ids)
+
+    if not aday_dersler:
+        return {
+            "ok": False,
+            "error": "Aday ders bulunamadi (fakulte ve yil icin TOPSIS evreni bos).",
+            "scores": {},
+            "metric_map": {},
+            "ders_meta": {},
+        }
+
+    cur.execute(
+        f"SELECT ders_id, {'bolum_id' if has_bolum_col else 'NULL as bolum_id'}, ad FROM ders {base_where}",
+        base_params,
+    )
+    ders_meta = {}
+    for r in cur.fetchall():
+        d_id = int(r[0])
+        ders_meta[d_id] = {
+            "bolum_id": int(r[1]) if r[1] is not None else None,
+            "ad": str(r[2] or ""),
+        }
+
+    motor = KararMotoru()
+    agirliklar = motor.ahp_calistir()
+    metric_rows = []
+    metric_map = {}
+    for ders_id in sorted(aday_dersler):
+        m = _read_course_metrics(cur, ders_id, akademik_yil, donem, motor)
+        m["ders"] = ders_meta.get(ders_id, {}).get("ad", str(ders_id))
+        metric_rows.append(m)
+        metric_map[ders_id] = m
+
+    df = pd.DataFrame(metric_rows)
+    if df.empty:
+        return {
+            "ok": False,
+            "error": "TOPSIS icin yeterli metrik verisi yok.",
+            "scores": {},
+            "metric_map": metric_map,
+            "ders_meta": ders_meta,
+        }
+
+    df_sonuc, meta = motor.topsis_calistir(df, agirliklar)
+    skor_map = {}
+    if not df_sonuc.empty:
+        for _, r in df_sonuc.iterrows():
+            d_id = int(r.get("ders_id", 0) or 0)
+            if d_id <= 0:
+                continue
+            kp = r.get("Kesinlesme_Puani")
+            if kp is None or (isinstance(kp, float) and math.isnan(kp)):
+                kp = _safe_float2(r.get("AHP_TOPSIS_Skor"), 0.0) * 100.0
+            skor_map[d_id] = round(_safe_float2(kp, 0.0), 2)
+
+    return {
+        "ok": True,
+        "scores": skor_map,
+        "metric_map": metric_map,
+        "ders_meta": ders_meta,
+        "df_sonuc": df_sonuc,
+        "meta": meta,
+    }
+
+
+def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, ders_meta):
+    fakulte_id = int(fakulte_id)
+    akademik_yil = int(akademik_yil)
+    cur.execute(
+        "UPDATE havuz SET skor = NULL WHERE fakulte_id = ? AND yil = ?",
+        (fakulte_id, akademik_yil),
+    )
+
+    upsert_count = 0
+    for ders_id, score in skor_map.items():
+        meta = ders_meta.get(int(ders_id), {})
+        bolum_id = meta.get("bolum_id")
+        ders_adi = str(meta.get("ad") or "")
+        score_val = round(_safe_float2(score, 0.0), 2)
+
+        cur.execute(
+            """
+            UPDATE havuz
+            SET bolum_id = COALESCE(?, bolum_id),
+                ders_adi = CASE WHEN ? <> '' THEN ? ELSE ders_adi END,
+                skor = ?
+            WHERE ders_id = ? AND fakulte_id = ? AND yil = ?
+            """,
+            (bolum_id, ders_adi, ders_adi, score_val, str(ders_id), fakulte_id, akademik_yil),
+        )
+        if cur.rowcount == 0:
+            cur.execute(
+                """
+                INSERT INTO havuz (ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi)
+                VALUES (?, ?, ?, ?, 0, 0, ?, ?)
+                """,
+                (str(ders_id), akademik_yil, fakulte_id, bolum_id, score_val, ders_adi),
+            )
+        upsert_count += 1
+    return upsert_count
 
 
 def generate_next_year_curricula(
@@ -720,12 +975,14 @@ def generate_next_year_curricula(
     fakulte_id=None,
     akademik_yil=None,
     donem="G",
-    drop_score_threshold=40.0,
+    drop_score_threshold=DROP_SCORE_THRESHOLD,
+    drop_average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
 ):
     """
     Faculty + year + term icin bolum bazli sonraki yil mufredati olusturur.
     - Tum bolumlerin mevcut mufredat dersleri icin kriter girisi zorunludur.
-    - Dusen dersler (skor baraj altinda) yerine kesinlesme puani en yuksek adaylar eklenir.
+    - Dusen dersler (skor baraj altinda veya ortalama not baraji altinda)
+      yerine kesinlesme puani en yuksek adaylar eklenir.
     - Duser yoksa mufredat aynen bir sonraki yila tasinir.
     - Havuz statu/sayac guncellemesi calculate_next_status ile yapilir.
     """
@@ -830,72 +1087,32 @@ def generate_next_year_curricula(
                 "missing_criteria": eksik_kriter,
             }
 
-        tip_col = _resolve_elective_col(cur)
-
-        if tip_col:
-            cur.execute(
-                f"""
-                SELECT ders_id
-                FROM ders
-                WHERE fakulte_id = ?
-                  AND COALESCE({tip_col}, '') LIKE 'Se%'
-                """,
-                (fakulte_id,),
-            )
-            aday_dersler = {int(r[0]) for r in cur.fetchall()}
-        else:
-            aday_dersler = set()
-
-        for dersler in mevcut_mufredatlar.values():
-            aday_dersler.update(int(d) for d in dersler)
-
-        if not aday_dersler:
+        score_pack = get_faculty_year_topsis_results(
+            cur=cur,
+            fakulte_id=fakulte_id,
+            akademik_yil=akademik_yil,
+            donem=donem,
+        )
+        if not score_pack.get("ok"):
             return {
                 "ok": False,
-                "error": "Aday ders bulunamadi (fakulte dersi veya mufredat dersi yok).",
+                "error": score_pack.get("error", "TOPSIS skorlari olusturulamadi."),
             }
 
-        cur.execute(
-            "SELECT ders_id, bolum_id, ad FROM ders WHERE fakulte_id = ?",
-            (fakulte_id,),
+        skor_map = dict(score_pack.get("scores", {}))
+        metric_map = dict(score_pack.get("metric_map", {}))
+        ders_meta = dict(score_pack.get("ders_meta", {}))
+        aday_dersler = set(int(d) for d in metric_map.keys())
+        if not aday_dersler:
+            return {"ok": False, "error": "Skor hesaplamak icin aday ders bulunamadi."}
+
+        year_score_upserts = persist_faculty_year_topsis_scores(
+            cur=cur,
+            fakulte_id=fakulte_id,
+            akademik_yil=akademik_yil,
+            skor_map=skor_map,
+            ders_meta=ders_meta,
         )
-        ders_meta = {}
-        for r in cur.fetchall():
-            d_id = int(r[0])
-            ders_meta[d_id] = {
-                "bolum_id": int(r[1]) if r[1] is not None else None,
-                "ad": str(r[2] or ""),
-            }
-
-        motor = KararMotoru()
-        agirliklar = motor.ahp_calistir()
-
-        metric_rows = []
-        metric_map = {}
-        for ders_id in sorted(aday_dersler):
-            m = _read_course_metrics(cur, ders_id, akademik_yil, donem, motor)
-            if ders_id in ders_meta:
-                m["ders"] = ders_meta[ders_id].get("ad", str(ders_id))
-            else:
-                m["ders"] = str(ders_id)
-            metric_rows.append(m)
-            metric_map[ders_id] = m
-
-        df = pd.DataFrame(metric_rows)
-        if df.empty:
-            return {"ok": False, "error": "Skor hesaplamak icin veri yok."}
-
-        df_sonuc, _ = motor.topsis_calistir(df, agirliklar)
-        skor_map = {}
-        if not df_sonuc.empty:
-            for _, r in df_sonuc.iterrows():
-                d_id = int(r.get("ders_id", 0) or 0)
-                if d_id <= 0:
-                    continue
-                kp = r.get("Kesinlesme_Puani")
-                if kp is None or (isinstance(kp, float) and math.isnan(kp)):
-                    kp = _safe_float2(r.get("AHP_TOPSIS_Skor"), 0.5) * 100.0
-                skor_map[d_id] = round(_safe_float2(kp, 50.0), 2)
 
         cur.execute(
             """
@@ -928,12 +1145,25 @@ def generate_next_year_curricula(
 
             dusenler = []
             kalanlar = []
+            drop_reason_map = {}
+            drop_avg_map = {}
 
             for d_id in mevcut:
                 score = _safe_float2(skor_map.get(d_id), 0.0)
+                ortalama_not = _safe_float2(metric_map.get(d_id, {}).get("ortalama_not"), 0.0)
                 prev_statu = int(prev_havuz.get(d_id, {}).get("statu", 0))
-                if prev_statu in (-1, -2) or score < float(drop_score_threshold):
+                drop_reasons = evaluate_drop_reasons(
+                    score_100=score,
+                    average_grade=ortalama_not,
+                    score_threshold=drop_score_threshold,
+                    average_grade_threshold=drop_average_grade_threshold,
+                )
+                if prev_statu in (-1, -2):
+                    drop_reasons = ["Gecmis statu nedeniyle secilemez"] + drop_reasons
+                if prev_statu in (-1, -2) or drop_reasons:
                     dusenler.append(d_id)
+                    drop_reason_map[d_id] = drop_reasons
+                    drop_avg_map[d_id] = ortalama_not
                 else:
                     kalanlar.append(d_id)
 
@@ -1000,6 +1230,8 @@ def generate_next_year_curricula(
                             "ders_id": d,
                             "ders": ders_meta.get(d, {}).get("ad", str(d)),
                             "score": _safe_float2(skor_map.get(d), 0.0),
+                            "average_grade": _safe_float2(drop_avg_map.get(d), 0.0),
+                            "reasons": drop_reason_map.get(d, []),
                         }
                         for d in dusenler
                     ],
@@ -1072,7 +1304,7 @@ def generate_next_year_curricula(
                 int(prev.get("sayac", 0)),
                 ders_id in secilenler,
             )
-            skor_val = int(round(_safe_float2(skor_map.get(ders_id), 50.0)))
+            skor_val = None
 
             cur.execute(
                 """
@@ -1102,6 +1334,7 @@ def generate_next_year_curricula(
             "donem": donem,
             "departments": bolum_sonuc,
             "pool_rows_upserted": upsert_count,
+            "year_score_upserted": year_score_upserts,
         }
 
     except Exception as exc:
@@ -1115,6 +1348,116 @@ def generate_next_year_curricula(
     finally:
         if conn:
             conn.close()
+
+
+def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G"):
+    summary = {
+        "ok": True,
+        "generated": [],
+        "skipped": [],
+        "errors": [],
+    }
+    if not os.path.exists(db_path):
+        summary["ok"] = False
+        summary["errors"].append({"error": f"DB bulunamadi: {db_path}"})
+        return summary
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY fakulte_id")
+    faculties = [(int(r[0]), str(r[1] or "")) for r in cur.fetchall()]
+    conn.close()
+
+    for fakulte_id, fakulte_adi in faculties:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM bolum WHERE fakulte_id = ?", (fakulte_id,))
+        bolum_adet = int(cur.fetchone()[0] or 0)
+        cur.execute(
+            """
+            SELECT DISTINCT akademik_yil
+            FROM mufredat
+            WHERE fakulte_id = ?
+            ORDER BY akademik_yil DESC
+            """,
+            (fakulte_id,),
+        )
+        years = [int(r[0]) for r in cur.fetchall()]
+        conn.close()
+
+        if not years:
+            summary["skipped"].append(
+                {"fakulte_id": fakulte_id, "fakulte": fakulte_adi, "reason": "Mufredat yili yok"}
+            )
+            continue
+
+        aday_yil = None
+        for yil in years:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT bolum_id)
+                FROM mufredat
+                WHERE fakulte_id = ? AND akademik_yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                """,
+                (fakulte_id, yil, donem),
+            )
+            mevcut_bolum_adet = int(cur.fetchone()[0] or 0)
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT bolum_id)
+                FROM mufredat
+                WHERE fakulte_id = ? AND akademik_yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                """,
+                (fakulte_id, yil + 1, donem),
+            )
+            sonraki_bolum_adet = int(cur.fetchone()[0] or 0)
+            conn.close()
+
+            hedef_bolum_adet = bolum_adet if bolum_adet > 0 else mevcut_bolum_adet
+            if mevcut_bolum_adet > 0 and sonraki_bolum_adet < hedef_bolum_adet:
+                aday_yil = yil
+                break
+
+        if aday_yil is None:
+            summary["skipped"].append(
+                {"fakulte_id": fakulte_id, "fakulte": fakulte_adi, "reason": "Sonraki yil zaten mevcut"}
+            )
+            continue
+
+        result = generate_next_year_curricula(
+            db_path=db_path,
+            fakulte_id=fakulte_id,
+            akademik_yil=aday_yil,
+            donem=donem,
+        )
+        if result.get("ok"):
+            summary["generated"].append(result)
+        elif result.get("missing_criteria") or result.get("missing_curricula"):
+            summary["skipped"].append(
+                {
+                    "fakulte_id": fakulte_id,
+                    "fakulte": fakulte_adi,
+                    "year": aday_yil,
+                    "reason": result.get("error", "Kriterler hazir degil"),
+                }
+            )
+        else:
+            summary["ok"] = False
+            summary["errors"].append(
+                {
+                    "fakulte_id": fakulte_id,
+                    "fakulte": fakulte_adi,
+                    "year": aday_yil,
+                    "error": result.get("error", "Bilinmeyen hata"),
+                }
+            )
+    return summary
 
 
 if __name__ == "__main__":

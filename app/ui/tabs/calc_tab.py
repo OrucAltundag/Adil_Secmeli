@@ -435,6 +435,7 @@ class CalcTab(ttk.Frame):
                         f"{sonuc.get('year_from')} -> {sonuc.get('year_to')} | Donem: {sonuc.get('donem')}"
                     )
                     lines.append(f"Havuz upsert: {sonuc.get('pool_rows_upserted', 0)} satir")
+                    lines.append(f"Bu yil TOPSIS skor upsert: {sonuc.get('year_score_upserted', 0)} satir")
                     lines.append("")
 
                     for bol in sonuc.get("departments", []):
@@ -445,7 +446,12 @@ class CalcTab(ttk.Frame):
 
                         dusen = bol.get("dusenler", [])
                         eklenen = bol.get("eklenenler", [])
-                        d_txt = ", ".join([f"{x.get('ders')} [{x.get('score',0):.1f}]" for x in dusen]) or "-"
+                        d_txt = ", ".join(
+                            [
+                                f"{x.get('ders')} [Skor:{x.get('score',0):.1f}, Ort:{x.get('average_grade',0):.1f}, Neden:{' + '.join(x.get('reasons', [])) or '-'}]"
+                                for x in dusen
+                            ]
+                        ) or "-"
                         e_txt = ", ".join([f"{x.get('ders')} [{x.get('score',0):.1f}]" for x in eklenen]) or "-"
                         lines.append(f"- {b_ad}:")
                         lines.append(f"  Dusenler : {d_txt}")

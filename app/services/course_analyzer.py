@@ -33,16 +33,23 @@ from app.services.havuz_karar import (
     STATU_IPTAL,
     MAKS_DUSME_SAYACI,
 )
-from app.services.calculation import KararMotoru
+from app.services.calculation import (
+    KararMotoru,
+    get_faculty_year_topsis_results,
+    should_drop_course,
+    DROP_SCORE_THRESHOLD,
+    DROP_AVERAGE_GRADE_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Sabitler
 # ---------------------------------------------------------------------------
-SKOR_BARAJ       = 40.0   # TOPSIS skoru bu barajın altındaysa "düşüyor"
-BASARI_BARAJ     = 0.40   # Başarı oranı (0-1) barajı
-DOLULUK_BARAJ    = 0.30   # Doluluk oranı (0-1) barajı
+SKOR_BARAJ = DROP_SCORE_THRESHOLD
+ORTALAMA_NOT_BARAJ = DROP_AVERAGE_GRADE_THRESHOLD
+BASARI_BARAJ = 0.40
+DOLULUK_BARAJ = 0.30
 
 
 # ---------------------------------------------------------------------------
@@ -88,20 +95,24 @@ def _fetch_course_meta(cur: sqlite3.Cursor, course_id: int) -> dict:
     else:
         tip_col = None
 
-    if tip_col:
-        cur.execute(
-            f"SELECT ders_id, ad, COALESCE({tip_col}, '') as tip FROM ders WHERE ders_id = ?",
-            (course_id,)
-        )
-    else:
-        cur.execute(
-            "SELECT ders_id, ad, '' as tip FROM ders WHERE ders_id = ?",
-            (course_id,)
-        )
+    sel = ["ders_id", "ad"]
+    sel.append(f"COALESCE({tip_col}, '') as tip" if tip_col else "'' as tip")
+    sel.append("fakulte_id" if "fakulte_id" in cols else "NULL as fakulte_id")
+    sel.append("bolum_id" if "bolum_id" in cols else "NULL as bolum_id")
+    cur.execute(
+        f"SELECT {', '.join(sel)} FROM ders WHERE ders_id = ?",
+        (course_id,),
+    )
     row = cur.fetchone()
     if not row:
         raise VeriEksikHatasi(f"Ders bulunamadi: ders_id={course_id}")
-    return {"ders_id": int(row[0]), "ad": str(row[1]), "tip": str(row[2])}
+    return {
+        "ders_id": int(row[0]),
+        "ad": str(row[1]),
+        "tip": str(row[2]),
+        "fakulte_id": int(row[3]) if row[3] is not None else None,
+        "bolum_id": int(row[4]) if row[4] is not None else None,
+    }
 
 
 def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
@@ -206,6 +217,55 @@ def _fetch_prev_pool(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
     return {"year": prev_year, "statu": 0, "sayac": 0, "skor": 0.0}
 
 
+def _resolve_course_faculty_id(cur: sqlite3.Cursor, course_meta: dict, course_id: int, year: int) -> Optional[int]:
+    meta_fak = course_meta.get("fakulte_id")
+    if meta_fak is not None:
+        return int(meta_fak)
+
+    cur.execute(
+        """
+        SELECT fakulte_id
+        FROM havuz
+        WHERE CAST(ders_id AS INTEGER) = ? AND yil = ?
+        LIMIT 1
+        """,
+        (course_id, year),
+    )
+    row = cur.fetchone()
+    if row and row[0] is not None:
+        return int(row[0])
+
+    cur.execute(
+        """
+        SELECT m.fakulte_id
+        FROM mufredat m
+        JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+        WHERE md.ders_id = ? AND m.akademik_yil = ?
+        LIMIT 1
+        """,
+        (course_id, year),
+    )
+    row = cur.fetchone()
+    if row and row[0] is not None:
+        return int(row[0])
+
+    cur.execute(
+        """
+        SELECT m.fakulte_id
+        FROM mufredat m
+        JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+        WHERE md.ders_id = ?
+        ORDER BY m.akademik_yil DESC
+        LIMIT 1
+        """,
+        (course_id,),
+    )
+    row = cur.fetchone()
+    if row and row[0] is not None:
+        return int(row[0])
+    return None
+
+
 def _fetch_gecmis_trend(cur: sqlite3.Cursor, course_id: int, base_year: int) -> list:
     """Son 3 yılın başarı oranını döner (en yeni önce)."""
     cur.execute(
@@ -245,58 +305,79 @@ def _run_ahp(criteria: dict) -> dict:
                 "CR": 0.0, "valid": False}
 
 
-def _run_topsis_single(criteria: dict, ahp_weights: dict) -> dict:
+def _run_topsis_single(
+    cur: sqlite3.Cursor,
+    course_id: int,
+    year: int,
+    fakulte_id: Optional[int],
+    donem: str = "G",
+) -> dict:
     """
-    Tek satır TOPSIS — skoru [0, 100] aralığında döner.
-    Tek satır olduğundan normalise edilmiş vektörün kendisi = referans;
-    pozitif ideal = değerin kendisi, negatif ideal = 0.
-    Bu formülasyon skoru doğrusal olarak hesaplar (multi-row TOPSIS için
-    harici veritabanı gerekir, bu modda yeterlidir).
+    Tek ders puanini, ilgili fakulte+yil evreninde toplu TOPSIS calistirarak
+    merkezi kaynaktan alir.
     """
     t0 = time.perf_counter()
-    try:
-        basari    = _safe_float(criteria.get("basari_orani"))
-        doluluk   = _safe_float(criteria.get("doluluk_orani"))
-        trend_val = _safe_float(criteria.get("_trend", basari))   # AHP adımından gelebilir
-        anket_val = _safe_float(criteria.get("anket_orani", 0.5))  # Kriter sayfasından veya nötr
-
-        w = ahp_weights
-        w_basari    = _safe_float(w.get("basari",    0.5))
-        w_trend     = _safe_float(w.get("trend",     0.2))
-        w_pop       = _safe_float(w.get("populerlik",0.2))
-        w_anket     = _safe_float(w.get("anket",     0.1))
-
-        # Ağırlıklı toplam skor (0-1)
-        ham_skor = (
-            basari   * w_basari  +
-            trend_val * w_trend   +
-            doluluk  * w_pop     +
-            anket_val * w_anket
-        )
-        denom = w_basari + w_trend + w_pop + w_anket
-        if denom < 1e-10:
-            raise ZeroDivisionError("AHP agirlik toplami sifir")
-
-        yakınlık = ham_skor / denom   # 0-1
-        skor_100 = round(yakınlık * 100, 2)
-
+    if fakulte_id is None:
         return {
-            "raw_score_01": round(yakınlık, 6),
-            "score_100":    skor_100,
-            "inputs": {
-                "basari": round(basari, 4),
-                "trend":  round(trend_val, 4),
-                "doluluk": round(doluluk, 4),
-                "anket":  anket_val,
-            },
+            "status": "not_calculated",
+            "score_100": None,
+            "raw_score_01": None,
+            "message": "Fakulte bilgisi bulunamadigi icin kesinlesme puani henuz hesaplanmadi.",
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
-    except ZeroDivisionError as exc:
-        logger.warning("TOPSIS ZeroDivision: %s", exc)
-        return {"error": str(exc), "score_100": 0.0, "raw_score_01": 0.0}
+
+    try:
+        pack = get_faculty_year_topsis_results(
+            cur=cur,
+            fakulte_id=int(fakulte_id),
+            akademik_yil=int(year),
+            donem=donem,
+            include_course_ids={int(course_id)},
+        )
+        if not pack.get("ok"):
+            return {
+                "status": "not_calculated",
+                "score_100": None,
+                "raw_score_01": None,
+                "message": pack.get("error", "TOPSIS sonucu hesaplanamadi."),
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+
+        scores = pack.get("scores", {})
+        if int(course_id) not in scores:
+            return {
+                "status": "not_calculated",
+                "score_100": None,
+                "raw_score_01": None,
+                "message": "Secilen ders icin kesinlesme puani henuz hesaplanmadi.",
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+
+        score_100 = _safe_float(scores.get(int(course_id)))
+        metric = (pack.get("metric_map") or {}).get(int(course_id), {})
+        return {
+            "status": "ok",
+            "raw_score_01": round(score_100 / 100.0, 6),
+            "score_100": round(score_100, 2),
+            "inputs": {
+                "basari": round(_safe_float(metric.get("basari")), 4),
+                "trend": round(_safe_float(metric.get("trend")), 4),
+                "doluluk": round(_safe_float(metric.get("populerlik")), 4),
+                "anket": round(_safe_float(metric.get("anket"), 0.5), 4),
+            },
+            "universe_size": len(pack.get("scores", {})),
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
     except Exception as exc:
         logger.warning("TOPSIS hatasi: %s", exc)
-        return {"error": str(exc), "score_100": 50.0, "raw_score_01": 0.5}
+        return {
+            "status": "not_calculated",
+            "error": str(exc),
+            "score_100": None,
+            "raw_score_01": None,
+            "message": "Kesinlesme puani henuz hesaplanmadi.",
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
 
 
 def _run_trend(gecmis_list: list) -> dict:
@@ -362,12 +443,17 @@ def _run_rf_simple(criteria: dict, prev_pool: dict) -> dict:
 
 def _build_dt_reason(criteria: dict, topsis: dict, in_mufredat: bool,
                      next_statu: int, next_sayac: int, prev_pool: dict) -> str:
-    """Karar ağacının insan dilinde açıklamasını üretir."""
-    basari      = _safe_float(criteria.get("basari_orani")) * 100
-    doluluk     = _safe_float(criteria.get("doluluk_orani")) * 100
-    skor        = _safe_float(topsis.get("score_100", 0))
-    prev_statu  = prev_pool.get("statu", 0)
-    prev_sayac  = prev_pool.get("sayac", 0)
+    """Karar aciklamasini insan dilinde uretir."""
+    basari = _safe_float(criteria.get("basari_orani")) * 100
+    doluluk = _safe_float(criteria.get("doluluk_orani")) * 100
+    ortalama_not = _safe_float(criteria.get("basari_ortalamasi"))
+    raw_skor = topsis.get("score_100")
+    score_available = raw_skor is not None and not (isinstance(raw_skor, float) and math.isnan(raw_skor))
+    skor = _safe_float(raw_skor) if score_available else None
+    skor_txt = f"{skor:.1f}" if score_available else "henuz hesaplanmadi"
+    prev_statu = prev_pool.get("statu", 0)
+    prev_sayac = prev_pool.get("sayac", 0)
+    drop_reasons = list(topsis.get("drop_reasons") or [])
 
     if next_statu == STATU_IPTAL:
         return (
@@ -376,13 +462,18 @@ def _build_dt_reason(criteria: dict, topsis: dict, in_mufredat: bool,
             "kalici olarak iptal edildi."
         )
     if next_statu == STATU_DINLENMEDE:
-        reason = []
-        if basari < BASARI_BARAJ * 100:
-            reason.append(f"basari orani %{basari:.1f} < baj %{BASARI_BARAJ*100:.0f}")
-        if skor < SKOR_BARAJ:
-            reason.append(f"kesinlesme puani {skor:.1f} < baj {SKOR_BARAJ:.0f}")
+        reason = list(drop_reasons)
+        if not reason and score_available:
+            _, reason = should_drop_course(
+                score_100=skor,
+                average_grade=ortalama_not,
+                score_threshold=SKOR_BARAJ,
+                average_grade_threshold=ORTALAMA_NOT_BARAJ,
+            )
+        if not reason and not score_available:
+            reason.append("Kesinlesme puani henuz hesaplanmadi")
         if not reason:
-            reason.append("komisyon karari ile mufredattan cikarildi")
+            reason.append("Komisyon karari ile mufredattan cikarildi")
         return (
             f"Ders mufredattan dustu ({', '.join(reason)}). "
             f"Sayac: {prev_sayac} -> {next_sayac}. 1 yil dinlenmeye alindi."
@@ -393,19 +484,21 @@ def _build_dt_reason(criteria: dict, topsis: dict, in_mufredat: bool,
                 "Ders bir onceki yil dinlenmedeydi. Ceza suresi doldu, "
                 "havuza geri dondu. Bu yil mufredata alinamaz."
             )
+        if not score_available:
+            return "Kesinlesme puani henuz hesaplanmadigi icin ders havuzda bekletiliyor."
         return (
-            f"Ders havuzda bekliyor. Kesinlesme puani: {skor:.1f}. "
+            f"Ders havuzda bekliyor. Kesinlesme puani: {skor_txt}. "
             "Bu yil mufredata alinmadi."
         )
     if next_statu == STATU_MUFREDATTA:
         if prev_statu == STATU_MUFREDATTA:
             return (
                 f"Ders mufredatta kalmaya devam ediyor. "
-                f"Basari: %{basari:.1f}, Kesinlesme: {skor:.1f}."
+                f"Ortalama not: {ortalama_not:.1f}, Kesinlesme: {skor_txt}."
             )
         return (
             f"Ders havuzdan mufredata alindi. "
-            f"Basari: %{basari:.1f}, Doluluk: %{doluluk:.1f}, Skor: {skor:.1f}."
+            f"Basari: %{basari:.1f}, Doluluk: %{doluluk:.1f}, Ortalama not: {ortalama_not:.1f}, Kesinlesme: {skor_txt}."
         )
     return "Durum belirlenemedi."
 
@@ -504,9 +597,6 @@ def analyze_single_course(
         if "error" in ahp_result:
             result["errors"].append(f"AHP: {ahp_result['error']}")
 
-        ahp_weights = ahp_result.get("weights", {"basari": 0.5, "trend": 0.2,
-                                                  "populerlik": 0.2, "anket": 0.1})
-
         # ------------------------------------------------------------------
         # 6. Trend/LR
         # ------------------------------------------------------------------
@@ -520,12 +610,23 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 7. TOPSIS
         # ------------------------------------------------------------------
-        topsis_result = _run_topsis_single(criteria, ahp_weights)
+        fakulte_id = _resolve_course_faculty_id(cur, result["course"], course_id, year)
+        result["course"]["fakulte_id"] = fakulte_id
+        topsis_result = _run_topsis_single(
+            cur=cur,
+            course_id=int(course_id),
+            year=int(year),
+            fakulte_id=fakulte_id,
+            donem="G",
+        )
         result["steps"]["topsis"] = topsis_result
         if "error" in topsis_result:
             result["errors"].append(f"TOPSIS: {topsis_result['error']}")
+        if topsis_result.get("status") == "not_calculated":
+            result["errors"].append(topsis_result.get("message", "Kesinlesme puani henuz hesaplanmadi."))
 
-        skor_final = topsis_result.get("score_100", 50.0)
+        score_available = topsis_result.get("score_100") is not None
+        skor_final = _safe_float(topsis_result.get("score_100")) if score_available else None
 
         # ------------------------------------------------------------------
         # 8. RF
@@ -536,10 +637,9 @@ def analyze_single_course(
             result["errors"].append(f"RF: {rf_result['error']}")
 
         # ------------------------------------------------------------------
-        # 9. in_mufredat kararı
+        # 9. in_mufredat karari
         # ------------------------------------------------------------------
-        basari  = _safe_float(criteria.get("basari_orani"))
-        doluluk = _safe_float(criteria.get("doluluk_orani"))
+        ortalama_not = _safe_float(criteria.get("basari_ortalamasi"))
 
         if year == 2022:
             cur.execute(
@@ -549,11 +649,21 @@ def analyze_single_course(
             row_gt = cur.fetchone()
             in_mufredat = bool(row_gt and int(row_gt[0]) == STATU_MUFREDATTA)
             is_ground_truth = True
+            drop_reasons = []
         else:
-            in_mufredat = (skor_final >= SKOR_BARAJ
-                           and basari >= BASARI_BARAJ
-                           and doluluk >= DOLULUK_BARAJ)
+            if score_available:
+                drop_flag, drop_reasons = should_drop_course(
+                    score_100=skor_final,
+                    average_grade=ortalama_not,
+                    score_threshold=SKOR_BARAJ,
+                    average_grade_threshold=ORTALAMA_NOT_BARAJ,
+                )
+                in_mufredat = not drop_flag
+            else:
+                drop_reasons = ["Kesinlesme puani henuz hesaplanmadi"]
+                in_mufredat = False
             is_ground_truth = False
+        topsis_result["drop_reasons"] = drop_reasons
 
         # ------------------------------------------------------------------
         # 10. State machine
@@ -566,7 +676,11 @@ def analyze_single_course(
             row_gt2 = cur.fetchone()
             next_statu = int(row_gt2[0]) if row_gt2 else 0
             next_sayac = int(row_gt2[1]) if row_gt2 else 0
-            sm_note    = "2022 Ground Truth: state machine hesabi yapilmadi."
+            sm_note = "2022 Ground Truth: state machine hesabi yapilmadi."
+        elif not score_available:
+            next_statu = int(prev_pool.get("statu", 0))
+            next_sayac = int(prev_pool.get("sayac", 0))
+            sm_note = "Kesinlesme puani henuz hesaplanmadigi icin state machine simulasyonu yapilmadi."
         else:
             prev_statu = prev_pool.get("statu", 0)
             prev_sayac = prev_pool.get("sayac", 0)
@@ -580,7 +694,7 @@ def analyze_single_course(
             )
 
         # ------------------------------------------------------------------
-        # 11. DT karar gerekçesi
+        # 11. DT karar gerekcesi
         # ------------------------------------------------------------------
         dt_reason = _build_dt_reason(
             criteria, topsis_result, in_mufredat,
@@ -592,13 +706,14 @@ def analyze_single_course(
         # 12. Karar paketi
         # ------------------------------------------------------------------
         result["decision"] = {
-            "score_final":          round(skor_final, 2),
+            "score_final": round(skor_final, 2) if score_available else None,
             "in_mufredat_this_year": in_mufredat,
-            "is_ground_truth":       is_ground_truth,
-            "prev":  prev_pool,
+            "is_ground_truth": is_ground_truth,
+            "prev": prev_pool,
             "next": {"statu": next_statu, "sayac": next_sayac},
             "label": _statu_label(next_statu),
             "sm_note": sm_note,
+            "drop_reasons": drop_reasons,
         }
 
     result["total_elapsed_ms"] = round((time.perf_counter() - t_total) * 1000, 1)

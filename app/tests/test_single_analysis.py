@@ -118,7 +118,7 @@ def test_sm_none_guvenli():
 # ===========================================================================
 
 def test_ahp_agirliklar_toplami():
-    """AHP agirlik toplamı 1.0 olmali."""
+    """AHP agirlik toplami 1.0 olmali."""
     result = _run_ahp({"basari_orani": 0.7, "doluluk_orani": 0.6})
     w = result["weights"]
     total = sum(w.values())
@@ -133,22 +133,52 @@ def test_ahp_cr_gecerli():
 
 def test_topsis_skor_aralik():
     """TOPSIS skoru 0-100 arasinda olmali."""
-    criteria = {
-        "basari_orani": 0.75, "doluluk_orani": 0.60,
-        "_trend": 0.70,
-    }
-    weights = {"basari": 0.5, "trend": 0.2, "populerlik": 0.2, "anket": 0.1}
-    result = _run_topsis_single(criteria, weights)
-    skor = result.get("score_100", -1)
-    assert 0 <= skor <= 100, f"TOPSIS skor aralik disinda: {skor}"
+    path = _make_mock_db_path()
+    try:
+        conn = sqlite3.connect(path)
+        cur = conn.cursor()
+        result = _run_topsis_single(
+            cur=cur,
+            course_id=99,
+            year=2023,
+            fakulte_id=2,
+            donem="G",
+        )
+        conn.close()
+
+        assert result.get("status") == "ok", f"Beklenen hesaplanmis TOPSIS, gelen: {result}"
+        skor = result.get("score_100")
+        assert skor is not None, "TOPSIS skor degeri bos dondu"
+        assert 0 <= skor <= 100, f"TOPSIS skor aralik disinda: {skor}"
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
-def test_topsis_sifir_agirlik():
-    """Agirlik toplamı sifira yakin -> hata yakalanmali, uygulama cokmemeli."""
-    criteria = {"basari_orani": 0.7, "doluluk_orani": 0.5, "_trend": 0.6}
-    weights = {"basari": 0.0, "trend": 0.0, "populerlik": 0.0, "anket": 0.0}
-    result = _run_topsis_single(criteria, weights)
-    assert "error" in result   # ZeroDivision yakalandı
+def test_topsis_hesaplanamadi_guvenli():
+    """Fakulte baglami yoksa kontrollu sekilde hesaplanamadi donmeli."""
+    path = _make_mock_db_path()
+    try:
+        conn = sqlite3.connect(path)
+        cur = conn.cursor()
+        result = _run_topsis_single(
+            cur=cur,
+            course_id=99,
+            year=2023,
+            fakulte_id=None,
+            donem="G",
+        )
+        conn.close()
+
+        assert result.get("status") == "not_calculated"
+        assert result.get("score_100") is None
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def test_trend_bos_gecmis():
@@ -206,7 +236,7 @@ def _make_mock_db_path(
     prev_statu: int = 0,
     prev_sayac: int = 0,
     add_criteria: bool = True,
-    gt_statu: int = None,       # 2022 havuz kaydı için
+    gt_statu: int = None,       # 2022 havuz kaydi icin
 ) -> str:
     """Gecici dosyada mock SQLite veritabani olusturur; yol dondurur (thread-safe test icin)."""
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -215,76 +245,142 @@ def _make_mock_db_path(
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # ders tablosu (DersTipi kolonu ile — course_analyzer bunu PRAGMA ile tespit eder)
-    cur.execute("CREATE TABLE ders (ders_id INTEGER, ad TEXT, DersTipi TEXT)")
-    cur.execute("INSERT INTO ders VALUES (?,?,?)", (ders_id, "Mock Ders", "Secmeli"))
+    alt_ders_id = ders_id + 1
 
+    # ders tablosu
+    cur.execute(
+        """
+        CREATE TABLE ders (
+            ders_id INTEGER,
+            ad TEXT,
+            DersTipi TEXT,
+            fakulte_id INTEGER,
+            bolum_id INTEGER
+        )
+        """
+    )
+    cur.executemany(
+        "INSERT INTO ders VALUES (?,?,?,?,?)",
+        [
+            (ders_id, "Mock Ders", "Secmeli", 2, 1),
+            (alt_ders_id, "Alternatif Ders", "Secmeli", 2, 1),
+        ],
+    )
 
     # ders_kriterleri
-    cur.execute("""CREATE TABLE ders_kriterleri (
-        id INTEGER PRIMARY KEY, ders_id INTEGER, yil INTEGER, donem TEXT,
-        toplam_ogrenci INTEGER, gecen_ogrenci INTEGER, basari_ortalamasi REAL,
-        kontenjan INTEGER, kayitli_ogrenci INTEGER
-    )""")
+    cur.execute(
+        """CREATE TABLE ders_kriterleri (
+            id INTEGER PRIMARY KEY,
+            ders_id INTEGER,
+            yil INTEGER,
+            donem TEXT,
+            toplam_ogrenci INTEGER,
+            gecen_ogrenci INTEGER,
+            basari_ortalamasi REAL,
+            kontenjan INTEGER,
+            kayitli_ogrenci INTEGER
+        )"""
+    )
     if add_criteria:
         toplam = 100
-        gecen  = int(toplam * basari_orani)
-        kont   = 50
-        kayit  = int(kont * doluluk_orani)
-        cur.execute(
-            "INSERT INTO ders_kriterleri VALUES (?,?,?,?,?,?,?,?,?)",
-            (1, ders_id, yil, "Guz", toplam, gecen, 75.0, kont, kayit)
-        )
-
-    # performans
-    cur.execute("""CREATE TABLE performans (
-        id INTEGER PRIMARY KEY, ders_id INTEGER, akademik_yil INTEGER,
-        donem TEXT, ortalama_not REAL, basari_orani REAL
-    )""")
-    if add_criteria:
-        cur.execute(
-            "INSERT INTO performans VALUES (?,?,?,?,?,?)",
-            (1, ders_id, yil, "Guz", 75.0, basari_orani)
-        )
-        # Gecmis trend icin 2022
-        cur.execute(
-            "INSERT INTO performans VALUES (?,?,?,?,?,?)",
-            (2, ders_id, 2022, "Guz", 70.0, 0.65)
-        )
-
-    # populerlik
-    cur.execute("""CREATE TABLE populerlik (
-        id INTEGER PRIMARY KEY, ders_id INTEGER, akademik_yil INTEGER,
-        donem TEXT, talep_sayisi INTEGER, kontenjan INTEGER, doluluk_orani REAL
-    )""")
-    if add_criteria:
+        gecen = int(toplam * basari_orani)
         kont = 50
         kayit = int(kont * doluluk_orani)
         cur.execute(
+            "INSERT INTO ders_kriterleri VALUES (?,?,?,?,?,?,?,?,?)",
+            (1, ders_id, yil, "G", toplam, gecen, 75.0, kont, kayit),
+        )
+        cur.execute(
+            "INSERT INTO ders_kriterleri VALUES (?,?,?,?,?,?,?,?,?)",
+            (2, alt_ders_id, yil, "G", 100, 35, 50.0, 50, 20),
+        )
+
+    # performans
+    cur.execute(
+        """CREATE TABLE performans (
+            id INTEGER PRIMARY KEY,
+            ders_id INTEGER,
+            akademik_yil INTEGER,
+            donem TEXT,
+            ortalama_not REAL,
+            basari_orani REAL
+        )"""
+    )
+    if add_criteria:
+        cur.executemany(
+            "INSERT INTO performans VALUES (?,?,?,?,?,?)",
+            [
+                (1, ders_id, yil, "G", 75.0, basari_orani),
+                (2, ders_id, 2022, "G", 70.0, 0.65),
+                (3, alt_ders_id, yil, "G", 50.0, 0.35),
+                (4, alt_ders_id, 2022, "G", 55.0, 0.40),
+            ],
+        )
+
+    # populerlik
+    cur.execute(
+        """CREATE TABLE populerlik (
+            id INTEGER PRIMARY KEY,
+            ders_id INTEGER,
+            akademik_yil INTEGER,
+            donem TEXT,
+            talep_sayisi INTEGER,
+            kontenjan INTEGER,
+            doluluk_orani REAL
+        )"""
+    )
+    if add_criteria:
+        kont = 50
+        kayit = int(kont * doluluk_orani)
+        cur.executemany(
             "INSERT INTO populerlik VALUES (?,?,?,?,?,?,?)",
-            (1, ders_id, yil, "Guz", kayit, kont, doluluk_orani)
+            [
+                (1, ders_id, yil, "G", kayit, kont, doluluk_orani),
+                (2, alt_ders_id, yil, "G", 20, 50, 0.40),
+            ],
         )
 
     # havuz (onceki yil)
-    cur.execute("""CREATE TABLE havuz (
-        id INTEGER PRIMARY KEY, ders_id TEXT, yil INTEGER, fakulte_id INTEGER,
-        statu INTEGER, sayac INTEGER, skor REAL
-    )""")
-    prev_year = yil - 1
     cur.execute(
-        "INSERT INTO havuz VALUES (?,?,?,?,?,?,?)",
-        (1, str(ders_id), prev_year, 2, prev_statu, prev_sayac, 60.0)
+        """CREATE TABLE havuz (
+            id INTEGER PRIMARY KEY,
+            ders_id TEXT,
+            yil INTEGER,
+            fakulte_id INTEGER,
+            statu INTEGER,
+            sayac INTEGER,
+            skor REAL
+        )"""
     )
-    # 2022 Ground Truth icin
+    prev_year = yil - 1
+    cur.executemany(
+        "INSERT INTO havuz VALUES (?,?,?,?,?,?,?)",
+        [
+            (1, str(ders_id), prev_year, 2, prev_statu, prev_sayac, 60.0),
+            (2, str(alt_ders_id), prev_year, 2, 0, 0, 35.0),
+        ],
+    )
     if gt_statu is not None and yil == 2022:
         cur.execute(
             "INSERT INTO havuz VALUES (?,?,?,?,?,?,?)",
-            (2, str(ders_id), 2022, 2, gt_statu, 0, 70.0)
+            (3, str(ders_id), 2022, 2, gt_statu, 0, 70.0),
         )
 
-    # mufredat (bos - yeterli)
-    cur.execute("CREATE TABLE mufredat (mufredat_id INTEGER PRIMARY KEY, akademik_yil INTEGER)")
+    # mufredat
+    cur.execute(
+        """CREATE TABLE mufredat (
+            mufredat_id INTEGER PRIMARY KEY,
+            fakulte_id INTEGER,
+            akademik_yil INTEGER,
+            donem TEXT
+        )"""
+    )
     cur.execute("CREATE TABLE mufredat_ders (mufredat_id INTEGER, ders_id INTEGER)")
+    cur.execute("INSERT INTO mufredat VALUES (1, 2, ?, 'G')", (yil,))
+    cur.executemany(
+        "INSERT INTO mufredat_ders VALUES (?, ?)",
+        [(1, ders_id), (1, alt_ders_id)],
+    )
 
     conn.commit()
     conn.close()
@@ -459,7 +555,7 @@ if __name__ == "__main__":
         test_ahp_agirliklar_toplami,
         test_ahp_cr_gecerli,
         test_topsis_skor_aralik,
-        test_topsis_sifir_agirlik,
+        test_topsis_hesaplanamadi_guvenli,
         test_trend_bos_gecmis,
         test_trend_uclu_agirlik,
         test_rf_yuksek_basari_mufredatta,
@@ -491,5 +587,7 @@ if __name__ == "__main__":
             failed += 1
 
     print(f"\n{'='*55}")
-    print(f"Toplam: {passed + failed} test — {passed} gecti, {failed} basarisiz")
+    print(f"Toplam: {passed + failed} test - {passed} gecti, {failed} basarisiz")
     sys.exit(1 if failed else 0)
+
+

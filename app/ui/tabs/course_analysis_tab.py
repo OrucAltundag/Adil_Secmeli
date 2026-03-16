@@ -558,6 +558,13 @@ class CourseAnalysisTab(ttk.Frame):
         topsis = steps.get("topsis", {})
         if "error" in topsis:
             self._set_step_state("topsis", "error", f"Hata: {topsis['error']}")
+        elif topsis.get("status") == "not_calculated" or topsis.get("score_100") is None:
+            txt = (
+                "Kesinlesme puani henuz hesaplanmadi.\n"
+                f"Mesaj: {topsis.get('message', 'Hesaplama verisi yetersiz.')}\n"
+                f"Sure: {topsis.get('elapsed_ms',0):.1f} ms"
+            )
+            self._set_step_state("topsis", "ok", txt)
         else:
             inp = topsis.get("inputs", {})
             txt = (
@@ -618,12 +625,15 @@ class CourseAnalysisTab(ttk.Frame):
         statu  = decision.get("next", {}).get("statu", 0)
         sayac  = decision.get("next", {}).get("sayac", 0)
         label  = decision.get("label", "?")
-        skor   = decision.get("score_final", 0)
+        skor   = decision.get("score_final")
+        skor_txt = f"{float(skor):.2f} / 100" if isinstance(skor, (int, float)) else "Henuz hesaplanmadi"
         in_muf = decision.get("in_mufredat_this_year", False)
         is_gt  = decision.get("is_ground_truth", False)
         sm     = decision.get("sm_note", "")
         prev   = decision.get("prev", {})
         dt_reason = steps.get("dt_reason", "")
+        drop_reasons = decision.get("drop_reasons", []) or []
+        drop_txt = ", ".join(drop_reasons) if drop_reasons else "-"
 
         # Renk
         colors = _STATU_COLORS.get(statu, _DEFAULT_COLOR)
@@ -645,8 +655,9 @@ class CourseAnalysisTab(ttk.Frame):
 
         summary = (
             f"Ders       : {ders_adi}\n"
-            f"Kesinlesme : {skor:.2f} / 100\n"
+            f"Kesinlesme : {skor_txt}\n"
             f"Mufredata  : {'Evet' if in_muf else 'Hayir'}\n"
+            f"Dusme Neden: {drop_txt}\n"
             f"{'--- Ground Truth ---' if is_gt else ''}\n"
             f"Onceki yil ({prev_yr}): statu={prev_st}, sayac={prev_sc}\n"
             f"Bu yil     : statu={statu}, sayac={sayac}\n"

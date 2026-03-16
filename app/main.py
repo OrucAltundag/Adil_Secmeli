@@ -41,7 +41,7 @@ except Exception:
     sns = None
 
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
-from app.services.calculation import KararMotoru, run_automatic_scoring
+from app.services.calculation import run_automatic_scoring
 from app.services.havuz_karar import muhendislik_mufredat_durumunu_esitle
 
 
@@ -151,49 +151,83 @@ class AdilSecmeliApp(tk.Tk):
 
     def auto_connect(self):
         db_path = self.config_data.get("db_path")
-        
-        # Dosya yolunu garantiye al (Mutlak yol kullan)
+
         if db_path:
             db_path = os.path.abspath(db_path)
 
         try:
-            # 1. Veritabanı Bağlantısı
+            # 1) Veritabani baglantisi
             self.db.connect(db_path)
             self.tab_view.fill_tables()
 
-            # 2. Havuz Başlangıç Kontrolü (Tablo boşsa ilk kayıtları atar)
+            # 2) Havuz seed (bossa)
             self.ensure_pool_initialized_once()
 
-            # 3. YENİ: Otomatik Puanlama ve 2023 Seçimi (Calculation.py)
-            # Bu fonksiyon: AHP/TOPSIS hesaplar, puanları basar ve 2023 müfredatına en iyi 5 dersi ekler.
+            # 3) Otomatik sonraki yil uretimi
             try:
-                print(f"⚙️ [AUTO] Otomatik Puanlama ve Simülasyon Çalıştırılıyor...")
-                run_automatic_scoring(db_path) 
+                print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
+                auto_summary = run_automatic_scoring(db_path)
+                if isinstance(auto_summary, dict):
+                    generated = auto_summary.get("generated", [])
+                    skipped = auto_summary.get("skipped", [])
+                    errors = auto_summary.get("errors", [])
+                    print(
+                        f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
+                        f"atlanan: {len(skipped)} | hata: {len(errors)}"
+                    )
+                    for err in errors[:5]:
+                        print(f"[AUTO][HATA] {err}")
             except Exception as e:
-                print(f"⚠️ Otomatik puanlama hatası: {e}")
+                print(f"[AUTO] Otomatik uretim hatasi: {e}")
 
-            # 4. YENİ: Statü ve Renk Eşitleme (HavuzKarar.py)
-            # Bu fonksiyon: Müfredat tablosuna bakar; seçilenleri 'Yeşil' (1), düşenleri 'Kırmızı' (-1) yapar.
+            # 4) State-machine esitleme (dinamik yil araligi)
             try:
-                print("⚙️ [AUTO] Statü ve Yıl Eşitlemesi yapılıyor...")
-                muhendislik_mufredat_durumunu_esitle(db_path, baslangic_yili=2022, bitis_yili=2025)
+                _, yr = self.db.run_sql(
+                    """
+                    SELECT MIN(yil), MAX(yil) FROM (
+                        SELECT yil as yil FROM havuz
+                        UNION
+                        SELECT akademik_yil as yil FROM mufredat
+                    )
+                    """
+                )
+                min_yil = int(yr[0][0]) if yr and yr[0][0] is not None else None
+                max_yil = int(yr[0][1]) if yr and yr[0][1] is not None else None
+                if min_yil is not None and max_yil is not None and max_yil >= min_yil:
+                    print(f"[AUTO] Statu/yil esitleme: {min_yil} -> {max_yil}")
+                    muhendislik_mufredat_durumunu_esitle(
+                        db_path,
+                        baslangic_yili=min_yil,
+                        bitis_yili=max_yil,
+                    )
             except Exception as e:
-                print(f"⚠️ Eşitleme uyarısı: {e}")
+                print(f"[AUTO] Esitleme uyarisi: {e}")
 
-            # 5. UI Yenileme (Hesaplama sekmesindeki verileri güncelle)
-            self.tab_calc.refresh()
+            # 5) UI yenileme
+            try:
+                self.tab_calc.refresh()
+            except Exception:
+                pass
+            try:
+                self.tab_tools.refresh()
+            except Exception:
+                pass
+            try:
+                self.tab_pool.refresh()
+            except Exception:
+                pass
 
         except FileNotFoundError:
             messagebox.showwarning(
-                "Veritabanı Bulunamadı",
-                f"Varsayılan veritabanı yok:\n{db_path}\n\nLütfen dosya seçiniz."
+                "Veritabani Bulunamadi",
+                f"Varsayilan veritabani yok:\\n{db_path}\\n\\nLutfen dosya seciniz."
             )
             self.cmd_open_db()
 
         except Exception as e:
             messagebox.showerror(
-                "Başlangıç Hatası",
-                f"Uygulama başlatılırken hata oluştu:\n\n{e}"
+                "Baslangic Hatasi",
+                f"Uygulama baslatilirken hata olustu:\\n\\n{e}"
             )
 
 
@@ -218,7 +252,19 @@ class AdilSecmeliApp(tk.Tk):
 
             self.tab_view.fill_tables()
             self.ensure_pool_initialized_once()
-            self.tab_calc.refresh()  # ✅ önemli
+            try:
+                run_automatic_scoring(path)
+            except Exception:
+                pass
+            self.tab_calc.refresh()
+            try:
+                self.tab_tools.refresh()
+            except Exception:
+                pass
+            try:
+                self.tab_pool.refresh()
+            except Exception:
+                pass
 
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -228,47 +274,51 @@ class AdilSecmeliApp(tk.Tk):
 
     def fill_pool_table_for_years(self):
         """
-        Havuz tablosunu 2022-2025 yılları için doldurur.
-        Sadece kayıt yoksa INSERT yapar (INSERT OR IGNORE).
-        havuz.ders_id TEXT tipindedir; str(ders_id) olarak saklanır.
+        Havuz tablosunu mevcut mufredat yillari icin doldurur.
+        Sadece kayit yoksa INSERT yapar (INSERT OR IGNORE).
+        skor alanini NULL birakir; yil bazli TOPSIS hesaplaninca doldurulur.
         """
-        years = [2022, 2023, 2024, 2025]
+        _, year_rows = self.db.run_sql(
+            "SELECT DISTINCT akademik_yil FROM mufredat ORDER BY akademik_yil"
+        )
+        years = [int(r[0]) for r in (year_rows or []) if r and r[0] is not None]
+        if not years:
+            return
 
-        # Ders tipi kolon adını tespit et
         try:
-            _, test = self.db.run_sql(
-                "SELECT 1 FROM ders WHERE DersTipi='Secmeli' LIMIT 1"
-            )
+            self.db.run_sql("SELECT 1 FROM ders WHERE DersTipi='Secmeli' LIMIT 1")
             col_tip = "DersTipi"
         except Exception:
             col_tip = "tip"
 
-        q = f"SELECT d.ders_id, d.fakulte_id FROM ders d WHERE d.{col_tip} LIKE '%Seçmeli%'"
+        q = (
+            f"SELECT d.ders_id, d.fakulte_id, d.bolum_id, d.ad "
+            f"FROM ders d WHERE COALESCE(d.{col_tip}, '') LIKE 'Se%'"
+        )
         try:
             _, dersler = self.db.run_sql(q)
         except Exception:
-            _, dersler = self.db.run_sql(
-                "SELECT ders_id, fakulte_id FROM ders WHERE DersTipi LIKE '%mecmeli%'"
-            )
+            _, dersler = self.db.run_sql("SELECT ders_id, fakulte_id, bolum_id, ad FROM ders")
+
         if not dersler:
             return
 
-        # havuz şeması: id, ders_id(TEXT), yil, fakulte_id, bolum_id, alan, statu, sayac, skor, ders_adi
         insert_q = """
-            INSERT OR IGNORE INTO havuz (ders_id, yil, fakulte_id, statu, sayac, skor)
-            VALUES (?, ?, ?, 0, 0, 0)
+            INSERT OR IGNORE INTO havuz (ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi)
+            VALUES (?, ?, ?, ?, 0, 0, NULL, ?)
         """
 
         cur = self.db.conn.cursor()
-        for ders_id, fakulte_id in dersler:
+        for ders_id, fakulte_id, bolum_id, ders_adi in dersler:
             for yil in years:
-                cur.execute(insert_q, (str(ders_id), yil, fakulte_id))
+                cur.execute(
+                    insert_q,
+                    (str(ders_id), yil, fakulte_id, bolum_id, str(ders_adi or "")),
+                )
 
         self.db.conn.commit()
-        print(f"[Pool] {len(dersler)} ders x {len(years)} yıl = havuz seed tamamlandı.")
-   
-   
-    # ---- BÖLÜM 5: SQL Çalıştırıcı penceresi -----
+        print(f"[Pool] {len(dersler)} ders x {len(years)} yil = havuz seed tamamlandi.")
+
 
     def open_sql_runner(self):
         win = tk.Toplevel(self)
@@ -346,11 +396,10 @@ class AdilSecmeliApp(tk.Tk):
 
 
     def ensure_pool_initialized_once(self):
-        res = self.db.run_sql("SELECT COUNT(*) FROM havuz WHERE yil BETWEEN 2022 AND 2025;")
+        res = self.db.run_sql("SELECT COUNT(*) FROM havuz;")
         cnt = res[1][0][0] if res[1] else 0
         if cnt == 0:
             self.fill_pool_table_for_years()
-
 
 
 if __name__ == "__main__":

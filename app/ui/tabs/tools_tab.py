@@ -56,6 +56,7 @@ class ToolsTab(ttk.Frame):
         """Sekmeye gelince veya 'Yenile' basılınca çağır."""
         self.db_path = getattr(self.app, "db_path", self.db_path)
 
+        self._fill_years()
         self._fill_faculties()
         # seçimler varsa tabloyu bas
         try:
@@ -82,9 +83,9 @@ class ToolsTab(ttk.Frame):
         self.cb_bolum.bind("<<ComboboxSelected>>", lambda e: self.load_report())
 
         ttk.Label(top, text="Yıl:").pack(side=tk.LEFT, padx=(0, 6))
-        self.cb_yil = ttk.Combobox(top, state="readonly", values=["2022", "2023", "2024", "2025"], width=10)
+        self.cb_yil = ttk.Combobox(top, state="readonly", values=[], width=10)
         self.cb_yil.pack(side=tk.LEFT, padx=(0, 14))
-        self.cb_yil.set("2025")
+        self.cb_yil.set(str(datetime.datetime.now().year))
         self.cb_yil.bind("<<ComboboxSelected>>", lambda e: self.load_report())
 
         ttk.Button(top, text="📌 Rapor Getir", command=self.load_report).pack(side=tk.LEFT, padx=6)
@@ -189,6 +190,27 @@ class ToolsTab(ttk.Frame):
         except Exception as e:
             self.log(f"Fakülte yükleme hatası: {e}")
 
+    def _fill_years(self):
+        try:
+            _, rows = self.db.run_sql(
+                """
+                SELECT DISTINCT yil FROM (
+                    SELECT yil as yil FROM havuz
+                    UNION
+                    SELECT akademik_yil as yil FROM mufredat
+                )
+                ORDER BY yil
+                """
+            )
+            years = [str(r[0]) for r in (rows or []) if r and r[0] is not None]
+            if not years:
+                years = [str(datetime.datetime.now().year)]
+            self.cb_yil["values"] = years
+            if self.cb_yil.get() not in years:
+                self.cb_yil.set(years[-1])
+        except Exception as e:
+            self.log(f"Yil listesi yukleme hatasi: {e}")
+
     def _on_faculty_change(self, _event):
         fakulte = self.cb_fakulte.get()
         if not fakulte:
@@ -234,9 +256,9 @@ class ToolsTab(ttk.Frame):
                 h.yil
             FROM havuz h
             JOIN fakulte f ON h.fakulte_id = f.fakulte_id
-            LEFT JOIN ders d ON h.ders_id = d.ders_id
+            LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
             WHERE f.ad = ? AND h.yil = ?
-            ORDER BY h.skor DESC, h.sayac DESC
+            ORDER BY CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC, h.sayac DESC
         """
 
         pool_rows = []
@@ -253,8 +275,13 @@ class ToolsTab(ttk.Frame):
         skorlar = []
 
         for ders_id, ders_adi, skor, sayac, statu, yil_ in pool_rows:
-            s = float(skor) if skor is not None else 0.0
-            skorlar.append(s)
+            if skor is not None:
+                s = float(skor)
+                skorlar.append(s)
+                skor_txt = f"{s:.2f}"
+            else:
+                s = None
+                skor_txt = "-"
 
             statu = int(statu) if statu is not None else 0
             if statu == -1:
@@ -266,12 +293,12 @@ class ToolsTab(ttk.Frame):
             else:
                 statu_txt = "Havuzda (0)"
 
-            self.tree_pool.insert("", tk.END, values=(ders_id, ders_adi, f"{s:.2f}", sayac, statu_txt, yil_))
+            self.tree_pool.insert("", tk.END, values=(ders_id, ders_adi, skor_txt, sayac, statu_txt, yil_))
 
-        avg = (sum(skorlar) / len(skorlar)) if skorlar else 0.0
+        avg = (sum(skorlar) / len(skorlar)) if skorlar else None
 
         self.lbl_pool_total.config(text=f"Havuz Toplam: {total}")
-        self.lbl_pool_avg.config(text=f"Ortalama Skor: {avg:.2f}")
+        self.lbl_pool_avg.config(text=f"Ortalama Skor: {avg:.2f}" if avg is not None else "Ortalama Skor: -")
         self.lbl_pool_rest.config(text=f"Dinlenmede(-1): {rest}")
         self.lbl_pool_chosen.config(text=f"Müfredatta(1): {chosen}")
 
@@ -290,7 +317,7 @@ class ToolsTab(ttk.Frame):
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN havuz h ON (h.ders_id = d.ders_id AND h.yil = m.akademik_yil)
+            LEFT JOIN havuz h ON (CAST(h.ders_id AS INTEGER) = d.ders_id AND h.yil = m.akademik_yil)
             WHERE b.ad = ? AND m.akademik_yil = ?
             ORDER BY d.ad
         """
@@ -300,7 +327,7 @@ class ToolsTab(ttk.Frame):
             rows_curr = rows_curr or []
             for ders_id, ders_adi, skor in rows_curr:
                 s = float(skor) if skor is not None else None
-                self.tree_curr.insert("", tk.END, values=(ders_id, ders_adi, f"{s:.2f}" if s is not None else "---"))
+                self.tree_curr.insert("", tk.END, values=(ders_id, ders_adi, f"{s:.2f}" if s is not None else "-"))
         except Exception as e:
             self.log(f"Müfredat sorgu hatası: {e}")
 
@@ -337,21 +364,37 @@ class ToolsTab(ttk.Frame):
 
     def sync_status_year(self):
         if not self.db_path:
-            messagebox.showwarning("Uyarı", "DB yolu bulunamadı.")
+            messagebox.showwarning("Uyari", "DB yolu bulunamadi.")
             return
 
-        if not messagebox.askyesno("Onay", "Statü & yıl eşitleme çalıştırılsın mı?"):
+        if not messagebox.askyesno("Onay", "Statu & yil esitleme calistirilsin mi?"):
             return
 
         try:
-            muhendislik_mufredat_durumunu_esitle(self.db_path, baslangic_yili=2022, bitis_yili=2025)
-            self.log("✅ Statü/Yıl eşitleme tamamlandı.")
+            _, yr = self.db.run_sql(
+                """
+                SELECT MIN(yil), MAX(yil) FROM (
+                    SELECT yil as yil FROM havuz
+                    UNION
+                    SELECT akademik_yil as yil FROM mufredat
+                )
+                """
+            )
+            min_yil = int(yr[0][0]) if yr and yr[0][0] is not None else 2022
+            max_yil = int(yr[0][1]) if yr and yr[0][1] is not None else min_yil
+            muhendislik_mufredat_durumunu_esitle(
+                self.db_path,
+                baslangic_yili=min_yil,
+                bitis_yili=max_yil,
+            )
+            self.log("Statu/Yil esitleme tamamlandi.")
             self.load_report()
-            messagebox.showinfo("Tamam", "Eşitleme tamamlandı.")
+            messagebox.showinfo("Tamam", "Esitleme tamamlandi.")
         except Exception as e:
-            self.log(f"❌ Eşitleme hatası: {e}")
+            self.log(f"Esitleme hatasi: {e}")
             messagebox.showerror("Hata", str(e))
 
+    
     def backup_db(self):
         if not self.db_path or not os.path.exists(self.db_path):
             messagebox.showwarning("Uyarı", "Yedeklenecek DB bulunamadı.")
