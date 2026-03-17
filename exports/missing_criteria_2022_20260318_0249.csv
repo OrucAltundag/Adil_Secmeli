@@ -1,0 +1,32 @@
+﻿fakulte,bolum,ders_id,ders_adi,yil,donem,mufredatta_mi,toplam_ogrenci,gecen_ogrenci,kontenjan,kayitli_ogrenci,ortalama,basari_orani,trend,populerlik,anket_katilimci,anket_dersi_secen,not_aciklama
+Güzel Sanatlar Fakültesi,Gastronomi,568,Antik Mutfaklar,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Güzel Sanatlar Fakültesi,Gastronomi,597,Gastronomi ve Sanat,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Güzel Sanatlar Fakültesi,Gastronomi,557,Moleküler Gastronomi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Güzel Sanatlar Fakültesi,Gastronomi,558,Yemek Fotoğrafçılığı,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Güzel Sanatlar Fakültesi,Gastronomi,559,İçecek Bilgisi ve Miksoloji,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Mühendislik ve Doğa Bilimleri Fakültesi,Endüstri Mühendisliği,563,İnsan Kaynakları Yönetimi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Ebelik,448,Adli Ebelik,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Ebelik,374,Doğuma Hazırlık ve Ebeveyn Eğitimi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Ebelik,460,Emzirme Danışmanlığı,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Ebelik,432,Perinatal Ruh Sağlığı,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Ebelik,459,Suda Doğum ve Alternatif Yöntemler,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Fizyoterapi ve Rehabilitasyon,489,Hidroterapi ve Balneoterapi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Fizyoterapi ve Rehabilitasyon,488,Manuel Terapi Teknikleri,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Fizyoterapi ve Rehabilitasyon,487,Sporcu Sağlığı ve Rehabilitasyonu,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Fizyoterapi ve Rehabilitasyon,537,Tele-Rehabilitasyon,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Fizyoterapi ve Rehabilitasyon,539,Yoga ve Pilates,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Hemşirelik,351,Diyaliz Hemşireliği,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Hemşirelik,349,Onkoloji Hemşireliği,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Hemşirelik,348,Sağlık Psikolojisi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Hemşirelik,367,Yoğun Bakım Hemşireliği,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Sağlık Bilimleri Fakültesi,Hemşirelik,352,İlk Yardım,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Tıp Fakültesi,Tıp,79,Kariyer Planlama,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Tıp Fakültesi,Tıp,22,Plastik Rekonstrüktif ve Estetik Cerrahi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Tıp Fakültesi,Tıp,23,Radyasyon Onkolojisi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Tıp Fakültesi,Tıp,668,Toplum ve Kültürü Anlamak,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+Tıp Fakültesi,Tıp,2,Çocuk Hakları ve Aile Eğitimi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+İlahiyat Fakültesi,İlahiyat,625,Din ve Mitoloji,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+İlahiyat Fakültesi,İlahiyat,664,Kur'an-ı Kerim Talimi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+İlahiyat Fakültesi,İlahiyat,672,Medeniyetler ve Küresel Karşılaşmalar,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+İlahiyat Fakültesi,İlahiyat,624,Osmanlı Türkçesi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.
+İlahiyat Fakültesi,İlahiyat,626,İslam Ahlak Felsefesi,2022,Güz,True,100,75,50,40,70.0,0.75,0.72,0.8,0,0,ORNEK SEED — Excel’i gercek degerlerle guncelleyin; dry-run ile kontrol edin.

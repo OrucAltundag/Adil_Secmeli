@@ -93,3 +93,14 @@ CREATE TABLE IF NOT EXISTS kontenjan (
     PRIMARY KEY (ders_id, donem),
     FOREIGN KEY(ders_id) REFERENCES ders(ders_id)
 );
+
+-- Mufredat uretim pipeline logu (olusturulan/atlanan/hatali ozet)
+CREATE TABLE IF NOT EXISTS curriculum_generation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    generated_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    rounds INTEGER NOT NULL DEFAULT 0,
+    summary_text TEXT
+);

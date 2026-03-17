@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # app/ui/tabs/calc_tab.py
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -367,106 +368,125 @@ class CalcTab(ttk.Frame):
                     else:
                         sonuc_metni += "Hesaplama sonucu boş döndü."
 
-            # 5) Sonraki yil mufredat uretimi (bolum bazli)
+            # 5) Sonraki yil mufredat uretimi (okul geneli zincirli pipeline)
             elif algo_id == "next_year":
-                from app.services.calculation import generate_next_year_curricula
+                from app.services.calculation import rebuild_school_curricula
                 import os
-
-                cb_fak = getattr(self.page_lab, "cb_fakulte", None)
-                cb_yil = getattr(self.page_lab, "cb_yil", None)
-
-                fakulte_adi = cb_fak.get().strip() if cb_fak and cb_fak.get() else ""
-                yil_str = cb_yil.get().strip() if cb_yil and cb_yil.get() else ""
-
-                if not fakulte_adi or not yil_str:
-                    raise ValueError("Lutfen Ders Lab alanindan fakulte ve yil secin.")
-
-                fakulte_id = getattr(self.page_lab, "_fakulte_map", {}).get(fakulte_adi)
-                if fakulte_id is None:
-                    _, rr = self.db.run_sql(
-                        "SELECT fakulte_id FROM fakulte WHERE TRIM(ad)=TRIM(?) LIMIT 1",
-                        (fakulte_adi,)
-                    )
-                    if rr:
-                        fakulte_id = int(rr[0][0])
-
-                if fakulte_id is None:
-                    raise ValueError(f"Fakulte ID bulunamadi: {fakulte_adi}")
 
                 db_path = getattr(self.app, "db_path", None) or self.db_path
                 if not db_path:
                     raise ValueError("Veritabani yolu bulunamadi.")
                 db_path = os.path.abspath(db_path)
 
-                donem = "G"
-                sonuc = generate_next_year_curricula(
+                pipeline = rebuild_school_curricula(
                     db_path=db_path,
-                    fakulte_id=int(fakulte_id),
-                    akademik_yil=int(yil_str),
-                    donem=donem,
+                    base_year=2022,
+                    donem="G",
+                    max_rounds=8,
                 )
 
-                if not sonuc.get("ok"):
-                    basarili_mi = False
-                    msg = ["Sonraki yil mufredat uretimi basarisiz."]
-                    if sonuc.get("error"):
-                        msg.append(f"Hata: {sonuc['error']}")
+                reset = pipeline.get("reset") or {}
+                gen = pipeline.get("generation") or {}
+                generated = gen.get("generated", []) or []
+                skipped = gen.get("skipped", []) or []
+                errors = gen.get("errors", []) or []
+                rounds = gen.get("rounds", []) or []
 
-                    eksik_krit = sonuc.get("missing_criteria") or []
-                    if eksik_krit:
-                        msg.append("\nEksik kriter girisleri:")
-                        for it in eksik_krit[:20]:
-                            msg.append(f"- {it.get('bolum')} | {it.get('ders')} (ID:{it.get('ders_id')})")
-                        if len(eksik_krit) > 20:
-                            msg.append(f"... +{len(eksik_krit)-20} ders daha")
+                lines = []
+                lines.append("Okul geneli mufredat yeniden olusturma pipeline'i calisti.")
+                lines.append("1) 2022 disi mufredat temizlendi")
+                lines.append("2) Kriterleri tamam olan yillar zincirleme yeniden uretildi")
+                lines.append("")
 
-                    eksik_muf = sonuc.get("missing_curricula") or []
-                    if eksik_muf:
-                        msg.append("\nEksik mufredat kayitlari:")
-                        for it in eksik_muf:
-                            msg.append(f"- {it.get('bolum')} (bolum_id={it.get('bolum_id')})")
+                lines.append(
+                    f"Temizlik: mufredat={reset.get('deleted_mufredat', 0)} | "
+                    f"mufredat_ders={reset.get('deleted_mufredat_ders', 0)} | "
+                    f"havuz={reset.get('deleted_havuz', 0)}"
+                )
+                lines.append(f"Legacy duzeltme kaydi: {reset.get('normalized_curricula', 0)}")
+                lines.append(
+                    f"Uretim ozeti: round={len(rounds)} | olusan={len(generated)} | "
+                    f"atlanan={len(skipped)} | hata={len(errors)}"
+                )
+                lines.append("")
 
-                    sonuc_metni = "\n".join(msg)
-                else:
-                    lines = []
-                    lines.append("Bolum bazli sonraki yil mufredat uretimi tamamlandi.")
+                for item in generated:
                     lines.append(
-                        f"Fakulte: {sonuc.get('fakulte')} (ID:{sonuc.get('fakulte_id')}) | "
-                        f"{sonuc.get('year_from')} -> {sonuc.get('year_to')} | Donem: {sonuc.get('donem')}"
+                        f"[{item.get('fakulte')}] {item.get('year_from')} -> {item.get('year_to')} "
+                        f"(havuz upsert={item.get('pool_rows_upserted', 0)})"
                     )
-                    lines.append(f"Havuz upsert: {sonuc.get('pool_rows_upserted', 0)} satir")
-                    lines.append(f"Bu yil TOPSIS skor upsert: {sonuc.get('year_score_upserted', 0)} satir")
-                    lines.append("")
-
-                    for bol in sonuc.get("departments", []):
+                    for bol in item.get("departments", []):
                         b_ad = bol.get("bolum", "?")
                         if bol.get("tasindi_mi"):
-                            lines.append(f"- {b_ad}: Dusen ders yok, mufredat aynen tasindi.")
+                            lines.append(f"- {b_ad}: Degisiklik yok, mufredat tasindi.")
                             continue
+                        dusen = bol.get("dusenler", []) or []
+                        eklenen = bol.get("eklenenler", []) or []
+                        if dusen:
+                            lines.append(f"- {b_ad} | Cikanlar:")
+                            for d in dusen:
+                                rs = " + ".join(d.get("reasons", []) or ["Kural geregi"])
+                                lines.append(
+                                    f"  * {d.get('ders')} (Skor:{d.get('score', 0):.1f}, "
+                                    f"Ort:{d.get('average_grade', 0):.1f}) -> {rs}"
+                                )
+                        if eklenen:
+                            lines.append(f"- {b_ad} | Girenler:")
+                            for e in eklenen:
+                                rs = " + ".join(e.get("reasons", []) or ["Yuksek kesinlesme puani"])
+                                lines.append(
+                                    f"  * {e.get('ders')} (Skor:{e.get('score', 0):.1f}) -> {rs}"
+                                )
+                    lines.append("")
 
-                        dusen = bol.get("dusenler", [])
-                        eklenen = bol.get("eklenenler", [])
-                        d_txt = ", ".join(
-                            [
-                                f"{x.get('ders')} [Skor:{x.get('score',0):.1f}, Ort:{x.get('average_grade',0):.1f}, Neden:{' + '.join(x.get('reasons', [])) or '-'}]"
-                                for x in dusen
-                            ]
-                        ) or "-"
-                        e_txt = ", ".join([f"{x.get('ders')} [{x.get('score',0):.1f}]" for x in eklenen]) or "-"
-                        lines.append(f"- {b_ad}:")
-                        lines.append(f"  Dusenler : {d_txt}")
-                        lines.append(f"  Eklenenler: {e_txt}")
+                if skipped:
+                    lines.append("Atlanan fakulteler/yillar:")
+                    for item in skipped[:30]:
+                        ytxt = f" | yil={item.get('year')}" if item.get("year") is not None else ""
+                        lines.append(f"- {item.get('fakulte')} {ytxt} -> {item.get('reason')}")
+                        missing_criteria = item.get("missing_criteria", []) or []
+                        if missing_criteria:
+                            lines.append("  Eksik kriter girisleri:")
+                            for mk in missing_criteria[:8]:
+                                lines.append(
+                                    f"    * {mk.get('bolum')} | {mk.get('ders')} (ID:{mk.get('ders_id')})"
+                                )
+                            if len(missing_criteria) > 8:
+                                lines.append(f"    * ... +{len(missing_criteria)-8} ders daha")
 
-                    sonuc_metni = "\n".join(lines)
+                        missing_curricula = item.get("missing_curricula", []) or []
+                        if missing_curricula:
+                            lines.append("  Eksik mufredat bolumleri:")
+                            for mm in missing_curricula[:8]:
+                                lines.append(f"    * {mm.get('bolum')} (bolum_id={mm.get('bolum_id')})")
+                            if len(missing_curricula) > 8:
+                                lines.append(f"    * ... +{len(missing_curricula)-8} bolum daha")
+                    lines.append("")
 
-                    try:
-                        self.page_pool.refresh()
-                    except Exception:
-                        pass
-                    try:
-                        self.page_lab.refresh()
-                    except Exception:
-                        pass
+                if errors:
+                    lines.append("Hatalar:")
+                    for item in errors[:20]:
+                        ytxt = f" | yil={item.get('year')}" if item.get("year") is not None else ""
+                        lines.append(f"- {item.get('fakulte')} {ytxt} -> {item.get('error')}")
+
+                if not generated and not errors:
+                    lines.append("Yeni yil uretimi yapilmadi. (Kriterler eksik olabilir veya sistem zaten guncel.)")
+
+                sonuc_metni = "\n".join(lines)
+                basarili_mi = bool(pipeline.get("ok", False)) and len(errors) == 0
+
+                try:
+                    self.page_pool.refresh()
+                except Exception:
+                    pass
+                try:
+                    self.page_lab.refresh()
+                except Exception:
+                    pass
+                try:
+                    self.app.refresh_all()
+                except Exception:
+                    pass
 
             # 6) ML
             elif algo_id in ["lr", "rf", "dt"]:
@@ -498,11 +518,13 @@ class CalcTab(ttk.Frame):
         self.results_cache[algo_id] = sonuc_metni
 
         if basarili_mi:
-            widgets["status"].config(text="Tamamlandı", bg="#86efac")
+            widgets["status"].config(text="Tamamlandi", bg="#86efac")
             widgets["show_btn"].config(state="normal")
             self.show_result(algo_id)
         else:
             widgets["status"].config(text="Hata!", bg="#fca5a5")
+            widgets["show_btn"].config(state="normal")
+            self.show_result(algo_id)
 
     def show_result(self, algo_id: str):
         metin = self.results_cache.get(algo_id, "Sonuç bulunamadı.")

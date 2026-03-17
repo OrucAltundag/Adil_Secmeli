@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # =============================================================================
 # app/ui/tabs/criteria_page.py — Kriter Girdi Sayfası
 # =============================================================================
@@ -304,39 +305,64 @@ class CriteriaPage:
         try:
             col_tip = self._ders_tip_kolonu()
             donem_norm = "Güz" if donem == "Güz" else "Bahar"
+            bolum_filter = bolum or ""
 
             if sadece_mufredat:
-                # Sadece o fakülte, yıl, dönem müfredatındaki dersler
+                # Mufredattaki TUM dersler (secimli + zorunlu). Eski filtre sadece secimli
+                # gosterdiginden mufredatta olup DersTipi=Zorunlu kayitli dersler listede yoktu.
                 query = f"""
                     SELECT DISTINCT d.ders_id, d.ad,
                            CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
-                    FROM ders d
-                    JOIN fakulte f ON d.fakulte_id = f.fakulte_id
-                    JOIN mufredat m ON m.fakulte_id = f.fakulte_id
-                      AND m.akademik_yil = ? AND LOWER(COALESCE(m.donem,'Güz')) = LOWER(?)
-                    JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id AND md.ders_id = d.ders_id
+                    FROM mufredat m
+                    JOIN bolum b ON b.bolum_id = m.bolum_id
+                    JOIN fakulte f ON f.fakulte_id = b.fakulte_id
+                    JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+                    JOIN ders d ON d.ders_id = md.ders_id
                     LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?
                         AND (dk.donem = ? OR dk.donem IS NULL OR dk.donem = ''))
                     WHERE f.ad = ?
-                      AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%'
-                           OR LOWER(COALESCE(d.{col_tip},'')) LIKE '%secmeli%')
+                      AND (? = '' OR b.ad = ?)
+                      AND m.akademik_yil = ?
+                      AND LOWER(SUBSTR(TRIM(COALESCE(m.donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
                     ORDER BY d.ad
                 """
-                _, rows = self.db.run_sql(query, (int(yil), donem_norm, int(yil), donem_norm, fakulte))
+                _, rows = self.db.run_sql(
+                    query,
+                    (
+                        int(yil),
+                        donem_norm,
+                        fakulte,
+                        bolum_filter,
+                        bolum_filter,
+                        int(yil),
+                        donem_norm,
+                    ),
+                )
             else:
                 query = f"""
                     SELECT d.ders_id, d.ad,
                            CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
                     FROM ders d
                     JOIN fakulte f ON d.fakulte_id = f.fakulte_id
+                    LEFT JOIN bolum b ON b.bolum_id = d.bolum_id
                     LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?
                         AND (dk.donem = ? OR dk.donem IS NULL OR dk.donem = ''))
                     WHERE f.ad = ?
+                      AND (? = '' OR b.ad = ?)
                       AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%'
                            OR LOWER(COALESCE(d.{col_tip},'')) LIKE '%secmeli%')
                     ORDER BY d.ad
                 """
-                _, rows = self.db.run_sql(query, (int(yil), donem_norm, fakulte))
+                _, rows = self.db.run_sql(
+                    query,
+                    (
+                        int(yil),
+                        donem_norm,
+                        fakulte,
+                        bolum_filter,
+                        bolum_filter,
+                    ),
+                )
 
             # Kriter filtresi uygula
             if kriter_filtre == "Girildi":
@@ -623,13 +649,41 @@ class CriteriaPage:
             except Exception:
                 pass
 
+            pipeline_note = ""
+            if self.app and getattr(self.app, "db_path", None):
+                try:
+                    from app.services.calculation import rebuild_school_curricula
+
+                    pipeline = rebuild_school_curricula(
+                        db_path=self.app.db_path,
+                        base_year=2022,
+                        donem="G",
+                        max_rounds=8,
+                    )
+                    gen = (pipeline or {}).get("generation") or {}
+                    g_cnt = len(gen.get("generated", []) or [])
+                    s_cnt = len(gen.get("skipped", []) or [])
+                    e_cnt = len(gen.get("errors", []) or [])
+                    pipeline_note = (
+                        f"\n\nOtomatik yeniden hesaplama calisti: "
+                        f"olusan={g_cnt}, atlanan={s_cnt}, hata={e_cnt}"
+                    )
+                except Exception as pe:
+                    pipeline_note = f"\n\nOtomatik yeniden hesaplama hatasi: {pe}"
+
             msg = "Veriler kaydedildi."
             if in_mufredat:
                 msg += f"\nBaşarı oranı: %{basari_orani*100:.1f}  |  Doluluk: %{doluluk_orani*100:.1f}"
             else:
                 msg += "\n(Müfredatta olmayan ders – sadece anket kaydedildi.)"
+            msg += pipeline_note
             messagebox.showinfo("Başarılı", msg)
             self.load_courses()
+            if self.app:
+                try:
+                    self.app.refresh_all()
+                except Exception:
+                    pass
 
         except ValueError:
             messagebox.showerror("Hata", "Lütfen sayısal alanlara sadece rakam giriniz!")

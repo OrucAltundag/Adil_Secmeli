@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # app/ui/tabs/course_analysis_tab.py
 """
 Ders Analiz Laboratuvari sekmesi.
@@ -92,6 +93,7 @@ class CourseAnalysisTab(ttk.Frame):
     # =========================================================
     def refresh(self):
         self.db = self.app.db
+        self._load_years()
         self._load_faculties()
 
     # =========================================================
@@ -129,9 +131,7 @@ class CourseAnalysisTab(ttk.Frame):
                      "font": ("Segoe UI", 9, "bold")}
 
         tk.Label(bar, text="Yil:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
-        self.cb_yil = ttk.Combobox(bar, state="readonly",
-                                   values=["2022", "2023", "2024", "2025"], width=7)
-        self.cb_yil.current(0)
+        self.cb_yil = ttk.Combobox(bar, state="readonly", width=7)
         self.cb_yil.pack(side=tk.LEFT, padx=(0, 10))
 
         tk.Label(bar, text="Fakulte:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
@@ -287,7 +287,76 @@ class CourseAnalysisTab(ttk.Frame):
     #  VERI YUKLEME
     # =========================================================
     def _load_initial_data(self):
+        self._load_years()
         self._load_faculties()
+
+    def _load_years(self):
+        """
+        Yil listesini veritabanindan dinamik doldurur.
+        Varsayilan olarak en guncel yil secilir.
+        """
+        default_years = ["2022", "2023", "2024", "2025"]
+        try:
+            if not getattr(self.db, "conn", None):
+                self.cb_yil["values"] = tuple(default_years)
+                self.cb_yil.set(default_years[-1])
+                self._global_year_values = list(default_years)
+                return
+
+            _, rows = self.db.run_sql(
+                """
+                SELECT DISTINCT yil
+                FROM (
+                    SELECT yil as yil FROM havuz
+                    UNION
+                    SELECT akademik_yil as yil FROM mufredat
+                )
+                WHERE yil IS NOT NULL
+                ORDER BY yil
+                """
+            )
+            years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
+            if not years:
+                years = default_years
+
+            self._global_year_values = list(years)
+            self.cb_yil["values"] = tuple(years)
+            self.cb_yil.set(years[-1])
+        except Exception as e:
+            print(f"[CourseAnalysisTab] _load_years hatasi: {e}")
+            self._global_year_values = list(default_years)
+            self.cb_yil["values"] = tuple(default_years)
+            self.cb_yil.set(default_years[-1])
+
+    def _sync_year_for_faculty(self, fakulte_id: int):
+        """
+        Secili fakulte icin mufredatta bulunan en guncel yili secer.
+        """
+        try:
+            yil_list = list(getattr(self, "_global_year_values", []))
+            if not yil_list:
+                yil_list = [str(v) for v in self.cb_yil.cget("values")]
+
+            _, rows = self.db.run_sql(
+                """
+                SELECT DISTINCT m.akademik_yil
+                FROM mufredat m
+                JOIN bolum b ON b.bolum_id = m.bolum_id
+                WHERE b.fakulte_id = ?
+                ORDER BY m.akademik_yil
+                """,
+                (int(fakulte_id),),
+            )
+            fakulte_years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
+            hedef = fakulte_years[-1] if fakulte_years else (yil_list[-1] if yil_list else "")
+
+            merged = sorted(set(yil_list + fakulte_years), key=lambda x: int(x))
+            if merged:
+                self.cb_yil["values"] = tuple(merged)
+            if hedef:
+                self.cb_yil.set(hedef)
+        except Exception as e:
+            print(f"[CourseAnalysisTab] _sync_year_for_faculty hatasi: {e}")
 
     def _load_faculties(self):
         try:
@@ -323,6 +392,7 @@ class CourseAnalysisTab(ttk.Frame):
                     self._update_ders_combo("")
                     return
                 fid = int(rows[0][0])
+            self._sync_year_for_faculty(fid)
 
             ders_rows = []
             # 1) Müfredat yolu: müfredat->bolum->fakulte (Mühendislik, Tıp vb. için)

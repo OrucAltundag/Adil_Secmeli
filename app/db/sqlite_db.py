@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # app/db/sqlite_db.py
 from __future__ import annotations
 

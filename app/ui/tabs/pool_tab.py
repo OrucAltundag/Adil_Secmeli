@@ -1,9 +1,15 @@
+# -*- coding: utf-8 -*-
 # app/ui/tabs/pool_tab.py
 # Havuz Yonetimi sekmesi - Durum Makinesi goruntuleyici
 
 import tkinter as tk
 from tkinter import ttk, messagebox, font as tkfont
 
+from app.services.calculation import (
+    ensure_pool_visibility_for_curriculum,
+    get_faculty_year_topsis_results,
+    persist_faculty_year_topsis_scores,
+)
 
 # ---------------------------------------------------------------------------
 # Statu sabitleri ve gorsel esleme
@@ -124,6 +130,12 @@ class PoolTab(ttk.Frame):
             command=self.toggle_resting_courses
         )
         self.btn_toggle.pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            actions,
+            text="Sağlık Kontrolü (Fakülte/Yıl)",
+            command=self.run_pool_health_check,
+        ).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(actions, text="Secileni Dinlenmeye Al (-1)",
                    command=lambda: self.set_selected_pool_status(-1)).pack(side=tk.LEFT, padx=5)
@@ -313,6 +325,47 @@ class PoolTab(ttk.Frame):
     # =========================================================
     #  DATA LOADERS
     # =========================================================
+    def _ensure_year_scores(self, fakulte_id: int, yil: int, donem: str = "G") -> None:
+        """
+        Secili fakulte + yil icin TOPSIS tabanli kesinlesme puanlarini
+        hesaplayip havuz.skor alanina yazar.
+
+        Havuz ekranina gelindiginde, puanlar daha once hesaplanmamis olsa bile
+        yil bazli skorlar guncellenmis olur.
+        """
+        try:
+            conn = getattr(self.db, "conn", None)
+            if conn is None:
+                return
+            cur = conn.cursor()
+            fakulte_id = int(fakulte_id)
+
+            pack = get_faculty_year_topsis_results(
+                cur=cur,
+                fakulte_id=fakulte_id,
+                akademik_yil=int(yil),
+                donem=donem,
+            )
+            if not pack.get("ok"):
+                return
+
+            skor_map = dict(pack.get("scores") or {})
+            ders_meta = dict(pack.get("ders_meta") or {})
+            if not skor_map:
+                return
+
+            persist_faculty_year_topsis_scores(
+                cur=cur,
+                fakulte_id=fakulte_id,
+                akademik_yil=int(yil),
+                skor_map=skor_map,
+                ders_meta=ders_meta,
+                donem=donem,
+            )
+            conn.commit()
+        except Exception as exc:
+            print(f"UI Hata (Yil TOPSIS): {exc}")
+
     def load_faculties_to_combo(self):
         try:
             _, rows = self.db.run_sql("SELECT ad FROM fakulte ORDER BY ad")
@@ -380,9 +433,46 @@ class PoolTab(ttk.Frame):
         fakulte = self.cb_fakulte.get()
         bolum   = self.cb_bolum.get()
         yil     = self.cb_yil.get()
+        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Güz"
+        donem_norm = str(donem).strip() or "Güz"
 
         if not fakulte or not yil:
             return
+
+        # Fakulte ID'sini kesin olarak cozumle (ad LIKE degil, birebir)
+        fakulte_id = None
+        try:
+            _, fid_rows = self.db.run_sql(
+                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
+                (fakulte,),
+            )
+            if fid_rows and fid_rows[0] and fid_rows[0][0] is not None:
+                fakulte_id = int(fid_rows[0][0])
+        except Exception:
+            fakulte_id = None
+
+        if fakulte_id is None:
+            return
+
+        # Secili fakulte + yil icin kesinlesme puanlarini hesapla ve havuza yaz
+        try:
+            conn = getattr(self.db, "conn", None)
+            if conn is not None:
+                cur = conn.cursor()
+                ensure_pool_visibility_for_curriculum(
+                    cur=cur,
+                    fakulte_id=fakulte_id,
+                    akademik_yil=int(yil),
+                    donem=donem_norm,
+                )
+                conn.commit()
+        except Exception:
+            pass
+
+        try:
+            self._ensure_year_scores(fakulte_id, int(yil), donem=donem_norm)
+        except Exception:
+            pass
 
         # --- SOL: HAVUZ ---
         self.tree_pool.delete(*self.tree_pool.get_children())
@@ -393,15 +483,14 @@ class PoolTab(ttk.Frame):
             SELECT DISTINCT
                 h.ders_id, d.ad, h.statu, h.sayac, h.skor, h.yil
             FROM havuz h
-            JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
-            JOIN fakulte f ON h.fakulte_id = f.fakulte_id
-            WHERE f.ad LIKE ?
+            LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
+            WHERE h.fakulte_id = ?
               AND h.yil = ?
               {extra_where}
             ORDER BY h.statu DESC, CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC
         """
         try:
-            _, rows = self.db.run_sql(q_pool, (f"%{fakulte}%", int(yil)))
+            _, rows = self.db.run_sql(q_pool, (int(fakulte_id), int(yil)))
             seen = set()
             for d_id, d_ad, statu, sayac, skor, y in (rows or []):
                 if d_id in seen:
@@ -437,13 +526,19 @@ class PoolTab(ttk.Frame):
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN havuz h ON (CAST(h.ders_id AS INTEGER) = d.ders_id AND h.yil = m.akademik_yil)
-            WHERE m.akademik_yil = ? AND b.ad LIKE ?
-              AND (LOWER(COALESCE(m.donem,'Güz')) = LOWER(?))
+            LEFT JOIN havuz h ON (
+                CAST(h.ders_id AS INTEGER) = d.ders_id
+                AND h.yil = m.akademik_yil
+                AND h.fakulte_id = b.fakulte_id
+            )
+            WHERE b.fakulte_id = ?
+              AND m.akademik_yil = ?
+              AND b.ad = ?
+              AND LOWER(SUBSTR(TRIM(COALESCE(m.donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
             ORDER BY d.ad
         """
         try:
-            _, rows_r = self.db.run_sql(q_curr, (int(yil), f"%{bolum}%", donem_norm))
+            _, rows_r = self.db.run_sql(q_curr, (int(fakulte_id), int(yil), bolum, donem_norm))
             seen_r = set()
             for d_id, d_ad, skor in (rows_r or []):
                 if d_id in seen_r:
@@ -466,19 +561,128 @@ class PoolTab(ttk.Frame):
         if not selected:
             messagebox.showinfo("Bilgi", "Oncelikle havuzdan ders secin.")
             return
+        fakulte = self.cb_fakulte.get()
         yil = self.cb_yil.get()
-        if not yil:
+        if not (fakulte and yil):
             return
         try:
+            _, fid_rows = self.db.run_sql(
+                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
+                (fakulte,),
+            )
+            if not fid_rows:
+                return
+            fakulte_id = int(fid_rows[0][0])
             for vals in selected:
                 ders_id = int(vals[0])
                 self.db.run_sql(
-                    "UPDATE havuz SET statu = ? WHERE ders_id = ? AND yil = ?",
-                    (int(new_status), ders_id, int(yil))
+                    "UPDATE havuz SET statu = ? WHERE ders_id = ? AND yil = ? AND fakulte_id = ?",
+                    (int(new_status), ders_id, int(yil), fakulte_id),
                 )
             self.load_pool_data()
         except Exception as e:
             messagebox.showerror("Guncelleme Hatasi", str(e))
+
+    def run_pool_health_check(self):
+        fakulte = self.cb_fakulte.get()
+        yil = self.cb_yil.get()
+        if not fakulte or not yil:
+            messagebox.showwarning("Eksik Secim", "Lutfen once fakulte ve yil secin.")
+            return
+
+        try:
+            _, fid_rows = self.db.run_sql(
+                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
+                (fakulte,),
+            )
+            if not fid_rows or fid_rows[0][0] is None:
+                messagebox.showerror("Hata", "Secilen fakulte icin fakulte_id bulunamadi.")
+                return
+            fakulte_id = int(fid_rows[0][0])
+        except Exception as e:
+            messagebox.showerror("Hata", f"Fakulte id cozumlenemedi:\n{e}")
+            return
+
+        try:
+            donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Güz"
+            donem_norm = str(donem).strip() or "Güz"
+            donem_key = donem_norm[0].lower()
+
+            # 1) Havuz statu dagilimi (secili fakulte + yil)
+            q_statu = """
+                SELECT
+                    COALESCE(statu, 0) AS s,
+                    COUNT(*) AS adet
+                FROM havuz
+                WHERE fakulte_id = ? AND yil = ?
+                GROUP BY COALESCE(statu, 0)
+            """
+            _, rows_st = self.db.run_sql(q_statu, (fakulte_id, int(yil)))
+            statu_counts = {int(r[0]): int(r[1]) for r in (rows_st or [])}
+
+            # 2) Mufredatta olup havuzda olmayan dersler
+            q_curr_only = """
+                SELECT COUNT(DISTINCT md.ders_id) AS adet
+                FROM mufredat m
+                JOIN bolum b ON b.bolum_id = m.bolum_id
+                JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+                LEFT JOIN havuz h ON (
+                    h.fakulte_id = b.fakulte_id
+                    AND h.yil = m.akademik_yil
+                    AND CAST(h.ders_id AS INTEGER) = md.ders_id
+                )
+                WHERE b.fakulte_id = ?
+                  AND m.akademik_yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = ?
+                  AND h.ders_id IS NULL
+            """
+            _, rows_c = self.db.run_sql(
+                q_curr_only,
+                (fakulte_id, int(yil), donem_key),
+            )
+            curr_not_in_pool = int(rows_c[0][0]) if rows_c and rows_c[0] and rows_c[0][0] is not None else 0
+
+            # 3) Havuzda olup ayni yil/donem mufredatinda olmayan dersler
+            q_pool_only = """
+                SELECT COUNT(DISTINCT CAST(h.ders_id AS INTEGER)) AS adet
+                FROM havuz h
+                LEFT JOIN mufredat m ON (
+                    m.akademik_yil = h.yil
+                    AND m.fakulte_id = h.fakulte_id
+                    AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = ?
+                )
+                LEFT JOIN mufredat_ders md ON (
+                    md.mufredat_id = m.mufredat_id
+                    AND md.ders_id = CAST(h.ders_id AS INTEGER)
+                )
+                WHERE h.fakulte_id = ?
+                  AND h.yil = ?
+                  AND md.ders_id IS NULL
+            """
+            _, rows_p = self.db.run_sql(
+                q_pool_only,
+                (donem_key, fakulte_id, int(yil)),
+            )
+            pool_not_in_curr = int(rows_p[0][0]) if rows_p and rows_p[0] and rows_p[0][0] is not None else 0
+
+            lines = []
+            lines.append(f"Fakulte: {fakulte}")
+            lines.append(f"Yil: {yil}  Donem: {donem_norm}")
+            lines.append("")
+            lines.append("Havuz statu dagilimi:")
+            lines.append(f"  statu= 1 (Mufredatta): {statu_counts.get(1, 0)}")
+            lines.append(f"  statu= 0 (Havuzda):   {statu_counts.get(0, 0)}")
+            lines.append(f"  statu=-1 (Dinlenme):  {statu_counts.get(-1, 0)}")
+            lines.append(f"  statu=-2 (Iptal):      {statu_counts.get(-2, 0)}")
+            lines.append("")
+            lines.append("Mufredat / Havuz senkronizasyonu:")
+            lines.append(f"  Mufredatta olup havuzda olmayan ders sayisi : {curr_not_in_pool}")
+            lines.append(f"  Havuzda olup mufredatta olmayan ders sayisi : {pool_not_in_curr}")
+
+            msg = "\n".join(lines)
+            messagebox.showinfo("Havuz Saglik Kontrolu", msg)
+        except Exception as e:
+            messagebox.showerror("Hata", f"Saglik kontrolu calistirilirken hata olustu:\n{e}")
 
     def run_decision_engine(self):
         messagebox.showinfo(
