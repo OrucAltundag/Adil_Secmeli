@@ -380,39 +380,120 @@ def _run_topsis_single(
         }
 
 
-def _run_trend(gecmis_list: list) -> dict:
-    """Trend/LR: ağırlıklı geçmiş ortalama."""
+def _run_trend_lr(gecmis_list: list) -> dict:
+    """
+    Trend/LR: yeterli veri varsa sklearn LinearRegression,
+    yoksa agirlikli gecmis ortalamaya fallback.
+    """
     t0 = time.perf_counter()
     try:
         if not gecmis_list:
-            return {"predicted": 0.5, "log": "Gecmis veri yok.", "elapsed_ms": 0}
+            return {"predicted": 0.5, "predicted_100": 50.0,
+                    "log": "Gecmis veri yok.", "method": "none", "elapsed_ms": 0}
+
         motor = KararMotoru()
-        trend, log = motor.gecmis_trend_hesapla(gecmis_list)
+        trend_wa, log_wa = motor.gecmis_trend_hesapla(gecmis_list)
+
+        if len(gecmis_list) >= 3:
+            try:
+                from sklearn.linear_model import LinearRegression
+                import numpy as np
+                years = np.array([g["yil"] for g in gecmis_list]).reshape(-1, 1)
+                rates = np.array([g["oran"] for g in gecmis_list])
+                lr = LinearRegression()
+                lr.fit(years, rates)
+                next_year = max(g["yil"] for g in gecmis_list) + 1
+                lr_pred = float(np.clip(lr.predict([[next_year]])[0], 0, 1))
+                coef = float(lr.coef_[0])
+                trend_dir = "yukselis" if coef > 0.005 else ("dusus" if coef < -0.005 else "stabil")
+                return {
+                    "predicted": round(lr_pred, 4),
+                    "predicted_100": round(lr_pred * 100, 2),
+                    "log": f"LR tahmin ({next_year}): %{lr_pred*100:.1f} | Egim: {coef:+.4f} ({trend_dir}) | WA: %{trend_wa*100:.1f}",
+                    "method": "sklearn_lr",
+                    "coefficient": round(coef, 6),
+                    "trend_direction": trend_dir,
+                    "wa_fallback": round(trend_wa, 4),
+                    "n_years": len(gecmis_list),
+                    "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                }
+            except Exception as exc:
+                logger.debug("sklearn LR basarisiz, WA fallback: %s", exc)
+
         return {
-            "predicted": round(trend, 4),
-            "predicted_100": round(trend * 100, 2),
-            "log": log,
+            "predicted": round(trend_wa, 4),
+            "predicted_100": round(trend_wa * 100, 2),
+            "log": log_wa,
+            "method": "weighted_average",
             "n_years": len(gecmis_list),
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
     except Exception as exc:
         logger.warning("Trend hatasi: %s", exc)
-        return {"error": str(exc), "predicted": 0.5, "predicted_100": 50.0}
+        return {"error": str(exc), "predicted": 0.5, "predicted_100": 50.0,
+                "method": "error"}
 
 
-def _run_rf_simple(criteria: dict, prev_pool: dict) -> dict:
+def _run_rf(criteria: dict, prev_pool: dict, db_path: str = None) -> dict:
     """
-    Basit RF-yerine-geçen kural tabanlı tahmin.
-    Gerçek sklearn RF için yeterli veri (çok satır) gerekir; single-course
-    analizde deterministik kural kullanılır ve bu açıkça belirtilir.
+    RF tahmini: yeterli havuz verisi varsa sklearn RandomForest,
+    yoksa kural tabanli fallback.
     """
     t0 = time.perf_counter()
     try:
-        basari  = _safe_float(criteria.get("basari_orani"))
+        basari = _safe_float(criteria.get("basari_orani"))
         doluluk = _safe_float(criteria.get("doluluk_orani"))
-        sayac   = int(prev_pool.get("sayac", 0))
+        ortalama_not = _safe_float(criteria.get("basari_ortalamasi"))
+        anket = _safe_float(criteria.get("anket_orani", 0.5))
+        trend = _safe_float(criteria.get("_trend", basari))
+        sayac = int(prev_pool.get("sayac", 0))
 
-        # Kural seti (karar ağacı / RF yerine)
+        sklearn_used = False
+        pred_score = None
+
+        try:
+            from app.db.database import SessionLocal
+            session = SessionLocal()
+            try:
+                from app.services.ai_engine import HavuzAIEngine
+                engine = HavuzAIEngine(session)
+                if engine.train():
+                    features = {
+                        "basari_orani": basari,
+                        "ortalama_not": ortalama_not,
+                        "doluluk_orani": doluluk,
+                        "anket_orani": anket,
+                        "trend": trend,
+                        "sayac": sayac,
+                    }
+                    pred_score = engine.predict_kesinlesme(features)
+                    sklearn_used = True
+            finally:
+                session.close()
+        except Exception as exc:
+            logger.debug("sklearn RF basarisiz, kural tabanli fallback: %s", exc)
+
+        if sklearn_used and pred_score is not None:
+            if pred_score >= SKOR_BARAJ and ortalama_not >= ORTALAMA_NOT_BARAJ:
+                pred_statu = STATU_MUFREDATTA
+                prob_str = f"RF skoru ({pred_score:.1f}) baraj ({SKOR_BARAJ}) uzerinde"
+            elif sayac >= MAKS_DUSME_SAYACI:
+                pred_statu = STATU_IPTAL
+                prob_str = "Kalici iptal (sayac limiti)"
+            else:
+                pred_statu = STATU_HAVUZDA
+                prob_str = f"RF skoru ({pred_score:.1f}) baraj ({SKOR_BARAJ}) altinda"
+
+            return {
+                "predicted_statu": pred_statu,
+                "predicted_label": _statu_label(pred_statu),
+                "predicted_score": round(pred_score, 2),
+                "rule": prob_str,
+                "method": "sklearn_rf",
+                "note": "sklearn RandomForest ile tahmin yapildi.",
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+
         if sayac >= MAKS_DUSME_SAYACI:
             pred_statu = STATU_IPTAL
             prob_str = "Kalici iptal"
@@ -432,13 +513,77 @@ def _run_rf_simple(criteria: dict, prev_pool: dict) -> dict:
         return {
             "predicted_statu": pred_statu,
             "predicted_label": _statu_label(pred_statu),
-            "rule":            prob_str,
-            "note": "Tek-ders modunda kural tabanli RF kullanildi (sklearn RF cok satir gerektirir).",
+            "rule": prob_str,
+            "method": "rule_based",
+            "note": "Kural tabanli tahmin (egitim verisi yetersiz).",
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
     except Exception as exc:
         logger.warning("RF hatasi: %s", exc)
-        return {"error": str(exc), "predicted_statu": 0}
+        return {"error": str(exc), "predicted_statu": 0, "method": "error"}
+
+
+def _run_dt(criteria: dict, prev_pool: dict) -> dict:
+    """
+    DT tahmini: yeterli havuz verisi varsa sklearn DecisionTree,
+    yoksa kural tabanli fallback.
+    """
+    t0 = time.perf_counter()
+    try:
+        basari = _safe_float(criteria.get("basari_orani"))
+        doluluk = _safe_float(criteria.get("doluluk_orani"))
+        ortalama_not = _safe_float(criteria.get("basari_ortalamasi"))
+        anket = _safe_float(criteria.get("anket_orani", 0.5))
+        trend = _safe_float(criteria.get("_trend", basari))
+        sayac = int(prev_pool.get("sayac", 0))
+
+        try:
+            from app.db.database import SessionLocal
+            session = SessionLocal()
+            try:
+                from app.services.ai_engine import HavuzAIEngine
+                engine = HavuzAIEngine(session)
+                if engine.train():
+                    features = {
+                        "basari_orani": basari,
+                        "ortalama_not": ortalama_not,
+                        "doluluk_orani": doluluk,
+                        "anket_orani": anket,
+                        "trend": trend,
+                        "sayac": sayac,
+                    }
+                    pred_statu = engine.predict_statu(features)
+                    return {
+                        "predicted_statu": pred_statu,
+                        "predicted_label": _statu_label(pred_statu),
+                        "method": "sklearn_dt",
+                        "note": "sklearn DecisionTree ile statu tahmin edildi.",
+                        "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                    }
+            finally:
+                session.close()
+        except Exception as exc:
+            logger.debug("sklearn DT basarisiz, kural tabanli fallback: %s", exc)
+
+        if sayac >= MAKS_DUSME_SAYACI:
+            pred_statu = STATU_IPTAL
+        elif basari >= BASARI_BARAJ and doluluk >= DOLULUK_BARAJ:
+            pred_statu = STATU_MUFREDATTA
+        elif basari < BASARI_BARAJ:
+            pred_statu = STATU_DINLENMEDE
+        else:
+            pred_statu = STATU_HAVUZDA
+
+        return {
+            "predicted_statu": pred_statu,
+            "predicted_label": _statu_label(pred_statu),
+            "method": "rule_based",
+            "note": "Kural tabanli tahmin (egitim verisi yetersiz).",
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
+    except Exception as exc:
+        logger.warning("DT hatasi: %s", exc)
+        return {"error": str(exc), "predicted_statu": 0, "method": "error"}
 
 
 def _build_dt_reason(criteria: dict, topsis: dict, in_mufredat: bool,
@@ -600,7 +745,7 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 6. Trend/LR
         # ------------------------------------------------------------------
-        trend_result = _run_trend(gecmis_list)
+        trend_result = _run_trend_lr(gecmis_list)
         result["steps"]["trend"] = trend_result
         if "error" in trend_result:
             result["errors"].append(f"Trend: {trend_result['error']}")
@@ -631,7 +776,7 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 8. RF
         # ------------------------------------------------------------------
-        rf_result = _run_rf_simple(criteria, prev_pool)
+        rf_result = _run_rf(criteria, prev_pool, db_path=path)
         result["steps"]["rf"] = rf_result
         if "error" in rf_result:
             result["errors"].append(f"RF: {rf_result['error']}")
@@ -694,8 +839,11 @@ def analyze_single_course(
             )
 
         # ------------------------------------------------------------------
-        # 11. DT karar gerekcesi
+        # 11. DT (Karar Agaci) tahmini + karar gerekcesi
         # ------------------------------------------------------------------
+        dt_result = _run_dt(criteria, prev_pool)
+        result["steps"]["dt"] = dt_result
+
         dt_reason = _build_dt_reason(
             criteria, topsis_result, in_mufredat,
             next_statu, next_sayac, prev_pool

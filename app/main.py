@@ -169,15 +169,18 @@ class AdilSecmeliApp(tk.Tk):
                 print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
                 auto_summary = run_automatic_scoring(db_path)
                 if isinstance(auto_summary, dict):
-                    generated = auto_summary.get("generated", [])
-                    skipped = auto_summary.get("skipped", [])
-                    errors = auto_summary.get("errors", [])
+                    gen = auto_summary.get("generation") or {}
+                    generated = gen.get("generated", []) or []
+                    skipped = gen.get("skipped", []) or []
+                    errors = gen.get("errors", []) or []
                     print(
                         f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
                         f"atlanan: {len(skipped)} | hata: {len(errors)}"
                     )
                     for err in errors[:5]:
                         print(f"[AUTO][HATA] {err}")
+                    for sk in skipped[:5]:
+                        print(f"[AUTO][ATLANAN] {sk}")
             except Exception as e:
                 print(f"[AUTO] Otomatik uretim hatasi: {e}")
 
@@ -214,7 +217,7 @@ class AdilSecmeliApp(tk.Tk):
             except Exception:
                 pass
             try:
-                self.tab_pool.refresh()
+                self.tab_calc.page_pool.refresh()
             except Exception:
                 pass
 
@@ -263,7 +266,7 @@ class AdilSecmeliApp(tk.Tk):
             except Exception:
                 pass
             try:
-                self.tab_pool.refresh()
+                self.tab_calc.page_pool.refresh()
             except Exception:
                 pass
 

@@ -1175,9 +1175,8 @@ def generate_next_year_curricula(
             for ders_id in dersler:
                 prev_statu, _ = _effective_prev_state(ders_id)
                 if prev_statu != 1:
-                    # statu=1 olmayan dersler icin kriter zorunlulugu yok
                     continue
-                if not _has_generation_criteria(cur, ders_id, akademik_yil, donem):
+                if not _has_full_criteria(cur, ders_id, akademik_yil, donem):
                     cur.execute("SELECT ad FROM ders WHERE ders_id = ?", (ders_id,))
                     dr = cur.fetchone()
                     ders_adi = str(dr[0]) if dr else str(ders_id)
@@ -1191,15 +1190,11 @@ def generate_next_year_curricula(
                     )
 
         if eksik_kriter:
-            return {
-                "ok": False,
-                "error": (
-                    "Next year calistirilamaz: Sadece mufredatta olan derslerin zorunlu kriterleri "
-                    "kontrol edilir (toplam_ogrenci, kontenjan, ortalama vb.). "
-                    "Havuzdaki / mufredat disi dersler ve anket alani zorunlu degildir."
-                ),
-                "missing_criteria": eksik_kriter,
-            }
+            logger.warning(
+                "generate_next_year_curricula: %d ders icin kriter eksik (fakulte_id=%s yil=%s). "
+                "Bu dersler varsayilan degerlerle hesaplanacak.",
+                len(eksik_kriter), fakulte_id, akademik_yil,
+            )
 
         score_pack = get_faculty_year_topsis_results(
             cur=cur,

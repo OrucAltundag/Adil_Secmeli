@@ -574,6 +574,8 @@ class CourseAnalysisTab(ttk.Frame):
         self.warn_frame.pack_forget()
         self.btn_start.config(state="normal")
 
+        anket_val = criteria.get('anket_orani', 0.5)
+        anket_text = f"%{anket_val*100:.1f}" if anket_val != 0.5 else "%50.0 (varsayilan)"
         rows = [
             ("Toplam Ogrenci",    f"{criteria.get('toplam_ogrenci', 0):.0f}"),
             ("Gecen Ogrenci",     f"{criteria.get('gecen_ogrenci', 0):.0f}"),
@@ -582,6 +584,7 @@ class CourseAnalysisTab(ttk.Frame):
             ("Kayitli (Talep)",   f"{criteria.get('kayitli_ogrenci', 0):.0f}"),
             ("Basari Orani",      f"%{criteria.get('basari_orani', 0)*100:.1f}"),
             ("Doluluk Orani",     f"%{criteria.get('doluluk_orani', 0)*100:.1f}"),
+            ("Anket Orani",       anket_text),
         ]
         for k, v in rows:
             self.tree_krit.insert("", tk.END, values=(k, v))
@@ -615,11 +618,22 @@ class CourseAnalysisTab(ttk.Frame):
         if "error" in trend:
             self._set_step_state("trend", "error", f"Hata: {trend['error']}")
         else:
+            method = trend.get("method", "?")
+            method_label = {"sklearn_lr": "sklearn LR", "weighted_average": "Agirlikli Ortalama"}.get(method, method)
+            extra = ""
+            if method == "sklearn_lr":
+                coef = trend.get("coefficient", 0)
+                td = trend.get("trend_direction", "?")
+                extra = f"\nLR Egim: {coef:+.6f} ({td})"
+                wa = trend.get("wa_fallback")
+                if wa is not None:
+                    extra += f"\nWA Fallback: %{wa*100:.1f}"
             txt = (
+                f"Yontem: {method_label}\n"
                 f"Yillik gecmis ({trend.get('n_years',0)} yil):\n"
                 f"  {trend.get('log','—')}\n"
                 f"Tahmin (0-1) : {trend.get('predicted',0):.4f}\n"
-                f"Tahmin (0-100): {trend.get('predicted_100',0):.2f}\n"
+                f"Tahmin (0-100): {trend.get('predicted_100',0):.2f}{extra}\n"
                 f"Sure: {trend.get('elapsed_ms',0):.1f} ms"
             )
             self._set_step_state("trend", "ok", txt)
@@ -652,18 +666,38 @@ class CourseAnalysisTab(ttk.Frame):
         if "error" in rf:
             self._set_step_state("rf", "error", f"Hata: {rf['error']}")
         else:
+            method = rf.get("method", "?")
+            method_label = {"sklearn_rf": "sklearn RandomForest", "rule_based": "Kural Tabanli"}.get(method, method)
+            score_txt = ""
+            if rf.get("predicted_score") is not None:
+                score_txt = f"\nRF Skor: {rf['predicted_score']:.2f}"
             txt = (
+                f"Yontem: {method_label}\n"
                 f"Tahmin statu: {rf.get('predicted_statu',0)}  "
                 f"({rf.get('predicted_label','?')})\n"
-                f"Kural: {rf.get('rule','—')}\n"
+                f"Kural: {rf.get('rule','—')}{score_txt}\n"
                 f"Not: {rf.get('note','')}\n"
                 f"Sure: {rf.get('elapsed_ms',0):.1f} ms"
             )
             self._set_step_state("rf", "ok", txt)
 
         # DT
+        dt = steps.get("dt", {})
         dt_reason = steps.get("dt_reason", "—")
-        self._set_step_state("dt", "ok", dt_reason)
+        if "error" in dt:
+            self._set_step_state("dt", "error", f"Hata: {dt['error']}")
+        else:
+            dt_method = dt.get("method", "?")
+            dt_label = {"sklearn_dt": "sklearn DecisionTree", "rule_based": "Kural Tabanli"}.get(dt_method, dt_method)
+            txt = (
+                f"Yontem: {dt_label}\n"
+                f"DT Statu Tahmini: {dt.get('predicted_statu', '?')} "
+                f"({dt.get('predicted_label', '?')})\n"
+                f"Not: {dt.get('note', '')}\n"
+                f"Sure: {dt.get('elapsed_ms',0):.1f} ms\n"
+                f"---\nKarar Gerekcesi:\n{dt_reason}"
+            )
+            self._set_step_state("dt", "ok", txt)
 
     def _set_step_state(self, key: str, state: str, content: str):
         box = self._step_boxes.get(key)

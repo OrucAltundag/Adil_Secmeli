@@ -310,7 +310,6 @@ class CalcTab(ttk.Frame):
             # 4) TOPSIS
             elif algo_id == "topsis":
                 from app.services.calculation import KararMotoru
-                import numpy as np
 
                 motor = KararMotoru()
 
@@ -318,10 +317,12 @@ class CalcTab(ttk.Frame):
                     SELECT
                         d.ders_id, d.ad as ders,
                         p.akademik_yil, p.basari_orani,
-                        pop.talep_sayisi as populerlik
+                        pop.doluluk_orani as populerlik,
+                        pop.kontenjan, pop.talep_sayisi
                     FROM ders d
                     LEFT JOIN performans p ON d.ders_id = p.ders_id
                     LEFT JOIN populerlik pop ON d.ders_id = pop.ders_id
+                        AND pop.akademik_yil = p.akademik_yil
                     WHERE p.basari_orani IS NOT NULL
                     ORDER BY d.ders_id, p.akademik_yil DESC;
                 """
@@ -330,6 +331,25 @@ class CalcTab(ttk.Frame):
                     sonuc_metni = "Veri bulunamadı! Lütfen önce 'MOCK' veriyi çalıştırın."
                     basarili_mi = False
                 else:
+                    anket_map = {}
+                    try:
+                        _, anket_rows = self.db.run_sql(
+                            """SELECT ders_id,
+                                      CASE WHEN anket_katilimci > 0
+                                           THEN MIN(1.0, MAX(0.0, CAST(anket_dersi_secen AS REAL) / anket_katilimci))
+                                           ELSE 0.5 END as anket_orani
+                               FROM ders_kriterleri
+                               WHERE anket_katilimci > 0
+                               GROUP BY ders_id
+                               ORDER BY yil DESC"""
+                        )
+                        for r in (anket_rows or []):
+                            did = int(r[0])
+                            if did not in anket_map:
+                                anket_map[did] = float(r[1])
+                    except Exception:
+                        pass
+
                     islenmis = []
                     for _, grup in ham_veri.groupby("ders_id"):
                         ders_adi = grup.iloc[0]["ders"]
@@ -340,18 +360,20 @@ class CalcTab(ttk.Frame):
                         trend_skoru, _ = motor.gecmis_trend_hesapla(gecmis) if hasattr(motor, "gecmis_trend_hesapla") else (0, "")
                         son_basari = gecmis[0]["oran"] if gecmis else 0.0
 
-                        ort_pop = grup["populerlik"].max()
-                        ort_pop = float(ort_pop) if pd.notna(ort_pop) else 0.5
-                        pop_norm = min(1.0, ort_pop / 100) if ort_pop > 1 else max(0, min(1, ort_pop))
+                        pop_val = grup["populerlik"].dropna()
+                        pop_norm = float(pop_val.iloc[0]) if len(pop_val) > 0 else 0.5
+                        pop_norm = max(0.0, min(1.0, pop_norm))
 
                         ders_id_val = int(grup["ders_id"].iloc[0])
+                        anket_val = anket_map.get(ders_id_val, 0.5)
+
                         islenmis.append({
                             "ders_id": ders_id_val,
                             "ders": ders_adi,
                             "basari": son_basari,
                             "trend": trend_skoru,
                             "populerlik": pop_norm,
-                            "anket": float(np.random.randint(40, 90)) / 100.0
+                            "anket": anket_val,
                         })
 
                     df_final = pd.DataFrame(islenmis)
@@ -363,8 +385,8 @@ class CalcTab(ttk.Frame):
                     sonuc_metni = "--- NİHAİ KARAR MATRİSİ (TOPSIS) ---\n"
                     sonuc_metni += "Girdiler: Başarı + Trend + Popülerlik + Anket\n\n"
                     if not df_sonuc.empty:
-                        cols = [c for c in ["Ders", "AHP_TOPSIS_Skor", "S+", "S-"] if c in df_sonuc.columns]
-                        sonuc_metni += df_sonuc[cols].head(15).to_string(index=False, float_format="%.4f")
+                        cols = [c for c in ["Ders", "AHP_TOPSIS_Skor", "Kesinlesme_Puani", "S+", "S-"] if c in df_sonuc.columns]
+                        sonuc_metni += df_sonuc[cols].head(20).to_string(index=False, float_format="%.4f")
                     else:
                         sonuc_metni += "Hesaplama sonucu boş döndü."
 
@@ -476,7 +498,7 @@ class CalcTab(ttk.Frame):
                 basarili_mi = bool(pipeline.get("ok", False)) and len(errors) == 0
 
                 try:
-                    self.page_pool.refresh()
+                    self.page_pool.refresh(select_latest_year=True)
                 except Exception:
                     pass
                 try:
@@ -490,17 +512,59 @@ class CalcTab(ttk.Frame):
 
             # 6) ML
             elif algo_id in ["lr", "rf", "dt"]:
-                from app.services.ai_engine import AIEngine
+                from app.services.ai_engine import HavuzAIEngine
                 try:
-                    from app.db.database import SessionLocal
-                    db_oturumu = SessionLocal()
-                    ai_motoru = AIEngine(db_oturumu)
-                    sonuc_metni = ai_motoru.run_kfold_test(algorithm_type=algo_id, k=5)
+                    from app.db.database import get_session
+                    db_oturumu = get_session()
+                    havuz_ai = HavuzAIEngine(db_oturumu)
+
+                    kfold_txt = havuz_ai.run_kfold(algorithm_type=algo_id, k=5)
+                    sonuc_metni = kfold_txt + "\n"
+
+                    pred_df = havuz_ai.predict_all_courses()
+                    if not pred_df.empty:
+                        ders_names = {}
+                        try:
+                            _, d_rows = self.db.run_sql("SELECT ders_id, ad FROM ders")
+                            ders_names = {int(r[0]): str(r[1]) for r in (d_rows or [])}
+                        except Exception:
+                            pass
+
+                        pred_df["ders_ad"] = pred_df["ders_id"].apply(
+                            lambda x: ders_names.get(int(x), f"#{x}")
+                        )
+
+                        if algo_id == "lr":
+                            sonuc_metni += "\n--- Ders Bazli LR Tahminleri ---\n"
+                            show = pred_df[["ders_ad", "basari_orani", "lr_tahmin"]].copy()
+                            show.columns = ["Ders", "Gercek(%)", "LR_Tahmin(%)"]
+                            show["Gercek(%)"] = (show["Gercek(%)"] * 100).round(1)
+                            show = show.sort_values("LR_Tahmin(%)", ascending=False)
+                            sonuc_metni += show.head(25).to_string(index=False, float_format="%.1f")
+                        elif algo_id == "rf":
+                            sonuc_metni += "\n--- Ders Bazli RF Tahminleri ---\n"
+                            show = pred_df[["ders_ad", "skor", "rf_tahmin"]].copy()
+                            show.columns = ["Ders", "Gercek_Skor", "RF_Tahmin"]
+                            show = show.sort_values("RF_Tahmin", ascending=False)
+                            sonuc_metni += show.head(25).to_string(index=False, float_format="%.1f")
+                        elif algo_id == "dt":
+                            statu_map = {1: "Mufredat", 0: "Havuz", -1: "Dinlenme", -2: "Iptal"}
+                            sonuc_metni += "\n--- Ders Bazli DT Tahminleri ---\n"
+                            show = pred_df[["ders_ad", "statu", "dt_tahmin"]].copy()
+                            show.columns = ["Ders", "Gercek", "DT_Tahmin"]
+                            show["Gercek_Lbl"] = show["Gercek"].map(statu_map).fillna("?")
+                            show["Tahmin_Lbl"] = show["DT_Tahmin"].map(statu_map).fillna("?")
+                            show["Eslesme"] = show["Gercek"] == show["DT_Tahmin"]
+                            acc = show["Eslesme"].mean() * 100
+                            sonuc_metni += f"Tahmin dogrulugu: %{acc:.1f}\n\n"
+                            display = show[["Ders", "Gercek_Lbl", "Tahmin_Lbl", "Eslesme"]]
+                            sonuc_metni += display.head(25).to_string(index=False)
+
                     db_oturumu.close()
-                except Exception:
+                except Exception as ml_exc:
+                    import traceback
                     sonuc_metni = (
-                        "Hata: Veritabanı oturumu (SessionLocal) bulunamadı veya AIEngine hata verdi.\n"
-                        "Not: AIEngine SQLAlchemy Session bekliyorsa app/db/database.py ayarlı olmalı."
+                        f"ML Hata: {ml_exc}\n\n{traceback.format_exc()}"
                     )
                     basarili_mi = False
 

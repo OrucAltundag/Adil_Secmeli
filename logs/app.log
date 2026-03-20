@@ -12,3 +12,26 @@
 2026-03-18 01:22:35,860 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=111 yil=2022
 2026-03-18 01:23:37,745 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=263 yil=2022
 2026-03-18 01:24:25,109 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=262 yil=2022
+2026-03-20 21:14:46,826 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=90 yil=2023
+2026-03-20 21:14:47,042 - app.services.calculation - WARNING - generate_next_year_curricula: 1 ders icin kriter eksik (fakulte_id=1 yil=2024). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,054 - app.services.calculation - WARNING - generate_next_year_curricula: 1 ders icin kriter eksik (fakulte_id=2 yil=2024). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,220 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=1 yil=2026). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,236 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=2 yil=2026). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,289 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=3 yil=2026). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,316 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=4 yil=2026). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,330 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=5 yil=2026). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,346 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=1 yil=2027). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,366 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=2 yil=2027). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,398 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=3 yil=2027). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,428 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=4 yil=2027). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,445 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=5 yil=2027). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,462 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=1 yil=2028). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,477 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=2 yil=2028). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,507 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=3 yil=2028). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,531 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=4 yil=2028). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,548 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=5 yil=2028). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,563 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=1 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,579 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=2 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,614 - app.services.calculation - WARNING - generate_next_year_curricula: 15 ders icin kriter eksik (fakulte_id=3 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,643 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=4 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
+2026-03-20 21:14:47,658 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=5 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.

@@ -74,9 +74,9 @@ class PoolTab(ttk.Frame):
     # =========================================================
     #  PUBLIC
     # =========================================================
-    def refresh(self):
+    def refresh(self, select_latest_year=False):
         self.db_path = getattr(self.app, "db_path", self.db_path)
-        self.load_faculties_to_combo()
+        self.load_faculties_to_combo(force_latest_year=select_latest_year)
         self.load_pool_data()
 
     # =========================================================
@@ -366,7 +366,7 @@ class PoolTab(ttk.Frame):
         except Exception as exc:
             print(f"UI Hata (Yil TOPSIS): {exc}")
 
-    def load_faculties_to_combo(self):
+    def load_faculties_to_combo(self, force_latest_year=False):
         try:
             _, rows = self.db.run_sql("SELECT ad FROM fakulte ORDER BY ad")
             faculties = [r[0] for r in (rows or [])]
@@ -374,7 +374,6 @@ class PoolTab(ttk.Frame):
             if faculties and self.cb_fakulte.current() < 0:
                 self.cb_fakulte.current(0)
 
-            # Yil listesini havuz + mufredat tablolarindan dinamik cek
             try:
                 _, yil_rows = self.db.run_sql(
                     """
@@ -389,7 +388,7 @@ class PoolTab(ttk.Frame):
                 if yil_rows:
                     yillar = [str(r[0]) for r in yil_rows]
                     self.cb_yil["values"] = yillar
-                    if self.cb_yil.get() not in yillar:
+                    if force_latest_year or self.cb_yil.get() not in yillar:
                         self.cb_yil.set(yillar[-1])
             except Exception:
                 pass
