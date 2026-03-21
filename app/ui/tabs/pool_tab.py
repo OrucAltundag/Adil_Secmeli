@@ -76,7 +76,41 @@ class PoolTab(ttk.Frame):
     # =========================================================
     def refresh(self, select_latest_year=False):
         self.db_path = getattr(self.app, "db_path", self.db_path)
+        prev_fak = self.cb_fakulte.get()
+        prev_bol = self.cb_bolum.get()
+        prev_yil = self.cb_yil.get()
+        prev_donem = self.cb_donem.get()
+
         self.load_faculties_to_combo(force_latest_year=select_latest_year)
+
+        if not select_latest_year and prev_fak:
+            try:
+                vals = list(self.cb_fakulte.cget("values") or [])
+                if prev_fak in vals:
+                    self.cb_fakulte.set(prev_fak)
+            except Exception:
+                pass
+            self.on_faculty_change(None)
+            if prev_bol:
+                try:
+                    bvals = list(self.cb_bolum.cget("values") or [])
+                    if prev_bol in bvals:
+                        self.cb_bolum.set(prev_bol)
+                except Exception:
+                    pass
+            if prev_yil:
+                try:
+                    yvals = list(self.cb_yil.cget("values") or [])
+                    if prev_yil in yvals:
+                        self.cb_yil.set(prev_yil)
+                except Exception:
+                    pass
+            if prev_donem:
+                try:
+                    self.cb_donem.set(prev_donem)
+                except Exception:
+                    pass
+
         self.load_pool_data()
 
     # =========================================================
@@ -144,8 +178,7 @@ class PoolTab(ttk.Frame):
         ttk.Button(actions, text="Secileni Kalici Iptal (-2)",
                    command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(actions, text="Algoritmay Calistir",
-                   command=self.run_decision_engine).pack(side=tk.RIGHT, padx=5)
+        # "Algoritmay Calistir" kaldirildi — algoritma islemleri Hesaplama sekmesindedir.
 
         # --- 3) LEGEND (Aciklama Kutusu) ---
         self._build_legend()

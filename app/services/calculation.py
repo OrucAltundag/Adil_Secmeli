@@ -516,12 +516,26 @@ def _has_full_criteria(cur, ders_id, yil, donem):
 
         perf_ok = ortalama_not > 0 and basari_orani >= 0
         pop_ok = kontenjan > 0 or doluluk >= 0
-        return perf_ok and pop_ok
+        if perf_ok and pop_ok:
+            return True
+
+        cur.execute(
+            """SELECT basari_orani FROM performans
+               WHERE ders_id = ? AND akademik_yil < ? AND basari_orani IS NOT NULL
+               ORDER BY akademik_yil DESC LIMIT 1""",
+            (ders_id, yil),
+        )
+        prev_pf = cur.fetchone()
+        if prev_pf and _safe_float2(prev_pf[0], -1) >= 0:
+            return True
+
+        return False
     except Exception:
         return False
 
 
 def _read_course_metrics(cur, ders_id, yil, donem, motor):
+    dk = None
     try:
         cur.execute(
             """
@@ -537,20 +551,40 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         )
         dk = cur.fetchone()
     except sqlite3.OperationalError:
-        cur.execute(
-            """
-            SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                   kontenjan, kayitli_ogrenci
-            FROM ders_kriterleri
-            WHERE ders_id = ? AND yil = ?
-              AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (int(ders_id), int(yil), str(donem)),
-        )
-        row = cur.fetchone()
-        dk = (row[0], row[1], row[2], row[3], row[4], 0, 0) if row else None
+        try:
+            cur.execute(
+                """
+                SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                       kontenjan, kayitli_ogrenci
+                FROM ders_kriterleri
+                WHERE ders_id = ? AND yil = ?
+                  AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (int(ders_id), int(yil), str(donem)),
+            )
+            row = cur.fetchone()
+            dk = (row[0], row[1], row[2], row[3], row[4], 0, 0) if row else None
+        except Exception:
+            pass
+
+    if dk is None:
+        try:
+            cur.execute(
+                """
+                SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                       kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+                FROM ders_kriterleri
+                WHERE ders_id = ? AND yil < ?
+                ORDER BY yil DESC, id DESC
+                LIMIT 1
+                """,
+                (int(ders_id), int(yil)),
+            )
+            dk = cur.fetchone()
+        except Exception:
+            pass
 
     try:
         cur.execute(
@@ -638,6 +672,38 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
     trend, _ = motor.gecmis_trend_hesapla(gecmis) if gecmis else (basari, "")
     trend = max(0.0, min(1.0, _safe_float2(trend, basari)))
 
+    no_current_year_data = (
+        not dk and not pf and not pop
+    )
+    if no_current_year_data and gecmis:
+        basari = max(0.0, min(1.0, _safe_float2(trend, gecmis[0]["oran"])))
+
+        prev_yil = gecmis[0]["yil"]
+        try:
+            cur.execute(
+                """SELECT ortalama_not FROM performans
+                   WHERE ders_id = ? AND akademik_yil = ?
+                   ORDER BY pfrs_id DESC LIMIT 1""",
+                (int(ders_id), prev_yil),
+            )
+            prev_pf = cur.fetchone()
+            if prev_pf and _safe_float2(prev_pf[0], 0) > 0:
+                ortalama_not = _safe_float2(prev_pf[0], ortalama_not)
+        except Exception:
+            pass
+        try:
+            cur.execute(
+                """SELECT doluluk_orani FROM populerlik
+                   WHERE ders_id = ? AND akademik_yil = ?
+                   ORDER BY pop_id DESC LIMIT 1""",
+                (int(ders_id), prev_yil),
+            )
+            prev_pop = cur.fetchone()
+            if prev_pop and _safe_float2(prev_pop[0], 0) > 0:
+                doluluk = max(0.0, min(1.0, _safe_float2(prev_pop[0], doluluk)))
+        except Exception:
+            pass
+
     return {
         "ders_id": int(ders_id),
         "basari": basari,
@@ -706,35 +772,51 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     ders_cols = {str(r[1]) for r in cur.fetchall()}
     has_fakulte_col = "fakulte_id" in ders_cols
     has_bolum_col = "bolum_id" in ders_cols
-    base_where = "WHERE fakulte_id = ?" if has_fakulte_col else "WHERE 1=1"
-    base_params = (fakulte_id,) if has_fakulte_col else tuple()
+
+    curriculum_ids = _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem)
+
+    aday_dersler = set(curriculum_ids)
 
     tip_col = _resolve_elective_col(cur)
-    aday_dersler = set()
-    if tip_col:
-        cur.execute(
-            f"""
-            SELECT ders_id
-            FROM ders
-            {base_where}
-              AND (
-                    COALESCE({tip_col}, '') LIKE 'Se%'
-                 OR LOWER(COALESCE({tip_col}, '')) LIKE '%secmeli%'
-                 OR LOWER(COALESCE({tip_col}, '')) LIKE '%seçmeli%'
-              )
-            """,
-            base_params,
-        )
+    if has_fakulte_col:
+        if tip_col:
+            cur.execute(
+                f"""
+                SELECT ders_id FROM ders
+                WHERE fakulte_id = ?
+                  AND (
+                        COALESCE({tip_col}, '') LIKE 'Se%'
+                     OR LOWER(COALESCE({tip_col}, '')) LIKE '%secmeli%'
+                     OR LOWER(COALESCE({tip_col}, '')) LIKE '%seçmeli%'
+                  )
+                """,
+                (fakulte_id,),
+            )
+        else:
+            cur.execute(
+                "SELECT ders_id FROM ders WHERE fakulte_id = ?",
+                (fakulte_id,),
+            )
         aday_dersler.update(int(r[0]) for r in cur.fetchall())
-    else:
+
+    if has_bolum_col and not has_fakulte_col:
         cur.execute(
-            f"SELECT ders_id FROM ders {base_where}",
-            base_params,
+            """SELECT DISTINCT d.ders_id
+               FROM ders d
+               JOIN bolum b ON d.bolum_id = b.bolum_id
+               WHERE b.fakulte_id = ?""",
+            (fakulte_id,),
         )
         aday_dersler.update(int(r[0]) for r in cur.fetchall())
 
-    # Mufredattaki dersler (bolum veya legacy m.fakulte_id yolu — _get_curriculum_course_ids)
-    aday_dersler.update(_get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem))
+    cur.execute(
+        """SELECT DISTINCT CAST(h.ders_id AS INTEGER)
+           FROM havuz h
+           WHERE h.fakulte_id = ? AND h.yil = ?""",
+        (fakulte_id, akademik_yil),
+    )
+    aday_dersler.update(int(r[0]) for r in cur.fetchall() if r[0] is not None)
+
     aday_dersler.update(include_course_ids)
 
     if not aday_dersler:

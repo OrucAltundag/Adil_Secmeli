@@ -72,6 +72,141 @@ class _Tooltip:
             self._win = None
 
 
+class _SearchableCombo(tk.Frame):
+    """Yazdikca filtreleyen arama kutulu dropdown."""
+
+    def __init__(self, parent, width=38, **kw):
+        super().__init__(parent, **kw)
+        self._all_values = []
+        self._selected_value = ""
+        self._recent = []
+        self._popup = None
+        self._callback = None
+
+        self._var = tk.StringVar()
+        self._var.trace_add("write", self._on_text_change)
+        self.entry = tk.Entry(
+            self, textvariable=self._var, width=width,
+            font=("Segoe UI", 9),
+        )
+        self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.entry.bind("<FocusIn>", lambda e: self._show_popup())
+        self.entry.bind("<Return>", lambda e: self._select_top())
+        self.entry.bind("<Escape>", lambda e: self._hide_popup())
+        self.entry.bind("<Down>", lambda e: self._focus_list())
+
+    def set_values(self, values: list):
+        self._all_values = list(values)
+
+    def get(self):
+        return self._selected_value or self._var.get()
+
+    def set(self, value: str):
+        self._selected_value = value
+        self._var.set(value)
+
+    def bind_select(self, callback):
+        self._callback = callback
+
+    def _on_text_change(self, *_):
+        if self._popup:
+            self._fill_list(self._var.get())
+
+    def _show_popup(self):
+        if self._popup:
+            return
+        x = self.entry.winfo_rootx()
+        y = self.entry.winfo_rooty() + self.entry.winfo_height()
+        self._popup = pw = tk.Toplevel(self)
+        pw.wm_overrideredirect(True)
+        pw.wm_geometry(f"+{x}+{y}")
+        pw.wm_attributes("-topmost", True)
+
+        self._lb = tk.Listbox(
+            pw, width=self.entry.cget("width") + 5, height=12,
+            font=("Segoe UI", 9), selectbackground="#2563eb",
+            selectforeground="white", activestyle="none",
+        )
+        self._lb.pack(fill=tk.BOTH, expand=True)
+        self._lb.bind("<Double-1>", lambda e: self._on_lb_select())
+        self._lb.bind("<Return>", lambda e: self._on_lb_select())
+
+        pw.bind("<FocusOut>", self._on_popup_focus_out)
+        self._fill_list(self._var.get())
+
+    def _fill_list(self, query: str):
+        if not hasattr(self, "_lb"):
+            return
+        self._lb.delete(0, tk.END)
+        q = (query or "").lower().strip()
+        matched = []
+        for v in self._all_values:
+            if not q or q in v.lower():
+                matched.append(v)
+        recent_set = set(self._recent)
+        top = [v for v in matched if v in recent_set]
+        rest = [v for v in matched if v not in recent_set]
+        for v in top[:3]:
+            self._lb.insert(tk.END, v)
+        for v in rest[:150]:
+            self._lb.insert(tk.END, v)
+        if self._lb.size() > 0:
+            self._lb.selection_set(0)
+
+    def _on_lb_select(self):
+        sel = self._lb.curselection()
+        if sel:
+            val = self._lb.get(sel[0])
+            self._selected_value = val
+            self._var.set(val)
+            if val not in self._recent:
+                self._recent.insert(0, val)
+                self._recent = self._recent[:5]
+            self._hide_popup()
+            if self._callback:
+                self._callback(None)
+
+    def _select_top(self):
+        if hasattr(self, "_lb") and self._lb.size() > 0:
+            self._lb.selection_clear(0, tk.END)
+            self._lb.selection_set(0)
+            self._on_lb_select()
+        else:
+            self._hide_popup()
+
+    def _focus_list(self):
+        if hasattr(self, "_lb") and self._popup:
+            self._lb.focus_set()
+            if self._lb.size() > 0:
+                self._lb.selection_set(0)
+
+    def _on_popup_focus_out(self, event):
+        try:
+            focused = self.winfo_containing(event.x_root, event.y_root)
+            if focused and (focused == self._lb or focused == self.entry or focused == self._popup):
+                return
+        except Exception:
+            pass
+        self.after(150, self._hide_popup_safe)
+
+    def _hide_popup_safe(self):
+        try:
+            focused = self.focus_get()
+            if focused and (focused == self.entry or (hasattr(self, "_lb") and focused == self._lb)):
+                return
+        except Exception:
+            pass
+        self._hide_popup()
+
+    def _hide_popup(self):
+        if self._popup:
+            try:
+                self._popup.destroy()
+            except Exception:
+                pass
+            self._popup = None
+
+
 # ---------------------------------------------------------------------------
 # Ana sekme
 # ---------------------------------------------------------------------------
@@ -93,8 +228,35 @@ class CourseAnalysisTab(ttk.Frame):
     # =========================================================
     def refresh(self):
         self.db = self.app.db
+        prev_yil = self.cb_yil.get()
+        prev_fak = self.cb_fakulte.get()
+        prev_ders = self.cb_ders.get()
+
         self._load_years()
         self._load_faculties()
+
+        if prev_yil:
+            try:
+                yvals = list(self.cb_yil.cget("values") or [])
+                if prev_yil in yvals:
+                    self.cb_yil.set(prev_yil)
+            except Exception:
+                pass
+        if prev_fak:
+            try:
+                fvals = list(self.cb_fakulte.cget("values") or [])
+                if prev_fak in fvals:
+                    self.cb_fakulte.set(prev_fak)
+                    self._on_faculty_change(None)
+            except Exception:
+                pass
+        if prev_ders:
+            try:
+                all_vals = getattr(self.cb_ders, "_all_values", [])
+                if prev_ders in all_vals:
+                    self.cb_ders.set(prev_ders)
+            except Exception:
+                pass
 
     # =========================================================
     #  UI INSASI
@@ -140,9 +302,9 @@ class CourseAnalysisTab(ttk.Frame):
         self.cb_fakulte.bind("<<ComboboxSelected>>", self._on_faculty_change)
 
         tk.Label(bar, text="Ders:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
-        self.cb_ders = ttk.Combobox(bar, state="readonly", width=38)
+        self.cb_ders = _SearchableCombo(bar, width=42, bg="#1e293b")
         self.cb_ders.pack(side=tk.LEFT, padx=(0, 10))
-        self.cb_ders.bind("<<ComboboxSelected>>", self._on_ders_selected)
+        self.cb_ders.bind_select(self._on_ders_selected)
 
         # Ilerleme cubugu (arka plan analizi icin)
         self.progress = ttk.Progressbar(bar, mode="indeterminate", length=80)
@@ -461,34 +623,20 @@ class CourseAnalysisTab(ttk.Frame):
         pass
 
     def _update_ders_combo(self, query: str):
-        """Ders listesini query ile filtrele; combobox values guncelle."""
+        """Ders listesini SearchableCombo'ya yukle."""
         ders_list = getattr(self, "_ders_list", [])
         if not ders_list:
-            self.cb_ders["values"] = ["(Bu fakülte için ders bulunamadı)"]
+            self.cb_ders.set_values([])
             self.cb_ders.set("")
             self.btn_start.config(state="disabled")
-            self.update_idletasks()
             return
         self.btn_start.config(state="normal")
-        q = (query or "").lower()
-        if not q:
-            filtered = [d[0] for d in ders_list]
-        else:
-            filtered = [
-                d[0] for d in ders_list
-                if q in d[0].lower()
-            ]
-            if not filtered:
-                filtered = [d[0] for d in ders_list]
-        self.cb_ders["values"] = tuple(filtered)
-        if filtered:
-            try:
-                self.cb_ders.current(0)
-            except tk.TclError:
-                self.cb_ders.set(filtered[0])
+        all_vals = [d[0] for d in ders_list]
+        self.cb_ders.set_values(all_vals)
+        if all_vals:
+            self.cb_ders.set(all_vals[0])
         else:
             self.cb_ders.set("")
-        self.update_idletasks()
 
     # =========================================================
     #  ANALIZ BASLAT

@@ -2,212 +2,367 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
+import math
+
+
+PAGE_SIZE = 100
 
 
 class ViewTab(ttk.Frame):
     """
-    📂 Tablo Görüntüle sekmesi.
-    - Sol: tablo listesi
-    - Sağ: Treeview ile içerik + filtre
+    Admin Panel: Tum tablolari incele.
+    - Sol: tablo listesi + satir sayilari
+    - Sag: kolon bazli filtreleme, siralama, sayfalama
     - SQL Runner popup
     """
 
     def __init__(self, parent, app):
-        """
-        parent: root içindeki ttk.Notebook
-        app: AdilSecmeliApp (root). app.db bekler.
-        """
-        super().__init__(parent)   # ✅ parent notebook olmalı
+        super().__init__(parent)
         self.app = app
         self.db = app.db
 
         self.current_table = None
+        self._all_rows = []
+        self._filtered_rows = []
+        self._columns = []
+        self._page = 0
+        self._sort_col = None
+        self._sort_desc = False
+        self._col_filters = {}
 
+        self._build_ui()
+
+    def _build_ui(self):
         # --- SOL: Sidebar ---
-        self.sidebar = ttk.Frame(self, style="Sidebar.TFrame", width=240)  # ✅ self.frame değil self
-        self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
-        self.sidebar.pack_propagate(False)
+        sidebar = tk.Frame(self, bg="#0f172a", width=220)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar.pack_propagate(False)
 
-        ttk.Label(self.sidebar, text="Tablolar", style="Sidebar.TLabel") \
-            .pack(anchor="w", padx=14, pady=(16, 6))
+        tk.Label(sidebar, text="TABLOLAR", bg="#0f172a", fg="#94a3b8",
+                 font=("Segoe UI", 10, "bold"), pady=8).pack(fill=tk.X, padx=8)
 
         self.lst_tables = tk.Listbox(
-            self.sidebar,
-            bg="#111827", fg="#e5e7eb", highlightthickness=0,
-            selectbackground="#334155", activestyle="none"
+            sidebar, bg="#1e293b", fg="#e2e8f0", highlightthickness=0,
+            selectbackground="#2563eb", selectforeground="white",
+            activestyle="none", font=("Segoe UI", 9), bd=0,
         )
-        self.lst_tables.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
-        self.lst_tables.bind("<<ListboxSelect>>", self.on_table_select)
+        self.lst_tables.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 4))
+        self.lst_tables.bind("<<ListboxSelect>>", self._on_table_select)
 
-        ttk.Button(
-            self.sidebar,
-            text="SQL Çalıştır",
-            style="Sidebar.TButton",
-            command=self.open_sql_runner
-        ).pack(fill=tk.X, padx=10, pady=(0, 10))
+        self._lbl_row_count = tk.Label(sidebar, text="", bg="#0f172a", fg="#64748b",
+                                       font=("Segoe UI", 8))
+        self._lbl_row_count.pack(fill=tk.X, padx=8)
 
-        # --- SAĞ: İçerik ---
-        content_frame = ttk.Frame(self, padding=10)  # ✅ self.frame değil self
-        content_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        tk.Button(
+            sidebar, text="SQL Calistir", bg="#334155", fg="white",
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            command=self._open_sql_runner,
+        ).pack(fill=tk.X, padx=6, pady=6)
 
-        top_view = ttk.Frame(content_frame)
-        top_view.pack(fill=tk.X)
+        # --- SAG: Icerik ---
+        right = tk.Frame(self, bg="#f8fafc")
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        self.search_var = tk.StringVar()
-        ttk.Label(top_view, text="Filtre:").pack(side=tk.LEFT)
-        ttk.Entry(top_view, textvariable=self.search_var, width=40).pack(side=tk.LEFT, padx=6)
-        ttk.Button(top_view, text="Uygula", command=self.apply_filter).pack(side=tk.LEFT)
-        ttk.Button(top_view, text="Temizle", command=self.clear_filter).pack(side=tk.LEFT, padx=6)
+        # Ust: filtre + sayfalama
+        toolbar = tk.Frame(right, bg="#e2e8f0", pady=4, padx=6)
+        toolbar.pack(fill=tk.X)
 
-        self.tree = ttk.Treeview(content_frame, show="headings")
-        self.tree.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        tk.Label(toolbar, text="Genel Ara:", bg="#e2e8f0",
+                 font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self._search_var = tk.StringVar()
+        search_entry = tk.Entry(toolbar, textvariable=self._search_var, width=30,
+                                font=("Segoe UI", 9))
+        search_entry.pack(side=tk.LEFT, padx=(0, 6))
+        search_entry.bind("<Return>", lambda e: self._apply_filters())
 
-        self.scroll_x = ttk.Scrollbar(content_frame, orient="horizontal", command=self.tree.xview)
-        self.scroll_x.pack(fill=tk.X)
-        self.tree.configure(xscrollcommand=self.scroll_x.set)
+        tk.Button(toolbar, text="Filtrele", bg="#2563eb", fg="white",
+                  font=("Segoe UI", 8, "bold"), relief="flat", cursor="hand2",
+                  command=self._apply_filters).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text="Temizle", bg="#64748b", fg="white",
+                  font=("Segoe UI", 8), relief="flat", cursor="hand2",
+                  command=self._clear_filters).pack(side=tk.LEFT, padx=2)
 
-    # ------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------
+        self._lbl_page = tk.Label(toolbar, text="", bg="#e2e8f0",
+                                  font=("Segoe UI", 8))
+        self._lbl_page.pack(side=tk.RIGHT, padx=4)
+
+        tk.Button(toolbar, text=">>", bg="#475569", fg="white",
+                  font=("Segoe UI", 8), relief="flat", width=3,
+                  command=lambda: self._change_page(1)).pack(side=tk.RIGHT)
+        tk.Button(toolbar, text="<<", bg="#475569", fg="white",
+                  font=("Segoe UI", 8), relief="flat", width=3,
+                  command=lambda: self._change_page(-1)).pack(side=tk.RIGHT, padx=2)
+
+        # Kolon filtre satirlari
+        self._filter_frame = tk.Frame(right, bg="#f1f5f9")
+        self._filter_frame.pack(fill=tk.X, padx=2)
+        self._filter_entries = {}
+
+        # Treeview
+        tree_frame = tk.Frame(right)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=(0, 2))
+
+        self.tree = ttk.Treeview(tree_frame, show="headings", selectmode="extended")
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+
+        # Durum cubugu
+        self._statusbar = tk.Label(right, text="Tablo secin.",
+                                   bg="#e2e8f0", fg="#475569",
+                                   font=("Segoe UI", 8), anchor="w", padx=8)
+        self._statusbar.pack(fill=tk.X)
+
+    # =========================================================
+    #  PUBLIC
+    # =========================================================
     def refresh(self):
         self.fill_tables()
-        self.on_table_select()
 
     def fill_tables(self):
         self.lst_tables.delete(0, tk.END)
-
         try:
             tables = self.db.tables()
         except Exception as e:
-            messagebox.showerror("DB Hatası", f"Tablolar listelenemedi:\n{e}")
+            messagebox.showerror("DB Hatasi", f"Tablolar listelenemedi:\n{e}")
             return
-
         for t in tables:
             self.lst_tables.insert(tk.END, t)
-
         if tables:
             self.lst_tables.selection_clear(0, tk.END)
             self.lst_tables.selection_set(0)
             self.current_table = tables[0]
+            self._load_table(tables[0])
 
-    # ------------------------------------------------------------
-    # UI handlers
-    # ------------------------------------------------------------
-    def on_table_select(self, _evt=None):
+    # =========================================================
+    #  TABLE LOADING
+    # =========================================================
+    def _on_table_select(self, _evt=None):
         sel = self.lst_tables.curselection()
         if not sel:
             return
-
         table = self.lst_tables.get(sel[0])
         self.current_table = table
+        self._load_table(table)
+
+    def _load_table(self, table: str):
+        self._page = 0
+        self._sort_col = None
+        self._sort_desc = False
+        self._search_var.set("")
+        self._col_filters = {}
 
         try:
-            cols, rows = self.db.head(table, limit=2000)
-            self._populate_tree(cols, rows)
+            cols, rows = self.db.head(table, limit=50000)
         except Exception as e:
-            messagebox.showerror("Hata", f"Tablo okunamadı:\n{e}")
+            messagebox.showerror("Hata", f"Tablo okunamadi:\n{e}")
+            return
 
-    def _populate_tree(self, cols, rows):
+        self._columns = list(cols)
+        self._all_rows = [list(r) if not isinstance(r, (list, tuple)) else list(r) for r in rows]
+        self._filtered_rows = list(self._all_rows)
+        self._lbl_row_count.config(text=f"{len(self._all_rows)} satir")
+
+        self._build_column_filters()
+        self._setup_tree_columns()
+        self._render_page()
+
+    def _setup_tree_columns(self):
+        self.tree["columns"] = self._columns
+        for c in self._columns:
+            self.tree.heading(
+                c, text=c,
+                command=lambda col=c: self._sort_by(col),
+            )
+            self.tree.column(c, width=120, anchor="center", minwidth=60)
+
+    def _build_column_filters(self):
+        for w in self._filter_frame.winfo_children():
+            w.destroy()
+        self._filter_entries = {}
+
+        if not self._columns:
+            return
+
+        for col in self._columns:
+            f = tk.Frame(self._filter_frame, bg="#f1f5f9")
+            f.pack(side=tk.LEFT, padx=1, pady=2)
+            tk.Label(f, text=col, bg="#f1f5f9", fg="#475569",
+                     font=("Segoe UI", 7), width=12, anchor="w").pack(anchor="w")
+            var = tk.StringVar()
+            e = tk.Entry(f, textvariable=var, width=12, font=("Segoe UI", 7))
+            e.pack()
+            e.bind("<Return>", lambda ev: self._apply_filters())
+            self._filter_entries[col] = var
+
+    # =========================================================
+    #  FILTERING + SORTING + PAGINATION
+    # =========================================================
+    def _apply_filters(self):
+        global_q = self._search_var.get().strip().lower()
+        col_queries = {}
+        for col, var in self._filter_entries.items():
+            v = var.get().strip().lower()
+            if v:
+                col_queries[col] = v
+
+        result = []
+        for row in self._all_rows:
+            if global_q:
+                if not any(global_q in str(cell).lower() for cell in row):
+                    continue
+            if col_queries:
+                skip = False
+                for col, q in col_queries.items():
+                    idx = self._columns.index(col) if col in self._columns else -1
+                    if idx < 0 or idx >= len(row):
+                        continue
+                    if q not in str(row[idx]).lower():
+                        skip = True
+                        break
+                if skip:
+                    continue
+            result.append(row)
+
+        self._filtered_rows = result
+        self._page = 0
+        self._render_page()
+
+    def _clear_filters(self):
+        self._search_var.set("")
+        for var in self._filter_entries.values():
+            var.set("")
+        self._filtered_rows = list(self._all_rows)
+        self._page = 0
+        self._render_page()
+
+    def _sort_by(self, col: str):
+        if self._sort_col == col:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_col = col
+            self._sort_desc = False
+
+        idx = self._columns.index(col) if col in self._columns else 0
+
+        def sort_key(row):
+            val = row[idx] if idx < len(row) else ""
+            if val is None:
+                return (1, "")
+            try:
+                return (0, float(val))
+            except (ValueError, TypeError):
+                return (0, str(val).lower())
+
+        self._filtered_rows.sort(key=sort_key, reverse=self._sort_desc)
+        self._page = 0
+        self._render_page()
+
+        arrow = " v" if self._sort_desc else " ^"
+        for c in self._columns:
+            display = c + (arrow if c == col else "")
+            self.tree.heading(c, text=display)
+
+    def _change_page(self, delta: int):
+        total_pages = max(1, math.ceil(len(self._filtered_rows) / PAGE_SIZE))
+        new_page = self._page + delta
+        if 0 <= new_page < total_pages:
+            self._page = new_page
+            self._render_page()
+
+    def _render_page(self):
         self.tree.delete(*self.tree.get_children())
-        self.tree["columns"] = cols
+        total = len(self._filtered_rows)
+        total_pages = max(1, math.ceil(total / PAGE_SIZE))
+        start = self._page * PAGE_SIZE
+        end = min(start + PAGE_SIZE, total)
+        page_rows = self._filtered_rows[start:end]
 
-        for c in cols:
-            self.tree.heading(c, text=c, command=lambda col=c: self.sort_by(col, False))
-            self.tree.column(c, width=140, anchor="center")
+        for row in page_rows:
+            vals = []
+            for cell in row:
+                if isinstance(cell, float):
+                    vals.append(f"{cell:.4f}" if abs(cell) < 1 else f"{cell:.2f}")
+                elif cell is None:
+                    vals.append("")
+                else:
+                    vals.append(str(cell))
+            self.tree.insert("", tk.END, values=vals)
 
-        for r in rows:
-            if isinstance(r, sqlite3.Row):
-                self.tree.insert("", tk.END, values=[r[c] for c in cols])
-            else:
-                self.tree.insert("", tk.END, values=list(r))
+        self._lbl_page.config(
+            text=f"Sayfa {self._page + 1}/{total_pages}  ({total} kayit)"
+        )
+        self._statusbar.config(
+            text=f"{self.current_table or '?'}: {total} kayit gosteriliyor "
+                 f"(toplam {len(self._all_rows)})"
+        )
 
-    def sort_by(self, col, descending: bool):
-        data = [(self.tree.set(child, col), child) for child in self.tree.get_children("")]
-        try:
-            data.sort(key=lambda t: float(t[0]), reverse=descending)
-        except Exception:
-            data.sort(key=lambda t: t[0], reverse=descending)
+    # =========================================================
+    #  SQL RUNNER
+    # =========================================================
+    def _open_sql_runner(self):
+        win = tk.Toplevel(self)
+        win.title("SQL Calistir")
+        win.geometry("960x600")
+        win.configure(bg="#0f172a")
 
-        for index, (_, item) in enumerate(data):
-            self.tree.move(item, "", index)
+        tk.Label(win, text="SQL Sorgusu:", bg="#0f172a", fg="#94a3b8",
+                 font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
 
-        self.tree.heading(col, command=lambda: self.sort_by(col, not descending))
-
-    def clear_filter(self):
-        self.search_var.set("")
-        self.on_table_select()
-
-    def apply_filter(self):
-        if not self.current_table:
-            return
-
-        kw = self.search_var.get().strip()
-        if not kw:
-            self.on_table_select()
-            return
-
-        try:
-            cols, _ = self.db.head(self.current_table, limit=1)
-        except Exception:
-            return
-
-        like_cols = " OR ".join([f"CAST({c} AS TEXT) LIKE ?" for c in cols])
-        query = f"SELECT * FROM {self.current_table} WHERE {like_cols} LIMIT 2000;"
-        params = [f"%{kw}%"] * len(cols)
-
-        try:
-            cur = self.db.conn.cursor()
-            cur.execute(query, params)
-            rows = cur.fetchall()
-            cols2 = [d[0] for d in cur.description]
-            self._populate_tree(cols2, rows)
-        except Exception as e:
-            messagebox.showerror("Filtre Hatası", str(e))
-
-    # ------------------------------------------------------------
-    # SQL Runner
-    # ------------------------------------------------------------
-    def open_sql_runner(self):
-        win = tk.Toplevel(self)  # ✅ self.frame değil self
-        win.title("SQL Çalıştır")
-        win.geometry("900x600")
-
-        txt = tk.Text(win, height=10)
-        txt.pack(fill=tk.BOTH, expand=False, padx=8, pady=8)
+        txt = tk.Text(win, height=6, bg="#1e293b", fg="#e2e8f0",
+                      insertbackground="white", font=("Consolas", 10),
+                      relief="flat")
+        txt.pack(fill=tk.X, padx=10, pady=(0, 4))
         txt.insert(tk.END, "SELECT name FROM sqlite_master WHERE type='table';")
 
-        frame = ttk.Frame(win)
-        frame.pack(fill=tk.BOTH, expand=True)
+        btn_frame = tk.Frame(win, bg="#0f172a")
+        btn_frame.pack(fill=tk.X, padx=10)
+        tk.Button(btn_frame, text="Calistir", bg="#2563eb", fg="white",
+                  font=("Segoe UI", 9, "bold"), relief="flat", cursor="hand2",
+                  command=lambda: run_sql()).pack(side=tk.LEFT)
 
-        tree = ttk.Treeview(frame, show="headings")
-        tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        result_lbl = tk.Label(btn_frame, text="", bg="#0f172a", fg="#86efac",
+                              font=("Segoe UI", 8))
+        result_lbl.pack(side=tk.LEFT, padx=12)
 
-        sx = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
-        sx.pack(fill=tk.X)
-        tree.configure(xscrollcommand=sx.set)
+        tree_frame = tk.Frame(win)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 10))
 
-        def run():
+        sql_tree = ttk.Treeview(tree_frame, show="headings")
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=sql_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=sql_tree.xview)
+        sql_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        sql_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+
+        def run_sql():
             q = txt.get("1.0", tk.END).strip()
             if not q:
                 return
-
             try:
                 cols, rows = self.db.run_sql(q)
                 if cols:
-                    tree.delete(*tree.get_children())
-                    tree["columns"] = cols
+                    sql_tree.delete(*sql_tree.get_children())
+                    sql_tree["columns"] = cols
                     for c in cols:
-                        tree.heading(c, text=c)
-                        tree.column(c, width=150, anchor="center")
-
-                    for r in rows:
+                        sql_tree.heading(c, text=c)
+                        sql_tree.column(c, width=130, anchor="center")
+                    for r in (rows or []):
                         if isinstance(r, sqlite3.Row):
-                            tree.insert("", tk.END, values=[r[c] for c in cols])
+                            sql_tree.insert("", tk.END, values=[r[c] for c in cols])
                         else:
-                            tree.insert("", tk.END, values=list(r))
+                            sql_tree.insert("", tk.END, values=list(r))
+                    result_lbl.config(text=f"{len(rows or [])} satir", fg="#86efac")
                 else:
-                    messagebox.showinfo("Tamam", "Sorgu başarıyla çalıştı.")
+                    result_lbl.config(text="Sorgu basariyla calisti.", fg="#86efac")
             except Exception as e:
-                messagebox.showerror("SQL Hatası", str(e))
-
-        ttk.Button(win, text="Çalıştır", command=run).pack(pady=(0, 8))
+                result_lbl.config(text=f"Hata: {e}", fg="#fca5a5")

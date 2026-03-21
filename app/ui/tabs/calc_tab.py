@@ -57,51 +57,61 @@ class CalcTab(ttk.Frame):
         self.sub_nb.bind("<<NotebookTabChanged>>", self._on_sub_tab_changed)
 
     def _on_sub_tab_changed(self, event=None):
-        """Algoritma Kontrol & Ders Lab sekmesi acildiginda ders listesini yukle."""
+        """
+        Alt sekme degistiginde sadece ilk acilista yukle; sonrasinda
+        mevcut filtre durumlarini koru.
+        """
         try:
             idx = self.sub_nb.index(self.sub_nb.select())
-            if idx == 1:  # Algoritma Kontrol & Ders Lab
+            if idx == 1 and not getattr(self, "_lab_initialized", False):
                 self.page_lab.refresh()
+                self._lab_initialized = True
+            elif idx == 3 and not getattr(self, "_pool_initialized", False):
+                self.page_pool.refresh()
+                self._pool_initialized = True
         except Exception:
             pass
 
     # =========================================================
     #  PUBLIC
     # =========================================================
-    def refresh(self):
-        # DB path güncel kalsın
+    def refresh(self, force_reload=False):
+        """
+        DB path guncelle. force_reload=True olmadikca mevcut filtre
+        durumlarini korur; sadece combobox values'lari gunceller.
+        """
         self.db_path = getattr(self.app, "db_path", self.db_path)
 
-        # Relations yenile (fakülteleri kendi içinde dolduruyor)
         try:
             self.page_relations.refresh()
         except Exception:
             pass
 
-        # PoolTab yenile
         try:
             self.page_pool.db_path = self.db_path
-            self.page_pool.refresh()
+            if force_reload or not getattr(self, "_pool_initialized", False):
+                self.page_pool.refresh()
+                self._pool_initialized = True
         except Exception:
             pass
 
-        # Ders Analiz Lab yenile
         try:
-            self.page_lab.refresh()
+            if force_reload or not getattr(self, "_lab_initialized", False):
+                self.page_lab.refresh()
+                self._lab_initialized = True
         except Exception:
             pass
 
-        # Kriter sayfasını yenile (fakülteler + ders listesi)
         try:
             if hasattr(self.criteria_view, "load_faculties"):
                 self.criteria_view.load_faculties()
         except Exception as e:
-            print(f"[CalcTab] load_faculties hatası: {e}")
+            print(f"[CalcTab] load_faculties hatasi: {e}")
         try:
             if hasattr(self.criteria_view, "load_courses"):
                 self.criteria_view.load_courses()
         except Exception as e:
-            print(f"[CalcTab] load_courses hatası: {e}")
+            print(f"[CalcTab] load_courses hatasi: {e}")
 
 
 
@@ -115,26 +125,60 @@ class CalcTab(ttk.Frame):
 
         # UST: Genel Algoritma Kontrolu
         top_container = tk.Frame(paned, bg="#f0f0f0")
-        paned.add(top_container, minsize=180)
+        paned.add(top_container, minsize=200)
 
+        # --- Next Year butonu: sabit ust bar ---
+        next_year_bar = tk.Frame(top_container, bg="#0f172a", pady=6, padx=10)
+        next_year_bar.pack(fill=tk.X, side=tk.TOP)
+
+        self._btn_next_year = tk.Button(
+            next_year_bar,
+            text="Sonraki Yil Mufredat Uret",
+            bg="#16a34a", fg="white", activebackground="#15803d", activeforeground="white",
+            font=("Segoe UI", 12, "bold"),
+            cursor="hand2",
+            relief="flat", bd=0,
+            padx=24, pady=6,
+            command=lambda: self.run_single_step("next_year"),
+        )
+        self._btn_next_year.pack(side=tk.LEFT, padx=(0, 16))
+
+        self._lbl_next_year_status = tk.Label(
+            next_year_bar, text="", bg="#0f172a", fg="#86efac",
+            font=("Segoe UI", 9),
+        )
+        self._lbl_next_year_status.pack(side=tk.LEFT, padx=4)
+
+        btn_run_all_top = tk.Button(
+            next_year_bar,
+            text="Tumunu Calistir",
+            bg="#2563eb", fg="white", activebackground="#1d4ed8", activeforeground="white",
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2",
+            relief="flat", bd=0,
+            padx=16, pady=4,
+            command=self.run_all_algorithms,
+        )
+        btn_run_all_top.pack(side=tk.RIGHT)
+
+        # --- Ana icerik: Sol (butonlar) + Sag (log) ---
         main_container = tk.Frame(top_container, bg="#f0f0f0")
         main_container.pack(fill=tk.BOTH, expand=True)
 
-        left_frame = tk.Frame(main_container, bg="#e2e8f0", width=450)
+        left_frame = tk.Frame(main_container, bg="#e2e8f0", width=430)
         left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
         left_frame.pack_propagate(False)
 
         tk.Label(
             left_frame,
-            text="Genel Kontrol",
-            bg="#1e293b",
-            fg="white",
-            font=("Segoe UI", 11, "bold"),
-            pady=8
+            text="Algoritma Kontrol",
+            bg="#1e293b", fg="white",
+            font=("Segoe UI", 10, "bold"),
+            pady=6,
         ).pack(fill=tk.X)
 
         grid_frame = tk.Frame(left_frame, bg="#e2e8f0")
-        grid_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        grid_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
 
         right_frame = tk.Frame(main_container, bg="#fce7f3")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -142,79 +186,92 @@ class CalcTab(ttk.Frame):
         tk.Label(
             right_frame,
             text="Sonuc / Log",
-            bg="#be185d",
-            fg="white",
-            font=("Segoe UI", 11, "bold"),
-            pady=8
+            bg="#be185d", fg="white",
+            font=("Segoe UI", 10, "bold"),
+            pady=6,
         ).pack(fill=tk.X)
 
         self.result_text = tk.Text(
             right_frame,
-            bg="#fff1f2",
-            fg="#000000",
-            font=("Consolas", 10),
+            bg="#fff1f2", fg="#000000",
+            font=("Consolas", 9),
             state="disabled",
-            padx=10,
-            pady=10
+            padx=8, pady=8,
         )
         self.result_text.pack(fill=tk.BOTH, expand=True)
 
         # ALT: Ders Analiz Laboratuvari
         bottom_container = tk.Frame(paned, bg="white")
         paned.add(bottom_container, minsize=220)
+
+        lab_header = tk.Frame(bottom_container, bg="#0f172a", pady=3, padx=8)
+        lab_header.pack(fill=tk.X)
+        tk.Label(lab_header, text="Ders Analiz Laboratuvari",
+                 bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+        self._btn_fullscreen = tk.Button(
+            lab_header, text="Tam Ekran",
+            bg="#334155", fg="white", font=("Segoe UI", 8, "bold"),
+            relief="flat", cursor="hand2", padx=10,
+            command=self._toggle_fullscreen,
+        )
+        self._btn_fullscreen.pack(side=tk.RIGHT)
+
         self.page_lab = CourseAnalysisTab(bottom_container, app=self.app)
         self.page_lab.pack(fill=tk.BOTH, expand=True)
 
-        # Algoritma listesi (app'ten al, yoksa default)
+        self._paned = paned
+        self._top_container = top_container
+        self._bottom_container = bottom_container
+        self._is_fullscreen = False
+
+        # Algoritma listesi (next_year haric — o ayri buton olarak ust barda)
         algos = getattr(self.app, "algorithms", None)
         if not algos:
             algos = [
-                {"id": "mock", "name": "Veri Üretimi (Mock)"},
+                {"id": "mock", "name": "Veri Uretimi (Mock)"},
                 {"id": "trend", "name": "Tarihsel Trend Analizi"},
-                {"id": "ahp", "name": "AHP (Ağırlıklar)"},
-                {"id": "topsis", "name": "TOPSIS (Sıralama)"},
+                {"id": "ahp", "name": "AHP (Agirliklar)"},
+                {"id": "topsis", "name": "TOPSIS (Siralama)"},
                 {"id": "lr", "name": "Lineer Regresyon (Tahmin)"},
-                {"id": "rf", "name": "Random Forest (Sınıflandırma)"},
+                {"id": "rf", "name": "Random Forest (Siniflandirma)"},
                 {"id": "dt", "name": "Decision Tree (Karar)"},
-                {"id": "next_year", "name": "Sonraki Yıl Müfredat Üretimi"},
+                {"id": "next_year", "name": "Sonraki Yil Mufredat Uretimi"},
             ]
 
         self.ui_refs = {}
         self.results_cache = {}
 
-        btn_run_all = tk.Button(
-            grid_frame,
-            text="🚀 TÜMÜNÜ ÇALIŞTIR",
-            bg="#2563eb",
-            fg="white",
-            font=("Segoe UI", 10, "bold"),
-            cursor="hand2",
-            command=self.run_all_algorithms
-        )
-        btn_run_all.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 20), ipady=5)
-
-        for idx, algo in enumerate(algos, start=1):
+        row_idx = 0
+        for algo in algos:
             algo_id = algo["id"]
+            if algo_id == "next_year":
+                lbl_status = self._lbl_next_year_status
+                self.ui_refs[algo_id] = {"status": lbl_status, "show_btn": None}
+                continue
 
             btn_run = ttk.Button(
                 grid_frame,
-                text=f"Çalıştır: {algo_id.upper()}",
-                command=lambda i=algo_id: self.run_single_step(i)
+                text=f"Calistir: {algo_id.upper()}",
+                command=lambda i=algo_id: self.run_single_step(i),
             )
-            btn_run.grid(row=idx, column=0, padx=5, pady=5, sticky="ew")
+            btn_run.grid(row=row_idx, column=0, padx=4, pady=3, sticky="ew")
 
-            lbl_status = tk.Label(grid_frame, text="Bekliyor...", bg="#cbd5e1", width=15, anchor="center")
-            lbl_status.grid(row=idx, column=1, padx=5, pady=5)
+            lbl_status = tk.Label(
+                grid_frame, text="Bekliyor...", bg="#cbd5e1",
+                width=14, anchor="center", font=("Segoe UI", 8),
+            )
+            lbl_status.grid(row=row_idx, column=1, padx=4, pady=3)
 
             btn_show = ttk.Button(
                 grid_frame,
-                text="Sonuç Göster",
+                text="Sonuc Goster",
                 state="disabled",
-                command=lambda i=algo_id: self.show_result(i)
+                command=lambda i=algo_id: self.show_result(i),
             )
-            btn_show.grid(row=idx, column=2, padx=5, pady=5, sticky="ew")
+            btn_show.grid(row=row_idx, column=2, padx=4, pady=3, sticky="ew")
 
             self.ui_refs[algo_id] = {"status": lbl_status, "show_btn": btn_show}
+            row_idx += 1
 
         grid_frame.columnconfigure(0, weight=1)
         grid_frame.columnconfigure(1, weight=1)
@@ -236,8 +293,13 @@ class CalcTab(ttk.Frame):
             return
 
         widgets = self.ui_refs[algo_id]
-        widgets["status"].config(text="Çalışıyor...", bg="#fcd34d")
-        widgets["show_btn"].config(state="disabled")
+        if algo_id == "next_year":
+            widgets["status"].config(text="Calisiyor...", fg="#fcd34d")
+            self._btn_next_year.config(state="disabled", bg="#6b7280", text="Calisiyor...")
+        else:
+            widgets["status"].config(text="Calisiyor...", bg="#fcd34d")
+            if widgets.get("show_btn"):
+                widgets["show_btn"].config(state="disabled")
         self.update_idletasks()
 
         sonuc_metni = ""
@@ -581,13 +643,27 @@ class CalcTab(ttk.Frame):
 
         self.results_cache[algo_id] = sonuc_metni
 
-        if basarili_mi:
-            widgets["status"].config(text="Tamamlandi", bg="#86efac")
-            widgets["show_btn"].config(state="normal")
+        if algo_id == "next_year":
+            if basarili_mi:
+                widgets["status"].config(text="Tamamlandi", fg="#86efac")
+                self._btn_next_year.config(
+                    state="normal", bg="#16a34a",
+                    text="Sonraki Yil Mufredat Uret",
+                )
+            else:
+                widgets["status"].config(text="Hata!", fg="#fca5a5")
+                self._btn_next_year.config(
+                    state="normal", bg="#dc2626",
+                    text="Sonraki Yil (Hata!)",
+                )
             self.show_result(algo_id)
         else:
-            widgets["status"].config(text="Hata!", bg="#fca5a5")
-            widgets["show_btn"].config(state="normal")
+            if basarili_mi:
+                widgets["status"].config(text="Tamamlandi", bg="#86efac")
+            else:
+                widgets["status"].config(text="Hata!", bg="#fca5a5")
+            if widgets.get("show_btn"):
+                widgets["show_btn"].config(state="normal")
             self.show_result(algo_id)
 
     def show_result(self, algo_id: str):
@@ -601,4 +677,14 @@ class CalcTab(ttk.Frame):
         self.result_text.insert(tk.END, metin)
 
         self.result_text.config(state="disabled")
+
+    def _toggle_fullscreen(self):
+        if self._is_fullscreen:
+            self._paned.add(self._top_container, before=self._bottom_container, minsize=200)
+            self._btn_fullscreen.config(text="Tam Ekran")
+            self._is_fullscreen = False
+        else:
+            self._paned.forget(self._top_container)
+            self._btn_fullscreen.config(text="Normal Gorunum")
+            self._is_fullscreen = True
 
