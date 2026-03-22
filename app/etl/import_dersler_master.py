@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/etl/import_dersler_master.py — Dersler Master Excel Ice Aktarma
+# =============================================================================
+# dersler_master.xlsx uzerinden fakulte, bolum ve ders kayitlarini SQLite veritabanina yukler.
+# =============================================================================
+
 import sqlite3
 import pandas as pd
 import os

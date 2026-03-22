@@ -1,4 +1,13 @@
-# app/ui/tabs/relations_tab.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/ui/tabs/relations_tab.py — Ders Iliskileri & NLP Benzerlik
+# =============================================================================
+# Secilen ders icin NLP tabanli benzerlik analizi yapar.
+# Sol: Fakulteye ait ders listesi
+# Orta: NetworkX ile iliski agi grafi
+# Sag: En benzer 10 dersin puan tablosu
+# SimilarityEngine kullanarak TF-IDF bazli benzerlik skorlari hesaplanir.
+# =============================================================================
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -101,6 +110,7 @@ class RelationsTab(ttk.Frame):
 
     # ---------------- Data ----------------
     def load_courses_for_relations(self):
+        """Secili fakulteye ait dersleri listbox'a yukler."""
         fakulte = self.cb_fakulte.get()
         if not fakulte:
             return
@@ -125,6 +135,7 @@ class RelationsTab(ttk.Frame):
             self.course_map[idx] = row[0]
 
     def on_rel_course_select(self, _event):
+        """Ders secildiginde NLP benzerlik analizi calistirir ve sonuclari tablo + graf olarak gosterir."""
         sel = self.lst_rel_courses.curselection()
         if not sel:
             return

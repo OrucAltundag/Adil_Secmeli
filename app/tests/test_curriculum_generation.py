@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/tests/test_curriculum_generation.py — Müfredat üretim testleri
+# =============================================================================
+# Sonraki yıl müfredat üretimi, TOPSIS sonuçları ve tekil ders analizi
+# fonksiyonları için pytest tabanlı testler.
+# =============================================================================
+
 import os
 import sqlite3
 import tempfile

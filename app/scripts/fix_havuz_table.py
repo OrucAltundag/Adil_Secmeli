@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/fix_havuz_table.py — Havuz tablosu onarımı
+# =============================================================================
+# Havuz tablosunu kaldırıp statu, sayaç, skor, yıl ve bölüm bilgileriyle
+# uyumlu şemayla yeniden oluşturur.
+# =============================================================================
+
 import sqlite3
 import os
 

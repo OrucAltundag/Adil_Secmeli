@@ -73,132 +73,294 @@ class _Tooltip:
 
 
 class _SearchableCombo(tk.Frame):
-    """Yazdikca filtreleyen arama kutulu dropdown."""
+    """
+    Aranabilir ders secim widget'i.
+
+    Iki modda calisir:
+      - GORUNTULEME MODU: Secili ders gosterilir, ok butonuyla liste acilir.
+      - ARAMA MODU: Entry'ye odaklaninca veya ok'a tiklaninca acilir,
+        yazdikca listbox filtrelenir. Secim yapilinca goruntuleme moduna doner.
+
+    Popup her zaman entry'nin hemen altinda, guncel pozisyonda acilir.
+    Scrollbar ile tum liste gezilir, son secilenler ustte gosterilir.
+    """
 
     def __init__(self, parent, width=38, **kw):
         super().__init__(parent, **kw)
-        self._all_values = []
-        self._selected_value = ""
-        self._recent = []
-        self._popup = None
-        self._callback = None
+        self._all_values = []       # Tum secenekler
+        self._selected_value = ""   # Secili ders metni
+        self._recent = []           # Son secilen dersler (max 5)
+        self._popup = None          # Acik popup Toplevel referansi
+        self._callback = None       # Secim sonrasi callback
+        self._is_searching = False  # Arama modunda mi?
 
+        # --- Entry: ders adi gosterimi ve arama ---
         self._var = tk.StringVar()
-        self._var.trace_add("write", self._on_text_change)
         self.entry = tk.Entry(
             self, textvariable=self._var, width=width,
             font=("Segoe UI", 9),
         )
         self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.entry.bind("<FocusIn>", lambda e: self._show_popup())
-        self.entry.bind("<Return>", lambda e: self._select_top())
-        self.entry.bind("<Escape>", lambda e: self._hide_popup())
-        self.entry.bind("<Down>", lambda e: self._focus_list())
+
+        # --- Ok butonu: listeyi ac/kapat ---
+        self._btn = tk.Button(
+            self, text="\u25BC", width=2, font=("Segoe UI", 7),
+            relief="flat", bg="#334155", fg="white", cursor="hand2",
+            command=self._toggle_popup,
+        )
+        self._btn.pack(side=tk.LEFT, padx=(1, 0))
+
+        # Olaylar
+        self.entry.bind("<FocusIn>", self._on_entry_focus)
+        self.entry.bind("<KeyRelease>", self._on_key)
+        self.entry.bind("<Return>", lambda e: self._select_current())
+        self.entry.bind("<Escape>", lambda e: self._cancel_search())
+        self.entry.bind("<Down>", lambda e: self._move_selection(1))
+        self.entry.bind("<Up>", lambda e: self._move_selection(-1))
+
+    # ----- Public API -----
 
     def set_values(self, values: list):
+        """Tum secenek listesini ayarla."""
         self._all_values = list(values)
 
     def get(self):
+        """Secili degeri dondur."""
         return self._selected_value or self._var.get()
 
     def set(self, value: str):
+        """Secili degeri programatik olarak ayarla."""
         self._selected_value = value
         self._var.set(value)
+        self._is_searching = False
 
     def bind_select(self, callback):
+        """Secim yapildiginda cagrilacak fonksiyon."""
         self._callback = callback
 
-    def _on_text_change(self, *_):
-        if self._popup:
-            self._fill_list(self._var.get())
+    # ----- Popup yonetimi -----
 
-    def _show_popup(self):
+    def _toggle_popup(self):
+        """Ok butonuyla listeyi ac/kapat."""
         if self._popup:
+            self._close_popup()
+        else:
+            self._open_popup(show_all=True)
+
+    def _on_entry_focus(self, _event):
+        """Entry'ye tiklandiginda arama moduna gec."""
+        if not self._popup:
+            self._is_searching = True
+            self.entry.select_range(0, tk.END)
+
+    def _on_key(self, event):
+        """Her tus basildiginda listeyi filtrele."""
+        if event.keysym in ("Return", "Escape", "Up", "Down"):
             return
+        if not self._popup:
+            self._open_popup(show_all=False)
+        self._is_searching = True
+        self._refresh_list()
+
+    def _open_popup(self, show_all=False):
+        """Popup'i entry'nin hemen altinda ac."""
+        if self._popup:
+            self._close_popup()
+
+        # Her acilista pozisyonu yeniden hesapla
+        self.update_idletasks()
         x = self.entry.winfo_rootx()
         y = self.entry.winfo_rooty() + self.entry.winfo_height()
+        pw_width = max(400, self.entry.winfo_width() + self._btn.winfo_width())
+
         self._popup = pw = tk.Toplevel(self)
         pw.wm_overrideredirect(True)
-        pw.wm_geometry(f"+{x}+{y}")
+        pw.wm_geometry(f"{pw_width}x280+{x}+{y}")
         pw.wm_attributes("-topmost", True)
+        pw.configure(bg="#1e293b")
+
+        # Arama ipucu
+        hint = tk.Label(
+            pw, text="Yazmaya baslayin veya listeden secin...",
+            bg="#1e293b", fg="#64748b", font=("Segoe UI", 7),
+            anchor="w", padx=4,
+        )
+        hint.pack(fill=tk.X)
+
+        # Listbox + scrollbar
+        lb_frame = tk.Frame(pw, bg="#1e293b")
+        lb_frame.pack(fill=tk.BOTH, expand=True)
+
+        sb = tk.Scrollbar(lb_frame, orient=tk.VERTICAL)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._lb = tk.Listbox(
-            pw, width=self.entry.cget("width") + 5, height=12,
-            font=("Segoe UI", 9), selectbackground="#2563eb",
-            selectforeground="white", activestyle="none",
+            lb_frame, font=("Segoe UI", 9),
+            bg="#1e293b", fg="#e2e8f0",
+            selectbackground="#2563eb", selectforeground="white",
+            activestyle="none", highlightthickness=0, bd=0,
+            yscrollcommand=sb.set,
         )
-        self._lb.pack(fill=tk.BOTH, expand=True)
-        self._lb.bind("<Double-1>", lambda e: self._on_lb_select())
-        self._lb.bind("<Return>", lambda e: self._on_lb_select())
+        self._lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.config(command=self._lb.yview)
 
+        self._lb.bind("<ButtonRelease-1>", lambda e: self._on_lb_click())
+        self._lb.bind("<Double-1>", lambda e: self._on_lb_click())
+        self._lb.bind("<Return>", lambda e: self._on_lb_click())
+
+        # Tiklanabilir alan disina tiklaninca kapat
         pw.bind("<FocusOut>", self._on_popup_focus_out)
-        self._fill_list(self._var.get())
 
-    def _fill_list(self, query: str):
-        if not hasattr(self, "_lb"):
+        if show_all:
+            self._is_searching = False
+            self._refresh_list()
+        else:
+            self._refresh_list()
+
+    def _refresh_list(self):
+        """Listeyi mevcut arama metnine gore guncelle."""
+        if not self._popup or not hasattr(self, "_lb"):
             return
+
         self._lb.delete(0, tk.END)
-        q = (query or "").lower().strip()
+
+        # Arama metnini belirle
+        if self._is_searching:
+            q = self._var.get().strip().lower()
+            # Eger metin secili degerle ayniysa, filtre uygulama (tumunu goster)
+            if q == self._selected_value.lower():
+                q = ""
+        else:
+            q = ""
+
+        # Eslesen dersleri bul
         matched = []
         for v in self._all_values:
             if not q or q in v.lower():
                 matched.append(v)
+
+        # Son secilenler ustte
         recent_set = set(self._recent)
-        top = [v for v in matched if v in recent_set]
-        rest = [v for v in matched if v not in recent_set]
-        for v in top[:3]:
-            self._lb.insert(tk.END, v)
-        for v in rest[:150]:
-            self._lb.insert(tk.END, v)
-        if self._lb.size() > 0:
-            self._lb.selection_set(0)
+        top_items = [v for v in matched if v in recent_set]
+        rest_items = [v for v in matched if v not in recent_set]
 
-    def _on_lb_select(self):
+        if top_items:
+            for v in top_items[:5]:
+                self._lb.insert(tk.END, v)
+            self._lb.insert(tk.END, "─" * 40)
+
+        for v in rest_items:
+            self._lb.insert(tk.END, v)
+
+        # Secili dersi listede vurgula
+        if self._selected_value:
+            for i in range(self._lb.size()):
+                if self._lb.get(i) == self._selected_value:
+                    self._lb.selection_set(i)
+                    self._lb.see(i)
+                    break
+
+        if not matched:
+            self._lb.insert(tk.END, "(Sonuc bulunamadi)")
+
+    def _on_lb_click(self):
+        """Listeden secim yapildiginda."""
         sel = self._lb.curselection()
-        if sel:
-            val = self._lb.get(sel[0])
-            self._selected_value = val
-            self._var.set(val)
-            if val not in self._recent:
-                self._recent.insert(0, val)
-                self._recent = self._recent[:5]
-            self._hide_popup()
-            if self._callback:
-                self._callback(None)
+        if not sel:
+            return
+        val = self._lb.get(sel[0])
+        if val.startswith("─") or val == "(Sonuc bulunamadi)":
+            return
 
-    def _select_top(self):
-        if hasattr(self, "_lb") and self._lb.size() > 0:
-            self._lb.selection_clear(0, tk.END)
-            self._lb.selection_set(0)
-            self._on_lb_select()
-        else:
-            self._hide_popup()
+        self._selected_value = val
+        self._var.set(val)
+        self._is_searching = False
 
-    def _focus_list(self):
-        if hasattr(self, "_lb") and self._popup:
-            self._lb.focus_set()
+        # Son secilenler listesine ekle
+        if val in self._recent:
+            self._recent.remove(val)
+        self._recent.insert(0, val)
+        self._recent = self._recent[:5]
+
+        self._close_popup()
+        if self._callback:
+            self._callback(None)
+
+    def _select_current(self):
+        """Enter ile secili ogeni onayla."""
+        if self._popup and hasattr(self, "_lb"):
+            sel = self._lb.curselection()
+            if sel:
+                self._on_lb_click()
+                return
+            # Secim yoksa ilk ogeni sec
             if self._lb.size() > 0:
-                self._lb.selection_set(0)
+                first = self._lb.get(0)
+                if not first.startswith("─") and first != "(Sonuc bulunamadi)":
+                    self._lb.selection_set(0)
+                    self._on_lb_click()
+                    return
+        self._close_popup()
+
+    def _cancel_search(self):
+        """Escape ile aramayi iptal edip onceki secime don."""
+        self._var.set(self._selected_value)
+        self._is_searching = False
+        self._close_popup()
+
+    def _move_selection(self, delta):
+        """Ok tuslari ile listede gezin."""
+        if not self._popup or not hasattr(self, "_lb"):
+            self._open_popup(show_all=True)
+            return
+
+        size = self._lb.size()
+        if size == 0:
+            return
+
+        sel = self._lb.curselection()
+        current = sel[0] if sel else -1
+        new_idx = max(0, min(size - 1, current + delta))
+
+        # Ayirici satiri atla
+        val = self._lb.get(new_idx)
+        if val.startswith("─"):
+            new_idx = max(0, min(size - 1, new_idx + delta))
+
+        self._lb.selection_clear(0, tk.END)
+        self._lb.selection_set(new_idx)
+        self._lb.see(new_idx)
 
     def _on_popup_focus_out(self, event):
+        """Popup disina tiklaninca kapat."""
         try:
-            focused = self.winfo_containing(event.x_root, event.y_root)
-            if focused and (focused == self._lb or focused == self.entry or focused == self._popup):
+            w = self.winfo_containing(event.x_root, event.y_root)
+            if w is not None:
+                pw = self._popup
+                if (w == self.entry or w == self._btn or w == pw
+                        or (hasattr(self, "_lb") and w == self._lb)):
+                    return
+                try:
+                    if str(w).startswith(str(pw)):
+                        return
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.after(120, self._deferred_close)
+
+    def _deferred_close(self):
+        """Geckmeli kapatma - focus hala icerideyse kapatma."""
+        try:
+            f = self.focus_get()
+            if f == self.entry or (hasattr(self, "_lb") and f == self._lb):
                 return
         except Exception:
             pass
-        self.after(150, self._hide_popup_safe)
+        self._close_popup()
 
-    def _hide_popup_safe(self):
-        try:
-            focused = self.focus_get()
-            if focused and (focused == self.entry or (hasattr(self, "_lb") and focused == self._lb)):
-                return
-        except Exception:
-            pass
-        self._hide_popup()
-
-    def _hide_popup(self):
+    def _close_popup(self):
+        """Popup'i kapat ve temizle."""
         if self._popup:
             try:
                 self._popup.destroy()

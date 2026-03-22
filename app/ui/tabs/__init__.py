@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/ui/tabs — Ana Arayuz Sekmeleri Paketi
+# =============================================================================
+# ViewTab, AnalysisTab, CalcTab, PoolTab, RelationsTab, ToolsTab siniflarini disa aktarir.
+# =============================================================================
+
 from .view_tab import ViewTab
 from .analysis_tab import AnalysisTab
 from .calc_tab import CalcTab

@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/utils/logger.py — Merkezi Loglama Altyapisi
+# =============================================================================
+# Dosya (logs/app.log) ve konsola (stdout) cift kanalli loglama.
+# log_operation() ile islem bazli yapisal log kaydi olusturulur.
+# =============================================================================
 import logging
 import os
 import sys

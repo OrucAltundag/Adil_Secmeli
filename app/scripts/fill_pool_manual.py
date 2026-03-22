@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/fill_pool_manual.py — Manuel havuz doldurma
+# =============================================================================
+# Belirli fakülte için havuz tablosunu temizleyip ders kayıtlarını elle
+# oluşturur ve günceller.
+# =============================================================================
+
 import sqlite3
 import os
 

@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/etl/import_mufredat_excel.py — Mufredat Excel Ice Aktarma
+# =============================================================================
+# Excel dosyasindan mufredat ve mufredat_ders iliskilerini SQLite veritabanina aktarir.
+# =============================================================================
+
 import sqlite3
 import pandas as pd
 import os

@@ -1,6 +1,18 @@
 # -*- coding: utf-8 -*-
-# app/ui/tabs/pool_tab.py
-# Havuz Yonetimi sekmesi - Durum Makinesi goruntuleyici
+# =============================================================================
+# app/ui/tabs/pool_tab.py — Havuz Yonetimi Sekmesi
+# =============================================================================
+# Ders havuzunu fakulte/bolum/yil/donem bazinda goruntuler.
+# Sol panel: Havuz tablosu (statu renklendirme, strikeout iptal, skor gorunumu)
+# Sag panel: Secili bolumun mufredat dersleri
+#
+# Statu renk kodlari:
+#   1  Mufredatta (yesil) | 0 Havuzda (sari)
+#  -1  Dinlenmede (turuncu) | -2 Iptal (gri + ustu cizili)
+#
+# Saglik kontrolu: havuz-mufredat tutarliligini denetler.
+# Ogrenci simülasyonu: mufredattan ornek ders secim ekrani acar.
+# =============================================================================
 
 import tkinter as tk
 from tkinter import ttk, messagebox, font as tkfont
@@ -462,6 +474,7 @@ class PoolTab(ttk.Frame):
         self.load_pool_data()
 
     def load_pool_data(self):
+        """Secili fakulte/bolum/yil icin havuz ve mufredat verilerini ceker, tablolara basar."""
         fakulte = self.cb_fakulte.get()
         bolum   = self.cb_bolum.get()
         yil     = self.cb_yil.get()
@@ -616,6 +629,7 @@ class PoolTab(ttk.Frame):
             messagebox.showerror("Guncelleme Hatasi", str(e))
 
     def run_pool_health_check(self):
+        """Secili fakulte+yil icin havuz statu dagilimi ve mufredat-havuz senkronizasyon raporunu cikartir."""
         fakulte = self.cb_fakulte.get()
         yil = self.cb_yil.get()
         if not fakulte or not yil:
@@ -726,6 +740,7 @@ class PoolTab(ttk.Frame):
     #  SIMULASYON
     # =========================================================
     def open_student_simulation(self):
+        """Mufredattaki derslerden ogrenci secim simulasyonu penceresi acar."""
         curr_items = self.tree_curr.get_children()
         if not curr_items:
             messagebox.showwarning("Uyari", "Mufredatta ders yok! Once algoritmay calistirin.")

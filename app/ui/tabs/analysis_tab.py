@@ -1,4 +1,11 @@
-# app/ui/tabs/analysis_tab.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/ui/tabs/analysis_tab.py — Analiz & Grafik Sekmesi (Dashboard)
+# =============================================================================
+# KPI kartlari: toplam ogrenci, ders sayisi, genel basari, anket durumu
+# Grafikler: En yuksek basari oranlari (barplot) + En populer dersler (pie chart)
+# Seaborn + Matplotlib ile gorsellestirilir, Tkinter FigureCanvasTkAgg ile gosterilir.
+# =============================================================================
 import tkinter as tk
 from tkinter import ttk
 
@@ -111,6 +118,7 @@ class AnalysisTab(ttk.Frame):
         tk.Label(card, text=str(value), bg=color_code, fg="white", font=("Segoe UI", 18, "bold")).pack(anchor="w")
 
     def _fetch_dashboard_stats(self):
+        """Ozet istatistikleri (toplam ogrenci, ders, basari orani, anket) veritabanindan ceker."""
         stats = {
             "total_student": 0,
             "total_course": 0,
@@ -154,6 +162,7 @@ class AnalysisTab(ttk.Frame):
         return stats
 
     def _plot_top_success(self, ax):
+        """En yuksek basari oranina sahip 5 dersi yatay bar grafik olarak cizer."""
         ax.set_title("En Yüksek Başarı Oranı (Top 5)", fontsize=10)
 
         if not (self._has_table("performans") and self._has_table("ders")):
@@ -196,6 +205,7 @@ class AnalysisTab(ttk.Frame):
             ax.axis("off")
 
     def _plot_top_popularity(self, ax):
+        """En populer 7 dersi pasta grafik olarak cizer."""
         ax.set_title("En Popüler Dersler (Top 7)", fontsize=10)
 
         if not (self._has_table("populerlik") and self._has_table("ders")):

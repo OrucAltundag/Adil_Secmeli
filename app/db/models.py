@@ -1,5 +1,14 @@
-# models.py
-# Bitirme Projesi: Engel Denetimi, Kontenjan kuralları ve ilişkiler için güncellenmiş modeller
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/db/models.py — SQLAlchemy ORM Modelleri
+# =============================================================================
+# Veritabani tablolarinin Python sinif karsiliklari (ORM).
+# Tablolar: okul, fakulte, bolum, ogrenci, ders, havuz, ogretim_gorevlisi,
+#   ders_ogretim, mufredat, mufredat_ders, kayit, performans, populerlik,
+#   anket_form, anket_cevap, anket_sonuclari, skor, ogrenci_engel
+#
+# Not: havuz.ders_id TEXT olarak saklanir; JOIN'lerde CAST gerekir.
+# =============================================================================
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, Date, DateTime, Boolean, Float, Text, UniqueConstraint
 )

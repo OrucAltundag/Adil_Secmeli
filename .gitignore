@@ -3,3 +3,9 @@ __pycache__/
 .DS_Store
 venv/
 node_modules/
+.pytest_cache/
+logs/
+_arsiv/
+exports/*.csv
+exports/*.xlsx
+*.log

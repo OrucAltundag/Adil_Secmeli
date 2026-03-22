@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/tests/reset_counters.py — Sayaç sıfırlama
+# =============================================================================
+# Havuz tablosundaki sayaç alanını toplu olarak sıfırlayan yardımcı betik.
+# =============================================================================
+
 import sqlite3
 
 db_path = "data/adil_secmeli.db"

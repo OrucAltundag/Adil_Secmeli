@@ -46,9 +46,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Sabitler
 # ---------------------------------------------------------------------------
+# Kesinlesme puani baraj degeri — calculation.py'deki DROP_SCORE_THRESHOLD ile ayni
 SKOR_BARAJ = DROP_SCORE_THRESHOLD
+# Ortalama not baraj degeri
 ORTALAMA_NOT_BARAJ = DROP_AVERAGE_GRADE_THRESHOLD
+# Kural tabanli RF/DT fallback icin basari orani alt siniri
 BASARI_BARAJ = 0.40
+# Kural tabanli RF/DT fallback icin doluluk orani alt siniri
 DOLULUK_BARAJ = 0.30
 
 
@@ -85,6 +89,9 @@ def _statu_label(statu: int) -> str:
 # Veritabanı veri çekiciler
 # ---------------------------------------------------------------------------
 def _fetch_course_meta(cur: sqlite3.Cursor, course_id: int) -> dict:
+    """
+    ders tablosundan ders_id, ad, tip, fakulte_id, bolum_id bilgilerini okur.
+    """
     # ders tablosunda hangi tip kolonu var?
     cur.execute("PRAGMA table_info(ders)")
     cols = {r[1] for r in cur.fetchall()}
@@ -218,6 +225,9 @@ def _fetch_prev_pool(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
 
 
 def _resolve_course_faculty_id(cur: sqlite3.Cursor, course_meta: dict, course_id: int, year: int) -> Optional[int]:
+    """
+    Dersin fakulte_id'sini cozumler: ders.fakulte_id > havuz > mufredat sirasiyla bakar.
+    """
     meta_fak = course_meta.get("fakulte_id")
     if meta_fak is not None:
         return int(meta_fak)

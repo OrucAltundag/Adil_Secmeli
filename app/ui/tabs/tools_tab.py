@@ -1,4 +1,11 @@
-# app/ui/tabs/tools_tab.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/ui/tabs/tools_tab.py — Rapor & Skor Sekmesi
+# =============================================================================
+# Fakulte/Bolum/Yil bazinda filtrelenmis havuz ve mufredat raporlari.
+# Ozet istatistikler: toplam ders, ortalama skor, dinlenmede/mufredatta sayilari.
+# CSV/Excel disari aktarim, DB yedekleme, Mufredat Excel yukle, Statu/Yil esitle.
+# =============================================================================
 import os
 import shutil
 import datetime
@@ -236,6 +243,7 @@ class ToolsTab(ttk.Frame):
     # REPORT LOAD
     # =========================================================
     def load_report(self):
+        """Secili fakulte/bolum/yil icin havuz ve mufredat raporunu yukleyip tablolara basar."""
         fakulte = self.cb_fakulte.get()
         bolum = self.cb_bolum.get()
         yil = self.cb_yil.get()
@@ -363,6 +371,7 @@ class ToolsTab(ttk.Frame):
             messagebox.showerror("Hata", str(e))
 
     def sync_status_year(self):
+        """Havuz statu/sayac degerlerini zincirleme yillik hesaplamayla esitler."""
         if not self.db_path:
             messagebox.showwarning("Uyari", "DB yolu bulunamadi.")
             return
@@ -421,10 +430,7 @@ class ToolsTab(ttk.Frame):
             messagebox.showerror("Hata", str(e))
 
     def export_current(self, which: str, fmt: str):
-        """
-        which: 'pool' or 'curr'
-        fmt: 'csv' or 'xlsx'
-        """
+        """Havuz veya mufredat tablosunu CSV/Excel olarak disa aktarir."""
         fakulte = self.cb_fakulte.get()
         bolum = self.cb_bolum.get()
         yil = self.cb_yil.get()

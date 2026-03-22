@@ -1,4 +1,13 @@
-# app/ui/tabs/view_tab.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/ui/tabs/view_tab.py — Tablo Goruntuleme / Admin Panel
+# =============================================================================
+# Veritabanindaki TUM tablolari listeleyip inceleme imkani sunar.
+# Sol sidebar: tablo listesi + satir sayilari
+# Sag panel: secili tablonun verisi (kolon bazli filtreleme, global arama,
+#            siralama, sayfalama)
+# SQL Runner: serbest SQL sorgusu calistirma penceresi
+# =============================================================================
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
@@ -152,6 +161,7 @@ class ViewTab(ttk.Frame):
         self._load_table(table)
 
     def _load_table(self, table: str):
+        """Secilen tabloyu veritabanindan okuyup filtreleme/siralama icin hafizaya alir."""
         self._page = 0
         self._sort_col = None
         self._sort_desc = False
@@ -205,6 +215,7 @@ class ViewTab(ttk.Frame):
     #  FILTERING + SORTING + PAGINATION
     # =========================================================
     def _apply_filters(self):
+        """Global arama ve kolon bazli filtreleri uygulayarak sonuclari gunceller."""
         global_q = self._search_var.get().strip().lower()
         col_queries = {}
         for col, var in self._filter_entries.items():
@@ -243,6 +254,7 @@ class ViewTab(ttk.Frame):
         self._render_page()
 
     def _sort_by(self, col: str):
+        """Belirtilen kolona gore siralama yapar. Ayni kolona tekrar tiklanirsa yonu tersine cevirir."""
         if self._sort_col == col:
             self._sort_desc = not self._sort_desc
         else:
@@ -277,6 +289,7 @@ class ViewTab(ttk.Frame):
             self._render_page()
 
     def _render_page(self):
+        """Filtrelenmis ve siralanmis verinin gecerli sayfasini Treeview'a basar."""
         self.tree.delete(*self.tree.get_children())
         total = len(self._filtered_rows)
         total_pages = max(1, math.ceil(total / PAGE_SIZE))

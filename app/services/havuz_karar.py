@@ -1,5 +1,10 @@
-# app/services/havuz_karar.py
-# Havuz statü/sayaç durum makinesi (State Machine) ve müfredat-havuz eşitleme
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/services/havuz_karar.py — Havuz Statu/Sayac Durum Makinesi
+# =============================================================================
+# Ders havuzu icin State Machine mantigi ve mufredat-havuz zincirleme esleme.
+# Kurallar: Mufredattan dusme -> dinlenme -> tekrar aday / kalici iptal.
+# =============================================================================
 
 import sqlite3
 

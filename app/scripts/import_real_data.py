@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/import_real_data.py — Gerçek veri içe aktarma
+# =============================================================================
+# Excel/CSV kaynaklı gerçek ders verisini bularak SQLite veritabanına aktarır;
+# yol çözümleme ve tablo eşlemesi bu betikte yapılır.
+# =============================================================================
+
 import sqlite3
 import pandas as pd
 import os

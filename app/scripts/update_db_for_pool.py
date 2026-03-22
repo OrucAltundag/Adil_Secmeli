@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/update_db_for_pool.py — Havuz için veritabanı güncelleme
+# =============================================================================
+# Proje klasöründe SQLite veritabanını bular; havuz ve ders tablolarına havuz
+# yönetimi için gerekli sütunları (statu, sayaç, skor, yıl, alan vb.) ekler.
+# =============================================================================
+
 import sqlite3
 import os
 

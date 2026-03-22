@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/services/similarity_engine.py — NLP Tabanli Ders Benzerlik Motoru (sqlite3)
+# =============================================================================
+# TF-IDF + Cosine Similarity ile ders icerikleri arasindaki benzerligi hesaplar.
+# Dogrudan sqlite3 kullanir; sonuclari ders_iliski tablosuna kaydeder.
+# =============================================================================
+
 import sqlite3
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -11,6 +19,8 @@ TURKCE_STOP_WORDS = [
 
 
 class SimilarityEngine:
+    """sqlite3 tabanli ders benzerlik hesaplama motoru."""
+
     def __init__(self, db_path: str):
         self.db_path = db_path
 
@@ -18,6 +28,7 @@ class SimilarityEngine:
         return sqlite3.connect(self.db_path)
 
     def load_courses(self):
+        """Veritabanindan bilgi alani dolu tum dersleri DataFrame olarak doner."""
         conn = self._get_connection()
 
         query = """
@@ -33,6 +44,7 @@ class SimilarityEngine:
         return df
 
     def compute_similarity(self):
+        """Tum dersler icin TF-IDF matrisi olusturur ve cosine similarity hesaplar."""
         df = self.load_courses()
 
         if df.empty:
@@ -51,6 +63,7 @@ class SimilarityEngine:
         return df.reset_index(drop=True), similarity_matrix
 
     def get_similar_courses(self, target_ders_id: int, top_n: int = 10):
+        """Verilen ders icin en benzer top_n dersi skor ile doner."""
         df, sim_matrix = self.compute_similarity()
 
         if target_ders_id not in df["ders_id"].values:
@@ -72,7 +85,7 @@ class SimilarityEngine:
         return results
     
     def compute_and_save(self, target_ders_id: int, top_n: int = 10):
-        
+        """Benzerlikleri hesaplayip ders_iliski tablosuna kaydeder."""
         results = self.get_similar_courses(target_ders_id, top_n)
 
         conn = sqlite3.connect(self.db_path)

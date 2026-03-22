@@ -1,1 +1,7 @@
-# pytest için test dosyası: score_engine
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/tests/test_score_engine.py — Skor motoru testleri
+# =============================================================================
+# score_engine modülü için pytest testleri (yer tutucu / genişletilebilir).
+# =============================================================================
+

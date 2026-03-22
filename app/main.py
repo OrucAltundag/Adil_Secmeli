@@ -151,6 +151,10 @@ class AdilSecmeliApp(tk.Tk):
     # ---- BÖLÜM 3: Veritabanı bağlantısı ve başlangıç -----
 
     def auto_connect(self):
+        """
+        Uygulama acilisinda otomatik veritabani baglantisi kurar.
+        Sirasyla: DB baglan -> havuz seed -> sonraki yil uret -> statu esitle -> UI yenile.
+        """
         db_path = self.config_data.get("db_path")
 
         if db_path:
@@ -236,6 +240,7 @@ class AdilSecmeliApp(tk.Tk):
 
 
     def cmd_open_db(self):
+        """Kullanicidan yeni veritabani dosyasi secmesini ister ve baglantıyı yeniler."""
         path = filedialog.askopenfilename(
             title="SQLite Veritabanı Seç",
             filetypes=[("SQLite", "*.db *.sqlite *.sqlite3"), ("Tümü", "*.*")]
@@ -390,6 +395,7 @@ class AdilSecmeliApp(tk.Tk):
     # =========================================================
 
     def on_tab_change(self, event):
+        """Ana sekme degistiginde ilgili sekmenin refresh() metodunu cagırır."""
         selected_tab = event.widget.tab(event.widget.index("current"), "text")
 
         if "Analiz" in selected_tab:
@@ -400,6 +406,7 @@ class AdilSecmeliApp(tk.Tk):
 
 
     def ensure_pool_initialized_once(self):
+        """Havuz tablosu bos ise ilk kez mufredat yillarindan seed olusturur."""
         res = self.db.run_sql("SELECT COUNT(*) FROM havuz;")
         cnt = res[1][0][0] if res[1] else 0
         if cnt == 0:

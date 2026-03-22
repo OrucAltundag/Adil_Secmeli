@@ -19,13 +19,16 @@ from app.services.havuz_karar import calculate_next_status
 logger = logging.getLogger(__name__)
 
 # ---------- BÖLÜM 1: Karar Motoru (AHP + TOPSIS) ----------
-# AHP için RI (Random Index) - 4 kriter için
+# AHP Random Index degeri, 4 kriter icin sabit tablo degeri
 RI_4 = 0.90
+# Kesinlesme puani baraj degeri — bu skorun altinda kalan dersler mufredattan duser
 DROP_SCORE_THRESHOLD = 40.0
+# Ortalama not baraj degeri — bu notun altindaki dersler mufredattan duser
 DROP_AVERAGE_GRADE_THRESHOLD = 45.0
 
-# Mufredat disi (havuz) dersler: merkez 50, yalnizca anket ile ±10 sapma (40-60).
+# Mufredat disi (havuz) dersler icin varsayilan kesinlesme puani merkezi
 POOL_DEFAULT_SCORE = 50.0
+# Havuz derslerinin anket bazli puan yayilim araligi (50 ± bu deger)
 POOL_ANKET_SCORE_SPREAD = 10.0
 
 class KararMotoru:
@@ -375,6 +378,9 @@ def _normalize_mufredat_faculty_ids(cur):
 
 
 def _safe_float2(value, default=0.0):
+    """
+    None, NaN, Inf ve string degerleri guvenli float'a cevirir. Gecersiz degerlerde default doner.
+    """
     try:
         if value is None:
             return float(default)
@@ -387,6 +393,9 @@ def _safe_float2(value, default=0.0):
 
 
 def _resolve_elective_col(cur):
+    """
+    ders tablosunda secmeli/zorunlu tip sutununun adini belirler (DersTipi, tip veya None).
+    """
     cur.execute("PRAGMA table_info(ders)")
     cols = {str(r[1]) for r in cur.fetchall()}
     if "DersTipi" in cols:
@@ -535,6 +544,10 @@ def _has_full_criteria(cur, ders_id, yil, donem):
 
 
 def _read_course_metrics(cur, ders_id, yil, donem, motor):
+    """
+    Tek ders icin AHP/TOPSIS girdilerini derler: basari, trend, populerlik, anket, ortalama_not.
+    Oncelik sirasi: ders_kriterleri > performans > populerlik. Mevcut yil verisi yoksa onceki yildan propagasyon yapar.
+    """
     dk = None
     try:
         cur.execute(
@@ -720,6 +733,9 @@ def evaluate_drop_reasons(
     score_threshold=DROP_SCORE_THRESHOLD,
     average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
 ):
+    """
+    Dersin mufredattan dusme nedenlerini degerlendirip neden listesi doner.
+    """
     reasons = []
     if _safe_float2(score_100, 0.0) < float(score_threshold):
         reasons.append(f"Kesinlesme puani {float(score_threshold):.0f} altinda")
@@ -734,6 +750,9 @@ def should_drop_course(
     score_threshold=DROP_SCORE_THRESHOLD,
     average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
 ):
+    """
+    Dersin dusup dusmeyecegini ve nedenlerini doner. (drop_flag, reasons) tuple.
+    """
     reasons = evaluate_drop_reasons(
         score_100,
         average_grade,
@@ -763,6 +782,10 @@ def _pool_course_score_anket_only(anket):
 
 
 def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", include_course_ids=None):
+    """
+    Bir fakulte+yil icin tum adaylarin TOPSIS skorlarini hesaplar. Mufredattaki dersler TOPSIS pipeline'ina girer;
+    mufredat disi dersler yalnizca anket-bazli sabit puanlanir.
+    """
     fakulte_id = int(fakulte_id)
     akademik_yil = int(akademik_yil)
     donem = str(donem or "G")
@@ -1005,6 +1028,9 @@ def _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem="G"):
 
 
 def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, ders_meta, donem="G"):
+    """
+    Hesaplanan TOPSIS skorlarini havuz tablosuna yazar. Mevcut kayit varsa UPDATE, yoksa INSERT yapar.
+    """
     fakulte_id = int(fakulte_id)
     akademik_yil = int(akademik_yil)
     active_curriculum_ids = _get_curriculum_course_ids(
@@ -1585,6 +1611,9 @@ def generate_next_year_curricula(
 
 
 def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G"):
+    """
+    Tum fakulteler icin otomatik sonraki yil mufredat uretimini tetikler. Her fakultenin en son mufredatli yilini bulur ve bir sonraki yili uretir.
+    """
     summary = {
         "ok": True,
         "generated": [],

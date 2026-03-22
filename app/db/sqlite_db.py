@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-# app/db/sqlite_db.py
+# =============================================================================
+# app/db/sqlite_db.py — UI Tarafli SQLite Veritabani Erisimi
+# =============================================================================
+# Tkinter UI katmani tarafindan kullanilan hafif sqlite3 wrapper.
+# SQLAlchemy yerine dogrudan sqlite3 kullanir (basit sorgular icin).
+# connect(), tables(), head(), read_df(), run_sql() metodlari sunar.
+# =============================================================================
 from __future__ import annotations
 
 import os

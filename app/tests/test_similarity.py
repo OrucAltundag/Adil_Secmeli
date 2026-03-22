@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/tests/test_similarity.py — Benzerlik motoru testleri
+# =============================================================================
+# SimilarityEngine için birim testleri; geçici SQLite veritabanı ile benzerlik
+# hesaplarının doğrulanması.
+# =============================================================================
+
 import os
 import sqlite3
 import tempfile

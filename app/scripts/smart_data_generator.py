@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/smart_data_generator.py — Akıllı test verisi üretici
+# =============================================================================
+# Performans, popülerlik ve skor tablolarını oluşturur; rastgele test verisiyle
+# veritabanı şemasını doldurur ve günceller.
+# =============================================================================
+
 import random
 import sqlite3
 

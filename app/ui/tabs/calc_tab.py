@@ -1,5 +1,16 @@
 # -*- coding: utf-8 -*-
-# app/ui/tabs/calc_tab.py
+# =============================================================================
+# app/ui/tabs/calc_tab.py — Hesaplama & Test Ana Sekmesi
+# =============================================================================
+# Bu dosya dort alt sekme icerir:
+#   1. Kriter Girdi Islemleri (CriteriaPage)
+#   2. Algoritma Kontrol & Ders Lab (genel AHP/TOPSIS/LR/RF/DT + tek ders analizi)
+#   3. Ders Iliskileri & Kurallar (NLP benzerlik grafi)
+#   4. Havuz Yonetimi (PoolTab — fakulte/yil/donem bazli havuz gorunumu)
+#
+# "Sonraki Yil Mufredat Uret" butonu rebuild_school_curricula pipeline'ini tetikler.
+# "Tam Ekran" butonu PanedWindow'dan ust paneli gizleyerek analiz labini buyutur.
+# =============================================================================
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -119,6 +130,7 @@ class CalcTab(ttk.Frame):
     #  1) ALGO PANEL
     # =========================================================
     def setup_algo_panel(self, parent):
+        """Algoritma kontrol panelini olusturur: ust barda sonraki yil uretim + tumunu calistir butonlari, sol tarafta her algoritma icin calistir/goster butonlari, sag tarafta log/sonuc alani, altta ders analiz laboratuvari."""
         # Dikey bolum: Ust = Genel Kontrol, Alt = Ders Laboratuvari
         paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, bg="#cbd5e1")
         paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -278,6 +290,7 @@ class CalcTab(ttk.Frame):
         grid_frame.columnconfigure(2, weight=1)
 
     def run_all_algorithms(self):
+        """Tum algoritmalari sirayla calistirir ve sonuclarini log paneline yazar."""
         self.result_text.config(state="normal")
         self.result_text.delete("1.0", tk.END)
         self.result_text.insert(tk.END, "Toplu işlem başlatılıyor...\nLütfen bekleyiniz.\n")
@@ -289,6 +302,7 @@ class CalcTab(ttk.Frame):
             self.update_idletasks()
 
     def run_single_step(self, algo_id: str):
+        """Tek bir algoritma adimini calistirir. Sonucu results_cache'e kaydeder ve UI status etiketini gunceller."""
         if algo_id not in self.ui_refs:
             return
 
@@ -667,6 +681,7 @@ class CalcTab(ttk.Frame):
             self.show_result(algo_id)
 
     def show_result(self, algo_id: str):
+        """Secilen algoritmanin cache'deki sonucunu log panelinde gosterir."""
         metin = self.results_cache.get(algo_id, "Sonuç bulunamadı.")
 
         self.result_text.config(state="normal")
@@ -679,6 +694,7 @@ class CalcTab(ttk.Frame):
         self.result_text.config(state="disabled")
 
     def _toggle_fullscreen(self):
+        """Ders analiz panelini tam ekran yapar veya eski haline dondurur."""
         if self._is_fullscreen:
             self._paned.add(self._top_container, before=self._bottom_container, minsize=200)
             self._btn_fullscreen.config(text="Tam Ekran")

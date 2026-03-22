@@ -1,4 +1,11 @@
-# app/services/similarity.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/services/similarity.py — NLP Tabanli Ders Benzerlik Motoru (SQLAlchemy)
+# =============================================================================
+# TF-IDF + Cosine Similarity ile ders icerikleri arasindaki benzerligi hesaplar.
+# SQLAlchemy ORM kullanir; relations_tab sekmesine veri saglar.
+# =============================================================================
+
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -16,6 +23,8 @@ TURKCE_STOP_WORDS = {
 }
 
 class SimilarityEngine:
+    """SQLAlchemy ORM tabanli ders benzerlik hesaplama motoru."""
+
     def __init__(self, db_session: Session):
         self.db = db_session
 

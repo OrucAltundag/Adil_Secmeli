@@ -1,5 +1,17 @@
-# app/db/database.py
-# ScopedSession ile bağlantı kopması önleme ve thread-safe kullanım
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/db/database.py — SQLAlchemy Oturum Yonetimi
+# =============================================================================
+# ScopedSession ile thread-safe veritabani erisimi saglar.
+# config.json'dan DB yolunu okur; yol degisirse engine otomatik yenilenir.
+# ORM modelleri (models.py) icin Base tanimini icerir.
+#
+# Kullanim:
+#   from app.db.database import get_session
+#   session = get_session()
+#   ...
+#   session.close()
+# =============================================================================
 import json
 import os
 import threading

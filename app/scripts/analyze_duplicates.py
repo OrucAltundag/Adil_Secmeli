@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/analyze_duplicates.py — Mükerrer ders analizi
+# =============================================================================
+# Veritabanında ders_id kullanan tabloları tarar; mükerrer ders kayıtlarını
+# raporlar ve analiz çıktısı üretir.
+# =============================================================================
+
 """Tekrarlayan dersleri analiz et."""
 import json
 import os

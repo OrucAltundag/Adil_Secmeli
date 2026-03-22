@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/havuz_2022_doldur.py — 2022 yılı havuz verisi oluşturma
+# =============================================================================
+# 2022 akademik yılı müfredat referansına göre havuz kayıtlarını oluşturur ve
+# ilgili güncellemeleri uygular.
+# =============================================================================
+
 import sqlite3
 import os
 

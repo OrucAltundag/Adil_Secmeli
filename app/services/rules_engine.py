@@ -1,5 +1,7 @@
-# app/services/rules_engine.py
-# Kurallar Motoru: Engel, Kontenjan, Çakışma denetimleri
+"""
+Kurallar Motoru: Ogrenci bazli ders uygunluk denetimi.
+Engel kontrolu (failed_before), kontenjan denetimi ve ders saati cakisma kontrolu saglar.
+"""
 
 from app.services.calculation import ders_cakisma_kontrolu
 

@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/init_script.py — Veritabanı ilk kurulum
+# =============================================================================
+# Havuz durumlarını geçmiş yıl seçim özetine göre simüle eden DecisionEngine
+# sınıfı; statü, sayaç ve skor mantığının prototip/test kullanımı.
+# =============================================================================
+
 import pandas as pd
 
 class DecisionEngine:

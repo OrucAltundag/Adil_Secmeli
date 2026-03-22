@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/tests/check_db_results.py — Veritabanı sonuç kontrolü
+# =============================================================================
+# Müfredat ve havuz skorlarına yönelik hızlı doğrulama çıktıları üreten
+# yardımcı betik.
+# =============================================================================
+
 import sqlite3
 import pandas as pd
 

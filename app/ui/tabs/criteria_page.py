@@ -14,6 +14,20 @@ import sqlite3
 
 
 class CriteriaPage:
+    """
+    Kriter Girdi Sayfasi.
+
+    Sol panel: Fakulte/Bolum/Yil filtreleriyle ders listesi (kriter durumu ile).
+    Sag panel: Secilen ders icin akademik performans, kontenjan/populerlik
+    ve anket tercih verilerinin giris formu.
+
+    Kaydet isleminde:
+      1. ders_kriterleri tablosuna INSERT/UPDATE
+      2. performans tablosuna ortalama_not + basari_orani yazilir
+      3. populerlik tablosuna talep + kontenjan + doluluk_orani yazilir
+      4. rebuild_school_curricula pipeline'i otomatik tetiklenir
+    """
+
     def __init__(self, parent, db, app=None):
         self.parent = parent
         self.db = db

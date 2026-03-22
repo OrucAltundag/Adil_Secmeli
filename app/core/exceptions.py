@@ -1,11 +1,21 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/core/exceptions.py — Ozel Hata Siniflari
+# =============================================================================
+# Proje genelinde kullanilan istisnai durum (exception) siniflari.
+# =============================================================================
+
+
 class BaseError(Exception):
-    """Temel hata sınıfı"""
+    """Tum proje hatalarinin taban sinifi."""
     pass
+
 
 class StudentNotFoundError(BaseError):
-    """Öğrenci bulunamadığında fırlatılır."""
+    """Ogrenci bulunamadiginda firlatilir."""
     pass
 
+
 class CourseQuotaExceededError(BaseError):
-    """Ders kontenjanı dolduğunda fırlatılır."""
+    """Ders kontenjani doldugunda firlatilir."""
     pass

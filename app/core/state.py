@@ -1,4 +1,11 @@
-# app/state.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/core/state.py — Uygulama Durum Yonetimi (AppState)
+# =============================================================================
+# Dataclass tabanli merkezi durum deposu. Tum UI sekmeleri ve servisler
+# buradaki degerleri okur/yazar. Mini event sistemi ile degisiklikler
+# dinleyicilere bildirilir (observer pattern).
+# =============================================================================
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, List, Any
 

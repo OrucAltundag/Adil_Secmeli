@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/scripts/reset.py — Veritabanı sıfırlama
+# =============================================================================
+# Havuz tablosundaki statu, sayaç ve skor alanlarını toplu olarak sıfırlar.
+# =============================================================================
+
 import sqlite3
 
 def reset_database_stats(db_path='proje_veritabani.db'):

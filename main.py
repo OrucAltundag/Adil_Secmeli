@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-# Proje kökünden "python main.py" ile başlatma kısayolu
+# =============================================================================
+# main.py — Proje Giris Noktasi
+# =============================================================================
+# Proje kokunden "python main.py" ile baslatma kisayolu.
+# sys.path ayarini yapip app.main.AdilSecmeliApp sinifini olusturur ve calistirir.
+# =============================================================================
 import sys
 import os
 

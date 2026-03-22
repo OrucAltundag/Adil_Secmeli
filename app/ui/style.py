@@ -1,4 +1,11 @@
-# app/ui/style.py
+# -*- coding: utf-8 -*-
+# =============================================================================
+# app/ui/style.py — Uygulama Gorsel Tema Yonetimi
+# =============================================================================
+# Tum ttk widget'lari icin merkezi stil tanimlari.
+# Renk paleti (COLORS), font tanimlari (FONTS) ve apply_style() fonksiyonu.
+# Tema: clam (platformlar arasi tutarli gorunum).
+# =============================================================================
 import tkinter as tk
 from tkinter import ttk
 

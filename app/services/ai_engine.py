@@ -18,10 +18,14 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# sklearn modelleri icin minimum egitim verisi satir sayisi
 MIN_SAMPLES_SKLEARN = 10
 
 
 def _sf(val, default=0.0):
+    """
+    Guvenli float donusumu. None/NaN/Inf icin varsayilan deger doner.
+    """
     if val is None:
         return default
     try:
@@ -108,9 +112,13 @@ class HavuzAIEngine:
         return df
 
     def _feature_cols(self):
+        """ML modelleri icin kullanilan ozellik (feature) sutun listesini doner."""
         return ["basari_orani", "ortalama_not", "doluluk_orani", "anket_orani", "trend", "sayac"]
 
     def train(self, fakulte_id=None):
+        """
+        LR, RF ve DT modellerini havuz verisi uzerinde egitir. Basarili ise True, veri yetersizse False doner.
+        """
         df = self._load_training_data(fakulte_id=fakulte_id)
         if df.empty or len(df) < MIN_SAMPLES_SKLEARN:
             self._trained = False
@@ -159,6 +167,7 @@ class HavuzAIEngine:
         return int(self.model_dt.predict(X)[0])
 
     def _dict_to_X(self, features: dict) -> np.ndarray:
+        """Feature dictionary'yi numpy array'e cevirir (sklearn uyumlu)."""
         row = [_sf(features.get(c, 0)) for c in self._feature_cols()]
         return np.array([row])
 
@@ -269,7 +278,9 @@ class HavuzAIEngine:
 
 
 class AIEngine:
-    """calc_tab.py ile geriye uyumlu arayuz."""
+    """
+    calc_tab.py tarafindan kullanilan ust duzey arayuz. HavuzAIEngine'i sarar.
+    """
 
     def __init__(self, db_session: Session):
         self.db = db_session
