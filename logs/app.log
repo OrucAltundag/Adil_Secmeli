@@ -36,3 +36,4 @@
 2026-03-20 21:14:47,643 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=4 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
 2026-03-20 21:14:47,658 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=5 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
 2026-03-21 22:31:52,912 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=112 yil=2023
+2026-03-23 00:15:31,510 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=90 yil=2023
