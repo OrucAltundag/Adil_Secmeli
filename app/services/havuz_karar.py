@@ -6,17 +6,28 @@
 # Kurallar: Mufredattan dusme -> dinlenme -> tekrar aday / kalici iptal.
 # =============================================================================
 
+from __future__ import annotations
+
 import sqlite3
 
 # ---------------------------------------------------------------------------
 # Sabitler
 # ---------------------------------------------------------------------------
-STATU_MUFREDATTA = 1    # Ders o yıl aktif müfredatta
-STATU_HAVUZDA    = 0    # Havuzda bekliyor; müfredata aday
-STATU_DINLENMEDE = -1   # Müfredattan yeni düştü; 1 yıl ceza, seçilemez
-STATU_IPTAL      = -2   # Toplamda 2 kez düştü; kalıcı olarak iptal
+STATU_MUFREDATTA = 1    # Ders o yil aktif mufredatta
+STATU_HAVUZDA = 0       # Havuzda bekliyor; mufredata aday
+STATU_DINLENMEDE = -1   # Mufredattan yeni dustu; 1 yil ceza, secilemez
+STATU_IPTAL = -2        # Toplamda 2 kez dustu; kalici olarak iptal
+MAKS_DUSME_SAYACI = 2   # Bu sayiya ulasan ders kalici olarak iptal edilir
 
-MAKS_DUSME_SAYACI = 2   # Bu sayıya ulaşan ders kalıcı olarak iptal edilir
+DONEM_GUZ = "Guz"
+DONEM_BAHAR = "Bahar"
+
+
+def normalize_semester(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value.startswith("b"):
+        return DONEM_BAHAR
+    return DONEM_GUZ
 
 
 # ---------------------------------------------------------------------------
@@ -26,36 +37,11 @@ def calculate_next_status(
     prev_statu: int,
     prev_sayac: int,
     in_mufredat_this_year: bool,
-) -> tuple:
+) -> tuple[int, int]:
     """
-    Bir önceki yılın (prev_statu, prev_sayac) durumuna ve bu yıl müfredatta
-    olup olmadığına (in_mufredat_this_year) göre yeni yılın statu ve sayac
-    değerini belirler.
-
-    State Machine Kuralları:
-    1. prev_statu == -2 (Kalıcı İptal)  → (-2, prev_sayac)  — değişmez.
-    2. prev_statu == -1 (Dinlenmede)    → (0, prev_sayac)   — ceza bitti,
-       havuza döner; in_mufredat_this_year True olsa bile bu yıl alınamaz.
-    3. prev_statu == 1  (Müfredatta):
-       a. in_mufredat_this_year True    → (1, prev_sayac)   — müfredatta kalır.
-       b. in_mufredat_this_year False   → düşme gerçekleşir:
-          yeni_sayac = prev_sayac + 1
-          yeni_sayac >= MAKS_DUSME_SAYACI → (-2, yeni_sayac)
-          aksi hâlde                       → (-1, yeni_sayac)
-    4. prev_statu == 0  (Havuzda):
-       a. in_mufredat_this_year True    → (1, prev_sayac)   — müfredata girer.
-       b. in_mufredat_this_year False   → (0, prev_sayac)   — havuzda kalır.
-    5. Bozuk/None değer                → (0, 0) ile başla (güvenli varsayılan).
-
-    Sayaç SADECE statu=1 iken müfredattan düşüldüğünde artar.
-    statu=0 veya statu=-1 iken sayaç KESİNLİKLE artmaz.
-
-    :param prev_statu:           Önceki yıl statüsü  (1, 0, -1, -2)
-    :param prev_sayac:           Önceki yıl düşme sayacı
-    :param in_mufredat_this_year: Bu yıl ders müfredatta mı? (komisyon kararı)
-    :return:                     (yeni_statu: int, yeni_sayac: int)
+    Bir onceki yilin (prev_statu, prev_sayac) durumuna ve bu yil mufredatta
+    olup olmadigina gore yeni yilin statu ve sayac degerini belirler.
     """
-    # Güvenli tür dönüşümü (bozuk/None girdi koruması — kural 5)
     if prev_statu is None:
         prev_statu = STATU_HAVUZDA
     if prev_sayac is None:
@@ -63,43 +49,195 @@ def calculate_next_status(
     prev_statu = int(prev_statu)
     prev_sayac = int(prev_sayac)
 
-    # --- Kural 1: Kalıcı iptal değişmez ---
     if prev_statu == STATU_IPTAL:
         return STATU_IPTAL, prev_sayac
 
-    # --- Kural 2: Dinlenmedeyken 1 yıl ceza bitti, havuza döner ---
     if prev_statu == STATU_DINLENMEDE:
         return STATU_HAVUZDA, prev_sayac
 
-    # --- Kural 3: Önceki yıl müfredattayken ---
     if prev_statu == STATU_MUFREDATTA:
         if in_mufredat_this_year:
-            return STATU_MUFREDATTA, prev_sayac          # 3a: müfredatta kalır
-        else:
-            yeni_sayac = prev_sayac + 1                  # 3b: düşme → sayaç artar
-            if yeni_sayac >= MAKS_DUSME_SAYACI:
-                return STATU_IPTAL, yeni_sayac
-            return STATU_DINLENMEDE, yeni_sayac
+            return STATU_MUFREDATTA, prev_sayac
+        yeni_sayac = prev_sayac + 1
+        if yeni_sayac >= MAKS_DUSME_SAYACI:
+            return STATU_IPTAL, yeni_sayac
+        return STATU_DINLENMEDE, yeni_sayac
 
-    # --- Kural 4: Önceki yıl havuzdayken ---
     if prev_statu == STATU_HAVUZDA:
         if in_mufredat_this_year:
-            return STATU_MUFREDATTA, prev_sayac          # 4a: müfredata girer
-        else:
-            return STATU_HAVUZDA, prev_sayac             # 4b: havuzda kalır
+            return STATU_MUFREDATTA, prev_sayac
+        return STATU_HAVUZDA, prev_sayac
 
-    # Bilinmeyen statü → güvenli varsayılan
     return STATU_HAVUZDA, prev_sayac
 
 
+def calculate_next_status_semester(
+    prev_statu: int,
+    prev_sayac: int,
+    selected_in_current_semester: bool,
+    selected_in_other_semester: bool = False,
+) -> tuple[int, int]:
+    """
+    Donem-aware durum guncellemesi.
+
+    Bir ders ayni akademik yil icinde hem Guz hem Bahar listesinde olamaz.
+    Bu kontrolu saglayip ana state machine'e delegasyon yapar.
+    """
+    if selected_in_current_semester and selected_in_other_semester:
+        raise ValueError("Cross-semester conflict: ders ayni yil iki donemde secilemez.")
+
+    return calculate_next_status(
+        prev_statu=prev_statu,
+        prev_sayac=prev_sayac,
+        in_mufredat_this_year=bool(selected_in_current_semester),
+    )
+
+
+def enforce_cross_semester_constraints(assignments: dict[str, set[int] | list[int]]) -> dict[str, list[int]]:
+    """
+    Guz/Bahar listelerinde ayni dersi tekillestirir.
+
+    Kural: cakisma varsa Guz korunur, Bahar listesinden ayni ders atilir.
+    """
+    guz = [int(d) for d in assignments.get(DONEM_GUZ, [])]
+    bahar = [int(d) for d in assignments.get(DONEM_BAHAR, [])]
+    guz_set = set(guz)
+    bahar_filtered = [d for d in bahar if d not in guz_set]
+    return {
+        DONEM_GUZ: guz,
+        DONEM_BAHAR: bahar_filtered,
+    }
+
+
 # ---------------------------------------------------------------------------
-# Yardımcı: Veritabanındaki fakülte ID'sini tespit et
+# Yardimci: Veritabanindaki fakulte ID'sini tespit et
 # ---------------------------------------------------------------------------
 def _get_muhendislik_fakulte_id(imlec) -> int:
     """Mühendislik fakültesinin ID'sini döner; bulunamazsa 2 varsayar."""
     imlec.execute("SELECT fakulte_id FROM fakulte WHERE ad LIKE '%hendislik%' LIMIT 1")
     row = imlec.fetchone()
     return int(row[0]) if row else 2
+
+
+def _canonical_course_scope(imlec, ders_id: int):
+    imlec.execute(
+        """
+        SELECT fakulte_id, bolum_id, ad
+        FROM ders
+        WHERE ders_id = ?
+        LIMIT 1
+        """,
+        (int(ders_id),),
+    )
+    row = imlec.fetchone()
+    if not row:
+        return None
+    return {
+        "fakulte_id": int(row[0]) if row[0] is not None else None,
+        "bolum_id": int(row[1]) if row[1] is not None else None,
+        "ders_adi": str(row[2] or ""),
+    }
+
+
+def _pool_row_priority(row, canonical_fakulte_id):
+    statu = int(row["statu"]) if row["statu"] is not None else 0
+    score = float(row["skor"]) if row["skor"] is not None else -1.0
+    row_fakulte = int(row["fakulte_id"]) if row["fakulte_id"] is not None else None
+    return (
+        1 if row_fakulte == canonical_fakulte_id else 0,
+        1 if statu == STATU_MUFREDATTA else 0,
+        score,
+        -int(row["id"]),
+    )
+
+
+def _dedupe_havuz_year(imlec, yil: int):
+    """
+    Ayni yil + ders icin birden fazla havuz satiri varsa tekilleştirir.
+    Kanonik kaynak: ders.fakulte_id / ders.bolum_id.
+    """
+    imlec.execute(
+        """
+        SELECT id, CAST(ders_id AS INTEGER) AS d_id, fakulte_id, bolum_id, statu, sayac, skor, ders_adi
+        FROM havuz
+        WHERE yil = ?
+        ORDER BY id
+        """,
+        (int(yil),),
+    )
+    rows = imlec.fetchall()
+    grouped = {}
+    for row in rows:
+        d_id = int(row["d_id"]) if row["d_id"] is not None else None
+        if d_id is None:
+            continue
+        grouped.setdefault(d_id, []).append(row)
+
+    updated = 0
+    deleted = 0
+    for ders_id, ders_rows in grouped.items():
+        canonical = _canonical_course_scope(imlec, ders_id)
+        canonical_fakulte_id = canonical["fakulte_id"] if canonical else None
+        keep_row = max(ders_rows, key=lambda r: _pool_row_priority(r, canonical_fakulte_id))
+
+        if canonical:
+            imlec.execute(
+                """
+                UPDATE havuz
+                SET fakulte_id = COALESCE(?, fakulte_id),
+                    bolum_id = COALESCE(?, bolum_id),
+                    ders_adi = CASE WHEN ? <> '' THEN ? ELSE ders_adi END
+                WHERE id = ?
+                """,
+                (
+                    canonical["fakulte_id"],
+                    canonical["bolum_id"],
+                    canonical["ders_adi"],
+                    canonical["ders_adi"],
+                    int(keep_row["id"]),
+                ),
+            )
+            updated += int(imlec.rowcount or 0)
+
+        for row in ders_rows:
+            if int(row["id"]) == int(keep_row["id"]):
+                continue
+            imlec.execute("DELETE FROM havuz WHERE id = ?", (int(row["id"]),))
+            deleted += int(imlec.rowcount or 0)
+
+    return {"updated": updated, "deleted": deleted}
+
+
+def _get_year_curriculum_pairs(imlec, yil: int):
+    imlec.execute(
+        """
+        SELECT DISTINCT b.fakulte_id, md.ders_id
+        FROM mufredat m
+        JOIN bolum b ON b.bolum_id = m.bolum_id
+        JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+        WHERE m.akademik_yil = ?
+        """,
+        (int(yil),),
+    )
+    rows = imlec.fetchall()
+    pairs = {(int(row[0]), int(row[1])) for row in rows if row[0] is not None and row[1] is not None}
+    if pairs:
+        return pairs
+
+    imlec.execute(
+        """
+        SELECT DISTINCT m.fakulte_id, md.ders_id
+        FROM mufredat m
+        JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+        WHERE m.akademik_yil = ?
+        """,
+        (int(yil),),
+    )
+    return {
+        (int(row[0]), int(row[1]))
+        for row in imlec.fetchall()
+        if row[0] is not None and row[1] is not None
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -120,50 +258,29 @@ def onar_2022_ground_truth(vt_yolu: str = "data/adil_secmeli.db"):
     imlec = baglanti.cursor()
 
     try:
-        fakulte_id = _get_muhendislik_fakulte_id(imlec)
+        dedupe = _dedupe_havuz_year(imlec, 2022)
+        mufredat_pairs = _get_year_curriculum_pairs(imlec, 2022)
 
-        # 2022 müfredatındaki ders ID'leri (INTEGER olarak)
-        imlec.execute("""
-            SELECT DISTINCT md.ders_id
-            FROM mufredat m
-            JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-            WHERE m.akademik_yil = 2022 AND m.fakulte_id = ?
-        """, (fakulte_id,))
-        mufredat_ids = {int(r[0]) for r in imlec.fetchall()}
+        print(f"   2022 mufredatinda {len(mufredat_pairs)} fakulte-ders eslesmesi var.")
+        print(f"   2022 havuz dedupe: silinen={dedupe['deleted']} guncellenen={dedupe['updated']}")
 
-        if not mufredat_ids:
-            # fakulte_id filtresi olmadan dene
-            imlec.execute("""
-                SELECT DISTINCT md.ders_id
-                FROM mufredat m
-                JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-                WHERE m.akademik_yil = 2022
-            """)
-            mufredat_ids = {int(r[0]) for r in imlec.fetchall()}
+        imlec.execute("UPDATE havuz SET statu = 0, sayac = 0 WHERE yil = 2022")
+        print(f"   statu=0 yapilan: {imlec.rowcount} kayit")
 
-        print(f"   2022 mufredatinda {len(mufredat_ids)} ders var.")
-
-        # havuz.ders_id TEXT olduğundan CAST kullanıyoruz
-        # Müfredattaki dersler → statu=1, sayac=0
-        if mufredat_ids:
-            placeholders = ",".join(str(x) for x in mufredat_ids)
-            imlec.execute(f"""
+        statu_1_count = 0
+        for fakulte_id, ders_id in sorted(mufredat_pairs):
+            imlec.execute(
+                """
                 UPDATE havuz
                 SET statu = 1, sayac = 0
                 WHERE yil = 2022
-                  AND CAST(ders_id AS INTEGER) IN ({placeholders})
-            """)
-            print(f"   statu=1 yapilan: {imlec.rowcount} kayit")
-
-        # Müfredatta olmayan dersler → statu=0, sayac=0
-        if mufredat_ids:
-            imlec.execute(f"""
-                UPDATE havuz
-                SET statu = 0, sayac = 0
-                WHERE yil = 2022
-                  AND CAST(ders_id AS INTEGER) NOT IN ({placeholders})
-            """)
-            print(f"   statu=0 yapilan: {imlec.rowcount} kayit")
+                  AND fakulte_id = ?
+                  AND CAST(ders_id AS INTEGER) = ?
+                """,
+                (int(fakulte_id), int(ders_id)),
+            )
+            statu_1_count += int(imlec.rowcount or 0)
+        print(f"   statu=1 yapilan: {statu_1_count} kayit")
 
         baglanti.commit()
         print("   2022 Ground Truth onarimi tamamlandi.")
@@ -211,37 +328,23 @@ def muhendislik_mufredat_durumunu_esitle(
     print(f"\n[ESLEME] Mufredat -> Havuz zincirleme esleme ({baslangic_yili} GT -> {bitis_yili})")
 
     try:
-        fakulte_id = _get_muhendislik_fakulte_id(imlec)
-
         # 2022'den sonra her yılı sırayla hesapla
         for hedef_yil in range(baslangic_yili + 1, bitis_yili + 1):
             onceki_yil = hedef_yil - 1
             print(f"\n[YIL] {hedef_yil} hesaplaniyor (baz: {onceki_yil})...")
 
-            # Bu yıl müfredatta olan ders ID'leri (INTEGER SET)
-            # Önce fakülte filtresiyle dene, sonuç yoksa filtresiz dene
-            imlec.execute("""
-                SELECT DISTINCT md.ders_id
-                FROM mufredat m
-                JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-                WHERE m.akademik_yil = ? AND m.fakulte_id = ?
-            """, (hedef_yil, fakulte_id))
-            mufredat_ids = {int(r[0]) for r in imlec.fetchall()}
+            prev_dedupe = _dedupe_havuz_year(imlec, onceki_yil)
+            target_dedupe = _dedupe_havuz_year(imlec, hedef_yil)
+            mufredat_pairs = _get_year_curriculum_pairs(imlec, hedef_yil)
 
-            if not mufredat_ids:
-                imlec.execute("""
-                    SELECT DISTINCT md.ders_id
-                    FROM mufredat m
-                    JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-                    WHERE m.akademik_yil = ?
-                """, (hedef_yil,))
-                mufredat_ids = {int(r[0]) for r in imlec.fetchall()}
-
-            print(f"   [MUFREDAT] {hedef_yil} yilinda {len(mufredat_ids)} ders var.")
+            print(
+                f"   [MUFREDAT] {hedef_yil} yilinda {len(mufredat_pairs)} fakulte-ders eslesmesi var. "
+                f"Dedupe prev={prev_dedupe['deleted']} target={target_dedupe['deleted']}"
+            )
 
             # Önceki yılın havuz kayıtları — CAST ile ders_id integer olarak alınır
             imlec.execute("""
-                SELECT id, CAST(ders_id AS INTEGER) as d_id, statu, sayac, fakulte_id
+                SELECT id, CAST(ders_id AS INTEGER) as d_id, statu, sayac, fakulte_id, bolum_id
                 FROM havuz
                 WHERE yil = ?
             """, (onceki_yil,))
@@ -274,8 +377,14 @@ def muhendislik_mufredat_durumunu_esitle(
                 prev_statu  = int(row["statu"])  if row["statu"]  is not None else 0
                 prev_sayac_ = int(row["sayac"])  if row["sayac"]  is not None else 0
                 prev_fak_id = row["fakulte_id"]
+                prev_bol_id = row["bolum_id"]
 
-                in_mufredat = raw_ders_id in mufredat_ids
+                if prev_fak_id is None:
+                    canonical = _canonical_course_scope(imlec, raw_ders_id)
+                    prev_fak_id = canonical["fakulte_id"] if canonical else None
+                    prev_bol_id = canonical["bolum_id"] if canonical else prev_bol_id
+
+                in_mufredat = (int(prev_fak_id), raw_ders_id) in mufredat_pairs if prev_fak_id is not None else False
                 yeni_statu, yeni_sayac = calculate_next_status(
                     prev_statu, prev_sayac_, in_mufredat
                 )
@@ -289,7 +398,7 @@ def muhendislik_mufredat_durumunu_esitle(
                     # Bu yıl için kayıt yok → ekle (ders_id TEXT olarak saklanır)
                     eklenecekler.append(
                         (str(raw_ders_id), hedef_yil, yeni_statu, yeni_sayac,
-                         prev_fak_id or fakulte_id)
+                         prev_fak_id, prev_bol_id)
                     )
 
             # Batch güncelleme
@@ -302,8 +411,8 @@ def muhendislik_mufredat_durumunu_esitle(
             # Batch ekleme
             if eklenecekler:
                 imlec.executemany(
-                    """INSERT INTO havuz (ders_id, yil, statu, sayac, fakulte_id)
-                       VALUES (?, ?, ?, ?, ?)""",
+                    """INSERT INTO havuz (ders_id, yil, statu, sayac, fakulte_id, bolum_id)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
                     eklenecekler
                 )
 
@@ -322,3 +431,7 @@ def muhendislik_mufredat_durumunu_esitle(
         baglanti.close()
 
     print("\n[TAMAM] Zincirleme esleme tamamlandi.")
+
+
+
+

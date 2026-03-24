@@ -1954,5 +1954,27 @@ def rebuild_school_curricula(db_path="data/adil_secmeli.db", base_year=2022, don
     }
 
 
+def rebuild_school_curricula_dual_semester(
+    db_path="data/adil_secmeli.db",
+    base_year=2022,
+    max_rounds=8,
+    block_size=4,
+):
+    """
+    Production-grade dual semester wrapper.
+
+    Ayrik Guz/Bahar pipeline'larini calistirir, ardindan 4+4 blok
+    dengesini ve cross-semester kurallarini uygular.
+    """
+    from app.services.dual_semester import rebuild_school_curricula_dual_semester as _impl
+
+    return _impl(
+        db_path=db_path,
+        base_year=base_year,
+        max_rounds=max_rounds,
+        block_size=block_size,
+    )
+
+
 if __name__ == "__main__":
     run_automatic_scoring()

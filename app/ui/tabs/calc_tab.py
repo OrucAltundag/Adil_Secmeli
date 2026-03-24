@@ -115,12 +115,13 @@ class CalcTab(ttk.Frame):
 
         try:
             if hasattr(self.criteria_view, "load_faculties"):
-                self.criteria_view.load_faculties()
+                self.criteria_view.load_faculties(preserve_selection=True)
         except Exception as e:
             print(f"[CalcTab] load_faculties hatasi: {e}")
         try:
             if hasattr(self.criteria_view, "load_courses"):
-                self.criteria_view.load_courses()
+                restore_id = getattr(self.criteria_view, "selected_course_id", None)
+                self.criteria_view.load_courses(restore_course_id=restore_id)
         except Exception as e:
             print(f"[CalcTab] load_courses hatasi: {e}")
 

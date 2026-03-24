@@ -265,19 +265,26 @@ class CriteriaPage:
         except Exception as e:
             messagebox.showerror("Hata", f"Import hatası: {e}")
 
-    def load_faculties(self):
+    def load_faculties(self, preserve_selection=False):
         if not getattr(self.db, "conn", None):
             return
+        prev_fakulte = self.cb_fakulte.get() if preserve_selection else None
+        prev_bolum = self.cb_bolum.get() if preserve_selection else None
         try:
             _, rows = self.db.run_sql("SELECT ad FROM fakulte")
             if rows:
-                self.cb_fakulte["values"] = [str(r[0]) for r in rows]
-                self.cb_fakulte.current(0)
-                self.on_faculty_change(None)
+                values = [str(r[0]) for r in rows]
+                self.cb_fakulte["values"] = values
+                if prev_fakulte and prev_fakulte in values:
+                    self.cb_fakulte.set(prev_fakulte)
+                    self.on_faculty_change(None, _preserve_bolum=prev_bolum)
+                else:
+                    self.cb_fakulte.current(0)
+                    self.on_faculty_change(None)
         except Exception as e:
             print(f"Fakülte yükleme hatası: {e}")
 
-    def on_faculty_change(self, event):
+    def on_faculty_change(self, event, _preserve_bolum=None):
         fakulte = self.cb_fakulte.get()
         if not fakulte or not getattr(self.db, "conn", None):
             return
@@ -289,13 +296,15 @@ class CriteriaPage:
             _, res_bolum = self.db.run_sql("SELECT ad FROM bolum WHERE fakulte_id=?", (fid,))
             vals = [str(r[0]) for r in res_bolum] if res_bolum else []
             self.cb_bolum["values"] = vals
-            if vals:
+            if _preserve_bolum and _preserve_bolum in vals:
+                self.cb_bolum.set(_preserve_bolum)
+            elif vals:
                 self.cb_bolum.current(0)
         except Exception as e:
             print(f"Bölüm yükleme hatası: {e}")
 
 
-    def load_courses(self):
+    def load_courses(self, restore_course_id=None):
         """Fakültedeki seçmeli dersleri listeler; Güz/Bahar ve kriter filtresine göre."""
         self.tree.delete(*self.tree.get_children())
 
@@ -390,6 +399,14 @@ class CriteriaPage:
                 for r in rows:
                     vals = (int(r[0]), str(r[1]), str(r[2]))
                     self.tree.insert("", tk.END, values=vals)
+
+            if restore_course_id is not None:
+                for item_id in self.tree.get_children():
+                    item_vals = self.tree.item(item_id, "values")
+                    if item_vals and str(item_vals[0]) == str(restore_course_id):
+                        self.tree.selection_set(item_id)
+                        self.tree.see(item_id)
+                        break
 
         except Exception as e:
             import traceback
@@ -692,10 +709,10 @@ class CriteriaPage:
                 msg += "\n(Müfredatta olmayan ders – sadece anket kaydedildi.)"
             msg += pipeline_note
             messagebox.showinfo("Başarılı", msg)
-            self.load_courses()
+            self.load_courses(restore_course_id=c_id)
             if self.app:
                 try:
-                    self.app.refresh_all()
+                    self.app.tab_view.refresh()
                 except Exception:
                     pass
 

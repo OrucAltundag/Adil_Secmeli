@@ -5,6 +5,8 @@
 
 import sys
 import os
+import sqlite3
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -15,6 +17,7 @@ from app.services.havuz_karar import (
     STATU_DINLENMEDE,
     STATU_IPTAL,
     MAKS_DUSME_SAYACI,
+    onar_2022_ground_truth,
 )
 
 
@@ -146,6 +149,81 @@ def test_maks_dusme_sayaci_sabiti():
     assert MAKS_DUSME_SAYACI == 2
 
 
+def test_onar_2022_ground_truth_cok_fakulteli():
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    conn = sqlite3.connect(path)
+    cur = conn.cursor()
+    try:
+        cur.executescript(
+            """
+            CREATE TABLE fakulte (fakulte_id INTEGER PRIMARY KEY, ad TEXT);
+            CREATE TABLE bolum (bolum_id INTEGER PRIMARY KEY, ad TEXT, fakulte_id INTEGER);
+            CREATE TABLE ders (ders_id INTEGER PRIMARY KEY, ad TEXT, bolum_id INTEGER, fakulte_id INTEGER);
+            CREATE TABLE mufredat (mufredat_id INTEGER PRIMARY KEY, fakulte_id INTEGER, akademik_yil INTEGER, bolum_id INTEGER, donem TEXT);
+            CREATE TABLE mufredat_ders (mders_id INTEGER PRIMARY KEY, mufredat_id INTEGER, ders_id INTEGER);
+            CREATE TABLE havuz (
+                id INTEGER PRIMARY KEY,
+                ders_id TEXT,
+                yil INTEGER,
+                statu INTEGER,
+                sayac INTEGER,
+                fakulte_id INTEGER,
+                bolum_id INTEGER,
+                skor REAL,
+                ders_adi TEXT
+            );
+            """
+        )
+        cur.executemany(
+            "INSERT INTO fakulte VALUES (?, ?)",
+            [(1, "Muhendislik"), (2, "Saglik")],
+        )
+        cur.executemany(
+            "INSERT INTO bolum VALUES (?, ?, ?)",
+            [(10, "Bilgisayar", 1), (20, "Hemsirelik", 2)],
+        )
+        cur.executemany(
+            "INSERT INTO ders VALUES (?, ?, ?, ?)",
+            [(101, "Algoritmalar", 10, 1), (201, "Onkoloji Hemsireligi", 20, 2)],
+        )
+        cur.executemany(
+            "INSERT INTO mufredat VALUES (?, ?, ?, ?, ?)",
+            [(1, 1, 2022, 10, "Güz"), (2, 2, 2022, 20, "Güz")],
+        )
+        cur.executemany(
+            "INSERT INTO mufredat_ders VALUES (?, ?, ?)",
+            [(1, 1, 101), (2, 2, 201)],
+        )
+        cur.executemany(
+            "INSERT INTO havuz VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (1, "101", 2022, 0, 0, 1, 10, None, "Algoritmalar"),
+                (2, "201", 2022, 0, 0, 2, 20, None, "Onkoloji Hemsireligi"),
+                (3, "201", 2022, 0, 0, 1, 10, None, "Yanlis Fakultede Kopya"),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        onar_2022_ground_truth(path)
+
+        conn = sqlite3.connect(path)
+        cur = conn.cursor()
+        cur.execute("SELECT statu FROM havuz WHERE yil = 2022 AND fakulte_id = 1 AND ders_id = '101'")
+        assert cur.fetchone() == (1,)
+        cur.execute("SELECT statu FROM havuz WHERE yil = 2022 AND fakulte_id = 2 AND ders_id = '201'")
+        assert cur.fetchone() == (1,)
+        cur.execute("SELECT COUNT(*) FROM havuz WHERE yil = 2022 AND ders_id = '201'")
+        assert cur.fetchone() == (1,)
+    finally:
+        conn.close()
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 # ===========================================================================
 # Sınır testleri
 # ===========================================================================
@@ -182,6 +260,7 @@ if __name__ == "__main__":
         test_dinlenmedeyken_sayac_artmaz,
         test_none_girdi_guvenliyol,
         test_maks_dusme_sayaci_sabiti,
+        test_onar_2022_ground_truth_cok_fakulteli,
         test_sayac_tam_esik,
         test_iptal_sonrasi_mufredata_girme_denemesi,
     ]

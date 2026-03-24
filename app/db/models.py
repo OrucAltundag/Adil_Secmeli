@@ -114,11 +114,21 @@ class Ders(Base):
 # ---------------------------
 class Havuz(Base):
     __tablename__ = "havuz"
+    __table_args__ = (
+        UniqueConstraint(
+            "ders_id",
+            "fakulte_id",
+            "yil",
+            "donem",
+            name="uq_havuz_ders_fac_yil_donem",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
     fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=False)
     yil = Column(Integer, nullable=False)
+    donem = Column(String, nullable=False, default="Guz")
     statu = Column(Integer, default=0)
     sayac = Column(Integer, default=0)
     skor = Column(Float, default=0.0)

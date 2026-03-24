@@ -128,9 +128,9 @@ class AdilSecmeliApp(tk.Tk):
         self.nb.add(self.tab_analysis, text="📊 Analiz & Grafik")
 
         
-        # 3. SEKME: Rapor & Skor (ToolsTab)
+        # 3. SEKME: Rapor & Yukleme (ToolsTab)
         self.tab_tools = ToolsTab(self.nb, app=self)
-        self.nb.add(self.tab_tools, text="⚙️ Rapor & Skor")
+        self.nb.add(self.tab_tools, text="Rapor & Yukleme")
 
 
         # 🔔 Notebook tab değişim event’i

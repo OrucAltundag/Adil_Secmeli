@@ -37,3 +37,14 @@
 2026-03-20 21:14:47,658 - app.services.calculation - WARNING - generate_next_year_curricula: 5 ders icin kriter eksik (fakulte_id=5 yil=2029). Bu dersler varsayilan degerlerle hesaplanacak.
 2026-03-21 22:31:52,912 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=112 yil=2023
 2026-03-23 00:15:31,510 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=90 yil=2023
+2026-03-23 15:58:47,880 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=98 yil=2024
+2026-03-23 16:12:44,609 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=88 yil=2024
+2026-03-23 16:12:48,717 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=112 yil=2024
+2026-03-23 16:12:53,556 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=165 yil=2024
+2026-03-23 16:13:00,266 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=90 yil=2024
+2026-03-23 16:15:06,934 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=98 yil=2025
+2026-03-23 16:15:10,936 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=96 yil=2025
+2026-03-23 16:15:14,809 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=81 yil=2025
+2026-03-23 16:15:18,504 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=99 yil=2025
+2026-03-23 16:15:21,695 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=165 yil=2025
+2026-03-23 16:19:27,227 - AdilSecmeli - INFO - [OK] Kriter kaydedildi | ders_id=106 yil=2025

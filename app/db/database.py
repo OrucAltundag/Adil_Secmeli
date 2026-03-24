@@ -12,30 +12,21 @@
 #   ...
 #   session.close()
 # =============================================================================
-import json
 import os
 import threading
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
+from app.core.settings import load_settings
+from app.db.schema_compat import ensure_reporting_schema
 
 _lock = threading.Lock()
 _current_url: str = ""
 
 
 def _load_db_url():
-    cfg = {"db_url": "sqlite:///./adil_secimli.db"}
-    if os.path.exists("config.json"):
-        try:
-            with open("config.json", "r", encoding="utf-8") as f:
-                data = json.load(f) or {}
-            if "db_path" in data:
-                cfg["db_url"] = f"sqlite:///{os.path.abspath(data['db_path'])}"
-            elif "db_url" in data:
-                cfg["db_url"] = data["db_url"]
-        except Exception:
-            pass
-    return cfg["db_url"]
+    settings = load_settings(config_path="config.json")
+    return settings.db_url
 
 
 DATABASE_URL = _load_db_url()
@@ -89,3 +80,22 @@ def get_session():
 
 def dispose_session():
     SessionLocal.remove()
+
+
+def ensure_runtime_sqlite_schema(sqlite_path: str) -> dict:
+    """
+    Uygulama acilisinda kritik sqlite sema uyumlulugunu garanti eder.
+    """
+    if not sqlite_path or not os.path.exists(sqlite_path):
+        return {"ok": False, "reason": "db_not_found"}
+    try:
+        import sqlite3
+
+        conn = sqlite3.connect(sqlite_path)
+        try:
+            result = ensure_reporting_schema(conn)
+            return {"ok": True, "result": result}
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"ok": False, "reason": str(exc)}

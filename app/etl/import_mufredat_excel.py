@@ -9,6 +9,7 @@ import sqlite3
 import pandas as pd
 import os
 import re
+from collections import defaultdict
 
 # -------------------------------------------------------
 # PATH'leri CWD'ye değil, dosyanın konumuna göre bul (daha sağlam)
@@ -110,6 +111,153 @@ def find_course_id(cur, ders_adi: str):
 
     return None
 
+
+def find_course_id_by_code_or_name(cur, ders_kodu=None, ders_adi=None):
+    kod = str(ders_kodu or "").strip()
+    if kod:
+        cur.execute("SELECT ders_id FROM ders WHERE lower(trim(kod)) = lower(trim(?))", (kod,))
+        row = cur.fetchone()
+        if row:
+            return row[0]
+    return find_course_id(cur, ders_adi)
+
+
+def collect_curriculum_rows(df: pd.DataFrame):
+    col_fak = find_col(df, "Fakülte", "Fakulte", "faculty")
+    col_bol = find_col(df, "Bölüm", "Bolum", "department")
+    col_yil = find_col(df, "Akademik Yıl", "akademik_yil", "Yıl", "Yil", "year")
+    col_don = find_col(df, "Dönem", "Donem", "term")
+    col_ders_adi = find_col(df, "Ders Adı", "Ders Adi", "ders_adi", "course_name")
+    col_ders_kodu = find_col(df, "Ders Kodu", "Ders Kodu/Kod", "ders_kodu", "kod", "course_code")
+
+    if not (col_fak and col_bol and col_yil):
+        return None, {
+            "error": "Gerekli kolonlar bulunamadı: Fakülte, Bölüm, Yıl",
+            "layout": None,
+        }
+
+    rows = []
+    warnings = []
+
+    # Yeni şablon: satır bazlı, her satır 1 ders
+    if col_ders_adi or col_ders_kodu:
+        for idx, row in df.iterrows():
+            fakulte = row.get(col_fak)
+            bolum = row.get(col_bol)
+            yil_raw = row.get(col_yil)
+            donem = str(row.get(col_don) if col_don else "Güz").strip() or "Güz"
+            ders_adi = row.get(col_ders_adi) if col_ders_adi else None
+            ders_kodu = row.get(col_ders_kodu) if col_ders_kodu else None
+
+            if pd.isna(fakulte) or pd.isna(bolum) or pd.isna(yil_raw):
+                warnings.append(f"Satır {idx}: fakülte/bölüm/yıl eksik")
+                continue
+
+            yil = clean_year(yil_raw, base_year_if_class=2022)
+            if not yil:
+                warnings.append(f"Satır {idx}: yıl parse edilemedi -> {yil_raw!r}")
+                continue
+
+            if (pd.isna(ders_adi) or str(ders_adi).strip() == "") and (pd.isna(ders_kodu) or str(ders_kodu).strip() == ""):
+                warnings.append(f"Satır {idx}: ders kodu/adı eksik")
+                continue
+
+            rows.append(
+                {
+                    "fakulte": str(fakulte).strip(),
+                    "bolum": str(bolum).strip(),
+                    "yil": yil,
+                    "donem": donem,
+                    "ders_adi": None if pd.isna(ders_adi) else str(ders_adi).strip(),
+                    "ders_kodu": None if pd.isna(ders_kodu) else str(ders_kodu).strip(),
+                }
+            )
+
+        return rows, {"error": None, "layout": "normalized", "warnings": warnings}
+
+    # Legacy geniş şablon: Seçmeli Ders 1..10 sütunları
+    for idx, row in df.iterrows():
+        fakulte = row.get(col_fak)
+        bolum = row.get(col_bol)
+        yil_raw = row.get(col_yil)
+        donem = str(row.get(col_don) if col_don else "Güz").strip() or "Güz"
+
+        if pd.isna(fakulte) or pd.isna(bolum) or pd.isna(yil_raw):
+            warnings.append(f"Satır {idx}: fakülte/bölüm/yıl eksik")
+            continue
+
+        yil = clean_year(yil_raw, base_year_if_class=2022)
+        if not yil:
+            warnings.append(f"Satır {idx}: yıl parse edilemedi -> {yil_raw!r}")
+            continue
+
+        found_any_course = False
+        for i in range(1, 11):
+            candidates = [f"Seçmeli Ders {i}", f"Secmeli Ders {i}", f"Ders {i}", f"Ders{i}"]
+            ders_col = next((c for c in candidates if c in df.columns), None)
+            if not ders_col:
+                continue
+
+            ders_adi = row.get(ders_col)
+            if pd.isna(ders_adi) or str(ders_adi).strip() == "":
+                continue
+
+            found_any_course = True
+            rows.append(
+                {
+                    "fakulte": str(fakulte).strip(),
+                    "bolum": str(bolum).strip(),
+                    "yil": yil,
+                    "donem": donem,
+                    "ders_adi": str(ders_adi).strip(),
+                    "ders_kodu": None,
+                }
+            )
+        if not found_any_course:
+            warnings.append(f"Satır {idx}: seçmeli ders kolonu dolu değil")
+
+    return rows, {"error": None, "layout": "wide", "warnings": warnings}
+
+
+def replace_scope_curriculum(cur, f_id, b_id, yil, donem, ders_ids):
+    cur.execute(
+        """
+        SELECT mufredat_id
+        FROM mufredat
+        WHERE fakulte_id = ? AND bolum_id = ? AND akademik_yil = ? AND donem = ?
+        ORDER BY COALESCE(versiyon, 0) DESC, mufredat_id DESC
+        """,
+        (f_id, b_id, yil, donem),
+    )
+    existing_ids = [int(row[0]) for row in cur.fetchall() if row and row[0] is not None]
+    keep_id = existing_ids[0] if existing_ids else None
+
+    if keep_id is not None:
+        cur.execute("DELETE FROM mufredat_ders WHERE mufredat_id = ?", (keep_id,))
+        for extra_id in existing_ids[1:]:
+            cur.execute("DELETE FROM mufredat_ders WHERE mufredat_id = ?", (extra_id,))
+            cur.execute("DELETE FROM mufredat WHERE mufredat_id = ?", (extra_id,))
+    else:
+        cur.execute(
+            "INSERT INTO mufredat (fakulte_id, bolum_id, akademik_yil, donem, durum, versiyon) VALUES (?, ?, ?, ?, ?, ?)",
+            (f_id, b_id, yil, donem, "Excel Import", 1),
+        )
+        keep_id = cur.lastrowid
+
+    linked = 0
+    seen = set()
+    for ders_id in ders_ids:
+        if ders_id in seen:
+            continue
+        seen.add(ders_id)
+        cur.execute(
+            "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
+            (keep_id, int(ders_id)),
+        )
+        linked += 1
+
+    return keep_id, linked
+
 # -------------------------------------------------------
 # Main
 # -------------------------------------------------------
@@ -122,7 +270,7 @@ def run_import(excel_path=None, db_path=None):
     """
     db = db_path or DB_PATH
     excel = excel_path or EXCEL_PATH
-    result = {"mufredat": 0, "link": 0, "skipped_year": 0}
+    result = {"mufredat": 0, "link": 0, "skipped_year": 0, "scopes": 0, "warnings": 0, "layout": None}
 
     if not db or not os.path.exists(db):
         return False, "Veritabanı bulunamadı.", result
@@ -131,115 +279,65 @@ def run_import(excel_path=None, db_path=None):
 
     df = pd.read_excel(excel)
     df.columns = [c.strip() for c in df.columns]
+    rows, parse_info = collect_curriculum_rows(df)
+    result["layout"] = parse_info.get("layout")
+    result["warnings"] = len(parse_info.get("warnings", []))
 
-    # Kolonları esnek bul
-    col_fak = find_col(df, "Fakülte", "Fakulte", "faculty")
-    col_bol = find_col(df, "Bölüm", "Bolum", "department")
-    col_yil = find_col(df, "Akademik Yıl", "akademik_yil", "Yıl", "Yil", "year")
-    col_don = find_col(df, "Dönem", "Donem", "term")
-
-    print("🔎 Kolon eşleşmeleri:")
-    print("  Fakülte :", col_fak)
-    print("  Bölüm   :", col_bol)
-    print("  Yıl     :", col_yil)
-    print("  Dönem   :", col_don)
-
-    if not (col_fak and col_bol and col_yil):
-        return False, "Gerekli kolonlar bulunamadı: Fakülte, Bölüm, Yıl", result
+    if parse_info.get("error"):
+        return False, parse_info["error"], result
+    if not rows:
+        return False, "Excel içinde aktarılabilir müfredat satırı bulunamadı.", result
 
     conn = sqlite3.connect(db)
     cur = conn.cursor()
 
     try:
-        # 1) tabloları temizle (DROP yok)
-        cur.execute("PRAGMA foreign_keys = OFF;")
-        cur.execute("DELETE FROM mufredat_ders;")
-        cur.execute("DELETE FROM mufredat;")
-        cur.execute("DELETE FROM sqlite_sequence WHERE name IN ('mufredat','mufredat_ders');")
-        cur.execute("PRAGMA foreign_keys = ON;")
-        conn.commit()
-        print("🧹 mufredat / mufredat_ders temizlendi.")
-
         count_muf = 0
         count_link = 0
-        skipped_year = 0
+        skipped_year = result["warnings"]
+        grouped = defaultdict(list)
 
-        for idx, row in df.iterrows():
-            fak_adi = row.get(col_fak)
-            bol_adi = row.get(col_bol)
-            yil_raw = row.get(col_yil)
-            donem = str(row.get(col_don) if col_don else "Güz").strip() or "Güz"
-
-            if pd.isna(fak_adi) or pd.isna(bol_adi) or pd.isna(yil_raw):
-                continue
-
-            # Eğer Excel’de yıl yerine sınıf yazıyorsa (1-4) bunu 2022 tabanlı akademik yıla çevirebilir:
-            yil = clean_year(yil_raw, base_year_if_class=2022)
-            if not yil:
-                skipped_year += 1
-                print(f"⚠️ Satır {idx}: Yıl parse edilemedi -> {yil_raw!r}")
-                continue
-
-            # Fakülte/Bölüm
-            f_id = get_fakulte_id(cur, fak_adi)
-            b_id = get_bolum_id(cur, bol_adi, f_id)
-
+        for idx, item in enumerate(rows):
+            f_id = get_fakulte_id(cur, item["fakulte"])
+            b_id = get_bolum_id(cur, item["bolum"], f_id) if f_id else None
             if not f_id or not b_id:
-                continue  # Eğer fakülte veya bölüm bulunamazsa, satırı atla
+                skipped_year += 1
+                print(f"⚠️ Satır {idx}: fakülte/bölüm eşleşmedi -> {item['fakulte']} / {item['bolum']}")
+                continue
 
-            # Müfredat
-            cur.execute(
-                "SELECT mufredat_id FROM mufredat WHERE fakulte_id=? AND bolum_id=? AND akademik_yil=? AND donem=?",
-                (f_id, b_id, yil, donem),
-            )
-            res = cur.fetchone()
-            if res:
-                m_id = res[0]
-            else:
-                cur.execute(
-                    "INSERT INTO mufredat (fakulte_id, bolum_id, akademik_yil, donem) VALUES (?, ?, ?, ?)",
-                    (f_id, b_id, yil, donem),
+            d_id = find_course_id_by_code_or_name(cur, item.get("ders_kodu"), item.get("ders_adi"))
+            if not d_id:
+                skipped_year += 1
+                print(
+                    f"⚠️ Satır {idx}: ders bulunamadı -> kod={item.get('ders_kodu')!r}, ad={item.get('ders_adi')!r}"
                 )
-                m_id = cur.lastrowid
-                count_muf += 1
+                continue
 
-            # Ders kolonları: Seçmeli Ders 1..10 / Ders 1..10 / Ders1..Ders10
-            for i in range(1, 11):
-                candidates = [f"Seçmeli Ders {i}", f"Secmeli Ders {i}", f"Ders {i}", f"Ders{i}"]
-                ders_col = None
-                for c in candidates:
-                    if c in df.columns:
-                        ders_col = c
-                        break
-                if not ders_col:
-                    continue
+            grouped[(f_id, b_id, item["yil"], item["donem"])].append(int(d_id))
 
-                ders_adi = row.get(ders_col)
-                if pd.isna(ders_adi):
-                    continue
+        if not grouped:
+            return False, "Aktarılabilir geçerli müfredat kaydı bulunamadı.", result
 
-                d_id = find_course_id(cur, str(ders_adi))
-                if not d_id:
-                    print(f"⚠️ Ders Bulunamadı (satır {idx}): {ders_adi!r}")
-                    continue
-
-                # ilişki ekle (tekrarları engelle)
-                cur.execute(
-                    "SELECT 1 FROM mufredat_ders WHERE mufredat_id=? AND ders_id=?",
-                    (m_id, d_id),
-                )
-                if not cur.fetchone():
-                    cur.execute(
-                        "INSERT INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
-                        (m_id, d_id),
-                    )
-                    count_link += 1
+        for (f_id, b_id, yil, donem), ders_ids in grouped.items():
+            _, linked = replace_scope_curriculum(cur, f_id, b_id, yil, donem, ders_ids)
+            count_muf += 1
+            count_link += linked
 
         conn.commit()
-        result = {"mufredat": count_muf, "link": count_link, "skipped_year": skipped_year}
-        msg = f"Aktarım tamamlandı. Müfredat: {count_muf}, Bağlanan ders: {count_link}"
+        result = {
+            "mufredat": count_muf,
+            "link": count_link,
+            "skipped_year": skipped_year,
+            "scopes": len(grouped),
+            "warnings": skipped_year,
+            "layout": result["layout"],
+        }
+        msg = (
+            f"Aktarım tamamlandı. Güncellenen kapsam: {len(grouped)}, "
+            f"Müfredat: {count_muf}, Bağlanan ders: {count_link}, Şablon: {result['layout']}"
+        )
         if skipped_year:
-            msg += f", Yıl atlanan: {skipped_year}"
+            msg += f", Uyarı/atlanan satır: {skipped_year}"
         return True, msg, result
 
     finally:
