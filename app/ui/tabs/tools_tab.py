@@ -20,7 +20,7 @@ from typing import Any
 import pandas as pd
 
 from app.services.curriculum_import_service import import_curriculum_excel as run_curriculum_import
-from app.services.havuz_karar import muhendislik_mufredat_durumunu_esitle
+from app.services.havuz_karar import mufredat_durumunu_esitle
 from app.services.reporting_service import build_report_snapshot, ensure_report_scores
 
 
@@ -453,7 +453,7 @@ class ToolsTab(ttk.Frame):
             )
             min_yil = int(rows[0][0]) if rows and rows[0][0] is not None else 2022
             max_yil = int(rows[0][1]) if rows and rows[0][1] is not None else min_yil
-            muhendislik_mufredat_durumunu_esitle(
+            mufredat_durumunu_esitle(
                 self.db_path,
                 baslangic_yili=min_yil,
                 bitis_yili=max_yil,

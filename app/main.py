@@ -43,7 +43,8 @@ except Exception:
 
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
 from app.services.calculation import run_automatic_scoring
-from app.services.havuz_karar import muhendislik_mufredat_durumunu_esitle
+from app.services.course_type import build_elective_predicate
+from app.services.havuz_karar import mufredat_durumunu_esitle
 
 
 
@@ -203,7 +204,7 @@ class AdilSecmeliApp(tk.Tk):
                 max_yil = int(yr[0][1]) if yr and yr[0][1] is not None else None
                 if min_yil is not None and max_yil is not None and max_yil >= min_yil:
                     print(f"[AUTO] Statu/yil esitleme: {min_yil} -> {max_yil}")
-                    muhendislik_mufredat_durumunu_esitle(
+                    mufredat_durumunu_esitle(
                         db_path,
                         baslangic_yili=min_yil,
                         bitis_yili=max_yil,
@@ -294,20 +295,23 @@ class AdilSecmeliApp(tk.Tk):
         if not years:
             return
 
+        dersler = []
         try:
-            self.db.run_sql("SELECT 1 FROM ders WHERE DersTipi='Secmeli' LIMIT 1")
-            col_tip = "DersTipi"
+            conn = getattr(self.db, "conn", None)
+            if conn is not None:
+                cur = conn.cursor()
+                elective_predicate = build_elective_predicate(cur=cur, alias="d")
+                if elective_predicate != "0=1":
+                    cur.execute(
+                        f"""
+                        SELECT d.ders_id, d.fakulte_id, d.bolum_id, d.ad
+                        FROM ders d
+                        WHERE {elective_predicate}
+                        """
+                    )
+                    dersler = cur.fetchall()
         except Exception:
-            col_tip = "tip"
-
-        q = (
-            f"SELECT d.ders_id, d.fakulte_id, d.bolum_id, d.ad "
-            f"FROM ders d WHERE COALESCE(d.{col_tip}, '') LIKE 'Se%'"
-        )
-        try:
-            _, dersler = self.db.run_sql(q)
-        except Exception:
-            _, dersler = self.db.run_sql("SELECT ders_id, fakulte_id, bolum_id, ad FROM ders")
+            dersler = []
 
         if not dersler:
             return

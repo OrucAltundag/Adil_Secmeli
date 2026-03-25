@@ -3,7 +3,7 @@
 Dual-semester curriculum rebuild engine.
 
 Bu modul:
-- Güz + Bahar uretimini ayni pipeline'da calistirir
+- GÃ¼z + Bahar uretimini ayni pipeline'da calistirir
 - 8 derslik yillik kapasiteyi 4+4 bloklara dengeler
 - Cross-semester cakismalari (bir dersin iki donemde birden secilmesi) engeller
 - Donem-aware havuz statu/sayac guncellemesini uygular
@@ -23,6 +23,7 @@ from app.services.havuz_karar import (
     enforce_cross_semester_constraints,
     normalize_semester,
 )
+from app.services.course_type import build_elective_predicate
 
 
 SEMESTER_ORDER = [DONEM_GUZ, DONEM_BAHAR]
@@ -44,16 +45,6 @@ def _term_token(term: str) -> str:
 def _havuz_has_donem(cur: sqlite3.Cursor) -> bool:
     cur.execute("PRAGMA table_info(havuz)")
     return "donem" in {str(row[1]) for row in cur.fetchall()}
-
-
-def _resolve_elective_col(cur: sqlite3.Cursor) -> str | None:
-    cur.execute("PRAGMA table_info(ders)")
-    cols = {str(row[1]) for row in cur.fetchall()}
-    if "DersTipi" in cols:
-        return "DersTipi"
-    if "tip" in cols:
-        return "tip"
-    return None
 
 
 def _fetch_or_create_curriculum_id(
@@ -117,39 +108,22 @@ def _fetch_curriculum_courses(
 
 
 def _fetch_candidate_courses(cur: sqlite3.Cursor, faculty_id: int, department_id: int) -> list[int]:
-    tip_col = _resolve_elective_col(cur)
-    if tip_col:
-        cur.execute(
-            f"""
-            SELECT DISTINCT d.ders_id
-            FROM ders d
-            WHERE d.bolum_id = ?
-              AND (
-                    LOWER(COALESCE(d.{tip_col}, '')) LIKE '%secmeli%'
-                 OR LOWER(COALESCE(d.{tip_col}, '')) LIKE '%seçmeli%'
-              )
-            ORDER BY d.ders_id
-            """,
-            (int(department_id),),
-        )
-        ids = [int(r[0]) for r in cur.fetchall() if r and r[0] is not None]
-        if ids:
-            return ids
+    elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    if elective_predicate == "0=1":
+        return []
 
     cur.execute(
-        """
+        f"""
         SELECT DISTINCT d.ders_id
         FROM ders d
         LEFT JOIN bolum b ON b.bolum_id = d.bolum_id
-        WHERE d.bolum_id = ?
-           OR d.fakulte_id = ?
-           OR b.fakulte_id = ?
-        ORDER BY d.ders_id
+        WHERE (d.fakulte_id = ? OR b.fakulte_id = ?)
+          AND {elective_predicate}
+        ORDER BY CASE WHEN d.bolum_id = ? THEN 0 ELSE 1 END, d.ders_id
         """,
-        (int(department_id), int(faculty_id), int(faculty_id)),
+        (int(faculty_id), int(faculty_id), int(department_id)),
     )
     return [int(r[0]) for r in cur.fetchall() if r and r[0] is not None]
-
 
 def _scores_for_term(
     cur: sqlite3.Cursor,
@@ -422,7 +396,7 @@ def rebuild_school_curricula_dual_semester(
 
     Akis:
     1) base_year sonrasi mufredati sifirla
-    2) Guz ve Bahar pipeline'ini ayrica üret
+    2) Guz ve Bahar pipeline'ini ayrica Ã¼ret
     3) Her faculty+year icin 4+4 blok dengesini enforce et
     4) Donem-aware havuz statu/sayac senkronizasyonu uygula
     """
@@ -540,3 +514,4 @@ def rebuild_school_curricula_dual_semester(
         }
     finally:
         conn.close()
+

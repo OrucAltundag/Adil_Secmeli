@@ -433,5 +433,24 @@ def muhendislik_mufredat_durumunu_esitle(
     print("\n[TAMAM] Zincirleme esleme tamamlandi.")
 
 
+def mufredat_durumunu_esitle(
+    vt_yolu: str = "data/adil_secmeli.db",
+    baslangic_yili: int = 2022,
+    bitis_yili: int = 2025,
+):
+    """
+    Tum fakulte ve bolumler icin zincirleme statu/sayac esitlemesi.
+
+    Not: Islevsel olarak muhendislik_mufredat_durumunu_esitle ile ayni
+    akisi kullanir; isim legacy bagimliliklarini kirmazken yeni generic
+    cagri noktasini saglar.
+    """
+    return muhendislik_mufredat_durumunu_esitle(
+        vt_yolu=vt_yolu,
+        baslangic_yili=baslangic_yili,
+        bitis_yili=bitis_yili,
+    )
+
+
 
 

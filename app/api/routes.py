@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.settings import load_settings
 from app.db.schema_compat import ensure_reporting_schema
+from app.services.course_type import build_elective_predicate
 from app.services.curriculum_import_service import import_curriculum_excel
 
 router = APIRouter()
@@ -63,29 +64,32 @@ def _havuz_has_donem(conn: sqlite3.Connection) -> bool:
 
 @router.get("/dersler")
 def ders_listesi(fakulte_id: Optional[int] = None, secmeli_only: bool = False):
-    if secmeli_only:
+    conn = _open_connection()
+    try:
+        cur = conn.cursor()
         q = """
             SELECT d.ders_id, d.kod, d.ad, d.kredi, d.akts, d.fakulte_id
             FROM ders d
-            WHERE (
-                LOWER(COALESCE(d.DersTipi, d.tip, d.tur, '')) LIKE '%secmeli%'
-                OR LOWER(COALESCE(d.DersTipi, d.tip, d.tur, '')) LIKE '%seçmeli%'
-            )
         """
-        params = []
+        where_parts: list[str] = []
+        params: list[int] = []
+
+        if secmeli_only:
+            where_parts.append(build_elective_predicate(cur=cur, alias="d"))
         if fakulte_id is not None:
-            q += " AND d.fakulte_id = ?"
-            params.append(fakulte_id)
+            where_parts.append("d.fakulte_id = ?")
+            params.append(int(fakulte_id))
+
+        if where_parts:
+            q += " WHERE " + " AND ".join(where_parts)
         q += " ORDER BY d.ad"
-    else:
-        q = "SELECT ders_id, kod, ad, kredi, akts, fakulte_id FROM ders"
-        params = []
-        if fakulte_id is not None:
-            q += " WHERE fakulte_id = ?"
-            params.append(fakulte_id)
-        q += " ORDER BY ad"
-    cols, rows = _run_query(q, tuple(params))
-    return {"columns": cols, "data": rows}
+
+        cur.execute(q, tuple(params))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return {"columns": cols, "data": [list(r) for r in rows]}
+    finally:
+        conn.close()
 
 
 @router.get("/skorlar")
@@ -110,26 +114,47 @@ def skor_listesi(akademik_yil: Optional[int] = None, donem: Optional[str] = None
 
 
 @router.get("/havuz")
-def havuz_listesi(yil: int, fakulte_id: Optional[int] = None, donem: Optional[str] = None):
+def havuz_listesi(
+    yil: int,
+    fakulte_id: Optional[int] = None,
+    bolum_id: Optional[int] = None,
+    donem: Optional[str] = None,
+):
     conn = _open_connection()
     try:
         use_term = bool(donem) and _havuz_has_donem(conn)
-        q = """
-            SELECT h.ders_id, d.ad, h.yil, h.fakulte_id, h.donem, h.statu, h.sayac, h.skor
+        cur = conn.cursor()
+        elective_predicate = build_elective_predicate(cur=cur, alias="d")
+        q = f"""
+            SELECT
+                h.ders_id,
+                d.ad,
+                h.yil,
+                h.fakulte_id,
+                h.donem,
+                h.statu,
+                h.sayac,
+                h.skor,
+                COALESCE(d.bolum_id, h.bolum_id) AS kaynak_bolum_id,
+                b.ad AS kaynak_bolum
             FROM havuz h
             LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
+            LEFT JOIN bolum b ON b.bolum_id = COALESCE(d.bolum_id, h.bolum_id)
             WHERE h.yil = ?
+              AND {elective_predicate}
         """
         params: list = [int(yil)]
         if fakulte_id is not None:
             q += " AND h.fakulte_id = ?"
             params.append(int(fakulte_id))
+        if bolum_id is not None:
+            q += " AND COALESCE(d.bolum_id, h.bolum_id) = ?"
+            params.append(int(bolum_id))
         if use_term:
             q += " AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?"
             params.append(_donem_key(donem))
-        q += " ORDER BY h.skor DESC"
+        q += " ORDER BY CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC, h.statu DESC, d.ad"
 
-        cur = conn.cursor()
         cur.execute(q, tuple(params))
         rows = cur.fetchall()
         cols = [d[0] for d in cur.description] if cur.description else []

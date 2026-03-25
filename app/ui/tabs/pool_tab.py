@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# app/ui/tabs/pool_tab.py — Havuz Yonetimi Sekmesi
+# app/ui/tabs/pool_tab.py â€” Havuz Yonetimi Sekmesi
 # =============================================================================
 # Ders havuzunu fakulte/bolum/yil/donem bazinda goruntuler.
 # Sol panel: Havuz tablosu (statu renklendirme, strikeout iptal, skor gorunumu)
@@ -11,7 +11,7 @@
 #  -1  Dinlenmede (turuncu) | -2 Iptal (gri + ustu cizili)
 #
 # Saglik kontrolu: havuz-mufredat tutarliligini denetler.
-# Ogrenci simülasyonu: mufredattan ornek ders secim ekrani acar.
+# Ogrenci simÃ¼lasyonu: mufredattan ornek ders secim ekrani acar.
 # =============================================================================
 
 import tkinter as tk
@@ -22,6 +22,7 @@ from app.services.calculation import (
     get_faculty_year_topsis_results,
     persist_faculty_year_topsis_scores,
 )
+from app.services.course_type import build_elective_predicate
 
 # ---------------------------------------------------------------------------
 # Statu sabitleri ve gorsel esleme
@@ -158,7 +159,7 @@ class PoolTab(ttk.Frame):
 
         tk.Label(top, text="Donem:", bg="#f1f5f9",
                  font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
-        self.cb_donem = ttk.Combobox(top, state="readonly", values=["Güz", "Bahar"], width=8)
+        self.cb_donem = ttk.Combobox(top, state="readonly", values=["Guz", "Bahar"], width=8)
         self.cb_donem.pack(side=tk.LEFT, padx=4)
         self.cb_donem.current(0)
         self.cb_donem.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
@@ -179,7 +180,7 @@ class PoolTab(ttk.Frame):
 
         ttk.Button(
             actions,
-            text="Sağlık Kontrolü (Fakülte/Yıl)",
+            text="Saglik Kontrolu (Fakulte/Yil)",
             command=self.run_pool_health_check,
         ).pack(side=tk.LEFT, padx=5)
 
@@ -190,7 +191,7 @@ class PoolTab(ttk.Frame):
         ttk.Button(actions, text="Secileni Kalici Iptal (-2)",
                    command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=5)
 
-        # "Algoritmay Calistir" kaldirildi — algoritma islemleri Hesaplama sekmesindedir.
+        # "Algoritmay Calistir" kaldirildi â€” algoritma islemleri Hesaplama sekmesindedir.
 
         # --- 3) LEGEND (Aciklama Kutusu) ---
         self._build_legend()
@@ -259,26 +260,28 @@ class PoolTab(ttk.Frame):
         ).pack(fill=tk.X, pady=(2, 0))
 
     def _build_pool_tree(self, parent):
-        cols = ("ders_id", "ders_adi", "statu_etiket", "sayac", "skor", "yil")
+        cols = ("ders_id", "ders_adi", "kaynak_bolum", "statu_etiket", "sayac", "skor", "yil")
         self.tree_pool = ttk.Treeview(
             parent, columns=cols, show="headings", selectmode="extended"
         )
 
         self.tree_pool.heading("ders_id",      text="ID")
         self.tree_pool.heading("ders_adi",     text="Ders Adi")
+        self.tree_pool.heading("kaynak_bolum", text="Kaynak Bolum")
         self.tree_pool.heading("statu_etiket", text="Durum")
         self.tree_pool.heading("sayac",        text="Sayac")
         self.tree_pool.heading("skor",         text="Kesinesme Puani")
         self.tree_pool.heading("yil",          text="Yil")
 
         self.tree_pool.column("ders_id",      width=45,  anchor="center")
-        self.tree_pool.column("ders_adi",     width=310)
+        self.tree_pool.column("ders_adi",     width=270)
+        self.tree_pool.column("kaynak_bolum", width=170)
         self.tree_pool.column("statu_etiket", width=175, anchor="center")
         self.tree_pool.column("sayac",        width=55,  anchor="center")
         self.tree_pool.column("skor",         width=110, anchor="center")
         self.tree_pool.column("yil",          width=50,  anchor="center")
 
-        # Renk etiketleri — normal satirlar
+        # Renk etiketleri â€” normal satirlar
         self.tree_pool.tag_configure(
             "mufredatta",
             background=_RENK["mufredatta_bg"],
@@ -310,8 +313,7 @@ class PoolTab(ttk.Frame):
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_pool.pack(fill=tk.BOTH, expand=True)
 
-        # Sayac icin tooltip
-        self.tree_pool.bind("<Motion>", self._on_pool_tree_motion)
+        # Sayac tooltip'i kullanici talebiyle kapatildi.
         self._tooltip_win = None
 
     def _build_curr_tree(self, parent):
@@ -329,21 +331,9 @@ class PoolTab(ttk.Frame):
     #  TOOLTIP (Sayac icin)
     # =========================================================
     def _on_pool_tree_motion(self, event):
-        item = self.tree_pool.identify_row(event.y)
-        if not item:
-            self._hide_tooltip()
-            return
-        vals = self.tree_pool.item(item, "values")
-        if len(vals) < 4:
-            self._hide_tooltip()
-            return
-        try:
-            sayac = int(vals[3])
-        except (ValueError, TypeError):
-            self._hide_tooltip()
-            return
-        metin = _SAYAC_TOOLTIP.get(sayac, f"Dusme sayaci: {sayac}")
-        self._show_tooltip(event, metin)
+        # Tooltip davranisi kapatildi.
+        self._hide_tooltip()
+        return
 
     def _show_tooltip(self, event, metin: str):
         self._hide_tooltip()
@@ -478,8 +468,8 @@ class PoolTab(ttk.Frame):
         fakulte = self.cb_fakulte.get()
         bolum   = self.cb_bolum.get()
         yil     = self.cb_yil.get()
-        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Güz"
-        donem_norm = str(donem).strip() or "Güz"
+        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
+        donem_norm = str(donem).strip() or "Guz"
 
         if not fakulte or not yil:
             return
@@ -498,6 +488,18 @@ class PoolTab(ttk.Frame):
 
         if fakulte_id is None:
             return
+
+        bolum_id = None
+        if bolum:
+            try:
+                _, bid_rows = self.db.run_sql(
+                    "SELECT bolum_id FROM bolum WHERE fakulte_id = ? AND ad = ? LIMIT 1",
+                    (int(fakulte_id), bolum),
+                )
+                if bid_rows and bid_rows[0] and bid_rows[0][0] is not None:
+                    bolum_id = int(bid_rows[0][0])
+            except Exception:
+                bolum_id = None
 
         # Secili fakulte + yil icin kesinlesme puanlarini hesapla ve havuza yaz
         try:
@@ -523,21 +525,45 @@ class PoolTab(ttk.Frame):
         self.tree_pool.delete(*self.tree_pool.get_children())
 
         extra_where = "AND h.statu NOT IN (-1, -2)" if self.hide_resting else ""
+        elective_predicate = "0=1"
+        try:
+            conn = getattr(self.db, "conn", None)
+            if conn is not None:
+                elective_predicate = build_elective_predicate(conn.cursor(), alias="d")
+        except Exception:
+            elective_predicate = "0=1"
 
         q_pool = f"""
             SELECT DISTINCT
-                h.ders_id, d.ad, h.statu, h.sayac, h.skor, h.yil
+                h.ders_id,
+                d.ad,
+                h.statu,
+                h.sayac,
+                h.skor,
+                h.yil,
+                COALESCE(d.bolum_id, h.bolum_id) AS kaynak_bolum_id,
+                b.ad AS kaynak_bolum
             FROM havuz h
             LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
+            LEFT JOIN bolum b ON b.bolum_id = COALESCE(d.bolum_id, h.bolum_id)
             WHERE h.fakulte_id = ?
               AND h.yil = ?
+              AND LOWER(SUBSTR(TRIM(COALESCE(h.donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+              AND {elective_predicate}
               {extra_where}
-            ORDER BY h.statu DESC, CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC
+            ORDER BY
+                CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END,
+                h.skor DESC,
+                h.statu DESC,
+                d.ad
         """
         try:
-            _, rows = self.db.run_sql(q_pool, (int(fakulte_id), int(yil)))
+            _, rows = self.db.run_sql(
+                q_pool,
+                (int(fakulte_id), int(yil), donem_norm),
+            )
             seen = set()
-            for d_id, d_ad, statu, sayac, skor, y in (rows or []):
+            for d_id, d_ad, statu, sayac, skor, y, _kaynak_bolum_id, kaynak_bolum in (rows or []):
                 if d_id in seen:
                     continue
                 seen.add(d_id)
@@ -548,10 +574,12 @@ class PoolTab(ttk.Frame):
 
                 skor_txt  = f"{float(skor):.2f}" if skor is not None else "-"
                 sayac_val = int(sayac) if sayac is not None else 0
+                kaynak_bolum_txt = str(kaynak_bolum or "-")
+                ders_adi_txt = str(d_ad or "")
 
                 self.tree_pool.insert(
                     "", tk.END,
-                    values=(d_id, d_ad, etkt, sayac_val, skor_txt, y),
+                    values=(d_id, ders_adi_txt, kaynak_bolum_txt, etkt, sayac_val, skor_txt, y),
                     tags=(tag,)
                 )
         except Exception as e:
@@ -562,25 +590,36 @@ class PoolTab(ttk.Frame):
         if not bolum:
             return
 
-        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Güz"
-        donem_norm = str(donem).strip() or "Güz"
+        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
+        donem_norm = str(donem).strip() or "Guz"
 
-        q_curr = """
+        q_curr = f"""
             SELECT DISTINCT d.ders_id, d.ad, h.skor
             FROM mufredat m
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN havuz h ON (
-                CAST(h.ders_id AS INTEGER) = d.ders_id
-                AND h.yil = m.akademik_yil
-                AND h.fakulte_id = b.fakulte_id
+            LEFT JOIN havuz h ON h.id = (
+                SELECT h2.id
+                FROM havuz h2
+                WHERE CAST(h2.ders_id AS INTEGER) = d.ders_id
+                  AND h2.yil = m.akademik_yil
+                  AND LOWER(SUBSTR(TRIM(COALESCE(h2.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1))
+                ORDER BY
+                    CASE WHEN h2.skor IS NULL THEN 1 ELSE 0 END,
+                    h2.skor DESC,
+                    h2.id DESC
+                LIMIT 1
             )
             WHERE b.fakulte_id = ?
               AND m.akademik_yil = ?
               AND b.ad = ?
               AND LOWER(SUBSTR(TRIM(COALESCE(m.donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
-            ORDER BY d.ad
+              AND {elective_predicate}
+            ORDER BY
+                CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END,
+                h.skor DESC,
+                d.ad
         """
         try:
             _, rows_r = self.db.run_sql(q_curr, (int(fakulte_id), int(yil), bolum, donem_norm))
@@ -618,11 +657,17 @@ class PoolTab(ttk.Frame):
             if not fid_rows:
                 return
             fakulte_id = int(fid_rows[0][0])
+            donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
             for vals in selected:
                 ders_id = int(vals[0])
                 self.db.run_sql(
-                    "UPDATE havuz SET statu = ? WHERE ders_id = ? AND yil = ? AND fakulte_id = ?",
-                    (int(new_status), ders_id, int(yil), fakulte_id),
+                    """
+                    UPDATE havuz
+                    SET statu = ?
+                    WHERE ders_id = ? AND yil = ? AND fakulte_id = ?
+                      AND LOWER(SUBSTR(TRIM(COALESCE(donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                    """,
+                    (int(new_status), ders_id, int(yil), fakulte_id, donem),
                 )
             self.load_pool_data()
         except Exception as e:
@@ -650,8 +695,8 @@ class PoolTab(ttk.Frame):
             return
 
         try:
-            donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Güz"
-            donem_norm = str(donem).strip() or "Güz"
+            donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
+            donem_norm = str(donem).strip() or "Guz"
             donem_key = donem_norm[0].lower()
 
             # 1) Havuz statu dagilimi (secili fakulte + yil)
@@ -661,9 +706,10 @@ class PoolTab(ttk.Frame):
                     COUNT(*) AS adet
                 FROM havuz
                 WHERE fakulte_id = ? AND yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?
                 GROUP BY COALESCE(statu, 0)
             """
-            _, rows_st = self.db.run_sql(q_statu, (fakulte_id, int(yil)))
+            _, rows_st = self.db.run_sql(q_statu, (fakulte_id, int(yil), donem_key))
             statu_counts = {int(r[0]): int(r[1]) for r in (rows_st or [])}
 
             # 2) Mufredatta olup havuzda olmayan dersler
@@ -703,11 +749,12 @@ class PoolTab(ttk.Frame):
                 )
                 WHERE h.fakulte_id = ?
                   AND h.yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?
                   AND md.ders_id IS NULL
             """
             _, rows_p = self.db.run_sql(
                 q_pool_only,
-                (donem_key, fakulte_id, int(yil)),
+                (donem_key, fakulte_id, int(yil), donem_key),
             )
             pool_not_in_curr = int(rows_p[0][0]) if rows_p and rows_p[0] and rows_p[0][0] is not None else 0
 
@@ -793,3 +840,4 @@ class PoolTab(ttk.Frame):
             bg="#22c55e", fg="white", font=("Segoe UI", 10, "bold"),
             command=save_selection
         ).pack(pady=18, ipadx=10)
+

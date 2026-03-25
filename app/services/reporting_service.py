@@ -14,6 +14,7 @@ from app.services.calculation import (
     get_faculty_year_topsis_results,
     persist_faculty_year_topsis_scores,
 )
+from app.services.course_type import build_elective_predicate
 
 
 def normalize_term(term: str | None) -> str:
@@ -170,10 +171,18 @@ def _fetch_score_source_map(db, year: int, term: str) -> dict[int, float]:
 def _fetch_pool_rows(db, faculty_id: int, year: int, term: str):
     conn = _conn_from_db(db)
     use_term = False
+    elective_predicate = "0=1"
     if conn is not None:
         use_term = "donem" in _table_columns(conn, "havuz")
+        try:
+            elective_predicate = build_elective_predicate(cur=conn.cursor(), alias="d")
+        except Exception:
+            elective_predicate = "0=1"
 
-    query = """
+    if elective_predicate == "0=1":
+        return []
+
+    query = f"""
         SELECT
             CAST(h.ders_id AS INTEGER) AS ders_id,
             COALESCE(h.ders_adi, d.ad, 'Ders ' || h.ders_id) AS ders_adi,
@@ -184,13 +193,14 @@ def _fetch_pool_rows(db, faculty_id: int, year: int, term: str):
         FROM havuz h
         LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
         WHERE h.fakulte_id = ? AND h.yil = ?
+          AND {elective_predicate}
     """
     params: list[Any] = [int(faculty_id), int(year)]
     if use_term:
         query += " AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?"
         params.append(term_key(term))
 
-    query += " ORDER BY h.statu DESC, CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC, ders_adi"
+    query += " ORDER BY CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END, h.skor DESC, h.statu DESC, ders_adi"
     _, rows = db.run_sql(query, tuple(params))
     return rows or []
 
@@ -204,6 +214,14 @@ def build_report_snapshot(
     department_name: str | None = None,
 ) -> dict[str, Any]:
     normalized_term = normalize_term(term)
+    conn = _conn_from_db(db)
+    elective_predicate = "0=1"
+    if conn is not None:
+        try:
+            elective_predicate = build_elective_predicate(cur=conn.cursor(), alias="d")
+        except Exception:
+            elective_predicate = "0=1"
+
     curriculum_ids = fetch_curriculum_course_ids(db, faculty_id, year, normalized_term)
     score_map = _fetch_score_source_map(db, year, normalized_term)
     pool_rows_raw = _fetch_pool_rows(db, faculty_id, year, normalized_term)
@@ -241,10 +259,18 @@ def build_report_snapshot(
             }
         )
 
+    pool_rows.sort(
+        key=lambda item: (
+            item.get("skor") is None,
+            -float(item.get("skor") or 0.0),
+            str(item.get("ders_adi") or ""),
+        )
+    )
+
     curriculum_rows = []
     if department_name:
         _, curr_rows_raw = db.run_sql(
-            """
+            f"""
             SELECT DISTINCT
                 d.ders_id,
                 d.ad,
@@ -253,16 +279,27 @@ def build_report_snapshot(
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
             JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN havuz h ON (
-                CAST(h.ders_id AS INTEGER) = d.ders_id
-                AND h.yil = m.akademik_yil
-                AND h.fakulte_id = b.fakulte_id
+            LEFT JOIN havuz h ON h.id = (
+                SELECT h2.id
+                FROM havuz h2
+                WHERE CAST(h2.ders_id AS INTEGER) = d.ders_id
+                  AND h2.yil = m.akademik_yil
+                  AND LOWER(SUBSTR(TRIM(COALESCE(h2.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1))
+                ORDER BY
+                    CASE WHEN h2.skor IS NULL THEN 1 ELSE 0 END,
+                    h2.skor DESC,
+                    h2.id DESC
+                LIMIT 1
             )
             WHERE b.fakulte_id = ?
               AND b.ad = ?
               AND m.akademik_yil = ?
               AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = ?
-            ORDER BY d.ad
+              AND {elective_predicate}
+            ORDER BY
+                CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END,
+                h.skor DESC,
+                d.ad
             """,
             (int(faculty_id), department_name, int(year), term_key(normalized_term)),
         )

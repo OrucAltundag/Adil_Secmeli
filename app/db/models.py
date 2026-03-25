@@ -94,6 +94,8 @@ class Ders(Base):
     akts = Column(Integer)
     onkosul = Column(Integer, ForeignKey("ders.ders_id"), nullable=True)
     bilgi = Column(Text)
+    bolum_id = Column(Integer, ForeignKey("bolum.bolum_id"), nullable=True)
+    DersTipi = Column(String)
     tip = Column(String)
     fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"))
     # Kontenjan kuralı: Varsayılan kontenjan (ders_ogretim veya populerlik ile override)
@@ -107,6 +109,17 @@ class Ders(Base):
     populerlikler = relationship("Populerlik", back_populates="ders")
     skorlar = relationship("Skor", back_populates="ders")
     anket_cevaplari = relationship("AnketCevap", back_populates="ders")
+
+    @property
+    def normalized_type(self) -> str:
+        for attr in ("DersTipi", "tip"):
+            value = getattr(self, attr, None)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return ""
 
 
 # ---------------------------
