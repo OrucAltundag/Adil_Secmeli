@@ -45,6 +45,7 @@ except Exception:
 from app.services.calculation import run_automatic_scoring
 from app.services.course_type import build_elective_predicate
 from app.services.havuz_karar import mufredat_durumunu_esitle
+from app.services.yearly_workflow import is_yearly_workflow_enabled
 
 
 
@@ -169,25 +170,28 @@ class AdilSecmeliApp(tk.Tk):
             # 2) Havuz seed (bossa)
             self.ensure_pool_initialized_once()
 
-            # 3) Otomatik sonraki yil uretimi
-            try:
-                print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
-                auto_summary = run_automatic_scoring(db_path)
-                if isinstance(auto_summary, dict):
-                    gen = auto_summary.get("generation") or {}
-                    generated = gen.get("generated", []) or []
-                    skipped = gen.get("skipped", []) or []
-                    errors = gen.get("errors", []) or []
-                    print(
-                        f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
-                        f"atlanan: {len(skipped)} | hata: {len(errors)}"
-                    )
-                    for err in errors[:5]:
-                        print(f"[AUTO][HATA] {err}")
-                    for sk in skipped[:5]:
-                        print(f"[AUTO][ATLANAN] {sk}")
-            except Exception as e:
-                print(f"[AUTO] Otomatik uretim hatasi: {e}")
+            # 3) Otomatik sonraki yil uretimi (legacy mod)
+            if is_yearly_workflow_enabled():
+                print("[AUTO] ENABLE_YEARLY_CRITERIA_WORKFLOW=true -> otomatik algoritma tetigi kapali.")
+            else:
+                try:
+                    print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
+                    auto_summary = run_automatic_scoring(db_path)
+                    if isinstance(auto_summary, dict):
+                        gen = auto_summary.get("generation") or {}
+                        generated = gen.get("generated", []) or []
+                        skipped = gen.get("skipped", []) or []
+                        errors = gen.get("errors", []) or []
+                        print(
+                            f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
+                            f"atlanan: {len(skipped)} | hata: {len(errors)}"
+                        )
+                        for err in errors[:5]:
+                            print(f"[AUTO][HATA] {err}")
+                        for sk in skipped[:5]:
+                            print(f"[AUTO][ATLANAN] {sk}")
+                except Exception as e:
+                    print(f"[AUTO] Otomatik uretim hatasi: {e}")
 
             # 4) State-machine esitleme (dinamik yil araligi)
             try:
@@ -262,10 +266,11 @@ class AdilSecmeliApp(tk.Tk):
 
             self.tab_view.fill_tables()
             self.ensure_pool_initialized_once()
-            try:
-                run_automatic_scoring(path)
-            except Exception:
-                pass
+            if not is_yearly_workflow_enabled():
+                try:
+                    run_automatic_scoring(path)
+                except Exception:
+                    pass
             self.tab_calc.refresh()
             try:
                 self.tab_tools.refresh()

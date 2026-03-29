@@ -7,6 +7,10 @@ import sqlite3
 from typing import Any
 
 import pandas as pd
+from app.services.yearly_workflow import (
+    ensure_yearly_workflow_schema,
+    reset_year_workflow_for_import,
+)
 
 
 DONEM_GUZ = "Guz"
@@ -159,6 +163,22 @@ def parse_curriculum_excel(excel_path: str) -> tuple[list[dict[str, Any]], list[
     return all_rows, warnings
 
 
+def parse_excel(excel_path: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """
+    Backward-compatible alias:
+    Kullanici senaryosundaki parse_excel(...) adini dogrudan destekler.
+    """
+    return parse_curriculum_excel(excel_path)
+
+
+def _table_exists(cur: sqlite3.Cursor, table_name: str) -> bool:
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (table_name,),
+    )
+    return bool(cur.fetchone())
+
+
 def _find_faculty_id(cur: sqlite3.Cursor, faculty_name: str) -> int | None:
     cur.execute("SELECT fakulte_id FROM fakulte WHERE lower(trim(ad)) = lower(trim(?)) LIMIT 1", (faculty_name,))
     row = cur.fetchone()
@@ -261,6 +281,134 @@ def _fetch_scope_courses(cur: sqlite3.Cursor, mufredat_id: int) -> set[int]:
     return {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
 
 
+def reset_criteria_for_import(
+    conn: sqlite3.Connection,
+    target_year: int,
+    scope_courses: dict[tuple[int, int, int, str], set[int]],
+) -> dict[str, int]:
+    """
+    Import sonrasi ilgili yil/fakulte/bolum kapsaminda kriter ve skor verilerini sifirlar.
+
+    Bu fonksiyon:
+    - ders_kriterleri / performans / populerlik / skor kayitlarini temizler
+      (yalnizca ilgili yil ve ilgili bolum mufredat dersleri icin),
+    - havuz.skor degerlerini NULL yapar (yalnizca ilgili fakulte+yil),
+    - workflow durum tablolarini "kriter girilmedi / algoritma calismadi" haline ceker.
+    """
+    cur = conn.cursor()
+    ensure_yearly_workflow_schema(conn, auto_commit=False)
+    target_year = int(target_year)
+
+    stats = {
+        "criteria_rows_deleted": 0,
+        "performance_rows_deleted": 0,
+        "popularity_rows_deleted": 0,
+        "score_rows_deleted": 0,
+        "pool_scores_cleared": 0,
+        "workflow_department_updates": 0,
+        "workflow_faculty_updates": 0,
+    }
+    if not scope_courses:
+        return stats
+
+    scope_pairs = sorted(
+        {
+            (int(fid), int(bid))
+            for (fid, bid, year, _term) in scope_courses.keys()
+            if int(year) == target_year
+        }
+    )
+    if not scope_pairs:
+        return stats
+
+    scoped_course_ids: set[int] = set()
+    for fakulte_id, bolum_id in scope_pairs:
+        cur.execute(
+            """
+            SELECT DISTINCT md.ders_id
+            FROM mufredat m
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            WHERE m.bolum_id = ?
+              AND m.akademik_yil = ?
+            """,
+            (int(bolum_id), target_year),
+        )
+        scoped_course_ids.update(
+            int(r[0]) for r in cur.fetchall() if r and r[0] is not None
+        )
+
+    scoped_faculty_ids = sorted({int(fid) for fid, _ in scope_pairs})
+
+    if scoped_course_ids:
+        course_list = sorted(int(d) for d in scoped_course_ids)
+        chunk_size = 900
+        for idx in range(0, len(course_list), chunk_size):
+            chunk = course_list[idx : idx + chunk_size]
+            placeholders = ",".join("?" for _ in chunk)
+
+            if _table_exists(cur, "ders_kriterleri"):
+                cur.execute(
+                    f"""
+                    DELETE FROM ders_kriterleri
+                    WHERE yil = ?
+                      AND ders_id IN ({placeholders})
+                    """,
+                    (target_year, *chunk),
+                )
+                stats["criteria_rows_deleted"] += int(cur.rowcount or 0)
+
+            if _table_exists(cur, "performans"):
+                cur.execute(
+                    f"""
+                    DELETE FROM performans
+                    WHERE akademik_yil = ?
+                      AND ders_id IN ({placeholders})
+                    """,
+                    (target_year, *chunk),
+                )
+                stats["performance_rows_deleted"] += int(cur.rowcount or 0)
+
+            if _table_exists(cur, "populerlik"):
+                cur.execute(
+                    f"""
+                    DELETE FROM populerlik
+                    WHERE akademik_yil = ?
+                      AND ders_id IN ({placeholders})
+                    """,
+                    (target_year, *chunk),
+                )
+                stats["popularity_rows_deleted"] += int(cur.rowcount or 0)
+
+            if _table_exists(cur, "skor"):
+                cur.execute(
+                    f"""
+                    DELETE FROM skor
+                    WHERE akademik_yil = ?
+                      AND ders_id IN ({placeholders})
+                    """,
+                    (target_year, *chunk),
+                )
+                stats["score_rows_deleted"] += int(cur.rowcount or 0)
+
+    if _table_exists(cur, "havuz"):
+        for fid in scoped_faculty_ids:
+            cur.execute(
+                """
+                UPDATE havuz
+                SET skor = NULL
+                WHERE fakulte_id = ?
+                  AND yil = ?
+                """,
+                (int(fid), target_year),
+            )
+            stats["pool_scores_cleared"] += int(cur.rowcount or 0)
+
+    wf_stats = reset_year_workflow_for_import(conn, yil=target_year, scopes=scope_pairs)
+    stats["workflow_department_updates"] = int(wf_stats.get("department_updates", 0))
+    stats["workflow_faculty_updates"] = int(wf_stats.get("faculty_updates", 0))
+    return stats
+
+
 @dataclass
 class ImportResult:
     ok: bool
@@ -272,6 +420,13 @@ class ImportResult:
     scopes_unchanged: int = 0
     links_added: int = 0
     links_removed: int = 0
+    criteria_rows_deleted: int = 0
+    performance_rows_deleted: int = 0
+    popularity_rows_deleted: int = 0
+    score_rows_deleted: int = 0
+    pool_scores_cleared: int = 0
+    workflow_department_updates: int = 0
+    workflow_faculty_updates: int = 0
     warnings: list[str] | None = None
     errors: list[str] | None = None
     compare: list[dict[str, Any]] | None = None
@@ -412,10 +567,16 @@ def import_curriculum_excel(
                 }
             )
 
+        reset_stats = reset_criteria_for_import(
+            conn=conn,
+            target_year=int(target_year),
+            scope_courses=scope_courses,
+        )
         conn.commit()
         msg = (
             f"Yukleme tamamlandi. kapsam={len(scope_courses)}, olusturulan={created}, "
-            f"guncellenen={updated}, ayni={unchanged}, eklenen_ders={links_added}, cikarilan_ders={links_removed}"
+            f"guncellenen={updated}, ayni={unchanged}, eklenen_ders={links_added}, "
+            f"cikarilan_ders={links_removed}, kriter_sifirlanan={reset_stats.get('criteria_rows_deleted', 0)}"
         )
         return ImportResult(
             True,
@@ -427,6 +588,13 @@ def import_curriculum_excel(
             scopes_unchanged=unchanged,
             links_added=links_added,
             links_removed=links_removed,
+            criteria_rows_deleted=int(reset_stats.get("criteria_rows_deleted", 0)),
+            performance_rows_deleted=int(reset_stats.get("performance_rows_deleted", 0)),
+            popularity_rows_deleted=int(reset_stats.get("popularity_rows_deleted", 0)),
+            score_rows_deleted=int(reset_stats.get("score_rows_deleted", 0)),
+            pool_scores_cleared=int(reset_stats.get("pool_scores_cleared", 0)),
+            workflow_department_updates=int(reset_stats.get("workflow_department_updates", 0)),
+            workflow_faculty_updates=int(reset_stats.get("workflow_faculty_updates", 0)),
             warnings=warnings,
             errors=[],
             compare=compare,
@@ -443,3 +611,14 @@ def import_curriculum_excel(
     finally:
         conn.close()
 
+
+def import_curriculum_2022(db_path: str, excel_path: str) -> dict[str, Any]:
+    """
+    Backward-compatible helper:
+    Kullanici senaryosundaki import_curriculum_2022(...) adini dogrudan destekler.
+    """
+    return import_curriculum_excel(
+        db_path=db_path,
+        excel_path=excel_path,
+        target_year=2022,
+    )

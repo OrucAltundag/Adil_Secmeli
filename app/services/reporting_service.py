@@ -15,6 +15,10 @@ from app.services.calculation import (
     persist_faculty_year_topsis_scores,
 )
 from app.services.course_type import build_elective_predicate
+from app.services.yearly_workflow import (
+    get_faculty_year_status,
+    is_yearly_workflow_enabled,
+)
 
 
 def normalize_term(term: str | None) -> str:
@@ -108,6 +112,20 @@ def ensure_report_scores(db, faculty_id: int, year: int, term: str) -> dict[str,
         akademik_yil=int(year),
         donem=normalize_term(term),
     )
+
+    if is_yearly_workflow_enabled():
+        status = get_faculty_year_status(
+            conn=conn,
+            fakulte_id=int(faculty_id),
+            yil=int(year),
+            refresh=True,
+        )
+        if str(status.get("algorithm_run_status") or "") != "ran":
+            return {
+                "ok": False,
+                "reason": "algorithms_not_run",
+                "status": status,
+            }
 
     pack = get_faculty_year_topsis_results(
         cur=cur,

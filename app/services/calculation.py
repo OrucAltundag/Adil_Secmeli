@@ -20,6 +20,14 @@ from app.services.course_type import (
     filter_elective_course_ids,
     get_existing_type_columns,
 )
+from app.services.yearly_workflow import (
+    ensure_yearly_workflow_schema,
+    get_missing_criteria,
+    get_faculty_year_status,
+    is_faculty_criteria_complete,
+    mark_algorithm_run,
+    record_cross_department_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +43,8 @@ DROP_AVERAGE_GRADE_THRESHOLD = 45.0
 POOL_DEFAULT_SCORE = 50.0
 # Havuz derslerinin anket bazli puan yayilim araligi (50 Â± bu deger)
 POOL_ANKET_SCORE_SPREAD = 10.0
+# Ayni bolum mufredatina fakulte ortak havuzundan en fazla bu kadar dis bolum dersi girebilir.
+MAX_CROSS_DEPARTMENT_COURSES = 1
 
 class KararMotoru:
     def __init__(self, db=None):
@@ -1491,6 +1501,41 @@ def generate_next_year_curricula(
 
         tum_aday_sirali = sorted(list(aday_dersler), key=_sort_key, reverse=True)
 
+        def _is_cross_department_course(course_id: int, target_department_id: int) -> bool:
+            kaynak_bolum_id = ders_meta.get(int(course_id), {}).get("bolum_id")
+            if kaynak_bolum_id is None:
+                return False
+            return int(kaynak_bolum_id) != int(target_department_id)
+
+        def _cross_department_count(course_ids: list[int], target_department_id: int) -> int:
+            return sum(
+                1
+                for c_id in course_ids
+                if _is_cross_department_course(int(c_id), int(target_department_id))
+            )
+
+        def _enforce_cross_department_limit(
+            course_ids: list[int],
+            target_department_id: int,
+            limit: int = MAX_CROSS_DEPARTMENT_COURSES,
+        ) -> list[int]:
+            if limit < 0:
+                return list(course_ids)
+            externals = [
+                int(c_id)
+                for c_id in course_ids
+                if _is_cross_department_course(int(c_id), int(target_department_id))
+            ]
+            if len(externals) <= limit:
+                return list(course_ids)
+            keep_external = set(sorted(externals, key=_sort_key, reverse=True)[:limit])
+            return [
+                int(c_id)
+                for c_id in course_ids
+                if not _is_cross_department_course(int(c_id), int(target_department_id))
+                or int(c_id) in keep_external
+            ]
+
         for bolum_id, bolum_adi in bolumler:
             mevcut = list(mevcut_mufredatlar.get(bolum_id, []))
             hedef_adet = len(mevcut)
@@ -1524,14 +1569,12 @@ def generate_next_year_curricula(
                 else:
                     kalanlar.append(d_id)
 
+            ekleme_nedenleri = {}
             if not dusenler:
                 yeni = list(mevcut)
-                eklenenler = []
-                ekleme_nedenleri = {}
             else:
                 yeni = list(kalanlar)
                 blok = set(yeni) | set(dusenler)
-                ekleme_nedenleri = {}
 
                 bolum_ici = [
                     d_id
@@ -1550,31 +1593,40 @@ def generate_next_year_curricula(
                     and _effective_prev_state(d_id)[0] not in (-1, -2)
                 ]
 
+                dis_bolum_sayisi = _cross_department_count(yeni, bolum_id)
                 for d_id in bolum_ici + fakulte_geneli:
                     if len(yeni) >= hedef_adet:
                         break
-                    if d_id not in yeni:
-                        yeni.append(d_id)
-                        if d_id in bolum_ici:
-                            ekleme_nedenleri[d_id] = ["Ayni bolum secmeli adayi"]
-                        else:
-                            kaynak_bolum_id = ders_meta.get(d_id, {}).get("bolum_id")
-                            kaynak_bolum = (
-                                bolum_ad_map.get(int(kaynak_bolum_id), f"Bolum-{kaynak_bolum_id}")
-                                if kaynak_bolum_id is not None
-                                else "Belirsiz"
-                            )
-                            ekleme_nedenleri[d_id] = [f"Fakulte ortak havuzu adayi (Kaynak: {kaynak_bolum})"]
-
-                eklenenler = [d for d in yeni if d not in mevcut]
+                    if d_id in yeni:
+                        continue
+                    if _is_cross_department_course(d_id, bolum_id) and dis_bolum_sayisi >= MAX_CROSS_DEPARTMENT_COURSES:
+                        continue
+                    yeni.append(d_id)
+                    if _is_cross_department_course(d_id, bolum_id):
+                        dis_bolum_sayisi += 1
+                    if d_id in bolum_ici:
+                        ekleme_nedenleri[d_id] = ["Ayni bolum secmeli adayi"]
+                    else:
+                        kaynak_bolum_id = ders_meta.get(d_id, {}).get("bolum_id")
+                        kaynak_bolum = (
+                            bolum_ad_map.get(int(kaynak_bolum_id), f"Bolum-{kaynak_bolum_id}")
+                            if kaynak_bolum_id is not None
+                            else "Belirsiz"
+                        )
+                        ekleme_nedenleri[d_id] = [f"Fakulte ortak havuzu adayi (Kaynak: {kaynak_bolum})"]
 
                 if len(yeni) < hedef_adet:
                     for d_id in sorted(dusenler, key=_sort_key, reverse=True):
                         if len(yeni) >= hedef_adet:
                             break
-                        if d_id not in yeni and d_id in aday_dersler and d_id not in blocked_other_term:
-                            yeni.append(d_id)
-                            ekleme_nedenleri[d_id] = ["Kontenjan korunumu icin geri eklendi"]
+                        if d_id in yeni or d_id not in aday_dersler or d_id in blocked_other_term:
+                            continue
+                        if _is_cross_department_course(d_id, bolum_id) and dis_bolum_sayisi >= MAX_CROSS_DEPARTMENT_COURSES:
+                            continue
+                        yeni.append(d_id)
+                        if _is_cross_department_course(d_id, bolum_id):
+                            dis_bolum_sayisi += 1
+                        ekleme_nedenleri[d_id] = ["Kontenjan korunumu icin geri eklendi"]
 
             yeni_unique = []
             seen = set()
@@ -1588,8 +1640,13 @@ def generate_next_year_curricula(
                 for d_id in mevcut:
                     if len(yeni_unique) >= hedef_adet:
                         break
-                    if d_id not in yeni_unique and d_id in aday_dersler and d_id not in blocked_other_term:
-                        yeni_unique.append(d_id)
+                    if d_id in yeni_unique or d_id not in aday_dersler or d_id in blocked_other_term:
+                        continue
+                    if _is_cross_department_course(d_id, bolum_id) and _cross_department_count(
+                        yeni_unique, bolum_id
+                    ) >= MAX_CROSS_DEPARTMENT_COURSES:
+                        continue
+                    yeni_unique.append(d_id)
 
             if blocked_other_term:
                 yeni_unique = [d_id for d_id in yeni_unique if d_id not in blocked_other_term]
@@ -1601,6 +1658,10 @@ def generate_next_year_curricula(
                             continue
                         if _effective_prev_state(d_id)[0] in (-1, -2):
                             continue
+                        if _is_cross_department_course(d_id, bolum_id) and _cross_department_count(
+                            yeni_unique, bolum_id
+                        ) >= MAX_CROSS_DEPARTMENT_COURSES:
+                            continue
                         yeni_unique.append(d_id)
                         if d_id not in ekleme_nedenleri:
                             kaynak_bolum_id = ders_meta.get(d_id, {}).get("bolum_id")
@@ -1610,6 +1671,26 @@ def generate_next_year_curricula(
                                 else "Belirsiz"
                             )
                             ekleme_nedenleri[d_id] = [f"Diger donem cakismasi nedeniyle eklendi (Kaynak: {kaynak_bolum})"]
+
+            yeni_unique = _enforce_cross_department_limit(
+                course_ids=yeni_unique,
+                target_department_id=bolum_id,
+                limit=MAX_CROSS_DEPARTMENT_COURSES,
+            )
+
+            if len(yeni_unique) < hedef_adet:
+                for d_id in tum_aday_sirali:
+                    if len(yeni_unique) >= hedef_adet:
+                        break
+                    if d_id in yeni_unique or d_id in blocked_other_term:
+                        continue
+                    if _effective_prev_state(d_id)[0] in (-1, -2):
+                        continue
+                    if _is_cross_department_course(d_id, bolum_id):
+                        continue
+                    yeni_unique.append(d_id)
+                    if d_id not in ekleme_nedenleri:
+                        ekleme_nedenleri[d_id] = ["Ayni bolum adayi ile tamamlandi"]
 
             eklenenler = [d for d in yeni_unique if d not in mevcut]
 
@@ -1645,6 +1726,7 @@ def generate_next_year_curricula(
                         for d in eklenenler
                     ],
                     "tasindi_mi": len(dusenler) == 0,
+                    "dis_bolum_ders_sayisi": _cross_department_count(yeni_unique, bolum_id),
                 }
             )
 
@@ -1689,6 +1771,27 @@ def generate_next_year_curricula(
                 cur.execute(
                     "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
                     (hedef_muf_id, int(d_id)),
+                )
+
+            dis_bolum_ders_sayisi = _cross_department_count(dersler, bolum_id)
+            try:
+                record_cross_department_usage(
+                    conn=conn,
+                    fakulte_id=fakulte_id,
+                    bolum_id=bolum_id,
+                    source_year=akademik_yil,
+                    generated_year=sonraki_yil,
+                    dis_bolum_ders_sayisi=dis_bolum_ders_sayisi,
+                )
+            except Exception as audit_exc:
+                logger.warning(
+                    "generate_next_year_curricula: cross-department audit yazilamadi "
+                    "(fakulte=%s bolum=%s yil=%s->%s): %s",
+                    fakulte_id,
+                    bolum_id,
+                    akademik_yil,
+                    sonraki_yil,
+                    audit_exc,
                 )
 
         secilenler = set()
@@ -1823,6 +1926,141 @@ def generate_next_year_curricula(
     finally:
         if conn:
             conn.close()
+
+
+def run_all_algorithms_for_year(
+    yil: int,
+    db_path: str = "data/adil_secmeli.db",
+    donem: str = "G",
+) -> dict:
+    """
+    Algoritma kontrol merkezi icin yil bazli manuel calistirma.
+
+    Kurallar:
+    - Sadece kriter girisi tamamlanmis fakulteler islenir.
+    - Eksik fakulteler raporlanir, hesaplanmaz.
+    - Basarili fakulteler icin (yil -> yil+1) mufredat uretilir.
+    - Workflow durum tablolarinda algoritma calisti bilgisi islenir.
+    """
+    yil = int(yil)
+    summary = {
+        "ok": True,
+        "year": yil,
+        "processed": [],
+        "skipped": [],
+        "errors": [],
+        "messages": [],
+    }
+
+    if not os.path.exists(db_path):
+        return {
+            "ok": False,
+            "year": yil,
+            "processed": [],
+            "skipped": [],
+            "errors": [{"error": f"DB bulunamadi: {db_path}"}],
+            "messages": [f"Veritabani bulunamadi: {db_path}"],
+        }
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    ensure_yearly_workflow_schema(conn)
+    cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY fakulte_id")
+    faculties = [(int(r[0]), str(r[1] or "")) for r in cur.fetchall()]
+    conn.close()
+
+    for fakulte_id, fakulte_adi in faculties:
+        status_conn = sqlite3.connect(db_path)
+        status_conn.row_factory = sqlite3.Row
+        try:
+            ensure_yearly_workflow_schema(status_conn)
+            complete = is_faculty_criteria_complete(
+                status_conn,
+                yil=yil,
+                fakulte_id=fakulte_id,
+                refresh=True,
+            )
+            faculty_status = get_faculty_year_status(
+                status_conn,
+                fakulte_id=fakulte_id,
+                yil=yil,
+                refresh=False,
+            )
+            if not complete:
+                missing = get_missing_criteria(
+                    status_conn,
+                    yil=yil,
+                    fakulte_id=fakulte_id,
+                )
+                skip_msg = (
+                    f"{fakulte_adi} fakultesi icin {yil} yili kriter girisi eksik oldugundan hesaplama yapilmadi."
+                )
+                summary["skipped"].append(
+                    {
+                        "fakulte_id": fakulte_id,
+                        "fakulte": fakulte_adi,
+                        "year": yil,
+                        "reason": skip_msg,
+                        "criteria_status": faculty_status.get("criteria_status", "not_started"),
+                        "missing_criteria": missing,
+                    }
+                )
+                summary["messages"].append(skip_msg)
+                continue
+        finally:
+            status_conn.close()
+
+        result = generate_next_year_curricula(
+            db_path=db_path,
+            fakulte_id=fakulte_id,
+            akademik_yil=yil,
+            donem=donem,
+        )
+
+        status_conn = sqlite3.connect(db_path)
+        status_conn.row_factory = sqlite3.Row
+        try:
+            if result.get("ok"):
+                mark_algorithm_run(
+                    conn=status_conn,
+                    fakulte_id=fakulte_id,
+                    source_year=yil,
+                    generated_year=yil + 1,
+                    success=True,
+                )
+                ok_msg = (
+                    f"{fakulte_adi} fakultesi {yil} yili verileri islendi, {yil + 1} yili mufredati olusturuldu."
+                )
+                summary["processed"].append({**result, "message": ok_msg})
+                summary["messages"].append(ok_msg)
+            else:
+                mark_algorithm_run(
+                    conn=status_conn,
+                    fakulte_id=fakulte_id,
+                    source_year=yil,
+                    generated_year=None,
+                    success=False,
+                )
+                err_msg = result.get("error", "Bilinmeyen hata")
+                summary["ok"] = False
+                summary["errors"].append(
+                    {
+                        "fakulte_id": fakulte_id,
+                        "fakulte": fakulte_adi,
+                        "year": yil,
+                        "error": err_msg,
+                    }
+                )
+                summary["messages"].append(
+                    f"{fakulte_adi} fakultesi icin {yil} yili hesaplama hatasi: {err_msg}"
+                )
+        finally:
+            status_conn.close()
+
+    if not summary["processed"] and not summary["errors"]:
+        summary["messages"].append("Calistirilacak uygun fakulte bulunamadi.")
+    return summary
 
 
 def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G"):

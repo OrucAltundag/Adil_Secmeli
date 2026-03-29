@@ -19,10 +19,13 @@ from tkinter import ttk, messagebox, font as tkfont
 
 from app.services.calculation import (
     ensure_pool_visibility_for_curriculum,
-    get_faculty_year_topsis_results,
-    persist_faculty_year_topsis_scores,
 )
 from app.services.course_type import build_elective_predicate
+from app.services.yearly_workflow import (
+    get_faculty_year_status,
+    is_yearly_workflow_enabled,
+    list_active_years_for_faculty,
+)
 
 # ---------------------------------------------------------------------------
 # Statu sabitleri ve gorsel esleme
@@ -190,6 +193,16 @@ class PoolTab(ttk.Frame):
                    command=lambda: self.set_selected_pool_status(0)).pack(side=tk.LEFT, padx=5)
         ttk.Button(actions, text="Secileni Kalici Iptal (-2)",
                    command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=5)
+
+        self.lbl_workflow_info = tk.Label(
+            actions,
+            text="",
+            bg="#e2e8f0",
+            fg="#334155",
+            font=("Segoe UI", 8, "italic"),
+            anchor="w",
+        )
+        self.lbl_workflow_info.pack(side=tk.RIGHT, padx=6)
 
         # "Algoritmay Calistir" kaldirildi â€” algoritma islemleri Hesaplama sekmesindedir.
 
@@ -362,44 +375,10 @@ class PoolTab(ttk.Frame):
     # =========================================================
     def _ensure_year_scores(self, fakulte_id: int, yil: int, donem: str = "G") -> None:
         """
-        Secili fakulte + yil icin TOPSIS tabanli kesinlesme puanlarini
-        hesaplayip havuz.skor alanina yazar.
-
-        Havuz ekranina gelindiginde, puanlar daha once hesaplanmamis olsa bile
-        yil bazli skorlar guncellenmis olur.
+        Legacy helper (deprecated).
+        Yearly workflow modunda otomatik puan hesaplamasi kapatilir.
         """
-        try:
-            conn = getattr(self.db, "conn", None)
-            if conn is None:
-                return
-            cur = conn.cursor()
-            fakulte_id = int(fakulte_id)
-
-            pack = get_faculty_year_topsis_results(
-                cur=cur,
-                fakulte_id=fakulte_id,
-                akademik_yil=int(yil),
-                donem=donem,
-            )
-            if not pack.get("ok"):
-                return
-
-            skor_map = dict(pack.get("scores") or {})
-            ders_meta = dict(pack.get("ders_meta") or {})
-            if not skor_map:
-                return
-
-            persist_faculty_year_topsis_scores(
-                cur=cur,
-                fakulte_id=fakulte_id,
-                akademik_yil=int(yil),
-                skor_map=skor_map,
-                ders_meta=ders_meta,
-                donem=donem,
-            )
-            conn.commit()
-        except Exception as exc:
-            print(f"UI Hata (Yil TOPSIS): {exc}")
+        return
 
     def load_faculties_to_combo(self, force_latest_year=False):
         try:
@@ -409,31 +388,47 @@ class PoolTab(ttk.Frame):
             if faculties and self.cb_fakulte.current() < 0:
                 self.cb_fakulte.current(0)
 
-            try:
-                _, yil_rows = self.db.run_sql(
-                    """
-                    SELECT DISTINCT yil FROM (
-                        SELECT yil as yil FROM havuz
-                        UNION
-                        SELECT akademik_yil as yil FROM mufredat
-                    )
-                    ORDER BY yil
-                    """
-                )
-                if yil_rows:
-                    yillar = [str(r[0]) for r in yil_rows]
-                    self.cb_yil["values"] = yillar
-                    if force_latest_year or self.cb_yil.get() not in yillar:
-                        self.cb_yil.set(yillar[-1])
-            except Exception:
-                pass
-
             if faculties:
-                self.on_faculty_change(None)
+                self.on_faculty_change(None, force_latest_year=force_latest_year)
         except Exception:
             pass
 
-    def on_faculty_change(self, _event):
+    def _refresh_years_for_faculty(self, fakulte_id: int, force_latest_year: bool = False):
+        years: list[int] = []
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            return
+        try:
+            if is_yearly_workflow_enabled():
+                years = list_active_years_for_faculty(conn, int(fakulte_id))
+        except Exception:
+            years = []
+
+        if not years:
+            try:
+                _, rows = self.db.run_sql(
+                    """
+                    SELECT DISTINCT yil FROM havuz WHERE fakulte_id = ?
+                    UNION
+                    SELECT DISTINCT m.akademik_yil
+                    FROM mufredat m
+                    JOIN bolum b ON b.bolum_id = m.bolum_id
+                    WHERE b.fakulte_id = ?
+                    ORDER BY 1
+                    """,
+                    (int(fakulte_id), int(fakulte_id)),
+                )
+                years = sorted({int(r[0]) for r in (rows or []) if r and r[0] is not None})
+            except Exception:
+                years = []
+
+        yil_values = [str(y) for y in years]
+        self.cb_yil["values"] = yil_values
+        if yil_values:
+            if force_latest_year or self.cb_yil.get() not in yil_values:
+                self.cb_yil.set(yil_values[-1])
+
+    def on_faculty_change(self, _event, force_latest_year: bool = False):
         fakulte = self.cb_fakulte.get()
         if not fakulte:
             return
@@ -451,6 +446,7 @@ class PoolTab(ttk.Frame):
             self.cb_bolum["values"] = bolumler
             if bolumler and self.cb_bolum.current() < 0:
                 self.cb_bolum.current(0)
+            self._refresh_years_for_faculty(fid, force_latest_year=force_latest_year)
             self.load_pool_data()
         except Exception:
             pass
@@ -501,7 +497,11 @@ class PoolTab(ttk.Frame):
             except Exception:
                 bolum_id = None
 
-        # Secili fakulte + yil icin kesinlesme puanlarini hesapla ve havuza yaz
+        workflow_note = ""
+        if getattr(self, "lbl_workflow_info", None):
+            self.lbl_workflow_info.config(text="")
+
+        # Secili fakulte + yil icin havuz gorunurlugunu senkronize et (otomatik skor hesaplamaz).
         try:
             conn = getattr(self.db, "conn", None)
             if conn is not None:
@@ -513,13 +513,28 @@ class PoolTab(ttk.Frame):
                     donem=donem_norm,
                 )
                 conn.commit()
-        except Exception:
-            pass
+                if is_yearly_workflow_enabled():
+                    status = get_faculty_year_status(
+                        conn=conn,
+                        fakulte_id=int(fakulte_id),
+                        yil=int(yil),
+                        refresh=True,
+                    )
+                    criteria_status = str(status.get("criteria_status") or "")
+                    algorithm_status = str(status.get("algorithm_run_status") or "")
+                    if criteria_status == "completed" and algorithm_status != "ran":
+                        workflow_note = "Kriter girisi tamamlandi ancak algoritmalar henuz calistirilmadi."
+                    elif criteria_status == "completed" and algorithm_status == "ran":
+                        workflow_note = f"{int(yil)} yili icin algoritmalar calistirildi."
+                    elif criteria_status == "partial":
+                        workflow_note = f"{int(yil)} yili kriter girisi kismi durumda."
+                    elif criteria_status == "not_started":
+                        workflow_note = f"{int(yil)} yili kriter girisi henuz baslatilmadi."
+        except Exception as wf_exc:
+            workflow_note = f"Workflow durumu okunamadi: {wf_exc}"
 
-        try:
-            self._ensure_year_scores(fakulte_id, int(yil), donem=donem_norm)
-        except Exception:
-            pass
+        if getattr(self, "lbl_workflow_info", None):
+            self.lbl_workflow_info.config(text=workflow_note)
 
         # --- SOL: HAVUZ ---
         self.tree_pool.delete(*self.tree_pool.get_children())

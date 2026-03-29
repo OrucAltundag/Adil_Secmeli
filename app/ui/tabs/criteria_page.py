@@ -11,6 +11,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import sqlite3
+from app.services.yearly_workflow import mark_criteria_status
 
 
 class CriteriaPage:
@@ -25,7 +26,7 @@ class CriteriaPage:
       1. ders_kriterleri tablosuna INSERT/UPDATE
       2. performans tablosuna ortalama_not + basari_orani yazilir
       3. populerlik tablosuna talep + kontenjan + doluluk_orani yazilir
-      4. rebuild_school_curricula pipeline'i otomatik tetiklenir
+      4. kriter tamamlama durumu bolum/fakulte bazinda guncellenir
     """
 
     def __init__(self, parent, db, app=None):
@@ -680,34 +681,45 @@ class CriteriaPage:
             except Exception:
                 pass
 
-            pipeline_note = ""
-            if self.app and getattr(self.app, "db_path", None):
-                try:
-                    from app.services.calculation import rebuild_school_curricula
-
-                    pipeline = rebuild_school_curricula(
-                        db_path=self.app.db_path,
-                        base_year=2022,
-                        donem="G",
-                        max_rounds=8,
+            status_messages = []
+            try:
+                _, fac_rows = self.db.run_sql(
+                    "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
+                    (self.cb_fakulte.get(),),
+                )
+                dep_rows = []
+                if fac_rows:
+                    _, dep_rows = self.db.run_sql(
+                        """
+                        SELECT bolum_id
+                        FROM bolum
+                        WHERE ad = ? AND fakulte_id = ?
+                        LIMIT 1
+                        """,
+                        (self.cb_bolum.get(), int(fac_rows[0][0])),
                     )
-                    gen = (pipeline or {}).get("generation") or {}
-                    g_cnt = len(gen.get("generated", []) or [])
-                    s_cnt = len(gen.get("skipped", []) or [])
-                    e_cnt = len(gen.get("errors", []) or [])
-                    pipeline_note = (
-                        f"\n\nOtomatik yeniden hesaplama calisti: "
-                        f"olusan={g_cnt}, atlanan={s_cnt}, hata={e_cnt}"
+                if fac_rows and dep_rows:
+                    status_result = mark_criteria_status(
+                        conn=self.db.conn,
+                        yil=int(yil),
+                        fakulte_id=int(fac_rows[0][0]),
+                        bolum_id=int(dep_rows[0][0]),
                     )
-                except Exception as pe:
-                    pipeline_note = f"\n\nOtomatik yeniden hesaplama hatasi: {pe}"
+                    status_messages = [
+                        str(msg)
+                        for msg in (status_result.get("messages") or [])
+                        if msg
+                    ]
+            except Exception as status_exc:
+                status_messages = [f"Kriter durum guncelleme uyarisi: {status_exc}"]
 
             msg = "Veriler kaydedildi."
             if in_mufredat:
                 msg += f"\nBaşarı oranı: %{basari_orani*100:.1f}  |  Doluluk: %{doluluk_orani*100:.1f}"
             else:
                 msg += "\n(Müfredatta olmayan ders – sadece anket kaydedildi.)"
-            msg += pipeline_note
+            if status_messages:
+                msg += "\n\n" + "\n".join(status_messages)
             messagebox.showinfo("Başarılı", msg)
             self.load_courses(restore_course_id=c_id)
             if self.app:

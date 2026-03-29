@@ -12,8 +12,13 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.settings import load_settings
 from app.db.schema_compat import ensure_reporting_schema
+from app.services.calculation import run_all_algorithms_for_year
 from app.services.course_type import build_elective_predicate
 from app.services.curriculum_import_service import import_curriculum_excel
+from app.services.yearly_workflow import (
+    get_faculty_year_status,
+    list_active_years_for_faculty,
+)
 
 router = APIRouter()
 
@@ -226,6 +231,43 @@ def akademik_plan(fakulte_id: int, yil: int):
 def fakulte_listesi():
     cols, rows = _run_query("SELECT fakulte_id, ad, kampus FROM fakulte ORDER BY ad")
     return {"columns": cols, "data": rows}
+
+
+@router.get("/kriter/durum")
+def kriter_durumu(fakulte_id: int, yil: int):
+    conn = _open_connection()
+    try:
+        status = get_faculty_year_status(
+            conn=conn,
+            fakulte_id=int(fakulte_id),
+            yil=int(yil),
+            refresh=True,
+        )
+        return status
+    finally:
+        conn.close()
+
+
+@router.get("/yillar/aktif")
+def aktif_yillar(fakulte_id: int):
+    conn = _open_connection()
+    try:
+        years = list_active_years_for_faculty(conn=conn, fakulte_id=int(fakulte_id))
+        return {"fakulte_id": int(fakulte_id), "years": years}
+    finally:
+        conn.close()
+
+
+@router.post("/algoritma/tumunu-calistir")
+def algoritma_tumunu_calistir(yil: int, donem: Optional[str] = "Guz"):
+    result = run_all_algorithms_for_year(
+        yil=int(yil),
+        db_path=_get_db_path(),
+        donem=_normalize_donem(donem),
+    )
+    if not result.get("ok") and not result.get("processed"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
 
 
 @router.post("/mufredat/yukle")

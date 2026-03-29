@@ -418,3 +418,72 @@ class OgrenciEngel(Base):
 
     ogrenci = relationship("Ogrenci", back_populates="engeller")
     ders = relationship("Ders")
+
+
+# ---------------------------
+# 19) CRITERIA_DEPARTMENT_STATUS
+# ---------------------------
+class CriteriaDepartmentStatus(Base):
+    __tablename__ = "criteria_department_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=False)
+    bolum_id = Column(Integer, ForeignKey("bolum.bolum_id"), nullable=False)
+    yil = Column(Integer, nullable=False)
+    criteria_status = Column(String, nullable=False, default="not_started")
+    required_course_count = Column(Integer, nullable=False, default=0)
+    completed_course_count = Column(Integer, nullable=False, default=0)
+    missing_course_count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("fakulte_id", "bolum_id", "yil", name="uq_criteria_department_status_scope"),
+    )
+
+
+# ---------------------------
+# 20) CRITERIA_FACULTY_STATUS
+# ---------------------------
+class CriteriaFacultyStatus(Base):
+    __tablename__ = "criteria_faculty_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=False)
+    yil = Column(Integer, nullable=False)
+    criteria_status = Column(String, nullable=False, default="not_started")
+    total_department_count = Column(Integer, nullable=False, default=0)
+    completed_department_count = Column(Integer, nullable=False, default=0)
+    algorithm_run_status = Column(String, nullable=False, default="not_run")
+    algorithm_run_at = Column(DateTime)
+    generated_year = Column(Integer)
+    year_active = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("fakulte_id", "yil", name="uq_criteria_faculty_status_scope"),
+    )
+
+
+# ---------------------------
+# 21) CURRICULUM_GENERATION_AUDIT
+# ---------------------------
+class CurriculumGenerationAudit(Base):
+    __tablename__ = "curriculum_generation_audit"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fakulte_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=False)
+    bolum_id = Column(Integer, ForeignKey("bolum.bolum_id"), nullable=False)
+    source_year = Column(Integer, nullable=False)
+    generated_year = Column(Integer, nullable=False)
+    dis_bolum_ders_sayisi = Column(Integer, nullable=False, default=0)
+    run_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fakulte_id",
+            "bolum_id",
+            "source_year",
+            "generated_year",
+            name="uq_curriculum_generation_audit_scope",
+        ),
+    )

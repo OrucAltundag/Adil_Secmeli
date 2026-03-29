@@ -8,7 +8,7 @@
 #   3. Ders Iliskileri & Kurallar (NLP benzerlik grafi)
 #   4. Havuz Yonetimi (PoolTab — fakulte/yil/donem bazli havuz gorunumu)
 #
-# "Sonraki Yil Mufredat Uret" butonu rebuild_school_curricula pipeline'ini tetikler.
+# "Sonraki Yil Mufredat Uret" butonu secili yil icin manuel algoritma calistirir.
 # "Tam Ekran" butonu PanedWindow'dan ust paneli gizleyerek analiz labini buyutur.
 # =============================================================================
 import tkinter as tk
@@ -40,6 +40,7 @@ class CalcTab(ttk.Frame):
         # state/cache
         self.ui_refs = {}
         self.results_cache = {}
+        self.cb_algo_year = None
 
 
         # ---- Nested Notebook ----
@@ -124,6 +125,38 @@ class CalcTab(ttk.Frame):
                 self.criteria_view.load_courses(restore_course_id=restore_id)
         except Exception as e:
             print(f"[CalcTab] load_courses hatasi: {e}")
+        try:
+            self._refresh_algo_year_options()
+        except Exception:
+            pass
+
+    def _refresh_algo_year_options(self):
+        if not self.cb_algo_year:
+            return
+        previous = self.cb_algo_year.get()
+        years = []
+        try:
+            _, rows = self.db.run_sql(
+                """
+                SELECT DISTINCT yil FROM (
+                    SELECT yil as yil FROM havuz
+                    UNION
+                    SELECT akademik_yil as yil FROM mufredat
+                )
+                WHERE yil IS NOT NULL
+                ORDER BY yil
+                """
+            )
+            years = [str(r[0]) for r in (rows or []) if r and r[0] is not None]
+        except Exception:
+            years = []
+
+        if years:
+            self.cb_algo_year["values"] = years
+            if previous in years:
+                self.cb_algo_year.set(previous)
+            else:
+                self.cb_algo_year.set(years[-1])
 
 
 
@@ -161,6 +194,17 @@ class CalcTab(ttk.Frame):
             font=("Segoe UI", 9),
         )
         self._lbl_next_year_status.pack(side=tk.LEFT, padx=4)
+
+        tk.Label(
+            next_year_bar,
+            text="Yil:",
+            bg="#0f172a",
+            fg="#cbd5e1",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side=tk.LEFT, padx=(16, 4))
+        self.cb_algo_year = ttk.Combobox(next_year_bar, state="readonly", width=8)
+        self.cb_algo_year.pack(side=tk.LEFT, padx=(0, 8))
+        self._refresh_algo_year_options()
 
         btn_run_all_top = tk.Button(
             next_year_bar,
@@ -291,16 +335,16 @@ class CalcTab(ttk.Frame):
         grid_frame.columnconfigure(2, weight=1)
 
     def run_all_algorithms(self):
-        """Tum algoritmalari sirayla calistirir ve sonuclarini log paneline yazar."""
+        """Algoritma kontrol merkezi: secili yil icin toplu hesaplama calistir."""
         self.result_text.config(state="normal")
         self.result_text.delete("1.0", tk.END)
-        self.result_text.insert(tk.END, "Toplu işlem başlatılıyor...\nLütfen bekleyiniz.\n")
+        self.result_text.insert(
+            tk.END,
+            "Toplu hesaplama baslatiliyor...\nLutfen bekleyiniz.\n",
+        )
         self.result_text.config(state="disabled")
-
-        algos = getattr(self.app, "algorithms", None) or [{"id": k} for k in self.ui_refs.keys()]
-        for algo in algos:
-            self.run_single_step(algo["id"])
-            self.update_idletasks()
+        self.run_single_step("next_year")
+        self.update_idletasks()
 
     def run_single_step(self, algo_id: str):
         """Tek bir algoritma adimini calistirir. Sonucu results_cache'e kaydeder ve UI status etiketini gunceller."""
@@ -467,9 +511,9 @@ class CalcTab(ttk.Frame):
                     else:
                         sonuc_metni += "Hesaplama sonucu boş döndü."
 
-            # 5) Sonraki yil mufredat uretimi (okul geneli zincirli pipeline)
+            # 5) Sonraki yil mufredat uretimi (manuel, yil bazli)
             elif algo_id == "next_year":
-                from app.services.calculation import rebuild_school_curricula
+                from app.services.calculation import run_all_algorithms_for_year
                 import os
 
                 db_path = getattr(self.app, "db_path", None) or self.db_path
@@ -477,103 +521,76 @@ class CalcTab(ttk.Frame):
                     raise ValueError("Veritabani yolu bulunamadi.")
                 db_path = os.path.abspath(db_path)
 
-                pipeline = rebuild_school_curricula(
+                secili_yil = None
+                if self.cb_algo_year and self.cb_algo_year.get():
+                    try:
+                        secili_yil = int(self.cb_algo_year.get())
+                    except Exception:
+                        secili_yil = None
+                if secili_yil is None:
+                    try:
+                        _, rows = self.db.run_sql("SELECT MAX(akademik_yil) FROM mufredat")
+                        secili_yil = int(rows[0][0]) if rows and rows[0][0] is not None else 2022
+                    except Exception:
+                        secili_yil = 2022
+
+                summary = run_all_algorithms_for_year(
+                    yil=int(secili_yil),
                     db_path=db_path,
-                    base_year=2022,
                     donem="G",
-                    max_rounds=8,
                 )
 
-                reset = pipeline.get("reset") or {}
-                gen = pipeline.get("generation") or {}
-                generated = gen.get("generated", []) or []
-                skipped = gen.get("skipped", []) or []
-                errors = gen.get("errors", []) or []
-                rounds = gen.get("rounds", []) or []
+                processed = summary.get("processed", []) or []
+                skipped = summary.get("skipped", []) or []
+                errors = summary.get("errors", []) or []
 
                 lines = []
-                lines.append("Okul geneli mufredat yeniden olusturma pipeline'i calisti.")
-                lines.append("1) 2022 disi mufredat temizlendi")
-                lines.append("2) Kriterleri tamam olan yillar zincirleme yeniden uretildi")
-                lines.append("")
-
+                lines.append(f"Algoritma kontrol merkezi: {int(secili_yil)} yili calistirildi.")
                 lines.append(
-                    f"Temizlik: mufredat={reset.get('deleted_mufredat', 0)} | "
-                    f"mufredat_ders={reset.get('deleted_mufredat_ders', 0)} | "
-                    f"havuz={reset.get('deleted_havuz', 0)}"
-                )
-                lines.append(f"Legacy duzeltme kaydi: {reset.get('normalized_curricula', 0)}")
-                lines.append(
-                    f"Uretim ozeti: round={len(rounds)} | olusan={len(generated)} | "
-                    f"atlanan={len(skipped)} | hata={len(errors)}"
+                    f"Ozet: islenen_fakulte={len(processed)} | atlanan_fakulte={len(skipped)} | hata={len(errors)}"
                 )
                 lines.append("")
 
-                for item in generated:
-                    lines.append(
-                        f"[{item.get('fakulte')}] {item.get('year_from')} -> {item.get('year_to')} "
-                        f"(havuz upsert={item.get('pool_rows_upserted', 0)})"
-                    )
-                    for bol in item.get("departments", []):
-                        b_ad = bol.get("bolum", "?")
-                        if bol.get("tasindi_mi"):
-                            lines.append(f"- {b_ad}: Degisiklik yok, mufredat tasindi.")
-                            continue
-                        dusen = bol.get("dusenler", []) or []
-                        eklenen = bol.get("eklenenler", []) or []
-                        if dusen:
-                            lines.append(f"- {b_ad} | Cikanlar:")
-                            for d in dusen:
-                                rs = " + ".join(d.get("reasons", []) or ["Kural geregi"])
-                                lines.append(
-                                    f"  * {d.get('ders')} (Skor:{d.get('score', 0):.1f}, "
-                                    f"Ort:{d.get('average_grade', 0):.1f}) -> {rs}"
-                                )
-                        if eklenen:
-                            lines.append(f"- {b_ad} | Girenler:")
-                            for e in eklenen:
-                                rs = " + ".join(e.get("reasons", []) or ["Yuksek kesinlesme puani"])
-                                lines.append(
-                                    f"  * {e.get('ders')} (Skor:{e.get('score', 0):.1f}) -> {rs}"
-                                )
+                if processed:
+                    lines.append("Islenen fakulteler:")
+                    for item in processed:
+                        lines.append(f"- {item.get('message', '')}")
+                        for bol in item.get("departments", []) or []:
+                            lines.append(
+                                f"  * {bol.get('bolum', '?')} | dis_bolum_dersi={bol.get('dis_bolum_ders_sayisi', 0)}"
+                            )
                     lines.append("")
 
                 if skipped:
-                    lines.append("Atlanan fakulteler/yillar:")
-                    for item in skipped[:30]:
-                        ytxt = f" | yil={item.get('year')}" if item.get("year") is not None else ""
-                        lines.append(f"- {item.get('fakulte')} {ytxt} -> {item.get('reason')}")
+                    lines.append("Atlanan fakulteler:")
+                    for item in skipped:
+                        lines.append(f"- {item.get('reason')}")
                         missing_criteria = item.get("missing_criteria", []) or []
-                        if missing_criteria:
-                            lines.append("  Eksik kriter girisleri:")
-                            for mk in missing_criteria[:8]:
-                                lines.append(
-                                    f"    * {mk.get('bolum')} | {mk.get('ders')} (ID:{mk.get('ders_id')})"
-                                )
-                            if len(missing_criteria) > 8:
-                                lines.append(f"    * ... +{len(missing_criteria)-8} ders daha")
-
-                        missing_curricula = item.get("missing_curricula", []) or []
-                        if missing_curricula:
-                            lines.append("  Eksik mufredat bolumleri:")
-                            for mm in missing_curricula[:8]:
-                                lines.append(f"    * {mm.get('bolum')} (bolum_id={mm.get('bolum_id')})")
-                            if len(missing_curricula) > 8:
-                                lines.append(f"    * ... +{len(missing_curricula)-8} bolum daha")
+                        for mk in missing_criteria[:8]:
+                            lines.append(
+                                f"  * Eksik: {mk.get('bolum')} | {mk.get('ders')} (ID:{mk.get('ders_id')})"
+                            )
+                        if len(missing_criteria) > 8:
+                            lines.append(f"  * ... +{len(missing_criteria) - 8} ders daha")
                     lines.append("")
 
                 if errors:
                     lines.append("Hatalar:")
-                    for item in errors[:20]:
-                        ytxt = f" | yil={item.get('year')}" if item.get("year") is not None else ""
-                        lines.append(f"- {item.get('fakulte')} {ytxt} -> {item.get('error')}")
+                    for item in errors:
+                        lines.append(
+                            f"- {item.get('fakulte')} | yil={item.get('year')} -> {item.get('error')}"
+                        )
 
-                if not generated and not errors:
-                    lines.append("Yeni yil uretimi yapilmadi. (Kriterler eksik olabilir veya sistem zaten guncel.)")
+                if not processed and not skipped and not errors:
+                    lines.append("Calistirilacak uygun fakulte bulunamadi.")
 
                 sonuc_metni = "\n".join(lines)
-                basarili_mi = bool(pipeline.get("ok", False)) and len(errors) == 0
+                basarili_mi = bool(summary.get("ok", True)) and len(errors) == 0
 
+                try:
+                    self._refresh_algo_year_options()
+                except Exception:
+                    pass
                 try:
                     self.page_pool.refresh(select_latest_year=True)
                 except Exception:
@@ -704,4 +721,5 @@ class CalcTab(ttk.Frame):
             self._paned.forget(self._top_container)
             self._btn_fullscreen.config(text="Normal Gorunum")
             self._is_fullscreen = True
+
 

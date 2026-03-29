@@ -216,7 +216,18 @@ def ensure_reporting_schema(conn: sqlite3.Connection) -> dict[str, dict[str, int
     """
     Raporlama icin gereken tum kritik tablolari synchronize eder.
     """
-    return {
+    result = {
         "havuz": ensure_havuz_semester_schema(conn),
         "skor": ensure_skor_schema(conn),
     }
+    try:
+        from app.services.yearly_workflow import ensure_yearly_workflow_schema
+
+        result["workflow"] = ensure_yearly_workflow_schema(conn)  # type: ignore[assignment]
+    except Exception:
+        # Workflow semasi kritik raporlama akisini bloklamasin.
+        result["workflow"] = {
+            "tables_created": 0,
+            "indexes_created": 0,
+        }
+    return result
