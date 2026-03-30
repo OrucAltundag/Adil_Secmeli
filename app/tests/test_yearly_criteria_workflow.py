@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
 
+import inspect
 import os
 import sqlite3
 import tempfile
 
 import pandas as pd
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from app.api import routes
+from app.services.ai_engine import HavuzAIEngine
 from app.services.calculation import generate_next_year_curricula, run_all_algorithms_for_year
 from app.services.curriculum_import_service import import_curriculum_excel
 from app.services.yearly_workflow import (
@@ -467,6 +472,69 @@ def test_new_year_visible_but_scores_empty_until_new_criteria():
             os.unlink(db_path)
         except OSError:
             pass
+
+
+def test_ai_engine_filters_to_selected_faculty_year_curriculum():
+    db_path = _create_db()
+    session = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.executemany(
+            "INSERT INTO fakulte VALUES (?, ?)",
+            [(1, "Muhendislik"), (2, "Saglik")],
+        )
+        cur.executemany(
+            "INSERT INTO bolum VALUES (?, ?, ?)",
+            [(10, 1, "Bilgisayar"), (20, 2, "Hemsirelik")],
+        )
+        cur.executemany(
+            "INSERT INTO ders (ders_id, bolum_id, fakulte_id, ad, kod, DersTipi) VALUES (?, ?, ?, ?, ?, 'Secmeli')",
+            [
+                (101, 10, 1, "Algoritmalar", "M101"),
+                (102, 10, 1, "Yapay Zeka", "M102"),
+                (201, 20, 2, "Onkoloji", "S201"),
+            ],
+        )
+        _insert_curriculum(conn, 1, 10, 2022, [101], "Guz")
+        _insert_curriculum(conn, 2, 20, 2022, [201], "Guz")
+
+        for ders_id, fakulte_id, bolum_id in [(101, 1, 10), (102, 1, 10), (201, 2, 20)]:
+            _insert_complete_metrics(conn, ders_id, 2022, "Guz")
+            _insert_pool_row(conn, ders_id, 2022, fakulte_id, bolum_id, 1, 80.0)
+        conn.commit()
+        conn.close()
+
+        engine = create_engine(f"sqlite:///{db_path}")
+        SessionLocal = sessionmaker(bind=engine)
+        session = SessionLocal()
+        ai = HavuzAIEngine(session)
+
+        df_scoped = ai._load_training_data(fakulte_id=1, yil=2022, curriculum_only=True)
+        assert set(int(v) for v in df_scoped["ders_id"].tolist()) == {101}
+        assert set(int(v) for v in df_scoped["fakulte_id"].tolist()) == {1}
+        assert set(int(v) for v in df_scoped["yil"].tolist()) == {2022}
+
+        df_faculty_year = ai._load_training_data(fakulte_id=1, yil=2022, curriculum_only=False)
+        assert set(int(v) for v in df_faculty_year["ders_id"].tolist()) == {101, 102}
+    finally:
+        try:
+            if session is not None:
+                session.close()
+        except Exception:
+            pass
+        try:
+            os.unlink(db_path)
+        except OSError:
+            pass
+
+
+def test_import_api_requires_explicit_target_year():
+    signature = inspect.signature(routes.mufredat_yukle)
+    param = signature.parameters["hedef_yil"]
+    assert hasattr(param.default, "default")
+    assert param.default.default != 2022
+    assert "PydanticUndefined" in repr(param.default)
 
 
 def test_only_one_cross_department_course_allowed():

@@ -3,7 +3,7 @@
 Rapor & Yukleme sekmesi.
 
 Bolgeler:
-1) Veri Yukleme (2022)
+1) Veri Yukleme (secili akademik yil)
 2) Raporlama (havuz + mufredat)
 3) Disa Aktarim (CSV/Excel)
 """
@@ -90,9 +90,14 @@ class ToolsTab(ttk.Frame):
         self.cb_bolum.bind("<<ComboboxSelected>>", lambda _e: self.load_report())
 
         ttk.Label(top, text="Yil:").pack(side=tk.LEFT, padx=(0, 6))
-        self.cb_yil = ttk.Combobox(top, state="readonly", width=10)
+        # Ilk mufredat yuklemesinde kullanicinin acikca yil yazabilmesi gerekir;
+        # bu nedenle yillari DB'den oneriyoruz ama combobox'i yazilabilir tutuyoruz.
+        self.cb_yil = ttk.Combobox(top, state="normal", width=10)
         self.cb_yil.pack(side=tk.LEFT, padx=(0, 12))
         self.cb_yil.bind("<<ComboboxSelected>>", self._on_year_change)
+        self.cb_yil.bind("<Return>", self._commit_year_input)
+        self.cb_yil.bind("<FocusOut>", self._commit_year_input)
+        self.cb_yil.bind("<KeyRelease>", lambda _e: self._update_import_state())
 
         ttk.Label(top, text="Donem:").pack(side=tk.LEFT, padx=(0, 6))
         self.cb_donem = ttk.Combobox(top, state="readonly", width=10, values=["Guz", "Bahar"])
@@ -105,15 +110,16 @@ class ToolsTab(ttk.Frame):
         ttk.Button(top, text="DB Yedekle", command=self.backup_db).pack(side=tk.LEFT, padx=4)
 
         # ---------- Zone A: Import ----------
-        import_zone = ttk.LabelFrame(self, text="A) Veri Yukleme (2022)", padding=10)
-        import_zone.pack(fill=tk.X, pady=(8, 8))
+        # Yıl kısıtlaması kaldırıldı - yükleme seçili yıl için yapılır
+        self._import_zone = ttk.LabelFrame(self, text="A) Veri Yukleme", padding=10)
+        self._import_zone.pack(fill=tk.X, pady=(8, 8))
 
-        self.btn_import = ttk.Button(import_zone, text="Excel Sec ve Yukle", command=self.import_curriculum_excel)
+        self.btn_import = ttk.Button(self._import_zone, text="Excel Sec ve Yukle", command=self.import_curriculum_excel)
         self.btn_import.pack(side=tk.LEFT, padx=(0, 10))
 
         self.lbl_import_state = ttk.Label(
-            import_zone,
-            text="Yukleme yalnizca yil=2022 seciminde aktiftir.",
+            self._import_zone,
+            text="Yukleme secili yil icin aktiftir.",
         )
         self.lbl_import_state.pack(side=tk.LEFT)
 
@@ -202,8 +208,8 @@ class ToolsTab(ttk.Frame):
             self._clear_views()
             return
 
-        self._fill_years()
         self._fill_faculties()
+        self._fill_years()
         self._update_import_state()
         self.load_report()
 
@@ -213,26 +219,74 @@ class ToolsTab(ttk.Frame):
         if self.tree_curr:
             self.tree_curr.delete(*self.tree_curr.get_children())
 
+    def _parse_year_text(self, raw: str | None) -> int | None:
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        try:
+            year = int(text)
+        except Exception:
+            return None
+        return year if year > 0 else None
+
+    def _merge_year_values(self, years: list[str], extra_year: int | None = None) -> list[str]:
+        merged = {str(int(y)) for y in years if self._parse_year_text(y) is not None}
+        if extra_year is not None:
+            merged.add(str(int(extra_year)))
+        return sorted(merged, key=lambda item: int(item))
+
+    def _commit_year_input(self, _event=None):
+        if not self.cb_yil:
+            return
+        year = self._parse_year_text(self.cb_yil.get())
+        if year is not None:
+            merged = self._merge_year_values(list(self.cb_yil.cget("values") or []), year)
+            self.cb_yil["values"] = merged
+            self.cb_yil.set(str(year))
+        self._update_import_state()
+        self.load_report()
+
     def _fill_years(self):
+        """Yil listesi: secili fakultenin gercek mufredat yillari (global sabit aralik yok)."""
         if not self.cb_yil or not self._db_ready():
             return
         try:
+            current_year = self._parse_year_text(self.cb_yil.get())
+            faculty_name = self.cb_fakulte.get() if self.cb_fakulte else ""
+            if not faculty_name:
+                self.cb_yil["values"] = []
+                if current_year is None:
+                    self.cb_yil.set("")
+                return
+            _, fid_rows = self.db.run_sql(
+                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
+                (faculty_name,),
+            )
+            if not fid_rows:
+                self.cb_yil["values"] = []
+                if current_year is None:
+                    self.cb_yil.set("")
+                return
+            faculty_id = int(fid_rows[0][0])
             _, rows = self.db.run_sql(
                 """
-                SELECT DISTINCT yil FROM (
-                    SELECT yil FROM havuz
-                    UNION
-                    SELECT akademik_yil AS yil FROM mufredat
-                )
-                WHERE yil IS NOT NULL
-                ORDER BY yil
-                """
+                SELECT DISTINCT m.akademik_yil
+                FROM mufredat m
+                JOIN bolum b ON b.bolum_id = m.bolum_id
+                WHERE b.fakulte_id = ?
+                ORDER BY m.akademik_yil
+                """,
+                (faculty_id,),
             )
-            years = [str(r[0]) for r in (rows or [])]
+            years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
             if not years:
+                # Ilk mufredat yuklemesi: henuz kayit yok; tek onerilen yil (sabit aralik degil)
                 years = [str(datetime.datetime.now().year)]
+            years = self._merge_year_values(years, current_year)
             self.cb_yil["values"] = years
-            if self.cb_yil.get() not in years:
+            if current_year is not None:
+                self.cb_yil.set(str(current_year))
+            elif self.cb_yil.get() not in years:
                 self.cb_yil.set(years[-1])
         except Exception as exc:
             self.log(f"Yil listesi yuklenemedi: {exc}")
@@ -272,6 +326,8 @@ class ToolsTab(ttk.Frame):
         except Exception as exc:
             self.log(f"Bolum listesi yuklenemedi: {exc}")
         finally:
+            self._fill_years()
+            self._update_import_state()
             self.load_report()
 
     def _on_year_change(self, _event):
@@ -279,16 +335,22 @@ class ToolsTab(ttk.Frame):
         self.load_report()
 
     def _update_import_state(self):
+        """Yükleme durumunu günceller - artık yıl kısıtlaması yok, seçili yıl için yükleme yapılır."""
         year = self.cb_yil.get() if self.cb_yil else ""
-        active = self._db_ready() and year == "2022"
+        parsed_year = self._parse_year_text(year)
+        # Yıl kısıtlaması kaldırıldı - yükleme her zaman aktif (DB bağlantısı varsa)
+        active = self._db_ready() and parsed_year is not None
         if self.btn_import:
             self.btn_import.config(state=("normal" if active else "disabled"))
+        # Zone başlığını dinamik güncelle
+        if hasattr(self, "_import_zone") and self._import_zone:
+            self._import_zone.config(text=f"A) Veri Yukleme ({year})" if year else "A) Veri Yukleme")
         if not self._db_ready():
             self._set_import_state_label("Veritabani baglantisi yok.")
+        elif year and parsed_year is None:
+            self._set_import_state_label("Gecerli bir akademik yil giriniz.")
         elif active:
-            self._set_import_state_label("Yukleme aktif: 2022 secili.")
-        else:
-            self._set_import_state_label("Yukleme pasif: yalnizca 2022 yilinda aktif.")
+            self._set_import_state_label(f"Yukleme aktif: {parsed_year} secili.")
 
     # ---------------------------------------------------------
     # Reporting
@@ -394,8 +456,13 @@ class ToolsTab(ttk.Frame):
         if not self._db_ready():
             messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")
             return
-        if not self.cb_yil or self.cb_yil.get() != "2022":
-            messagebox.showwarning("Kisit", "Yukleme sadece 2022 yili seciliyken aktiftir.")
+        if not self.cb_yil or not (self.cb_yil.get() or "").strip():
+            messagebox.showwarning("Uyari", "Once akademik yil seciniz.")
+            return
+        try:
+            target_year = int(self.cb_yil.get())
+        except Exception:
+            messagebox.showwarning("Uyari", "Gecerli bir akademik yil seciniz.")
             return
         if not self.db_path or not os.path.exists(self.db_path):
             messagebox.showwarning("Uyari", "Veritabani dosyasi bulunamadi.")
@@ -408,7 +475,7 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
-        result = run_curriculum_import(db_path=self.db_path, excel_path=excel_path, target_year=2022)
+        result = run_curriculum_import(db_path=self.db_path, excel_path=excel_path, target_year=target_year)
         if result.get("ok"):
             self.log("Yukleme basarili:")
             self.log(result.get("message", ""))
@@ -421,6 +488,10 @@ class ToolsTab(ttk.Frame):
                 self.log(f"Uyari: {warn}")
             messagebox.showinfo("Tamam", result.get("message", "Yukleme tamamlandi."))
             self.refresh()
+            try:
+                self.app.tab_calc.refresh(force_reload=True)
+            except Exception:
+                pass
         else:
             self.log("Yukleme basarisiz:")
             self.log(result.get("message", ""))
@@ -451,8 +522,11 @@ class ToolsTab(ttk.Frame):
                 )
                 """
             )
-            min_yil = int(rows[0][0]) if rows and rows[0][0] is not None else 2022
-            max_yil = int(rows[0][1]) if rows and rows[0][1] is not None else min_yil
+            if not rows or rows[0][0] is None:
+                messagebox.showwarning("Uyari", "Havuz veya mufredat icin yil bulunamadi.")
+                return
+            min_yil = int(rows[0][0])
+            max_yil = int(rows[0][1]) if rows[0][1] is not None else min_yil
             mufredat_durumunu_esitle(
                 self.db_path,
                 baslangic_yili=min_yil,

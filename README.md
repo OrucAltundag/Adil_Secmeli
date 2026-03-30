@@ -30,6 +30,13 @@ Masaustu:
 python -m app.main
 ```
 
+Headless / Codespaces:
+```bash
+python -m app.main --mode api --host 0.0.0.0 --port 8000
+```
+
+Not: `python -m app.main` veya `python main.py` komutu GUI olmayan ortamda otomatik olarak API moduna duser.
+
 API:
 ```bash
 uvicorn app.api.main:app --host 0.0.0.0 --port 8000

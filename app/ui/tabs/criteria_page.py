@@ -74,6 +74,38 @@ class CriteriaPage:
         except Exception as e:
             print(f"ders_kriterleri tablo oluşturma hatası: {e}")
 
+    def _refresh_related_views(self, restore_course_id=None):
+        """
+        Kriter kaydı sonrası ilgili ekranları yeniler.
+        Bu metod tüm bağlı sekmeler için refresh tetikler.
+        """
+        if not self.app:
+            return
+        try:
+            # CalcTab (Havuz Yönetimi dahil) yenile
+            if hasattr(self.app, "tab_calc"):
+                self.app.tab_calc.refresh(force_reload=True)
+        except Exception as exc:
+            print(f"[CriteriaPage] tab_calc refresh hatasi: {exc}")
+        try:
+            # Rapor & Yükleme sekmesini yenile
+            if hasattr(self.app, "tab_tools"):
+                self.app.tab_tools.refresh()
+        except Exception as exc:
+            print(f"[CriteriaPage] tab_tools refresh hatasi: {exc}")
+        try:
+            # Veri Görüntüleme sekmesini yenile
+            if hasattr(self.app, "tab_view"):
+                self.app.tab_view.refresh()
+        except Exception as exc:
+            print(f"[CriteriaPage] tab_view refresh hatasi: {exc}")
+        try:
+            # Kriter listesini restore et
+            if restore_course_id is not None:
+                self.load_courses(restore_course_id=restore_course_id)
+        except Exception as exc:
+            print(f"[CriteriaPage] load_courses refresh hatasi: {exc}")
+
     def setup_ui(self):
         # --- ANA DÜZEN: Üst (Filtre), Sol (Liste), Sağ (Form) ---
         
@@ -136,11 +168,12 @@ class CriteriaPage:
         tk.Label(parent, text="Bölüm:", **lbl_style).pack(side=tk.LEFT, padx=10)
         self.cb_bolum = ttk.Combobox(parent, state="readonly", width=25)
         self.cb_bolum.pack(side=tk.LEFT, padx=5)
+        # Bölüm değişince yıl listesini güncelle
+        self.cb_bolum.bind("<<ComboboxSelected>>", self._on_department_change)
         
-        # Yıl (varsayılan 2022 - müfredat genelde bu yılda dolu)
+        # Yıl - artık hard-coded değil, veritabanından dinamik yükleniyor
         tk.Label(parent, text="Yıl:", **lbl_style).pack(side=tk.LEFT, padx=10)
-        self.cb_yil = ttk.Combobox(parent, state="readonly", width=10, values=["2022", "2023", "2024", "2025"])
-        self.cb_yil.current(0)
+        self.cb_yil = ttk.Combobox(parent, state="readonly", width=10, values=[])
         self.cb_yil.pack(side=tk.LEFT, padx=5)
 
         # Dönem
@@ -261,6 +294,7 @@ class CriteriaPage:
             if ok:
                 messagebox.showinfo("Tamam", msg)
                 self.load_courses()
+                self._refresh_related_views()
             else:
                 messagebox.showerror("Hata", msg)
         except Exception as e:
@@ -294,6 +328,7 @@ class CriteriaPage:
             if not res:
                 return
             fid = res[0][0]
+            self._current_fakulte_id = int(fid)  # Fakülte ID'sini sakla
             _, res_bolum = self.db.run_sql("SELECT ad FROM bolum WHERE fakulte_id=?", (fid,))
             vals = [str(r[0]) for r in res_bolum] if res_bolum else []
             self.cb_bolum["values"] = vals
@@ -301,8 +336,90 @@ class CriteriaPage:
                 self.cb_bolum.set(_preserve_bolum)
             elif vals:
                 self.cb_bolum.current(0)
+            # Bölüm değişince yıl listesini de güncelle
+            self._refresh_years_for_selection()
         except Exception as e:
             print(f"Bölüm yükleme hatası: {e}")
+
+    def _on_department_change(self, event=None):
+        """Bölüm değiştiğinde yıl listesini günceller."""
+        self._refresh_years_for_selection()
+
+    def _refresh_years_for_selection(self):
+        """
+        Seçili fakülte/bölüm için müfredatı olan yılları yükler.
+        Hard-coded yıl listesi kaldırıldı - sadece gerçek müfredat verisi kullanılıyor.
+        """
+        if not getattr(self.db, "conn", None):
+            return
+        
+        fakulte = self.cb_fakulte.get()
+        bolum = self.cb_bolum.get()
+        
+        if not fakulte:
+            self.cb_yil["values"] = []
+            return
+        
+        try:
+            # Fakülte ID'sini al
+            _, res = self.db.run_sql("SELECT fakulte_id FROM fakulte WHERE ad=?", (fakulte,))
+            if not res:
+                self.cb_yil["values"] = []
+                return
+            fid = int(res[0][0])
+            
+            # Bölüm ID'sini al (varsa)
+            bid = None
+            if bolum:
+                _, res_bol = self.db.run_sql(
+                    "SELECT bolum_id FROM bolum WHERE fakulte_id=? AND ad=?", 
+                    (fid, bolum)
+                )
+                if res_bol:
+                    bid = int(res_bol[0][0])
+            
+            # Müfredatı olan yılları sorgula (fakülte + bölüm bazlı)
+            if bid:
+                # Belirli bir bölüm için müfredat yılları
+                _, rows = self.db.run_sql(
+                    """
+                    SELECT DISTINCT m.akademik_yil
+                    FROM mufredat m
+                    WHERE m.bolum_id = ?
+                    ORDER BY m.akademik_yil
+                    """,
+                    (bid,)
+                )
+            else:
+                # Fakültenin tüm bölümleri için müfredat yılları
+                _, rows = self.db.run_sql(
+                    """
+                    SELECT DISTINCT m.akademik_yil
+                    FROM mufredat m
+                    JOIN bolum b ON b.bolum_id = m.bolum_id
+                    WHERE b.fakulte_id = ?
+                    ORDER BY m.akademik_yil
+                    """,
+                    (fid,)
+                )
+            
+            years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
+            
+            # Mevcut seçimi koru veya en son yılı seç
+            prev_year = self.cb_yil.get()
+            self.cb_yil["values"] = years
+            
+            if years:
+                if prev_year in years:
+                    self.cb_yil.set(prev_year)
+                else:
+                    self.cb_yil.set(years[-1])  # En son yılı seç
+            else:
+                self.cb_yil.set("")
+                
+        except Exception as e:
+            print(f"Yıl listesi yükleme hatası: {e}")
+            self.cb_yil["values"] = []
 
 
     def load_courses(self, restore_course_id=None):
@@ -722,11 +839,8 @@ class CriteriaPage:
                 msg += "\n\n" + "\n".join(status_messages)
             messagebox.showinfo("Başarılı", msg)
             self.load_courses(restore_course_id=c_id)
-            if self.app:
-                try:
-                    self.app.tab_view.refresh()
-                except Exception:
-                    pass
+            # Tüm ilgili sekmeleri yenile (tab_view dahil)
+            self._refresh_related_views(restore_course_id=c_id)
 
         except ValueError:
             messagebox.showerror("Hata", "Lütfen sayısal alanlara sadece rakam giriniz!")

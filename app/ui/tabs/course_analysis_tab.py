@@ -394,7 +394,6 @@ class CourseAnalysisTab(ttk.Frame):
         prev_fak = self.cb_fakulte.get()
         prev_ders = self.cb_ders.get()
 
-        self._load_years()
         self._load_faculties()
 
         if prev_yil:
@@ -457,6 +456,7 @@ class CourseAnalysisTab(ttk.Frame):
         tk.Label(bar, text="Yil:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
         self.cb_yil = ttk.Combobox(bar, state="readonly", width=7)
         self.cb_yil.pack(side=tk.LEFT, padx=(0, 10))
+        self.cb_yil.bind("<<ComboboxSelected>>", self._on_year_change)
 
         tk.Label(bar, text="Fakulte:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
         self.cb_fakulte = ttk.Combobox(bar, state="readonly", width=28)
@@ -611,55 +611,19 @@ class CourseAnalysisTab(ttk.Frame):
     #  VERI YUKLEME
     # =========================================================
     def _load_initial_data(self):
-        self._load_years()
         self._load_faculties()
-
-    def _load_years(self):
-        """
-        Yil listesini veritabanindan dinamik doldurur.
-        Varsayilan olarak en guncel yil secilir.
-        """
-        default_years = ["2022", "2023", "2024", "2025"]
-        try:
-            if not getattr(self.db, "conn", None):
-                self.cb_yil["values"] = tuple(default_years)
-                self.cb_yil.set(default_years[-1])
-                self._global_year_values = list(default_years)
-                return
-
-            _, rows = self.db.run_sql(
-                """
-                SELECT DISTINCT yil
-                FROM (
-                    SELECT yil as yil FROM havuz
-                    UNION
-                    SELECT akademik_yil as yil FROM mufredat
-                )
-                WHERE yil IS NOT NULL
-                ORDER BY yil
-                """
-            )
-            years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
-            if not years:
-                years = default_years
-
-            self._global_year_values = list(years)
-            self.cb_yil["values"] = tuple(years)
-            self.cb_yil.set(years[-1])
-        except Exception as e:
-            print(f"[CourseAnalysisTab] _load_years hatasi: {e}")
-            self._global_year_values = list(default_years)
-            self.cb_yil["values"] = tuple(default_years)
-            self.cb_yil.set(default_years[-1])
 
     def _sync_year_for_faculty(self, fakulte_id: int):
         """
-        Secili fakulte icin mufredatta bulunan en guncel yili secer.
+        Secili fakulte icin yalnizca o fakultenin mufredat yillarini listeler
+        (global havuz birlesimi yok — baska fakultenin yili gorunmez).
         """
         try:
-            yil_list = list(getattr(self, "_global_year_values", []))
-            if not yil_list:
-                yil_list = [str(v) for v in self.cb_yil.cget("values")]
+            if not getattr(self.db, "conn", None):
+                self.cb_yil["values"] = tuple()
+                self.cb_yil.set("")
+                self._global_year_values = []
+                return
 
             _, rows = self.db.run_sql(
                 """
@@ -672,15 +636,75 @@ class CourseAnalysisTab(ttk.Frame):
                 (int(fakulte_id),),
             )
             fakulte_years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
-            hedef = fakulte_years[-1] if fakulte_years else (yil_list[-1] if yil_list else "")
-
-            merged = sorted(set(yil_list + fakulte_years), key=lambda x: int(x))
-            if merged:
-                self.cb_yil["values"] = tuple(merged)
-            if hedef:
-                self.cb_yil.set(hedef)
+            previous = self.cb_yil.get()
+            self._global_year_values = list(fakulte_years)
+            self.cb_yil["values"] = tuple(fakulte_years)
+            if previous and previous in fakulte_years:
+                self.cb_yil.set(previous)
+            elif fakulte_years:
+                self.cb_yil.set(fakulte_years[-1])
+            else:
+                self.cb_yil.set("")
         except Exception as e:
             print(f"[CourseAnalysisTab] _sync_year_for_faculty hatasi: {e}")
+
+    def _refresh_courses_for_scope(self, fakulte_id: int, yil_raw: str | None):
+        prev_ders = self.cb_ders.get()
+        self._ders_list = []
+        self._ders_map = {}
+
+        try:
+            yil = int(str(yil_raw or "").strip())
+        except Exception:
+            self._update_ders_combo("")
+            return
+
+        try:
+            seen = {}
+
+            _, curriculum_rows = self.db.run_sql(
+                """
+                SELECT DISTINCT d.ders_id, d.ad
+                FROM ders d
+                JOIN mufredat_ders md ON d.ders_id = md.ders_id
+                JOIN mufredat m ON md.mufredat_id = m.mufredat_id
+                JOIN bolum b ON m.bolum_id = b.bolum_id
+                WHERE b.fakulte_id = ? AND m.akademik_yil = ?
+                ORDER BY d.ad
+                """,
+                (int(fakulte_id), int(yil)),
+            )
+            for r in (curriculum_rows or []):
+                seen[int(r[0])] = (int(r[0]), str(r[1] or ""))
+
+            _, havuz_rows = self.db.run_sql(
+                """
+                SELECT DISTINCT CAST(h.ders_id AS INTEGER), COALESCE(d.ad, 'Ders ' || h.ders_id)
+                FROM havuz h
+                LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
+                WHERE h.fakulte_id = ? AND h.yil = ?
+                ORDER BY 2
+                """,
+                (int(fakulte_id), int(yil)),
+            )
+            for r in (havuz_rows or []):
+                ders_id = int(r[0])
+                if ders_id not in seen:
+                    seen[ders_id] = (ders_id, str(r[1] or ""))
+
+            self._ders_list = [
+                (f"{ders_id} — {ders_adi}", ders_id)
+                for ders_id, ders_adi in sorted(seen.values(), key=lambda item: (str(item[1]), item[0]))
+            ]
+            self._ders_map = {display: ders_id for display, ders_id in self._ders_list}
+            self._update_ders_combo("")
+            if prev_ders and prev_ders in getattr(self.cb_ders, "_all_values", []):
+                self.cb_ders.set(prev_ders)
+        except Exception as e:
+            print(f"[CourseAnalysisTab] kapsamli ders listesi hatasi: {e}")
+            self._ders_list = []
+            self._ders_map = {}
+            self._update_ders_combo("")
 
     def _load_faculties(self):
         try:
@@ -717,65 +741,36 @@ class CourseAnalysisTab(ttk.Frame):
                     return
                 fid = int(rows[0][0])
             self._sync_year_for_faculty(fid)
-
-            ders_rows = []
-            # 1) Müfredat yolu: müfredat->bolum->fakulte (Mühendislik, Tıp vb. için)
-            try:
-                _, d1 = self.db.run_sql(
-                    """SELECT DISTINCT d.ders_id, d.ad
-                       FROM ders d
-                       JOIN mufredat_ders md ON d.ders_id = md.ders_id
-                       JOIN mufredat m ON md.mufredat_id = m.mufredat_id
-                       JOIN bolum b ON m.bolum_id = b.bolum_id
-                       WHERE b.fakulte_id = ?
-                       ORDER BY d.ad""",
-                    (fid,)
-                )
-                ders_rows = list(d1 or [])
-            except Exception:
-                pass
-
-            # 2) ders.fakulte_id ile (bazı şemalarda doğrudan bağlı)
-            try:
-                _, d2 = self.db.run_sql(
-                    "SELECT DISTINCT ders_id, ad FROM ders WHERE fakulte_id = ? ORDER BY ad",
-                    (fid,)
-                )
-                # Birleştir, tekrarları kaldır
-                seen = {int(r[0]): (int(r[0]), str(r[1] or "")) for r in (ders_rows or [])}
-                for r in (d2 or []):
-                    k = int(r[0])
-                    if k not in seen:
-                        seen[k] = (k, str(r[1] or ""))
-                ders_rows = sorted(seen.values(), key=lambda x: (str(x[1]), x[0]))
-            except Exception:
-                if not ders_rows:
-                    pass  # ders_rows zaten bos
-
-            # 3) Hâlâ boşsa havuz tablosundan al
-            if not ders_rows:
-                try:
-                    _, havuz_rows = self.db.run_sql(
-                        """SELECT DISTINCT h.ders_id, COALESCE(d.ad, 'Ders ' || h.ders_id)
-                           FROM havuz h
-                           LEFT JOIN ders d ON h.ders_id = d.ders_id
-                           WHERE h.fakulte_id = ?
-                           ORDER BY 2""",
-                        (fid,)
-                    )
-                    ders_rows = havuz_rows or []
-                except Exception:
-                    ders_rows = []
-
-            # Format: "id — ad" (arama ve listeleme icin)
-            self._ders_list = [
-                (f"{r[0]} — {r[1]}", int(r[0])) for r in (ders_rows or [])
-            ]
-            self._ders_map = {display: d_id for display, d_id in self._ders_list}
-            # Fakulte degisince eski ders metnini filtre olarak tasima.
-            self._update_ders_combo("")
+            self._refresh_courses_for_scope(fid, self.cb_yil.get())
         except Exception as e:
             print(f"[CourseAnalysisTab] fakulte degisimi hatasi: {e}")
+            self._ders_list = []
+            self._ders_map = {}
+            self._update_ders_combo("")
+
+    def _on_year_change(self, _event=None):
+        fak = self.cb_fakulte.get()
+        if not fak:
+            self._ders_list = []
+            self._ders_map = {}
+            self._update_ders_combo("")
+            return
+        try:
+            fid = getattr(self, "_fakulte_map", {}).get(fak)
+            if fid is None:
+                _, rows = self.db.run_sql(
+                    "SELECT fakulte_id FROM fakulte WHERE TRIM(ad) = TRIM(?)",
+                    (fak,),
+                )
+                if not rows:
+                    self._ders_list = []
+                    self._ders_map = {}
+                    self._update_ders_combo("")
+                    return
+                fid = int(rows[0][0])
+            self._refresh_courses_for_scope(int(fid), self.cb_yil.get())
+        except Exception as e:
+            print(f"[CourseAnalysisTab] yil degisimi hatasi: {e}")
             self._ders_list = []
             self._ders_map = {}
             self._update_ders_combo("")

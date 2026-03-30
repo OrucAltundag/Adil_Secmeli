@@ -8,8 +8,10 @@
 #   3. Ders Iliskileri & Kurallar (NLP benzerlik grafi)
 #   4. Havuz Yonetimi (PoolTab — fakulte/yil/donem bazli havuz gorunumu)
 #
-# "Sonraki Yil Mufredat Uret" butonu secili yil icin manuel algoritma calistirir.
-# "Tam Ekran" butonu PanedWindow'dan ust paneli gizleyerek analiz labini buyutur.
+# "Sonraki Yil Mufredat Uret" butonu secili fakulte ve yil icin:
+#   - Fakulte bazli kriter tamlık kontrolu yapar
+#   - Eksik varsa uyari verir
+#   - Tamam ise algoritmalari calistirir ve sonraki yil mufredatini uretir
 # =============================================================================
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -20,6 +22,18 @@ from app.ui.tabs.pool_tab import PoolTab
 from app.ui.tabs.relations_tab import RelationsTab
 from app.ui.tabs.criteria_page import CriteriaPage
 from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
+from app.services.yearly_workflow import (
+    is_faculty_criteria_complete,
+    get_missing_criteria,
+    get_faculty_year_status,
+    get_years_eligible_for_algorithm,
+)
+
+# Kullanici mesaji (tam metin — spesifikasyon)
+_MSG_CRITERIA_BLOCK = (
+    "Bu fakültede bütün bölümlerin bu yıl özelinde kriter giriş işlemleri tamamlanmadı. "
+    "Yeni yıl müfredatı oluşturulamaz."
+)
 
 
 
@@ -41,6 +55,8 @@ class CalcTab(ttk.Frame):
         self.ui_refs = {}
         self.results_cache = {}
         self.cb_algo_year = None
+        self.cb_algo_fakulte = None  # Fakülte combobox'ı
+        self._fakulte_map = {}  # ad -> id eşlemesi
 
 
         # ---- Nested Notebook ----
@@ -126,30 +142,53 @@ class CalcTab(ttk.Frame):
         except Exception as e:
             print(f"[CalcTab] load_courses hatasi: {e}")
         try:
+            self._refresh_algo_faculty_options()
             self._refresh_algo_year_options()
         except Exception:
             pass
 
+    def _refresh_algo_faculty_options(self):
+        """Algoritma paneli için fakülte listesini yükler."""
+        if not self.cb_algo_fakulte:
+            return
+        previous = self.cb_algo_fakulte.get()
+        try:
+            _, rows = self.db.run_sql("SELECT fakulte_id, ad FROM fakulte ORDER BY ad")
+            faculties = [str(r[1]) for r in (rows or []) if r and r[1]]
+            self._fakulte_map = {str(r[1]): int(r[0]) for r in (rows or []) if r and r[1]}
+            self.cb_algo_fakulte["values"] = faculties
+            if faculties:
+                if previous in faculties:
+                    self.cb_algo_fakulte.set(previous)
+                else:
+                    self.cb_algo_fakulte.set(faculties[0])
+        except Exception as e:
+            print(f"[CalcTab] Fakulte listesi yuklenemedi: {e}")
+
+    def _on_algo_faculty_change(self, event=None):
+        """Fakülte değişince yıl listesini o fakülteye göre güncelle."""
+        self._refresh_algo_year_options()
+
     def _refresh_algo_year_options(self):
+        """
+        Algoritma paneli yil listesi: secili fakultede tum bolumlerin kriter girisi
+        tamamlanmis akademik yillar (sabit aralik / havuz copu yil yok).
+        """
         if not self.cb_algo_year:
             return
         previous = self.cb_algo_year.get()
-        years = []
+        years: list[str] = []
+
+        fakulte_name = self.cb_algo_fakulte.get() if self.cb_algo_fakulte else ""
+        fakulte_id = self._fakulte_map.get(fakulte_name) if fakulte_name else None
+
         try:
-            _, rows = self.db.run_sql(
-                """
-                SELECT DISTINCT yil FROM (
-                    SELECT yil as yil FROM havuz
-                    UNION
-                    SELECT akademik_yil as yil FROM mufredat
-                )
-                WHERE yil IS NOT NULL
-                ORDER BY yil
-                """
-            )
-            years = [str(r[0]) for r in (rows or []) if r and r[0] is not None]
-        except Exception:
-            years = []
+            conn = getattr(self.db, "conn", None)
+            if conn and fakulte_id:
+                years_int = get_years_eligible_for_algorithm(conn, int(fakulte_id))
+                years = [str(y) for y in years_int]
+        except Exception as e:
+            print(f"[CalcTab] Algoritma yil listesi: {e}")
 
         if years:
             self.cb_algo_year["values"] = years
@@ -157,6 +196,20 @@ class CalcTab(ttk.Frame):
                 self.cb_algo_year.set(previous)
             else:
                 self.cb_algo_year.set(years[-1])
+        else:
+            self.cb_algo_year["values"] = []
+            self.cb_algo_year.set("")
+
+    def _algo_scope(self) -> tuple[int, str, int]:
+        """Algoritma paneli: (fakulte_id, fakulte_ad, akademik_yil)."""
+        name = self.cb_algo_fakulte.get() if self.cb_algo_fakulte else ""
+        fid = self._fakulte_map.get(name)
+        if not fid:
+            raise ValueError("Lutfen bir fakulte seciniz.")
+        ystr = (self.cb_algo_year.get() or "").strip() if self.cb_algo_year else ""
+        if not ystr:
+            raise ValueError("Lutfen bir yil seciniz.")
+        return int(fid), name, int(ystr)
 
 
 
@@ -164,7 +217,16 @@ class CalcTab(ttk.Frame):
     #  1) ALGO PANEL
     # =========================================================
     def setup_algo_panel(self, parent):
-        """Algoritma kontrol panelini olusturur: ust barda sonraki yil uretim + tumunu calistir butonlari, sol tarafta her algoritma icin calistir/goster butonlari, sag tarafta log/sonuc alani, altta ders analiz laboratuvari."""
+        """
+        Algoritma kontrol panelini olusturur:
+        - Ust bar: Fakulte ve Yil secimi + Sonraki Yil Mufredat Uret butonu
+        - Sol: Her algoritma icin calistir/goster butonlari
+        - Sag: Log/sonuc alani
+        - Alt: Ders analiz laboratuvari
+        
+        NOT: "Tumunu Calistir" butonu kaldirildi - islevi "Sonraki Yil Mufredat Uret"
+        butonuna tasindi. Bu buton artik fakulte bazli kriter tamlık kontrolu yapar.
+        """
         # Dikey bolum: Ust = Genel Kontrol, Alt = Ders Laboratuvari
         paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, bg="#cbd5e1")
         paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -195,28 +257,35 @@ class CalcTab(ttk.Frame):
         )
         self._lbl_next_year_status.pack(side=tk.LEFT, padx=4)
 
+        # Fakülte seçimi - yıl listesi fakülteye göre güncellenir
+        tk.Label(
+            next_year_bar,
+            text="Fakulte:",
+            bg="#0f172a",
+            fg="#cbd5e1",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side=tk.LEFT, padx=(16, 4))
+        self.cb_algo_fakulte = ttk.Combobox(next_year_bar, state="readonly", width=28)
+        self.cb_algo_fakulte.pack(side=tk.LEFT, padx=(0, 8))
+        self.cb_algo_fakulte.bind("<<ComboboxSelected>>", self._on_algo_faculty_change)
+
         tk.Label(
             next_year_bar,
             text="Yil:",
             bg="#0f172a",
             fg="#cbd5e1",
             font=("Segoe UI", 9, "bold"),
-        ).pack(side=tk.LEFT, padx=(16, 4))
+        ).pack(side=tk.LEFT, padx=(8, 4))
         self.cb_algo_year = ttk.Combobox(next_year_bar, state="readonly", width=8)
         self.cb_algo_year.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # Fakülte ve yıl combobox'larını doldur
+        self._refresh_algo_faculty_options()
         self._refresh_algo_year_options()
 
-        btn_run_all_top = tk.Button(
-            next_year_bar,
-            text="Tumunu Calistir",
-            bg="#2563eb", fg="white", activebackground="#1d4ed8", activeforeground="white",
-            font=("Segoe UI", 10, "bold"),
-            cursor="hand2",
-            relief="flat", bd=0,
-            padx=16, pady=4,
-            command=self.run_all_algorithms,
-        )
-        btn_run_all_top.pack(side=tk.RIGHT)
+        # "Tumunu Calistir" butonu KALDIRILDI - islevi "Sonraki Yil Mufredat Uret"
+        # butonuna tasindi. Tek buton hem kriter tamlık kontrolu yapar hem de
+        # tum algoritmalari calistirip sonraki yil mufredatini uretir.
 
         # --- Ana icerik: Sol (butonlar) + Sag (log) ---
         main_container = tk.Frame(top_container, bg="#f0f0f0")
@@ -334,20 +403,20 @@ class CalcTab(ttk.Frame):
         grid_frame.columnconfigure(1, weight=1)
         grid_frame.columnconfigure(2, weight=1)
 
-    def run_all_algorithms(self):
-        """Algoritma kontrol merkezi: secili yil icin toplu hesaplama calistir."""
-        self.result_text.config(state="normal")
-        self.result_text.delete("1.0", tk.END)
-        self.result_text.insert(
-            tk.END,
-            "Toplu hesaplama baslatiliyor...\nLutfen bekleyiniz.\n",
-        )
-        self.result_text.config(state="disabled")
-        self.run_single_step("next_year")
-        self.update_idletasks()
+    # run_all_algorithms metodu KALDIRILDI - islevi run_single_step("next_year") icine tasindi
+    # Eski kod: Algoritma kontrol merkezi: secili yil icin toplu hesaplama calistir
+    # Yeni davranis: "Sonraki Yil Mufredat Uret" butonu artik hem kriter tamlık kontrolu
+    # yapar hem de tum algoritmalari calistirip sonraki yil mufredatini uretir.
 
     def run_single_step(self, algo_id: str):
-        """Tek bir algoritma adimini calistirir. Sonucu results_cache'e kaydeder ve UI status etiketini gunceller."""
+        """
+        Tek bir algoritma adimini calistirir. Sonucu results_cache'e kaydeder ve UI status etiketini gunceller.
+        
+        "next_year" icin ozel davranis:
+        - Secili fakulte icin kriter tamlık kontrolu yapar
+        - Eksik kriter varsa hata mesaji gosterir ve islemi durdurur
+        - Tamam ise tum algoritmalari calistirip sonraki yil mufredatini uretir
+        """
         if algo_id not in self.ui_refs:
             return
 
@@ -367,23 +436,30 @@ class CalcTab(ttk.Frame):
         try:
             # 1) MOCK kontrol
             if algo_id == "mock":
-                res = self.db.run_sql("SELECT COUNT(*) FROM ogrenci")
+                fid, fac_name, yctx = self._algo_scope()
+                res = self.db.run_sql(
+                    "SELECT COUNT(*) FROM ogrenci WHERE fakulte_id = ?",
+                    (fid,),
+                )
                 sayi = res[1][0][0] if res[1] else 0
                 sonuc_metni = (
-                    "Veritabanı Durumu:\n"
+                    f"Kapsam: {fac_name} | yil {yctx}\n"
                     "==================\n"
-                    f"Toplam Öğrenci: {sayi}\n"
+                    "Veritabanı Durumu:\n"
+                    f"Bu fakultedeki ogrenci sayisi: {sayi}\n"
                     "Durum: Veriler analiz için hazır."
                 )
 
             # 2) AHP
             elif algo_id == "ahp":
+                _, fac_name, yctx = self._algo_scope()
                 from app.services.calculation import KararMotoru
                 motor = KararMotoru()
                 agirliklar = motor.ahp_calistir()
                 cr, gecerli, lambda_max = motor.ahp_tutarlilik_kontrolu(agirliklar=agirliklar)
 
-                sonuc_metni = "AHP Matrisi ve Kriter Ağırlıkları:\n==================================\n"
+                sonuc_metni = f"Kapsam: {fac_name} | yil {yctx}\n\n"
+                sonuc_metni += "AHP Matrisi ve Kriter Ağırlıkları:\n==================================\n"
                 sonuc_metni += f"1. Performans (Başarı): {agirliklar[0]:.4f} (%{agirliklar[0]*100:.1f})\n"
                 sonuc_metni += f"2. Trend:               {agirliklar[1]:.4f} (%{agirliklar[1]*100:.1f})\n"
                 sonuc_metni += f"3. Popülerlik:          {agirliklar[2]:.4f} (%{agirliklar[2]*100:.1f})\n"
@@ -393,6 +469,7 @@ class CalcTab(ttk.Frame):
 
             # 3) TREND
             elif algo_id == "trend":
+                fid, fac_name, yctx = self._algo_scope()
                 from app.services.calculation import KararMotoru
                 motor = KararMotoru()
 
@@ -401,17 +478,29 @@ class CalcTab(ttk.Frame):
                     FROM ders d
                     JOIN performans p ON d.ders_id = p.ders_id
                     WHERE p.basari_orani IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1 FROM mufredat_ders md
+                          JOIN mufredat m ON md.mufredat_id = m.mufredat_id
+                          JOIN bolum b ON m.bolum_id = b.bolum_id
+                          WHERE md.ders_id = d.ders_id AND b.fakulte_id = ?
+                            AND m.akademik_yil = ?
+                      )
                     ORDER BY d.ders_id, p.akademik_yil DESC;
                 """
-                ham_veri = self.db.read_df(sorgu)
+                ham_veri = self.db.read_df(sorgu, params=(fid, yctx))
                 if ham_veri.empty:
-                    sonuc_metni = "Veri yok! Lütfen önce MOCK veriyi çalıştırın."
+                    sonuc_metni = (
+                        f"Kapsam: {fac_name} | yil {yctx}\n"
+                        "Secili fakulte icin performans verisi yok.\n"
+                        "Kriter / performans kayitlarini kontrol edin."
+                    )
                     basarili_mi = False
                 else:
                     gruplanmis = ham_veri.groupby("ders_id")
                     sonuc_metni = (
+                        f"Kapsam: {fac_name} | referans yil {yctx}\n"
                         "--- DERSLERİN TARİHSEL BAŞARI ANALİZİ ---\n"
-                        "(Formül: 2024*%50 + 2023*%30 + 2022*%20)\n\n"
+                        "(Agirlikli gecmis yil formulu — motor)\n\n"
                     )
 
                     for _, grup in gruplanmis:
@@ -430,6 +519,7 @@ class CalcTab(ttk.Frame):
 
             # 4) TOPSIS
             elif algo_id == "topsis":
+                fid, fac_name, yctx = self._algo_scope()
                 from app.services.calculation import KararMotoru
 
                 motor = KararMotoru()
@@ -441,15 +531,25 @@ class CalcTab(ttk.Frame):
                         pop.doluluk_orani as populerlik,
                         pop.kontenjan, pop.talep_sayisi
                     FROM ders d
-                    LEFT JOIN performans p ON d.ders_id = p.ders_id
+                    LEFT JOIN performans p ON d.ders_id = p.ders_id AND p.akademik_yil = ?
                     LEFT JOIN populerlik pop ON d.ders_id = pop.ders_id
                         AND pop.akademik_yil = p.akademik_yil
                     WHERE p.basari_orani IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1 FROM mufredat_ders md
+                          JOIN mufredat m ON md.mufredat_id = m.mufredat_id
+                          JOIN bolum b ON m.bolum_id = b.bolum_id
+                          WHERE md.ders_id = d.ders_id AND b.fakulte_id = ?
+                            AND m.akademik_yil = ?
+                      )
                     ORDER BY d.ders_id, p.akademik_yil DESC;
                 """
-                ham_veri = self.db.read_df(sorgu)
+                ham_veri = self.db.read_df(sorgu, params=(yctx, fid, yctx))
                 if ham_veri.empty:
-                    sonuc_metni = "Veri bulunamadı! Lütfen önce 'MOCK' veriyi çalıştırın."
+                    sonuc_metni = (
+                        f"Kapsam: {fac_name} | yil {yctx}\n"
+                        "Bu fakulte ve yil icin TOPSIS girdileri yok.\n"
+                    )
                     basarili_mi = False
                 else:
                     anket_map = {}
@@ -460,9 +560,10 @@ class CalcTab(ttk.Frame):
                                            THEN MIN(1.0, MAX(0.0, CAST(anket_dersi_secen AS REAL) / anket_katilimci))
                                            ELSE 0.5 END as anket_orani
                                FROM ders_kriterleri
-                               WHERE anket_katilimci > 0
+                               WHERE anket_katilimci > 0 AND yil = ?
                                GROUP BY ders_id
-                               ORDER BY yil DESC"""
+                               ORDER BY yil DESC""",
+                            (yctx,),
                         )
                         for r in (anket_rows or []):
                             did = int(r[0])
@@ -503,7 +604,8 @@ class CalcTab(ttk.Frame):
                     agirliklar = motor.ahp_calistir()
                     df_sonuc, meta = motor.topsis_calistir(df_final, agirliklar)
 
-                    sonuc_metni = "--- NİHAİ KARAR MATRİSİ (TOPSIS) ---\n"
+                    sonuc_metni = f"Kapsam: {fac_name} | yil {yctx}\n"
+                    sonuc_metni += "--- NİHAİ KARAR MATRİSİ (TOPSIS) ---\n"
                     sonuc_metni += "Girdiler: Başarı + Trend + Popülerlik + Anket\n\n"
                     if not df_sonuc.empty:
                         cols = [c for c in ["Ders", "AHP_TOPSIS_Skor", "Kesinlesme_Puani", "S+", "S-"] if c in df_sonuc.columns]
@@ -511,7 +613,7 @@ class CalcTab(ttk.Frame):
                     else:
                         sonuc_metni += "Hesaplama sonucu boş döndü."
 
-            # 5) Sonraki yil mufredat uretimi (manuel, yil bazli)
+            # 5) Sonraki yil mufredat uretimi (fakulte bazli, kriter tamlık kontrolu ile)
             elif algo_id == "next_year":
                 from app.services.calculation import run_all_algorithms_for_year
                 import os
@@ -521,6 +623,16 @@ class CalcTab(ttk.Frame):
                     raise ValueError("Veritabani yolu bulunamadi.")
                 db_path = os.path.abspath(db_path)
 
+                # Seçili fakülte ID'sini al
+                secili_fakulte_id = None
+                secili_fakulte_ad = None
+                if self.cb_algo_fakulte and self.cb_algo_fakulte.get():
+                    secili_fakulte_ad = self.cb_algo_fakulte.get()
+                    secili_fakulte_id = self._fakulte_map.get(secili_fakulte_ad)
+                
+                if not secili_fakulte_id:
+                    raise ValueError("Lutfen bir fakulte seciniz.")
+
                 secili_yil = None
                 if self.cb_algo_year and self.cb_algo_year.get():
                     try:
@@ -529,15 +641,83 @@ class CalcTab(ttk.Frame):
                         secili_yil = None
                 if secili_yil is None:
                     try:
-                        _, rows = self.db.run_sql("SELECT MAX(akademik_yil) FROM mufredat")
-                        secili_yil = int(rows[0][0]) if rows and rows[0][0] is not None else 2022
+                        _, rows = self.db.run_sql(
+                            """
+                            SELECT MAX(m.akademik_yil)
+                            FROM mufredat m
+                            JOIN bolum b ON b.bolum_id = m.bolum_id
+                            WHERE b.fakulte_id = ?
+                            """,
+                            (secili_fakulte_id,),
+                        )
+                        secili_yil = int(rows[0][0]) if rows and rows[0][0] is not None else None
                     except Exception:
-                        secili_yil = 2022
+                        secili_yil = None
+                if secili_yil is None:
+                    raise ValueError(
+                        "Secili fakulte icin akademik yil yok. Yil listesinden secin veya once mufredat yukleyin."
+                    )
 
+                # FAKÜLTE BAZLI KRİTER TAMLIK KONTROLÜ
+                # Seçili fakültedeki tüm bölümlerin seçili yıl için kriter girişleri tamamlanmış olmalı
+                conn = getattr(self.db, "conn", None)
+                if conn:
+                    kriter_tamam = is_faculty_criteria_complete(conn, secili_yil, secili_fakulte_id, refresh=True)
+                    
+                    if not kriter_tamam:
+                        # Eksik kriterleri listele
+                        eksik_kriterler = get_missing_criteria(conn, secili_yil, fakulte_id=secili_fakulte_id)
+                        
+                        # Eksik bölümleri bul
+                        eksik_bolumler = set()
+                        for ek in eksik_kriterler:
+                            eksik_bolumler.add(ek.get("bolum", "?"))
+                        
+                        hata_mesaji = _MSG_CRITERIA_BLOCK + "\n\n"
+                        hata_mesaji += (
+                            f"Fakulte: {secili_fakulte_ad}\n"
+                            f"Yil: {secili_yil}\n\n"
+                            f"Eksik kriter girisi olan bolumler:\n"
+                        )
+                        for bol in sorted(eksik_bolumler):
+                            hata_mesaji += f"  - {bol}\n"
+                        
+                        if eksik_kriterler:
+                            hata_mesaji += f"\nToplam eksik ders sayisi: {len(eksik_kriterler)}\n"
+                            hata_mesaji += "\nIlk 10 eksik ders:\n"
+                            for ek in eksik_kriterler[:10]:
+                                hata_mesaji += f"  * {ek.get('bolum')} | {ek.get('ders')} (ID:{ek.get('ders_id')})\n"
+                            if len(eksik_kriterler) > 10:
+                                hata_mesaji += f"  ... +{len(eksik_kriterler) - 10} ders daha\n"
+                        
+                        sonuc_metni = hata_mesaji
+                        basarili_mi = False
+                        
+                        # UI'ı güncelle ve erken çık
+                        widgets["status"].config(text="Kriter Eksik!", fg="#ef4444")
+                        self._btn_next_year.config(
+                            state="normal", bg="#16a34a", text="Sonraki Yil Mufredat Uret"
+                        )
+                        self.results_cache[algo_id] = sonuc_metni
+                        self.result_text.config(state="normal")
+                        self.result_text.delete("1.0", tk.END)
+                        self.result_text.insert(tk.END, sonuc_metni)
+                        self.result_text.config(state="disabled")
+                        
+                        # Kullanıcıya messagebox ile de uyarı ver
+                        messagebox.showwarning(
+                            "Kriter Girisleri Eksik",
+                            _MSG_CRITERIA_BLOCK
+                            + ("\n\nEksik bolumler: " + ", ".join(sorted(eksik_bolumler)) if eksik_bolumler else ""),
+                        )
+                        return
+
+                # Kriter kontrolü geçildi - algoritmayı çalıştır (sadece seçili fakülte için)
                 summary = run_all_algorithms_for_year(
                     yil=int(secili_yil),
                     db_path=db_path,
                     donem="G",
+                    fakulte_id=secili_fakulte_id,  # Sadece seçili fakülte için çalıştır
                 )
 
                 processed = summary.get("processed", []) or []
@@ -545,7 +725,7 @@ class CalcTab(ttk.Frame):
                 errors = summary.get("errors", []) or []
 
                 lines = []
-                lines.append(f"Algoritma kontrol merkezi: {int(secili_yil)} yili calistirildi.")
+                lines.append(f"Algoritma kontrol merkezi: {secili_fakulte_ad} fakultesi, {int(secili_yil)} yili calistirildi.")
                 lines.append(
                     f"Ozet: islenen_fakulte={len(processed)} | atlanan_fakulte={len(skipped)} | hata={len(errors)}"
                 )
@@ -588,6 +768,7 @@ class CalcTab(ttk.Frame):
                 basarili_mi = bool(summary.get("ok", True)) and len(errors) == 0
 
                 try:
+                    self._refresh_algo_faculty_options()
                     self._refresh_algo_year_options()
                 except Exception:
                     pass
@@ -606,16 +787,29 @@ class CalcTab(ttk.Frame):
 
             # 6) ML
             elif algo_id in ["lr", "rf", "dt"]:
+                fid_ml, fac_ml, y_ml = self._algo_scope()
                 from app.services.ai_engine import HavuzAIEngine
+                db_oturumu = None
                 try:
                     from app.db.database import get_session
                     db_oturumu = get_session()
                     havuz_ai = HavuzAIEngine(db_oturumu)
 
-                    kfold_txt = havuz_ai.run_kfold(algorithm_type=algo_id, k=5)
-                    sonuc_metni = kfold_txt + "\n"
+                    kfold_txt = havuz_ai.run_kfold(
+                        algorithm_type=algo_id,
+                        k=5,
+                        fakulte_id=fid_ml,
+                        yil=y_ml,
+                        curriculum_only=True,
+                    )
+                    sonuc_metni = f"Kapsam: {fac_ml} | yil {y_ml}\n\n"
+                    sonuc_metni += kfold_txt + "\n"
 
-                    pred_df = havuz_ai.predict_all_courses()
+                    pred_df = havuz_ai.predict_all_courses(
+                        fakulte_id=fid_ml,
+                        yil=y_ml,
+                        curriculum_only=True,
+                    )
                     if not pred_df.empty:
                         ders_names = {}
                         try:
@@ -653,14 +847,20 @@ class CalcTab(ttk.Frame):
                             sonuc_metni += f"Tahmin dogrulugu: %{acc:.1f}\n\n"
                             display = show[["Ders", "Gercek_Lbl", "Tahmin_Lbl", "Eslesme"]]
                             sonuc_metni += display.head(25).to_string(index=False)
-
-                    db_oturumu.close()
+                    else:
+                        sonuc_metni += "\nBu fakulte ve yil kapsami icin ML tahmin verisi bulunamadi."
                 except Exception as ml_exc:
                     import traceback
                     sonuc_metni = (
                         f"ML Hata: {ml_exc}\n\n{traceback.format_exc()}"
                     )
                     basarili_mi = False
+                finally:
+                    try:
+                        if db_oturumu is not None:
+                            db_oturumu.close()
+                    except Exception:
+                        pass
 
             else:
                 sonuc_metni = f"Bu algo_id desteklenmiyor: {algo_id}"

@@ -8,7 +8,7 @@ import os
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.settings import load_settings
 from app.db.schema_compat import ensure_reporting_schema
@@ -271,7 +271,7 @@ def algoritma_tumunu_calistir(yil: int, donem: Optional[str] = "Guz"):
 
 
 @router.post("/mufredat/yukle")
-async def mufredat_yukle(file: UploadFile = File(...), hedef_yil: int = 2022):
+async def mufredat_yukle(file: UploadFile = File(...), hedef_yil: int = Form(...)):
     filename = str(file.filename or "")
     if not filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Sadece .xlsx dosyasi desteklenir")

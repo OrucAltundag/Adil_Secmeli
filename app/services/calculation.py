@@ -1932,15 +1932,26 @@ def run_all_algorithms_for_year(
     yil: int,
     db_path: str = "data/adil_secmeli.db",
     donem: str = "G",
+    fakulte_id: int | None = None,
 ) -> dict:
     """
     Algoritma kontrol merkezi icin yil bazli manuel calistirma.
+
+    Not (isim netligi): Bu fonksiyon Tk arayuzundeki MOCK/Trend/AHP/LR/RF/DT
+    dugmelerini tek tek calistirmaz; uretim hattini `generate_next_year_curricula`
+    uzerinden yurutur (icinde TOPSIS/skor ve mufredat uretimi vardir).
 
     Kurallar:
     - Sadece kriter girisi tamamlanmis fakulteler islenir.
     - Eksik fakulteler raporlanir, hesaplanmaz.
     - Basarili fakulteler icin (yil -> yil+1) mufredat uretilir.
     - Workflow durum tablolarinda algoritma calisti bilgisi islenir.
+    
+    Parametreler:
+    - yil: Kaynak yıl (bu yıldan sonraki yıla müfredat üretilir)
+    - db_path: Veritabanı dosyası yolu
+    - donem: Dönem kodu ("G"=Güz, "B"=Bahar)
+    - fakulte_id: Belirli bir fakülte için çalıştır (None=tüm fakülteler)
     """
     yil = int(yil)
     summary = {
@@ -1966,11 +1977,16 @@ def run_all_algorithms_for_year(
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     ensure_yearly_workflow_schema(conn)
-    cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY fakulte_id")
+    
+    # fakulte_id belirtildiyse sadece o fakülteyi işle, yoksa hepsini al
+    if fakulte_id is not None:
+        cur.execute("SELECT fakulte_id, ad FROM fakulte WHERE fakulte_id = ?", (int(fakulte_id),))
+    else:
+        cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY fakulte_id")
     faculties = [(int(r[0]), str(r[1] or "")) for r in cur.fetchall()]
     conn.close()
 
-    for fakulte_id, fakulte_adi in faculties:
+    for fakulte_id_iter, fakulte_adi in faculties:
         status_conn = sqlite3.connect(db_path)
         status_conn.row_factory = sqlite3.Row
         try:
@@ -1978,12 +1994,12 @@ def run_all_algorithms_for_year(
             complete = is_faculty_criteria_complete(
                 status_conn,
                 yil=yil,
-                fakulte_id=fakulte_id,
+                fakulte_id=fakulte_id_iter,
                 refresh=True,
             )
             faculty_status = get_faculty_year_status(
                 status_conn,
-                fakulte_id=fakulte_id,
+                fakulte_id=fakulte_id_iter,
                 yil=yil,
                 refresh=False,
             )
@@ -1991,14 +2007,14 @@ def run_all_algorithms_for_year(
                 missing = get_missing_criteria(
                     status_conn,
                     yil=yil,
-                    fakulte_id=fakulte_id,
+                    fakulte_id=fakulte_id_iter,
                 )
                 skip_msg = (
                     f"{fakulte_adi} fakultesi icin {yil} yili kriter girisi eksik oldugundan hesaplama yapilmadi."
                 )
                 summary["skipped"].append(
                     {
-                        "fakulte_id": fakulte_id,
+                        "fakulte_id": fakulte_id_iter,
                         "fakulte": fakulte_adi,
                         "year": yil,
                         "reason": skip_msg,
@@ -2013,7 +2029,7 @@ def run_all_algorithms_for_year(
 
         result = generate_next_year_curricula(
             db_path=db_path,
-            fakulte_id=fakulte_id,
+            fakulte_id=fakulte_id_iter,
             akademik_yil=yil,
             donem=donem,
         )
@@ -2024,7 +2040,7 @@ def run_all_algorithms_for_year(
             if result.get("ok"):
                 mark_algorithm_run(
                     conn=status_conn,
-                    fakulte_id=fakulte_id,
+                    fakulte_id=fakulte_id_iter,
                     source_year=yil,
                     generated_year=yil + 1,
                     success=True,
@@ -2037,7 +2053,7 @@ def run_all_algorithms_for_year(
             else:
                 mark_algorithm_run(
                     conn=status_conn,
-                    fakulte_id=fakulte_id,
+                    fakulte_id=fakulte_id_iter,
                     source_year=yil,
                     generated_year=None,
                     success=False,
@@ -2046,7 +2062,7 @@ def run_all_algorithms_for_year(
                 summary["ok"] = False
                 summary["errors"].append(
                     {
-                        "fakulte_id": fakulte_id,
+                        "fakulte_id": fakulte_id_iter,
                         "fakulte": fakulte_adi,
                         "year": yil,
                         "error": err_msg,

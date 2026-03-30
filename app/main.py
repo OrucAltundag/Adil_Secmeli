@@ -6,6 +6,7 @@
 # İlgili modüller: app/db (veritabanı), app/ui/tabs (sekmeler), app/services (hesaplama)
 # =============================================================================
 
+import argparse
 import json
 import os
 import sys
@@ -13,18 +14,36 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
 
+# ---------- Headless (ekransız) ortam kontrolü ----------
+def is_headless_environment() -> bool:
+    """
+    Tkinter gibi GUI araçları bir "display" ister.
+    Codespaces / container gibi ortamlarda DISPLAY olmayabilir.
+    """
+    if os.name == "nt":
+        return False
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+HEADLESS = is_headless_environment()
+
+
+def _default_api_port() -> int:
+    try:
+        return int(os.environ.get("ADIL_SECMELI_API_PORT", "8000"))
+    except (TypeError, ValueError):
+        return 8000
+
+
+DEFAULT_API_HOST = os.environ.get("ADIL_SECMELI_API_HOST", "0.0.0.0")
+DEFAULT_API_PORT = _default_api_port()
+
 # ---------- Proje kökünü Python path'e ekle ----------
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-# ---------- Veritabanı ve UI bileşenleri ----------
+# ---------- Veritabanı ve temel bileşenler ----------
 from app.db.sqlite_db import Database
-from app.ui.tabs.view_tab import ViewTab
-from app.ui.tabs.analysis_tab import AnalysisTab
-from app.ui.tabs.calc_tab import CalcTab
-from app.ui.tabs.tools_tab import ToolsTab
-from app.ui.style import apply_style
 from app.core.state import AppState
 import sqlite3
 import tkinter as tk
@@ -35,7 +54,7 @@ import pandas as pd
 
 # ---------- Grafik kütüphaneleri (Tkinter uyumlu) ----------
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg" if HEADLESS else "TkAgg")
 try:
     import seaborn as sns
 except Exception:
@@ -68,6 +87,82 @@ def load_config():
     return default
 
 
+def build_headless_message(host: str, port: int) -> str:
+    return (
+        "[GUI] Headless ortam algilandi (DISPLAY/WAYLAND_DISPLAY yok). "
+        "Tkinter arayuzu burada acilamaz.\n\n"
+        "[API] REST API modu otomatik baslatiliyor.\n"
+        f"- Adres: http://{host}:{port}\n"
+        f"- Dokumantasyon: http://{host}:{port}/docs\n\n"
+        "Masaustu arayuz icin uygulamayi GUI olan bir ortamda "
+        "`python -m app.main --mode gui` ile calistirin."
+    )
+
+
+def run_api_server(host: str, port: int) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "[API] uvicorn bulunamadi. `pip install -r requirements.txt` komutunu calistirin."
+        )
+        return 1
+
+    print(f"[API] Adil Secmeli API baslatiliyor: http://{host}:{port}/docs")
+    uvicorn.run("app.api.main:app", host=host, port=port, reload=False)
+    return 0
+
+
+def run_gui() -> int:
+    try:
+        app = AdilSecmeliApp()
+        app.mainloop()
+        return 0
+    except tk.TclError as e:
+        print(
+            "[GUI] Tkinter baslatilamadi. Muhtemelen display yok.\n"
+            f"Hata: {e}\n\n"
+            "GUI uygulamayi display olan bir ortamda calistirin."
+        )
+        return 1
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Adil Seçmeli giriş noktası (GUI veya headless API modu)."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("auto", "gui", "api"),
+        default="auto",
+        help="auto: headless ise API, degilse GUI; gui: masaustu arayuzu zorla; api: REST API baslat",
+    )
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_API_HOST,
+        help="API host adresi (headless veya --mode api icin).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_API_PORT,
+        help="API portu (headless veya --mode api icin).",
+    )
+    args = parser.parse_args(argv)
+
+    if args.mode == "api":
+        return run_api_server(args.host, args.port)
+
+    if args.mode == "gui":
+        return run_gui()
+
+    if HEADLESS:
+        print(build_headless_message(args.host, args.port))
+        return run_api_server(args.host, args.port)
+
+    return run_gui()
+
+
 
 
 
@@ -79,6 +174,12 @@ class AdilSecmeliApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
+        from app.ui.tabs.view_tab import ViewTab
+        from app.ui.tabs.analysis_tab import AnalysisTab
+        from app.ui.tabs.calc_tab import CalcTab
+        from app.ui.tabs.tools_tab import ToolsTab
+        from app.ui.style import apply_style
+
         apply_style(self)
         self.config_data = load_config()
         self.db = Database()
@@ -423,5 +524,4 @@ class AdilSecmeliApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    app = AdilSecmeliApp()
-    app.mainloop()
+    raise SystemExit(main())

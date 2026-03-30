@@ -51,12 +51,33 @@ class HavuzAIEngine:
         self.model_rf = None
         self._trained = False
 
-    def _load_training_data(self, fakulte_id=None):
+    def _load_training_data(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """
         performans + populerlik + havuz + ders_kriterleri tablolarindan
         birlestirmis egitim verisi olusturur.
         """
-        fak_filter = f"AND h.fakulte_id = {int(fakulte_id)}" if fakulte_id else ""
+        filters = ["h.statu IS NOT NULL"]
+        params = {}
+        if fakulte_id is not None:
+            filters.append("h.fakulte_id = :fakulte_id")
+            params["fakulte_id"] = int(fakulte_id)
+        if yil is not None:
+            filters.append("h.yil = :yil")
+            params["yil"] = int(yil)
+        if curriculum_only:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM mufredat_ders md
+                    JOIN mufredat m ON md.mufredat_id = m.mufredat_id
+                    JOIN bolum b ON b.bolum_id = m.bolum_id
+                    WHERE md.ders_id = CAST(h.ders_id AS INTEGER)
+                      AND b.fakulte_id = h.fakulte_id
+                      AND m.akademik_yil = h.yil
+                )
+                """
+            )
 
         q = text(f"""
             SELECT
@@ -82,11 +103,11 @@ class HavuzAIEngine:
                 ON CAST(h.ders_id AS INTEGER) = pop.ders_id AND h.yil = pop.akademik_yil
             LEFT JOIN ders_kriterleri dk
                 ON CAST(h.ders_id AS INTEGER) = dk.ders_id AND h.yil = dk.yil
-            WHERE h.statu IS NOT NULL {fak_filter}
+            WHERE {" AND ".join(filters)}
             ORDER BY h.ders_id, h.yil
         """)
         try:
-            rows = self.db.execute(q).fetchall()
+            rows = self.db.execute(q, params).fetchall()
         except Exception as exc:
             logger.warning("AI veri yuklenemedi: %s", exc)
             return pd.DataFrame()
@@ -115,11 +136,15 @@ class HavuzAIEngine:
         """ML modelleri icin kullanilan ozellik (feature) sutun listesini doner."""
         return ["basari_orani", "ortalama_not", "doluluk_orani", "anket_orani", "trend", "sayac"]
 
-    def train(self, fakulte_id=None):
+    def train(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """
         LR, RF ve DT modellerini havuz verisi uzerinde egitir. Basarili ise True, veri yetersizse False doner.
         """
-        df = self._load_training_data(fakulte_id=fakulte_id)
+        df = self._load_training_data(
+            fakulte_id=fakulte_id,
+            yil=yil,
+            curriculum_only=curriculum_only,
+        )
         if df.empty or len(df) < MIN_SAMPLES_SKLEARN:
             self._trained = False
             return False
@@ -171,14 +196,22 @@ class HavuzAIEngine:
         row = [_sf(features.get(c, 0)) for c in self._feature_cols()]
         return np.array([row])
 
-    def predict_all_courses(self, fakulte_id=None):
+    def predict_all_courses(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """Tum dersler icin toplu tahmin yapar; DataFrame doner."""
-        df = self._load_training_data(fakulte_id=fakulte_id)
+        df = self._load_training_data(
+            fakulte_id=fakulte_id,
+            yil=yil,
+            curriculum_only=curriculum_only,
+        )
         if df.empty:
             return pd.DataFrame()
 
         if not self._trained:
-            self.train(fakulte_id=fakulte_id)
+            self.train(
+                fakulte_id=fakulte_id,
+                yil=yil,
+                curriculum_only=curriculum_only,
+            )
         if not self._trained:
             return df
 
@@ -190,9 +223,13 @@ class HavuzAIEngine:
         df["dt_tahmin"] = self.model_dt.predict(X)
         return df
 
-    def run_kfold(self, algorithm_type="rf", k=5, fakulte_id=None):
+    def run_kfold(self, algorithm_type="rf", k=5, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """K-Fold cross-validation sonucu doner (string)."""
-        df = self._load_training_data(fakulte_id=fakulte_id)
+        df = self._load_training_data(
+            fakulte_id=fakulte_id,
+            yil=yil,
+            curriculum_only=curriculum_only,
+        )
         if df.empty or len(df) < MIN_SAMPLES_SKLEARN:
             return f"Egitim verisi yetersiz ({len(df)} satir, minimum {MIN_SAMPLES_SKLEARN})."
 

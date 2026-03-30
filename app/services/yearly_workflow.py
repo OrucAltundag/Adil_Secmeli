@@ -844,19 +844,58 @@ def list_active_years_for_faculty(conn: sqlite3.Connection, fakulte_id: int) -> 
     if years:
         return years
 
+    # Havuz bir fakulte icin "hayali" yil tasiyabilir; ekranda yalnizca
+    # gercekten mufredat kaydi olan akademik yillar gorunsun.
     cur.execute(
         """
-        SELECT DISTINCT yil FROM havuz WHERE fakulte_id = ?
-        UNION
         SELECT DISTINCT m.akademik_yil
         FROM mufredat m
         JOIN bolum b ON b.bolum_id = m.bolum_id
         WHERE b.fakulte_id = ?
         ORDER BY 1
         """,
-        (int(fakulte_id), int(fakulte_id)),
+        (int(fakulte_id),),
     )
     return sorted({int(r[0]) for r in cur.fetchall() if r and r[0] is not None})
+
+
+def get_years_eligible_for_algorithm(conn: sqlite3.Connection, fakulte_id: int) -> list[int]:
+    """
+    Algoritma / sonraki yil mufredat uretimi icin secilebilir yillar.
+
+    Kural: Secili fakultede o akademik yil icin tum bolumlerin secili
+    mufredattaki zorunlu kriter girisleri tamamlanmis olmali.
+    """
+    ensure_yearly_workflow_schema(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT yil FROM criteria_faculty_status
+        WHERE fakulte_id = ? AND criteria_status = ?
+        ORDER BY yil
+        """,
+        (int(fakulte_id), STATUS_COMPLETED),
+    )
+    from_status = [int(r[0]) for r in cur.fetchall() if r and r[0] is not None]
+    if from_status:
+        return sorted(set(from_status))
+
+    cur.execute(
+        """
+        SELECT DISTINCT m.akademik_yil
+        FROM mufredat m
+        JOIN bolum b ON b.bolum_id = m.bolum_id
+        WHERE b.fakulte_id = ?
+        ORDER BY m.akademik_yil
+        """,
+        (int(fakulte_id),),
+    )
+    candidates = [int(r[0]) for r in cur.fetchall() if r and r[0] is not None]
+    eligible: list[int] = []
+    for y in candidates:
+        if is_faculty_criteria_complete(conn, y, int(fakulte_id), refresh=True):
+            eligible.append(y)
+    return sorted(set(eligible))
 
 
 def record_cross_department_usage(
