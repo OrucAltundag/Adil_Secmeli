@@ -15,6 +15,7 @@ from app.db.schema_compat import ensure_reporting_schema
 from app.services.calculation import run_all_algorithms_for_year
 from app.services.course_type import build_elective_predicate
 from app.services.curriculum_import_service import import_curriculum_excel
+from app.services.survey_import_service import import_survey_excel
 from app.services.yearly_workflow import (
     get_faculty_year_status,
     list_active_years_for_faculty,
@@ -292,6 +293,45 @@ async def mufredat_yukle(file: UploadFile = File(...), hedef_yil: int = Form(...
             db_path=db_path,
             excel_path=temp_path,
             target_year=int(hedef_yil),
+        )
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+
+@router.post("/anket/yukle")
+async def anket_yukle(
+    file: UploadFile = File(...),
+    fakulte_id: int = Form(...),
+    hedef_yil: int = Form(...),
+):
+    filename = str(file.filename or "")
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Sadece .xlsx dosyasi desteklenir")
+
+    db_path = _get_db_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
+
+    import tempfile
+
+    fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(fd)
+    try:
+        content = await file.read()
+        with open(temp_path, "wb") as fh:
+            fh.write(content)
+        result = import_survey_excel(
+            db_path=db_path,
+            excel_path=temp_path,
+            faculty_id=int(fakulte_id),
+            year=int(hedef_yil),
+            source_filename=filename,
         )
         if not result.get("ok"):
             raise HTTPException(status_code=400, detail=result)

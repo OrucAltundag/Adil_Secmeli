@@ -50,6 +50,7 @@ class HavuzAIEngine:
         self.model_dt = None
         self.model_rf = None
         self._trained = False
+        self._last_training_meta = {}
 
     def _load_training_data(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """
@@ -136,17 +137,52 @@ class HavuzAIEngine:
         """ML modelleri icin kullanilan ozellik (feature) sutun listesini doner."""
         return ["basari_orani", "ortalama_not", "doluluk_orani", "anket_orani", "trend", "sayac"]
 
-    def train(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
+    def _resolve_training_frames(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """
-        LR, RF ve DT modellerini havuz verisi uzerinde egitir. Basarili ise True, veri yetersizse False doner.
+        Tahmin gosterimi ve egitim kapsamlarini ayirir.
+        UI genelde mufredat dersleri icin tahmin ister; egitim verisi azsa ayni
+        fakulte/yilin tum havuz verisine genisletilir.
         """
-        df = self._load_training_data(
+        target_df = self._load_training_data(
             fakulte_id=fakulte_id,
             yil=yil,
             curriculum_only=curriculum_only,
         )
+        fit_df = target_df
+        meta = {
+            "requested_curriculum_only": bool(curriculum_only),
+            "target_rows": len(target_df),
+            "fit_rows": len(fit_df),
+            "fit_scope": "curriculum" if curriculum_only else "faculty_year",
+            "fallback_used": False,
+        }
+
+        if curriculum_only and len(target_df) < MIN_SAMPLES_SKLEARN:
+            fallback_df = self._load_training_data(
+                fakulte_id=fakulte_id,
+                yil=yil,
+                curriculum_only=False,
+            )
+            if len(fallback_df) > len(fit_df):
+                fit_df = fallback_df
+                meta.update(
+                    {
+                        "fit_rows": len(fit_df),
+                        "fit_scope": "faculty_year",
+                        "fallback_used": True,
+                    }
+                )
+
+        self._last_training_meta = dict(meta)
+        return target_df, fit_df, meta
+
+    def _train_from_dataframe(self, df: pd.DataFrame) -> bool:
+        self.model_lr = None
+        self.model_rf = None
+        self.model_dt = None
+        self._trained = False
+
         if df.empty or len(df) < MIN_SAMPLES_SKLEARN:
-            self._trained = False
             return False
 
         feat = self._feature_cols()
@@ -169,6 +205,28 @@ class HavuzAIEngine:
 
         self._trained = True
         return True
+
+    def get_last_training_meta(self) -> dict:
+        return dict(self._last_training_meta)
+
+    def train(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
+        """
+        LR, RF ve DT modellerini havuz verisi uzerinde egitir. Basarili ise True, veri yetersizse False doner.
+        """
+        _, fit_df, meta = self._resolve_training_frames(
+            fakulte_id=fakulte_id,
+            yil=yil,
+            curriculum_only=curriculum_only,
+        )
+        if meta.get("fallback_used"):
+            logger.info(
+                "AI egitimi fakulte/yil geneline genisletildi: target=%s fit=%s fakulte_id=%s yil=%s",
+                meta.get("target_rows"),
+                meta.get("fit_rows"),
+                fakulte_id,
+                yil,
+            )
+        return self._train_from_dataframe(fit_df)
 
     def predict_basari(self, features: dict) -> float:
         """LR: gelecek yil basari orani tahmini (0-100)."""
@@ -198,21 +256,26 @@ class HavuzAIEngine:
 
     def predict_all_courses(self, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """Tum dersler icin toplu tahmin yapar; DataFrame doner."""
-        df = self._load_training_data(
+        target_df, fit_df, meta = self._resolve_training_frames(
             fakulte_id=fakulte_id,
             yil=yil,
             curriculum_only=curriculum_only,
         )
-        if df.empty:
+        if target_df.empty:
             return pd.DataFrame()
 
+        self._train_from_dataframe(fit_df)
+        df = target_df.copy()
+
         if not self._trained:
-            self.train(
-                fakulte_id=fakulte_id,
-                yil=yil,
-                curriculum_only=curriculum_only,
-            )
-        if not self._trained:
+            df["lr_tahmin"] = np.clip(df["basari_orani"].values * 100, 0, 100).round(2)
+            df["rf_tahmin"] = np.clip(
+                np.where(df["skor"].values > 0, df["skor"].values, df["basari_orani"].values * 100),
+                0,
+                100,
+            ).round(2)
+            df["dt_tahmin"] = df["statu"].astype(int)
+            df["prediction_mode"] = "fallback"
             return df
 
         feat = self._feature_cols()
@@ -221,11 +284,14 @@ class HavuzAIEngine:
         df["lr_tahmin"] = np.clip(self.model_lr.predict(X), 0, 100).round(2)
         df["rf_tahmin"] = np.clip(self.model_rf.predict(X), 0, 100).round(2)
         df["dt_tahmin"] = self.model_dt.predict(X)
+        df["prediction_mode"] = "model"
+        if meta.get("fallback_used"):
+            df["training_scope"] = meta.get("fit_scope")
         return df
 
     def run_kfold(self, algorithm_type="rf", k=5, fakulte_id=None, yil=None, curriculum_only: bool = False):
         """K-Fold cross-validation sonucu doner (string)."""
-        df = self._load_training_data(
+        _, df, meta = self._resolve_training_frames(
             fakulte_id=fakulte_id,
             yil=yil,
             curriculum_only=curriculum_only,
@@ -255,9 +321,15 @@ class HavuzAIEngine:
                 f"=== Lineer Regresyon (Basari Tahmini) ===",
                 f"K-Fold (K={n_splits}) MAE: {mae:.2f}",
                 f"Egitim verisi: {len(X)} satir",
+            ]
+            if meta.get("fallback_used"):
+                lines.append(
+                    f"Not: Mufredat kapsami {meta.get('target_rows')} satir oldugu icin fakulte geneli {meta.get('fit_rows')} satirla egitim yapildi."
+                )
+            lines.extend([
                 "",
                 "Kriter agirliklari (katsayilar):",
-            ]
+            ])
             for name, coef in coefs:
                 lines.append(f"  {name:20s}: {coef:+.4f}")
             return "\n".join(lines)
@@ -276,9 +348,15 @@ class HavuzAIEngine:
                 f"=== Karar Agaci (Statu Tahmini) ===",
                 f"K-Fold (K={n_splits}) Accuracy: {scores.mean()*100:.1f}%",
                 f"Egitim verisi: {len(X)} satir",
+            ]
+            if meta.get("fallback_used"):
+                lines.append(
+                    f"Not: Mufredat kapsami {meta.get('target_rows')} satir oldugu icin fakulte geneli {meta.get('fit_rows')} satirla egitim yapildi."
+                )
+            lines.extend([
                 "",
                 "Ozellik onemliligi:",
-            ]
+            ])
             for name, imp in importances:
                 bar = "#" * int(imp * 30)
                 lines.append(f"  {name:20s}: {imp:.3f} {bar}")
@@ -303,9 +381,15 @@ class HavuzAIEngine:
                 f"=== Random Forest (Kesinlesme Puani Tahmini) ===",
                 f"K-Fold (K={n_splits}) MAE: {mae:.2f}",
                 f"Egitim verisi: {len(X)} satir",
+            ]
+            if meta.get("fallback_used"):
+                lines.append(
+                    f"Not: Mufredat kapsami {meta.get('target_rows')} satir oldugu icin fakulte geneli {meta.get('fit_rows')} satirla egitim yapildi."
+                )
+            lines.extend([
                 "",
                 "Ozellik onemliligi:",
-            ]
+            ])
             for name, imp in importances:
                 bar = "#" * int(imp * 30)
                 lines.append(f"  {name:20s}: {imp:.3f} {bar}")

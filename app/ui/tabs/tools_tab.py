@@ -22,6 +22,10 @@ import pandas as pd
 from app.services.curriculum_import_service import import_curriculum_excel as run_curriculum_import
 from app.services.havuz_karar import mufredat_durumunu_esitle
 from app.services.reporting_service import build_report_snapshot, ensure_report_scores
+from app.services.survey_import_service import (
+    import_survey_excel as run_survey_import,
+    write_survey_template_excel,
+)
 
 
 class ToolsTab(ttk.Frame):
@@ -37,6 +41,8 @@ class ToolsTab(ttk.Frame):
         self.cb_donem: ttk.Combobox | None = None
 
         self.btn_import: ttk.Button | None = None
+        self.btn_survey_import: ttk.Button | None = None
+        self.btn_survey_template: ttk.Button | None = None
         self.lbl_import_state: ttk.Label | None = None
 
         self.lbl_pool_total: ttk.Label | None = None
@@ -70,6 +76,22 @@ class ToolsTab(ttk.Frame):
     def _set_import_state_label(self, text: str):
         if self.lbl_import_state:
             self.lbl_import_state.config(text=text)
+
+    def _selected_faculty_scope(self) -> tuple[int | None, str | None, int | None]:
+        faculty_name = self.cb_fakulte.get().strip() if self.cb_fakulte else ""
+        year = self._parse_year_text(self.cb_yil.get()) if self.cb_yil else None
+        if not faculty_name or year is None or not self._db_ready():
+            return None, (faculty_name or None), year
+        try:
+            _, rows = self.db.run_sql(
+                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
+                (faculty_name,),
+            )
+            if not rows:
+                return None, faculty_name, year
+            return int(rows[0][0]), faculty_name, int(year)
+        except Exception:
+            return None, faculty_name, year
 
     # ---------------------------------------------------------
     # UI
@@ -114,12 +136,26 @@ class ToolsTab(ttk.Frame):
         self._import_zone = ttk.LabelFrame(self, text="A) Veri Yukleme", padding=10)
         self._import_zone.pack(fill=tk.X, pady=(8, 8))
 
-        self.btn_import = ttk.Button(self._import_zone, text="Excel Sec ve Yukle", command=self.import_curriculum_excel)
+        self.btn_import = ttk.Button(self._import_zone, text="Mufredat Excel Yukle", command=self.import_curriculum_excel)
         self.btn_import.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.btn_survey_template = ttk.Button(
+            self._import_zone,
+            text="Anket Sablonu Indir",
+            command=self.download_survey_template,
+        )
+        self.btn_survey_template.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.btn_survey_import = ttk.Button(
+            self._import_zone,
+            text="Anket Sonuclari Yukle",
+            command=self.import_survey_excel,
+        )
+        self.btn_survey_import.pack(side=tk.LEFT, padx=(0, 10))
 
         self.lbl_import_state = ttk.Label(
             self._import_zone,
-            text="Yukleme secili yil icin aktiftir.",
+            text="Mufredat ve anket yukleme secili yil icin aktiftir.",
         )
         self.lbl_import_state.pack(side=tk.LEFT)
 
@@ -342,6 +378,11 @@ class ToolsTab(ttk.Frame):
         active = self._db_ready() and parsed_year is not None
         if self.btn_import:
             self.btn_import.config(state=("normal" if active else "disabled"))
+        survey_active = active and bool((self.cb_fakulte.get() if self.cb_fakulte else "").strip())
+        if self.btn_survey_import:
+            self.btn_survey_import.config(state=("normal" if survey_active else "disabled"))
+        if self.btn_survey_template:
+            self.btn_survey_template.config(state=("normal" if survey_active else "disabled"))
         # Zone başlığını dinamik güncelle
         if hasattr(self, "_import_zone") and self._import_zone:
             self._import_zone.config(text=f"A) Veri Yukleme ({year})" if year else "A) Veri Yukleme")
@@ -349,8 +390,10 @@ class ToolsTab(ttk.Frame):
             self._set_import_state_label("Veritabani baglantisi yok.")
         elif year and parsed_year is None:
             self._set_import_state_label("Gecerli bir akademik yil giriniz.")
+        elif not survey_active:
+            self._set_import_state_label("Anket yukleme icin fakulte ve yil seciniz.")
         elif active:
-            self._set_import_state_label(f"Yukleme aktif: {parsed_year} secili.")
+            self._set_import_state_label(f"Yukleme aktif: fakulte secili, yil {parsed_year}.")
 
     # ---------------------------------------------------------
     # Reporting
@@ -452,6 +495,40 @@ class ToolsTab(ttk.Frame):
     # ---------------------------------------------------------
     # Zone A - Import
     # ---------------------------------------------------------
+    def download_survey_template(self):
+        if not self._db_ready():
+            messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")
+            return
+
+        faculty_id, faculty_name, year = self._selected_faculty_scope()
+        if faculty_id is None or year is None:
+            messagebox.showwarning("Uyari", "Once fakulte ve akademik yil seciniz.")
+            return
+
+        default_name = f"anket_sablonu_{faculty_name}_{year}.xlsx".replace(" ", "_")
+        target_path = filedialog.asksaveasfilename(
+            title="Anket Sablonunu Kaydet",
+            defaultextension=".xlsx",
+            initialfile=default_name,
+            filetypes=[("Excel", "*.xlsx"), ("Tum dosyalar", "*.*")],
+        )
+        if not target_path:
+            return
+
+        try:
+            write_survey_template_excel(
+                target_path=target_path,
+                faculty_name=faculty_name,
+                year=year,
+                db_path=self.db_path,
+                faculty_id=faculty_id,
+            )
+            self.log(f"Anket sablonu yazildi: {target_path}")
+            messagebox.showinfo("Tamam", "Anket sablonu olusturuldu.")
+        except Exception as exc:
+            self.log(f"Anket sablonu olusturma hatasi: {exc}")
+            messagebox.showerror("Hata", str(exc))
+
     def import_curriculum_excel(self):
         if not self._db_ready():
             messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")
@@ -500,6 +577,84 @@ class ToolsTab(ttk.Frame):
             for warn in result.get("warnings", []):
                 self.log(f"Uyari: {warn}")
             messagebox.showerror("Hata", result.get("message", "Yukleme basarisiz."))
+
+    def import_survey_excel(self):
+        if not self._db_ready():
+            messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")
+            return
+        if not self.db_path or not os.path.exists(self.db_path):
+            messagebox.showwarning("Uyari", "Veritabani dosyasi bulunamadi.")
+            return
+
+        faculty_id, faculty_name, year = self._selected_faculty_scope()
+        if faculty_id is None or year is None or not faculty_name:
+            messagebox.showwarning("Uyari", "Once fakulte ve akademik yil seciniz.")
+            return
+
+        excel_path = filedialog.askopenfilename(
+            title="Anket Excel sec",
+            filetypes=[("Excel", "*.xlsx"), ("Tum dosyalar", "*.*")],
+        )
+        if not excel_path:
+            return
+
+        result = run_survey_import(
+            db_path=self.db_path,
+            excel_path=excel_path,
+            faculty_id=faculty_id,
+            year=year,
+            source_filename=os.path.basename(excel_path),
+        )
+        if result.get("ok"):
+            self.log("Anket yukleme basarili:")
+            self.log(result.get("message", ""))
+            self.log(
+                f" - Fakulte: {faculty_name} | Yil: {year} | Toplam katilimci: {result.get('total_participants', 0)}"
+            )
+            self.log(
+                f" - Eslesen ders: {result.get('matched_count', 0)} | "
+                f"Guncellenen kriter: {result.get('updated_course_count', 0)} | "
+                f"Yeni kriter satiri: {result.get('created_course_count', 0)}"
+            )
+            replace = result.get("replace") or {}
+            self.log(
+                f" - Onceki anket verileri temizlendi: import={replace.get('previous_import_deleted', 0)} "
+                f"satir={replace.get('previous_rows_deleted', 0)} kriter_reset={replace.get('criteria_rows_reset', 0)}"
+            )
+            for warn in result.get("warnings", []):
+                self.log(f"Uyari: {warn}")
+            messagebox.showinfo("Tamam", result.get("message", "Anket yukleme tamamlandi."))
+            self.refresh()
+            try:
+                self.app.tab_calc.refresh(force_reload=True)
+            except Exception:
+                pass
+            try:
+                self.app.tab_view.refresh()
+            except Exception:
+                pass
+            try:
+                if hasattr(self.app, "tab_calc") and hasattr(self.app.tab_calc, "criteria_view"):
+                    self.app.tab_calc.criteria_view.load_courses()
+            except Exception:
+                pass
+        else:
+            self.log("Anket yukleme basarisiz:")
+            self.log(result.get("message", ""))
+            self.log(
+                f" - Eslesen ders: {result.get('matched_count', 0)} | "
+                f"Eslesemeyen satir: {result.get('unmatched_count', 0)}"
+            )
+            for err in result.get("errors", []):
+                self.log(f"Hata: {err}")
+            for row in result.get("unmatched_rows", [])[:30]:
+                self.log(
+                    f" - Eslesemedi (satir {row.get('row_no')}): "
+                    f"kod={row.get('ders_kodu')} ad={row.get('ders_adi')} neden={row.get('error_message')}"
+                )
+            for warn in result.get("warnings", []):
+                self.log(f"Uyari: {warn}")
+            messagebox.showerror("Hata", result.get("message", "Anket yukleme basarisiz."))
 
     # ---------------------------------------------------------
     # Zone B - Actions

@@ -11,6 +11,8 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import sqlite3
+from typing import Any
+from app.db.schema_compat import ensure_survey_import_schema
 from app.services.yearly_workflow import mark_criteria_status
 
 
@@ -34,6 +36,8 @@ class CriteriaPage:
         self.db = db
         self.app = app
         self.selected_course_id = None
+        self._survey_locked = False
+        self._current_survey_record = None
 
         self._ensure_table()
 
@@ -41,7 +45,7 @@ class CriteriaPage:
         self.setup_ui()
 
     def _ensure_table(self):
-        """ders_kriterleri tablosu yoksa oluşturur; anket alanları yoksa ekler."""
+        """ders_kriterleri tablosu yoksa oluşturur; anket/import alanları yoksa ekler."""
         if not getattr(self.db, "conn", None):
             return
         try:
@@ -59,17 +63,28 @@ class CriteriaPage:
                     kayitli_ogrenci INTEGER DEFAULT 0,
                     anket_katilimci INTEGER DEFAULT 0,
                     anket_dersi_secen INTEGER DEFAULT 0,
+                    anket_veri_kaynagi TEXT DEFAULT 'manual',
+                    anket_manual_locked INTEGER NOT NULL DEFAULT 0,
+                    anket_import_id INTEGER,
+                    anket_imported_at TEXT,
                     UNIQUE(ders_id, yil),
                     FOREIGN KEY(ders_id) REFERENCES ders(ders_id)
                 )
             """)
-            # Eski tablolarda anket sütunları yoksa ekle
-            for col in ("anket_katilimci", "anket_dersi_secen"):
+            for col_name, ddl in (
+                ("anket_katilimci", "INTEGER DEFAULT 0"),
+                ("anket_dersi_secen", "INTEGER DEFAULT 0"),
+                ("anket_veri_kaynagi", "TEXT DEFAULT 'manual'"),
+                ("anket_manual_locked", "INTEGER NOT NULL DEFAULT 0"),
+                ("anket_import_id", "INTEGER"),
+                ("anket_imported_at", "TEXT"),
+            ):
                 try:
-                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col} INTEGER DEFAULT 0")
+                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col_name} {ddl}")
                     self.db.conn.commit()
                 except sqlite3.OperationalError:
-                    pass  # Sütun zaten varsa
+                    pass
+            ensure_survey_import_schema(self.db.conn)
             self.db.conn.commit()
         except Exception as e:
             print(f"ders_kriterleri tablo oluşturma hatası: {e}")
@@ -151,8 +166,10 @@ class CriteriaPage:
         
         self.create_form_ui(right_frame)
 
-        # İlk Açılışta Fakülteleri Yükle
-        self.load_faculties()
+        # Fakülte listesi uygulama veritabani baglantisi kurulduktan sonra
+        # refresh() veya ilk veri yuklemesinde doldurulur.
+        if getattr(self.db, "conn", None):
+            self.load_faculties()
 
     def create_filter_ui(self, parent):
         # Stil
@@ -231,26 +248,37 @@ class CriteriaPage:
         # 2. Kontenjan ve İlgi
         self.create_section_header(6, "2. Kontenjan ve Popülerlik")
         self.ent_kontenjan = self.create_input_row(7, "Ders Kontenjanı:", "0")
-        self.ent_kayitli = self.create_input_row(8, "Kayıtlı Öğrenci (Talep):", "0")
+        self.ent_kayitli = self.create_input_row(8, "Kayıtlı Öğrenci (otomatik):", "0")
         
         # Otomatik Hesaplanan: Doluluk
         tk.Label(self.form_frame, text="Doluluk Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=9, column=0, sticky="w", pady=5)
         self.lbl_doluluk_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
         self.lbl_doluluk_sonuc.grid(row=9, column=1, sticky="w")
 
-        # 3. Anket Kriteri (düşük etki; yakın puanlarda ayırıcı)
+        # 3. Anket Tercihi
         self.create_section_header(10, "3. Anket Tercihi")
-        self.ent_anket_katilimci = self.create_input_row(11, "Ankete Katılan Toplam Öğrenci:", "0")
+        self.ent_anket_katilimci = self.create_input_row(11, "Ankete Katılan Toplam Öğrenci (otomatik):", "0")
+        self.ent_anket_katilimci.config(state="disabled")
         self.ent_anket_dersi_secen = self.create_input_row(12, "Bu Dersi Seçen Öğrenci:", "0")
         tk.Label(self.form_frame, text="Anket Tercih Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=13, column=0, sticky="w", pady=5)
         self.lbl_anket_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
         self.lbl_anket_sonuc.grid(row=13, column=1, sticky="w")
+        self.lbl_anket_kaynak_info = tk.Label(
+            self.form_frame,
+            text="Anket verisi manuel girise acik.",
+            bg="#f8fafc",
+            fg="#475569",
+            font=("Segoe UI", 9, "italic"),
+            wraplength=280,
+            justify="left",
+        )
+        self.lbl_anket_kaynak_info.grid(row=14, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # KAYDET BUTONU
         btn_save = tk.Button(self.form_frame, text="💾 VERİLERİ KAYDET VE GÜNCELLE", 
                              bg="#16a34a", fg="white", font=("Segoe UI", 10, "bold"),
                              command=self.save_data, cursor="hand2")
-        btn_save.grid(row=14, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
+        btn_save.grid(row=15, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
 
     def create_section_header(self, row, text):
         tk.Label(self.form_frame, text=text, bg="#f8fafc", fg="#2563eb", 
@@ -422,7 +450,7 @@ class CriteriaPage:
             self.cb_yil["values"] = []
 
 
-    def load_courses(self, restore_course_id=None):
+    def load_courses(self, restore_course_id=None, show_warnings=True):
         """Fakültedeki seçmeli dersleri listeler; Güz/Bahar ve kriter filtresine göre."""
         self.tree.delete(*self.tree.get_children())
 
@@ -436,7 +464,10 @@ class CriteriaPage:
         sadece_mufredat = muf_val in ("Müfredattakiler", "Müfredattaki")
 
         if not (fakulte and yil and donem):
-            messagebox.showwarning("Eksik", "Lütfen Fakülte, Yıl ve Dönem seçiniz.")
+            if show_warnings:
+                messagebox.showwarning("Eksik", "Lütfen Fakülte, Yıl ve Dönem seçiniz.")
+            else:
+                self.tree.insert("", tk.END, values=("", "Fakülte/Yıl/Dönem seçimi bekleniyor.", ""))
             return
 
         if not getattr(self.db, "conn", None):
@@ -567,16 +598,131 @@ class CriteriaPage:
             return False
 
     def _update_form_readonly(self):
-        """1 ve 2. kriterler filtreye göre; anket her zaman açık."""
-        # Müfredattakiler filtresi veya ders müfredattaysa → 1 ve 2 açık
+        """1 ve 2. kriterler filtreye göre açık/kilitli olur."""
+          # Müfredattakiler filtresi veya ders müfredattaysa → 1 ve 2 açık
         readonly = not getattr(self, "_course_in_mufredat", True)
         state = "disabled" if readonly else "normal"
         for w in (self.ent_toplam_ogrenci, self.ent_gecen_ogrenci, self.ent_ortalama,
                   self.ent_kontenjan, self.ent_kayitli):
             w.config(state=state)
-        # Anket her zaman açık
-        self.ent_anket_katilimci.config(state="normal")
-        self.ent_anket_dersi_secen.config(state="normal")
+
+    def _set_entry_value(self, entry, value, state="normal"):
+        previous_state = None
+        try:
+            previous_state = entry.cget("state")
+        except Exception:
+            previous_state = None
+        try:
+            entry.config(state=state)
+        except Exception:
+            pass
+        entry.delete(0, tk.END)
+        entry.insert(0, str(value))
+        if previous_state is not None:
+            try:
+                entry.config(state=previous_state)
+            except Exception:
+                pass
+
+    def _survey_record_locked(self, record: dict[str, Any] | None) -> bool:
+        if not record:
+            return False
+        source = str(record.get("anket_veri_kaynagi") or "").strip().lower()
+        locked = int(record.get("anket_manual_locked") or 0)
+        return locked == 1 or source == "survey_import"
+
+    def _apply_survey_lock_state(self, locked: bool, source_text: str | None = None):
+        self._survey_locked = bool(locked)
+        if locked:
+            if getattr(self, "ent_anket_dersi_secen", None):
+                self.ent_anket_dersi_secen.config(state="disabled")
+            if getattr(self, "lbl_anket_kaynak_info", None):
+                self.lbl_anket_kaynak_info.config(
+                    text=source_text or "Bu alanlar belge ile dolduruldugu icin manuel duzenlemeye kapali.",
+                    fg="#b45309",
+                )
+        else:
+            if getattr(self, "ent_anket_dersi_secen", None):
+                self.ent_anket_dersi_secen.config(state="normal")
+            if getattr(self, "lbl_anket_kaynak_info", None):
+                self.lbl_anket_kaynak_info.config(
+                    text=source_text or "Anket verisi manuel girise acik.",
+                    fg="#475569",
+                )
+
+    def _fetch_saved_criteria_record(self, ders_id, yil, donem):
+        """ders_kriterleri kaydini acik kolon adlariyla dondurur."""
+        columns = [
+            "donem",
+            "toplam_ogrenci",
+            "gecen_ogrenci",
+            "basari_ortalamasi",
+            "kontenjan",
+            "kayitli_ogrenci",
+            "anket_katilimci",
+            "anket_dersi_secen",
+            "anket_veri_kaynagi",
+            "anket_manual_locked",
+            "anket_import_id",
+            "anket_imported_at",
+        ]
+        select_parts = [
+            "donem",
+            "toplam_ogrenci",
+            "gecen_ogrenci",
+            "basari_ortalamasi",
+            "kontenjan",
+            "kayitli_ogrenci",
+            "anket_katilimci",
+            "anket_dersi_secen",
+            "COALESCE(anket_veri_kaynagi, 'manual') AS anket_veri_kaynagi"
+            if self._has_col("ders_kriterleri", "anket_veri_kaynagi")
+            else "'manual' AS anket_veri_kaynagi",
+            "COALESCE(anket_manual_locked, 0) AS anket_manual_locked"
+            if self._has_col("ders_kriterleri", "anket_manual_locked")
+            else "0 AS anket_manual_locked",
+            "anket_import_id" if self._has_col("ders_kriterleri", "anket_import_id") else "NULL AS anket_import_id",
+            "anket_imported_at"
+            if self._has_col("ders_kriterleri", "anket_imported_at")
+            else "NULL AS anket_imported_at",
+        ]
+        base_query = f"""
+            SELECT {", ".join(select_parts)}
+            FROM ders_kriterleri
+            WHERE ders_id=? AND yil=?
+        """
+        queries = [
+            (
+                base_query + " AND (donem = ? OR donem IS NULL OR donem = '')",
+                (int(ders_id), int(yil), str(donem).strip()),
+            ),
+            (
+                base_query + " LIMIT 1",
+                (int(ders_id), int(yil)),
+            ),
+        ]
+        for query, params in queries:
+            _, rows = self.db.run_sql(query, params)
+            if rows:
+                row = rows[0]
+                return {columns[idx]: row[idx] for idx in range(min(len(columns), len(row)))}
+        return None
+
+    def _fetch_saved_criteria(self, ders_id, yil, donem):
+        """ders_kriterleri kaydini sabit kolon sirasiyla dondurur."""
+        record = self._fetch_saved_criteria_record(ders_id, yil, donem)
+        if not record:
+            return None
+        return (
+            record.get("donem"),
+            record.get("toplam_ogrenci"),
+            record.get("gecen_ogrenci"),
+            record.get("basari_ortalamasi"),
+            record.get("kontenjan"),
+            record.get("kayitli_ogrenci"),
+            record.get("anket_katilimci"),
+            record.get("anket_dersi_secen"),
+        )
 
 
     def on_course_select(self, event):
@@ -610,7 +756,7 @@ class CriteriaPage:
         self.lbl_selected_course.config(text=f"Seçilen: {course_name} ({yil} {donem})", fg="#0f172a")
 
         # Müfredattakiler filtresi seçiliyse liste zaten müfredat dersleri → 1 ve 2 açık
-        # Değilse sadece bu ders müfredattaysa 1 ve 2 açık. Anket her zaman açık.
+        # Değilse sadece bu ders müfredattaysa 1 ve 2 açık.
         muf_filtre = getattr(self, "cb_mufredat_filtre", None)
         muf_val = (muf_filtre.get() or "").strip() if muf_filtre else ""
         if muf_val in ("Müfredattakiler", "Müfredattaki"):
@@ -621,37 +767,35 @@ class CriteriaPage:
 
         # Mevcut veriyi çek: ders_kriterleri (donem eşleşmeli; NULL/boş eski kayıtlar her iki dönemde)
         try:
-            _, rows = self.db.run_sql(
-                """SELECT * FROM ders_kriterleri WHERE ders_id=? AND yil=?
-                   AND (donem = ? OR donem IS NULL OR donem = '')""",
-                (self.selected_course_id, int(yil), str(donem).strip())
-            )
-            if not rows:
-                _, rows = self.db.run_sql(
-                    "SELECT * FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1",
-                    (self.selected_course_id, int(yil))
-                )
+            saved_record = self._fetch_saved_criteria_record(self.selected_course_id, int(yil), donem)
+            self._current_survey_record = saved_record
 
-            if rows:
-                r = rows[0]
-                # id, ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
-                self.cb_donem.set(str(r[3]) if r[3] else "Güz")
+            if saved_record:
+                self.cb_donem.set(str(saved_record.get("donem") or "Güz"))
                 self.ent_toplam_ogrenci.delete(0, tk.END)
-                self.ent_toplam_ogrenci.insert(0, str(r[4] or 0))
+                self.ent_toplam_ogrenci.insert(0, str(saved_record.get("toplam_ogrenci") or 0))
                 self.ent_gecen_ogrenci.delete(0, tk.END)
-                self.ent_gecen_ogrenci.insert(0, str(r[5] or 0))
+                self.ent_gecen_ogrenci.insert(0, str(saved_record.get("gecen_ogrenci") or 0))
                 self.ent_ortalama.delete(0, tk.END)
-                self.ent_ortalama.insert(0, str(r[6] or 0.0))
+                self.ent_ortalama.insert(0, str(saved_record.get("basari_ortalamasi") or 0.0))
                 self.ent_kontenjan.delete(0, tk.END)
-                self.ent_kontenjan.insert(0, str(r[7] or 0))
+                self.ent_kontenjan.insert(0, str(saved_record.get("kontenjan") or 0))
                 self.ent_kayitli.delete(0, tk.END)
-                self.ent_kayitli.insert(0, str(r[8] or 0))
-                # Anket alanları (indeks 9, 10 - yoksa 0)
-                self.ent_anket_katilimci.delete(0, tk.END)
-                self.ent_anket_katilimci.insert(0, str(r[9] if len(r) > 9 and r[9] is not None else 0))
-                self.ent_anket_dersi_secen.delete(0, tk.END)
-                self.ent_anket_dersi_secen.insert(0, str(r[10] if len(r) > 10 and r[10] is not None else 0))
+                self.ent_kayitli.insert(0, str(saved_record.get("kayitli_ogrenci") or 0))
+                self._set_entry_value(self.ent_anket_katilimci, saved_record.get("anket_katilimci") or 0, state="normal")
+                self.ent_anket_katilimci.config(state="disabled")
+                self._set_entry_value(self.ent_anket_dersi_secen, saved_record.get("anket_dersi_secen") or 0, state="normal")
+
+                if self._survey_record_locked(saved_record):
+                    imported_at = saved_record.get("anket_imported_at")
+                    import_message = "Bu alanlar belge ile dolduruldugu icin manuel duzenlemeye kapali."
+                    if imported_at:
+                        import_message += f" Son yukleme: {imported_at}."
+                    self._apply_survey_lock_state(True, import_message)
+                else:
+                    self._apply_survey_lock_state(False)
             else:
+                self._current_survey_record = None
                 # ders_kriterleri yoksa performans+populerlikten doldur
                 _, pr = self.db.run_sql(
                     "SELECT ortalama_not, basari_orani FROM performans WHERE ders_id=? AND akademik_yil=? LIMIT 1",
@@ -677,13 +821,20 @@ class CriteriaPage:
                     self.ent_kontenjan.delete(0, tk.END)
                     self.ent_kontenjan.insert(0, str(kont))
                     self.ent_kayitli.delete(0, tk.END)
-                    self.ent_kayitli.insert(0, str(talep))
-                    self.ent_anket_katilimci.delete(0, tk.END)
-                    self.ent_anket_katilimci.insert(0, "0")
+                    self.ent_kayitli.insert(0, str(top_ogr))
+                    self._set_entry_value(self.ent_anket_katilimci, top_ogr, state="normal")
+                    self.ent_anket_katilimci.config(state="disabled")
                     self.ent_anket_dersi_secen.delete(0, tk.END)
                     self.ent_anket_dersi_secen.insert(0, "0")
                 else:
                     self.clear_form_inputs()
+
+                    # Kayıtlı öğrenci sayısı ve anket katılımcı sayısı toplama eşit tutulur.
+                    self.ent_kayitli.delete(0, tk.END)
+                    self.ent_kayitli.insert(0, self.ent_toplam_ogrenci.get().strip() or "0")
+                    self._set_entry_value(self.ent_anket_katilimci, self.ent_toplam_ogrenci.get().strip() or "0", state="normal")
+                    self.ent_anket_katilimci.config(state="disabled")
+                self._apply_survey_lock_state(False)
 
             self.update_calculations()
             
@@ -695,18 +846,29 @@ class CriteriaPage:
 
     def clear_form_inputs(self):
         """Formu güvenli şekilde temizler"""
+        self._current_survey_record = None
         self.ent_toplam_ogrenci.delete(0, tk.END); self.ent_toplam_ogrenci.insert(0, "0")
         self.ent_gecen_ogrenci.delete(0, tk.END); self.ent_gecen_ogrenci.insert(0, "0")
         self.ent_ortalama.delete(0, tk.END); self.ent_ortalama.insert(0, "0.0")
         self.ent_kontenjan.delete(0, tk.END); self.ent_kontenjan.insert(0, "0")
         self.ent_kayitli.delete(0, tk.END); self.ent_kayitli.insert(0, "0")
-        self.ent_anket_katilimci.delete(0, tk.END); self.ent_anket_katilimci.insert(0, "0")
+        self._set_entry_value(self.ent_anket_katilimci, "0", state="normal")
+        self.ent_anket_katilimci.config(state="disabled")
         self.ent_anket_dersi_secen.delete(0, tk.END); self.ent_anket_dersi_secen.insert(0, "0")
+        self.lbl_anket_sonuc.config(text="-")
+        self._apply_survey_lock_state(False)
 
     def update_calculations(self, event=None):
         """Kullanıcı sayı girdikçe oranları anlık gösterir."""
         try:
             toplam = float(self.ent_toplam_ogrenci.get())
+            kayitli = toplam
+            kayitli_text = str(int(kayitli) if kayitli.is_integer() else kayitli)
+            self._set_entry_value(self.ent_kayitli, kayitli_text, state="normal")
+            if not self._survey_locked:
+                self._set_entry_value(self.ent_anket_katilimci, kayitli_text, state="normal")
+                self.ent_anket_katilimci.config(state="disabled")
+
             gecen = float(self.ent_gecen_ogrenci.get())
             if toplam > 0:
                 basari = (gecen / toplam) * 100
@@ -715,22 +877,19 @@ class CriteriaPage:
                 self.lbl_basari_sonuc.config(text="-")
 
             kontenjan = float(self.ent_kontenjan.get())
-            kayitli = float(self.ent_kayitli.get())
             if kontenjan > 0:
                 doluluk = (kayitli / kontenjan) * 100
                 self.lbl_doluluk_sonuc.config(text=f"%{doluluk:.1f}", fg="blue")
             else:
                 self.lbl_doluluk_sonuc.config(text="-")
 
-            # Anket tercih oranı: dersi seçen / ankete katılan
-            # anket_kat=0 ise %0.0 göster (kriter alanı boş kalmasın, eksik sayılmasın)
             anket_kat = float(self.ent_anket_katilimci.get() or 0)
             anket_secen = float(self.ent_anket_dersi_secen.get() or 0)
             if anket_kat > 0:
                 oran = min(100.0, (anket_secen / anket_kat) * 100)
                 self.lbl_anket_sonuc.config(text=f"%{oran:.1f}", fg="#7c3aed")
             else:
-                self.lbl_anket_sonuc.config(text="%0.0", fg="#7c3aed")
+                self.lbl_anket_sonuc.config(text="-")
         except ValueError:
             pass
 
@@ -746,15 +905,30 @@ class CriteriaPage:
 
         try:
             c_id = int(self.selected_course_id)
-            ank_kat = int(self.ent_anket_katilimci.get().strip() or 0)
-            ank_sec = int(self.ent_anket_dersi_secen.get().strip() or 0)
+            existing_record = self._fetch_saved_criteria_record(c_id, yil, donem)
+            survey_locked = self._survey_record_locked(existing_record)
             top_ogr = gecen = ort = kont = kayit = 0
             if in_mufredat:
                 top_ogr = int(self.ent_toplam_ogrenci.get().strip() or 0)
                 gecen = int(self.ent_gecen_ogrenci.get().strip() or 0)
                 ort = float(self.ent_ortalama.get().strip() or 0.0)
                 kont = int(self.ent_kontenjan.get().strip() or 0)
-                kayit = int(self.ent_kayitli.get().strip() or 0)
+                kayit = top_ogr
+
+            if survey_locked and existing_record:
+                ank_kat = int(existing_record.get("anket_katilimci") or 0)
+                ank_sec = int(existing_record.get("anket_dersi_secen") or 0)
+                anket_veri_kaynagi = str(existing_record.get("anket_veri_kaynagi") or "survey_import")
+                anket_manual_locked = int(existing_record.get("anket_manual_locked") or 1)
+                anket_import_id = existing_record.get("anket_import_id")
+                anket_imported_at = existing_record.get("anket_imported_at")
+            else:
+                ank_kat = int(self.ent_anket_katilimci.get().strip() or 0)
+                ank_sec = int(self.ent_anket_dersi_secen.get().strip() or 0)
+                anket_veri_kaynagi = "manual"
+                anket_manual_locked = 0
+                anket_import_id = None
+                anket_imported_at = None
 
             basari_orani = (gecen / top_ogr) if top_ogr > 0 else 0.0
             doluluk_orani = min(kayit / kont, 1.0) if kont > 0 else 0.0
@@ -767,9 +941,25 @@ class CriteriaPage:
                 INSERT INTO ders_kriterleri
                     (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
                      basari_ortalamasi, kontenjan, kayitli_ogrenci,
-                     anket_katilimci, anket_dersi_secen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (c_id, yil, donem, top_ogr, gecen, ort, kont, kayit, ank_kat, ank_sec))
+                     anket_katilimci, anket_dersi_secen, anket_veri_kaynagi,
+                     anket_manual_locked, anket_import_id, anket_imported_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                c_id,
+                yil,
+                donem,
+                top_ogr,
+                gecen,
+                ort,
+                kont,
+                kayit,
+                ank_kat,
+                ank_sec,
+                anket_veri_kaynagi,
+                anket_manual_locked,
+                anket_import_id,
+                anket_imported_at,
+            ))
 
             if in_mufredat:
                 cur.execute(
@@ -834,7 +1024,9 @@ class CriteriaPage:
             if in_mufredat:
                 msg += f"\nBaşarı oranı: %{basari_orani*100:.1f}  |  Doluluk: %{doluluk_orani*100:.1f}"
             else:
-                msg += "\n(Müfredatta olmayan ders – sadece anket kaydedildi.)"
+                msg += "\n(Müfredatta olmayan ders – yalnızca temel kriterler kaydedildi.)"
+            if survey_locked:
+                msg += "\nAnket alanlari belge ile dolduruldugu icin mevcut anket verisi korunarak kaydedildi."
             if status_messages:
                 msg += "\n\n" + "\n".join(status_messages)
             messagebox.showinfo("Başarılı", msg)

@@ -46,6 +46,31 @@ def _index_names(cur: sqlite3.Cursor, table_name: str) -> set[str]:
     return names
 
 
+def ensure_ders_code_schema(conn: sqlite3.Connection) -> dict[str, int]:
+    """
+    Legacy ders tablolarinda eksik ders kodu kolonunu tamamlar.
+
+    Eski SQLite dosyalarinda `ders.kod` kolonu olmayabiliyor. Uygulamanin
+    farkli yerlerinde bu kolon okundugu icin en azindan NULL/blank olacak
+    sekilde kolonun varligini garanti ederiz.
+    """
+    cur = conn.cursor()
+    changed = {
+        "columns_added": 0,
+    }
+
+    if not _table_exists(cur, "ders"):
+        return changed
+
+    cols = _column_names(cur, "ders")
+    if "kod" not in cols:
+        cur.execute("ALTER TABLE ders ADD COLUMN kod TEXT")
+        changed["columns_added"] += 1
+
+    conn.commit()
+    return changed
+
+
 def ensure_havuz_semester_schema(conn: sqlite3.Connection) -> dict[str, int]:
     """
     havuz tablosunu donem-aware hale getirir.
@@ -212,13 +237,132 @@ def ensure_skor_schema(conn: sqlite3.Connection) -> dict[str, int]:
     return changed
 
 
+def ensure_survey_import_schema(conn: sqlite3.Connection, commit: bool = True) -> dict[str, int]:
+    """
+    Fakulte+yil bazli anket import semasini hazirlar.
+
+    Hedef:
+    - ders_kriterleri uzerinde anket metadata kolonlarini eklemek
+    - survey_import / survey_import_rows tablolarini olusturmak
+    - replace ve raporlama icin gerekli indexleri eklemek
+    """
+    cur = conn.cursor()
+    changed = {
+        "tables_created": 0,
+        "columns_added": 0,
+        "indexes_created": 0,
+    }
+
+    if _table_exists(cur, "ders_kriterleri"):
+        cols = _column_names(cur, "ders_kriterleri")
+        survey_columns = [
+            ("anket_veri_kaynagi", "TEXT DEFAULT 'manual'"),
+            ("anket_manual_locked", "INTEGER NOT NULL DEFAULT 0"),
+            ("anket_import_id", "INTEGER"),
+            ("anket_imported_at", "TEXT"),
+        ]
+        for col_name, ddl in survey_columns:
+            if col_name not in cols:
+                cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col_name} {ddl}")
+                cols.add(col_name)
+                changed["columns_added"] += 1
+
+        cur.execute(
+            """
+            UPDATE ders_kriterleri
+            SET anket_veri_kaynagi = CASE
+                    WHEN COALESCE(TRIM(anket_veri_kaynagi), '') = '' THEN 'manual'
+                    ELSE anket_veri_kaynagi
+                END,
+                anket_manual_locked = CASE
+                    WHEN anket_manual_locked IS NULL THEN 0
+                    ELSE anket_manual_locked
+                END
+            """
+        )
+
+    if not _table_exists(cur, "survey_import"):
+        cur.execute(
+            """
+            CREATE TABLE survey_import (
+                import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fakulte_id INTEGER NOT NULL,
+                yil INTEGER NOT NULL,
+                total_participants INTEGER NOT NULL DEFAULT 0,
+                matched_course_count INTEGER NOT NULL DEFAULT 0,
+                unmatched_row_count INTEGER NOT NULL DEFAULT 0,
+                source_filename TEXT,
+                template_version TEXT,
+                notes TEXT,
+                imported_at TEXT,
+                status TEXT NOT NULL DEFAULT 'applied',
+                UNIQUE(fakulte_id, yil)
+            )
+            """
+        )
+        changed["tables_created"] += 1
+
+    if not _table_exists(cur, "survey_import_rows"):
+        cur.execute(
+            """
+            CREATE TABLE survey_import_rows (
+                row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_id INTEGER NOT NULL,
+                row_no INTEGER NOT NULL,
+                ders_kodu TEXT,
+                ders_adi TEXT,
+                tercih_sayisi INTEGER NOT NULL DEFAULT 0,
+                aciklama TEXT,
+                matched_ders_id INTEGER,
+                match_method TEXT,
+                row_status TEXT NOT NULL DEFAULT 'matched',
+                error_message TEXT,
+                raw_faculte TEXT,
+                raw_yil INTEGER
+            )
+            """
+        )
+        changed["tables_created"] += 1
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_survey_import_scope
+        ON survey_import (fakulte_id, yil)
+        """
+    )
+    changed["indexes_created"] += 1
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_survey_import_rows_import
+        ON survey_import_rows (import_id, row_status)
+        """
+    )
+    changed["indexes_created"] += 1
+
+    if _table_exists(cur, "ders_kriterleri"):
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_ders_kriterleri_survey_import
+            ON ders_kriterleri (yil, anket_import_id, anket_manual_locked)
+            """
+        )
+        changed["indexes_created"] += 1
+
+    if commit:
+        conn.commit()
+    return changed
+
+
 def ensure_reporting_schema(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
     """
     Raporlama icin gereken tum kritik tablolari synchronize eder.
     """
     result = {
+        "ders": ensure_ders_code_schema(conn),
         "havuz": ensure_havuz_semester_schema(conn),
         "skor": ensure_skor_schema(conn),
+        "survey": ensure_survey_import_schema(conn),
     }
     try:
         from app.services.yearly_workflow import ensure_yearly_workflow_schema

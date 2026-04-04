@@ -408,15 +408,13 @@ class PoolTab(ttk.Frame):
             try:
                 _, rows = self.db.run_sql(
                     """
-                    SELECT DISTINCT yil FROM havuz WHERE fakulte_id = ?
-                    UNION
                     SELECT DISTINCT m.akademik_yil
                     FROM mufredat m
                     JOIN bolum b ON b.bolum_id = m.bolum_id
                     WHERE b.fakulte_id = ?
                     ORDER BY 1
                     """,
-                    (int(fakulte_id), int(fakulte_id)),
+                    (int(fakulte_id),),
                 )
                 years = sorted({int(r[0]) for r in (rows or []) if r and r[0] is not None})
             except Exception:

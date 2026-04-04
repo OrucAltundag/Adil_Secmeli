@@ -28,6 +28,7 @@ from app.services.course_analyzer import (
     _run_trend,
     _run_rf_simple,
 )
+from app.services.calculation import KararMotoru
 
 
 # ===========================================================================
@@ -123,6 +124,26 @@ def test_ahp_agirliklar_toplami():
     w = result["weights"]
     total = sum(w.values())
     assert abs(total - 1.0) < 0.001, f"AHP agirlik toplami: {total}"
+    assert abs(w["basari"] - 0.5848) < 0.02
+    assert abs(w["trend"] - 0.2319) < 0.02
+    assert abs(w["populerlik"] - 0.1358) < 0.02
+    assert abs(w["anket"] - 0.0475) < 0.02
+
+
+def test_ahp_saaty_matrisi_kurallari():
+    """Saaty ikili karsilastirma matrisi is kurallarina uygun olmali."""
+    motor = KararMotoru()
+    matris = motor.ahp_matrisi()
+    assert matris.shape == (4, 4)
+    assert abs(matris[0, 1] - 3.0) < 1e-9
+    assert abs(matris[0, 2] - 5.0) < 1e-9
+    assert abs(matris[0, 3] - 9.0) < 1e-9
+    assert abs(matris[1, 2] - 2.0) < 1e-9
+    assert abs(matris[1, 3] - 5.0) < 1e-9
+    assert abs(matris[2, 3] - 4.0) < 1e-9
+    assert abs(matris[1, 0] - (1.0 / 3.0)) < 1e-9
+    assert abs(matris[2, 0] - (1.0 / 5.0)) < 1e-9
+    assert abs(matris[3, 0] - (1.0 / 9.0)) < 1e-9
 
 
 def test_ahp_cr_gecerli():
@@ -182,9 +203,9 @@ def test_topsis_hesaplanamadi_guvenli():
 
 
 def test_trend_bos_gecmis():
-    """Gecmis veri yoksa hata vermeden varsayilan donmeli."""
+    """Gecmis veri yoksa hesaplama guvenli sekilde sifir donmeli."""
     result = _run_trend([])
-    assert result.get("predicted") == 0.5
+    assert result.get("predicted") == 0.0
     assert "Gecmis" in result.get("log", "")
 
 
@@ -195,9 +216,48 @@ def test_trend_uclu_agirlik():
         {"yil": 2023, "oran": 0.60},
         {"yil": 2022, "oran": 0.40},
     ]
-    result = _run_trend(gecmis)
+    motor = KararMotoru()
+    trend, _ = motor.gecmis_trend_hesapla(gecmis)
     # 0.80*0.50 + 0.60*0.30 + 0.40*0.20 = 0.40+0.18+0.08 = 0.66
-    assert abs(result["predicted"] - 0.66) < 0.01
+    assert abs(trend - 0.66) < 0.01
+
+
+def test_trend_rescaling_eksik_orta_yil():
+    """1. ve 3. yil varsa agirliklar 0.50/0.20 -> 0.70 uzerinden normalize edilmeli."""
+    motor = KararMotoru()
+    trend, log = motor.gecmis_trend_hesapla([
+        {"yil": 2024, "oran": 0.80},
+        {"yil": 2023, "oran": None},
+        {"yil": 2022, "oran": 0.40},
+    ])
+    expected = (0.80 * (0.50 / 0.70)) + (0.40 * (0.20 / 0.70))
+    assert abs(trend - expected) < 1e-6
+    assert "2023: veri yok" in log
+    assert "re-scaled" in log
+
+
+def test_trend_rescaling_sifiri_eksik_sayar():
+    """0 degeri de eksik veri kabul edilmeli ve yeniden agirliklandirilmali."""
+    motor = KararMotoru()
+    trend, _ = motor.gecmis_trend_hesapla([
+        {"yil": 2024, "oran": 0.80},
+        {"yil": 2023, "oran": 0.0},
+        {"yil": 2022, "oran": 0.40},
+    ])
+    expected = (0.80 * (0.50 / 0.70)) + (0.40 * (0.20 / 0.70))
+    assert abs(trend - expected) < 1e-6
+
+
+def test_trend_tum_yillar_gecersizse_sifir_doner():
+    """Tum veriler null/0 ise islem guvenli sekilde sifirla sonlanmali."""
+    motor = KararMotoru()
+    trend, log = motor.gecmis_trend_hesapla([
+        {"yil": 2024, "oran": None},
+        {"yil": 2023, "oran": 0},
+        {"yil": 2022, "oran": None},
+    ])
+    assert trend == 0.0
+    assert "Gecmis veri yok." in log
 
 
 def test_rf_yuksek_basari_mufredatta():
@@ -553,11 +613,15 @@ if __name__ == "__main__":
         test_sm_none_guvenli,
         # Algoritma modulleri
         test_ahp_agirliklar_toplami,
+        test_ahp_saaty_matrisi_kurallari,
         test_ahp_cr_gecerli,
         test_topsis_skor_aralik,
         test_topsis_hesaplanamadi_guvenli,
         test_trend_bos_gecmis,
         test_trend_uclu_agirlik,
+        test_trend_rescaling_eksik_orta_yil,
+        test_trend_rescaling_sifiri_eksik_sayar,
+        test_trend_tum_yillar_gecersizse_sifir_doner,
         test_rf_yuksek_basari_mufredatta,
         test_rf_dusuk_basari_dinlenmede,
         test_rf_maks_sayac_iptal,

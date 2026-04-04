@@ -310,8 +310,8 @@ def _run_ahp(criteria: dict) -> dict:
         }
     except Exception as exc:
         logger.warning("AHP hatasi: %s", exc)
-        return {"error": str(exc), "weights": {"basari": 0.5, "trend": 0.2,
-                                                "populerlik": 0.2, "anket": 0.1},
+        return {"error": str(exc), "weights": {"basari": 0.5859, "trend": 0.2297,
+                                                "populerlik": 0.1371, "anket": 0.0473},
                 "CR": 0.0, "valid": False}
 
 
@@ -398,21 +398,38 @@ def _run_trend_lr(gecmis_list: list) -> dict:
     t0 = time.perf_counter()
     try:
         if not gecmis_list:
-            return {"predicted": 0.5, "predicted_100": 50.0,
+            return {"predicted": 0.0, "predicted_100": 0.0,
+                    "log": "Gecmis veri yok.", "method": "none", "elapsed_ms": 0}
+
+        # LR tarafinda da eksik yil mantigi agirlikli ortalama ile ayni kalmali.
+        # Is kurali geregi null/None/0 degerleri gecerli bir yil sayilmaz.
+        valid_gecmis = []
+        for item in gecmis_list:
+            oran = item.get("oran")
+            try:
+                oran_val = float(oran)
+            except (TypeError, ValueError):
+                continue
+            if math.isnan(oran_val) or math.isinf(oran_val) or oran_val <= 0.0:
+                continue
+            valid_gecmis.append({"yil": int(item["yil"]), "oran": min(max(oran_val, 0.0), 1.0)})
+
+        if not valid_gecmis:
+            return {"predicted": 0.0, "predicted_100": 0.0,
                     "log": "Gecmis veri yok.", "method": "none", "elapsed_ms": 0}
 
         motor = KararMotoru()
         trend_wa, log_wa = motor.gecmis_trend_hesapla(gecmis_list)
 
-        if len(gecmis_list) >= 3:
+        if len(valid_gecmis) >= 3:
             try:
                 from sklearn.linear_model import LinearRegression
                 import numpy as np
-                years = np.array([g["yil"] for g in gecmis_list]).reshape(-1, 1)
-                rates = np.array([g["oran"] for g in gecmis_list])
+                years = np.array([g["yil"] for g in valid_gecmis]).reshape(-1, 1)
+                rates = np.array([g["oran"] for g in valid_gecmis])
                 lr = LinearRegression()
                 lr.fit(years, rates)
-                next_year = max(g["yil"] for g in gecmis_list) + 1
+                next_year = max(g["yil"] for g in valid_gecmis) + 1
                 lr_pred = float(np.clip(lr.predict([[next_year]])[0], 0, 1))
                 coef = float(lr.coef_[0])
                 trend_dir = "yukselis" if coef > 0.005 else ("dusus" if coef < -0.005 else "stabil")
@@ -424,7 +441,7 @@ def _run_trend_lr(gecmis_list: list) -> dict:
                     "coefficient": round(coef, 6),
                     "trend_direction": trend_dir,
                     "wa_fallback": round(trend_wa, 4),
-                    "n_years": len(gecmis_list),
+                    "n_years": len(valid_gecmis),
                     "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
                 }
             except Exception as exc:
@@ -435,13 +452,17 @@ def _run_trend_lr(gecmis_list: list) -> dict:
             "predicted_100": round(trend_wa * 100, 2),
             "log": log_wa,
             "method": "weighted_average",
-            "n_years": len(gecmis_list),
+            "n_years": len(valid_gecmis),
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
     except Exception as exc:
         logger.warning("Trend hatasi: %s", exc)
         return {"error": str(exc), "predicted": 0.5, "predicted_100": 50.0,
                 "method": "error"}
+
+
+# Geriye donuk test ve kullanim uyumlulugu.
+_run_trend = _run_trend_lr
 
 
 def _run_rf(criteria: dict, prev_pool: dict, db_path: str = None) -> dict:
@@ -531,6 +552,40 @@ def _run_rf(criteria: dict, prev_pool: dict, db_path: str = None) -> dict:
     except Exception as exc:
         logger.warning("RF hatasi: %s", exc)
         return {"error": str(exc), "predicted_statu": 0, "method": "error"}
+
+
+def _run_rf_simple(criteria: dict, prev_pool: dict) -> dict:
+    """
+    Hafif/kural tabanli RF yardimcisi.
+    Testler ve hafif cagrilar icin sklearn/AI engine katmanina girmeden
+    `_run_rf` fallback mantigini dogrudan uygular.
+    """
+    basari = _safe_float(criteria.get("basari_orani"))
+    doluluk = _safe_float(criteria.get("doluluk_orani"))
+    sayac = int(prev_pool.get("sayac", 0))
+
+    if sayac >= MAKS_DUSME_SAYACI:
+        pred_statu = STATU_IPTAL
+        rule = "Kalici iptal"
+    elif basari >= 0.70 and doluluk >= 0.50:
+        pred_statu = STATU_MUFREDATTA
+        rule = "Yuksek basari + yuksek doluluk"
+    elif basari >= BASARI_BARAJ and doluluk >= DOLULUK_BARAJ:
+        pred_statu = STATU_MUFREDATTA
+        rule = "Yeterli basari + yeterli doluluk"
+    elif basari < BASARI_BARAJ:
+        pred_statu = STATU_DINLENMEDE
+        rule = "Dusuk basari orani"
+    else:
+        pred_statu = STATU_HAVUZDA
+        rule = "Orta duzey performans"
+
+    return {
+        "predicted_statu": pred_statu,
+        "predicted_label": _statu_label(pred_statu),
+        "rule": rule,
+        "method": "rule_based_simple",
+    }
 
 
 def _run_dt(criteria: dict, prev_pool: dict) -> dict:

@@ -1,0 +1,876 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+import os
+import sqlite3
+from typing import Any
+
+import pandas as pd
+from openpyxl.styles import Font
+
+from app.db.schema_compat import ensure_reporting_schema, ensure_survey_import_schema
+from app.services.course_matcher import (
+    load_faculty_course_candidates,
+    match_course_row,
+    normalize_course_key,
+    normalize_course_text,
+)
+from app.services.course_type import build_elective_predicate
+
+
+SURVEY_TEMPLATE_VERSION = "survey-import-v1"
+SURVEY_TEMPLATE_SHEET_NAME = "Ders Veri Giriş Şablonu Oluştur"
+
+
+@dataclass
+class SurveyRow:
+    row_no: int
+    ders_kodu: str | None
+    ders_adi: str | None
+    tercih_sayisi: int
+    aciklama: str | None = None
+    fakulte_adi: str | None = None
+    yil: int | None = None
+    toplam_katilimci: int | None = None
+
+
+@dataclass
+class SurveyImportRowResult:
+    row_no: int
+    ders_kodu: str | None
+    ders_adi: str | None
+    tercih_sayisi: int
+    aciklama: str | None = None
+    matched_ders_id: int | None = None
+    match_method: str | None = None
+    row_status: str = "matched"
+    error_message: str | None = None
+    raw_faculte: str | None = None
+    raw_yil: int | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _normalize_text(value: str | None) -> str:
+    return normalize_course_text(value)
+
+
+def _find_col(columns: list[str], *candidates: str) -> str | None:
+    norm_map = {_normalize_text(col): col for col in columns}
+    for cand in candidates:
+        key = _normalize_text(cand)
+        if key in norm_map:
+            return norm_map[key]
+    return None
+
+
+def _parse_year(value: Any) -> int | None:
+    try:
+        if value is None or pd.isna(value):
+            return None
+        year = int(float(value))
+    except (TypeError, ValueError):
+        text = str(value or "").strip()
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if len(digits) >= 4:
+            try:
+                year = int(digits[:4])
+            except ValueError:
+                return None
+        else:
+            return None
+    return year if 1900 <= year <= 2100 else None
+
+
+def _safe_int(value: Any, default: int | None = None) -> int | None:
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _clean_text(value: Any) -> str | None:
+    if value is None or pd.isna(value):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _excel_column_letter(index_1_based: int) -> str:
+    if index_1_based < 1:
+        raise ValueError("Excel kolon indeksi 1 veya daha buyuk olmali.")
+    out = ""
+    current = int(index_1_based)
+    while current > 0:
+        current, remainder = divmod(current - 1, 26)
+        out = chr(65 + remainder) + out
+    return out
+
+
+def _is_summary_row(ders_kodu: str | None, ders_adi: str | None) -> bool:
+    if _clean_text(ders_kodu):
+        return False
+    normalized_name = normalize_course_key(ders_adi)
+    return normalized_name in {"toplam", "geneltoplam"}
+
+
+def _read_meta_sheet(xls: pd.ExcelFile) -> dict[str, Any]:
+    meta_sheet = next((name for name in xls.sheet_names if _normalize_text(name) == "meta"), None)
+    if not meta_sheet:
+        return {}
+    df = xls.parse(sheet_name=meta_sheet)
+    if df.empty:
+        return {}
+    df.columns = [str(col).strip() for col in df.columns]
+    row = df.iloc[0].to_dict()
+    return {
+        "fakulte_adi": _clean_text(row.get(_find_col(list(df.columns), "fakulte_adi", "fakulte", "faculty"))),
+        "yil": _parse_year(row.get(_find_col(list(df.columns), "yil", "akademik_yil", "year"))),
+        "toplam_katilimci": _safe_int(row.get(_find_col(list(df.columns), "toplam_katilimci", "ankete_katilan_toplam_ogrenci", "total_participants"))),
+        "aciklama": _clean_text(row.get(_find_col(list(df.columns), "aciklama", "not", "notes"))),
+    }
+
+
+def parse_survey_excel(excel_path: str) -> dict[str, Any]:
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Anket dosyasi bulunamadi: {excel_path}")
+
+    xls = pd.ExcelFile(excel_path)
+    meta = _read_meta_sheet(xls)
+    data_sheet = next(
+        (
+            name
+            for name in xls.sheet_names
+            if _normalize_text(name) in {"anketsonuclari", "anket_sonuclari", "anket", "survey"}
+        ),
+        None,
+    )
+    if data_sheet is None:
+        non_meta_sheets = [name for name in xls.sheet_names if _normalize_text(name) != "meta"]
+        if not non_meta_sheets:
+            raise ValueError("Anket veri sayfasi bulunamadi.")
+        data_sheet = non_meta_sheets[0]
+
+    df = xls.parse(sheet_name=data_sheet)
+    df.columns = [str(col).strip() for col in df.columns]
+
+    columns = list(df.columns)
+    col_code = _find_col(columns, "ders_kodu", "ders kodu", "kod", "course_code")
+    col_name = _find_col(columns, "ders_adi", "ders adi", "ders adı", "course_name")
+    col_pref = _find_col(
+        columns,
+        "tercih_sayisi",
+        "tercih sayisi",
+        "tercih sayısı",
+        "oy_sayisi",
+        "oy sayisi",
+        "oy_miktari",
+        "oy miktari",
+        "preference_count",
+    )
+    col_note = _find_col(columns, "aciklama", "açıklama", "not")
+    col_faculty = _find_col(columns, "fakulte_adi", "fakulte", "fakülte")
+    col_year = _find_col(columns, "yil", "yıl", "akademik_yil", "akademik yıl", "year")
+    col_total = _find_col(columns, "toplam_katilimci", "toplam katilimci", "toplam katılımcı", "ankete_katilan_toplam_ogrenci")
+
+    if not col_pref:
+        raise ValueError("Gerekli kolon bulunamadi: tercih_sayisi / oy_miktari")
+    if not (col_code or col_name):
+        raise ValueError("Ders tanimlayici gerekli: ders_kodu veya ders_adi")
+
+    rows: list[SurveyRow] = []
+    warnings: list[str] = []
+    for idx, row in df.iterrows():
+        ders_kodu = _clean_text(row.get(col_code)) if col_code else None
+        ders_adi = _clean_text(row.get(col_name)) if col_name else None
+        tercih_sayisi = _safe_int(row.get(col_pref))
+        aciklama = _clean_text(row.get(col_note)) if col_note else None
+        raw_faculte = _clean_text(row.get(col_faculty)) if col_faculty else None
+        raw_yil = _parse_year(row.get(col_year)) if col_year else None
+        total_katilimci = _safe_int(row.get(col_total)) if col_total else None
+
+        row_has_context = any([ders_kodu, ders_adi, aciklama, raw_faculte, raw_yil, total_katilimci])
+        if not row_has_context and tercih_sayisi is None:
+            continue
+        if not row_has_context and tercih_sayisi is not None:
+            # Sablondaki toplam/formul satiri gibi veri disi satirlari atla.
+            continue
+        if _is_summary_row(ders_kodu=ders_kodu, ders_adi=ders_adi):
+            continue
+
+        if tercih_sayisi is None:
+            warnings.append(f"Satir {idx + 2}: tercih_sayisi/oy_miktari bos veya gecersiz.")
+            tercih_sayisi = -1
+
+        rows.append(
+            SurveyRow(
+                row_no=int(idx) + 2,
+                ders_kodu=ders_kodu,
+                ders_adi=ders_adi,
+                tercih_sayisi=int(tercih_sayisi),
+                aciklama=aciklama,
+                fakulte_adi=raw_faculte,
+                yil=raw_yil,
+                toplam_katilimci=total_katilimci,
+            )
+        )
+
+    return {
+        "meta": meta,
+        "rows": rows,
+        "warnings": warnings,
+        "sheet_name": data_sheet,
+        "template_version": SURVEY_TEMPLATE_VERSION,
+    }
+
+
+def validate_survey_rows(
+    rows: list[SurveyRow],
+    faculty_name: str | None = None,
+    year: int | None = None,
+    declared_total_participants: int | None = None,
+) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not rows:
+        errors.append("Belge icinde aktarilabilir anket satiri yok.")
+        return {"ok": False, "errors": errors, "warnings": warnings, "declared_total_participants": declared_total_participants}
+
+    repeated_totals = {
+        int(row.toplam_katilimci)
+        for row in rows
+        if row.toplam_katilimci is not None
+    }
+    if declared_total_participants is None and len(repeated_totals) == 1:
+        declared_total_participants = next(iter(repeated_totals))
+    elif len(repeated_totals) > 1:
+        errors.append("Belge satirlarindaki toplam_katilimci degerleri birbiriyle tutarsiz.")
+
+    seen_document_keys: dict[str, int] = {}
+    for row in rows:
+        if not row.ders_kodu and not row.ders_adi:
+            errors.append(f"Satir {row.row_no}: ders_kodu veya ders_adi zorunlu.")
+        if row.tercih_sayisi < 0:
+            errors.append(f"Satir {row.row_no}: tercih_sayisi negatif veya gecersiz.")
+        if faculty_name and row.fakulte_adi and _normalize_text(row.fakulte_adi) != _normalize_text(faculty_name):
+            errors.append(
+                f"Satir {row.row_no}: belge fakultesi '{row.fakulte_adi}' secili fakulte '{faculty_name}' ile uyusmuyor."
+            )
+        if year is not None and row.yil is not None and int(row.yil) != int(year):
+            errors.append(f"Satir {row.row_no}: belge yili '{row.yil}' secili yil '{year}' ile uyusmuyor.")
+
+        dedupe_key = normalize_course_text(row.ders_kodu) or f"ad:{normalize_course_key(row.ders_adi)}"
+        if dedupe_key:
+            if dedupe_key in seen_document_keys:
+                errors.append(
+                    f"Belgede ayni ders birden fazla kez geciyor: satir {seen_document_keys[dedupe_key]} ve {row.row_no}."
+                )
+            else:
+                seen_document_keys[dedupe_key] = row.row_no
+
+    return {
+        "ok": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "declared_total_participants": declared_total_participants,
+    }
+
+
+def compute_total_participants(rows: list[SurveyImportRowResult] | list[SurveyRow]) -> int:
+    return int(sum(max(0, int(getattr(row, "tercih_sayisi", 0))) for row in rows))
+
+
+def match_courses(
+    conn: sqlite3.Connection,
+    rows: list[SurveyRow],
+    faculty_id: int,
+    year: int,
+) -> dict[str, Any]:
+    cur = conn.cursor()
+    candidates = load_faculty_course_candidates(cur=cur, faculty_id=int(faculty_id), year=int(year))
+
+    matched_rows: list[SurveyImportRowResult] = []
+    unmatched_rows: list[SurveyImportRowResult] = []
+    seen_course_ids: dict[int, int] = {}
+    errors: list[str] = []
+
+    for row in rows:
+        result = match_course_row(candidates=candidates, ders_kodu=row.ders_kodu, ders_adi=row.ders_adi)
+        row_result = SurveyImportRowResult(
+            row_no=row.row_no,
+            ders_kodu=row.ders_kodu,
+            ders_adi=row.ders_adi,
+            tercih_sayisi=int(row.tercih_sayisi),
+            aciklama=row.aciklama,
+            raw_faculte=row.fakulte_adi,
+            raw_yil=row.yil,
+        )
+        if not result.matched or result.ders_id is None:
+            row_result.row_status = "unmatched"
+            row_result.error_message = result.error or "Sistemde eslesen ders bulunamadi."
+            unmatched_rows.append(row_result)
+            continue
+
+        if int(result.ders_id) in seen_course_ids:
+            first_row = seen_course_ids[int(result.ders_id)]
+            row_result.row_status = "duplicate"
+            row_result.error_message = (
+                f"Ayni ders belge icinde birden fazla kez eslesti: satir {first_row} ve {row.row_no}."
+            )
+            unmatched_rows.append(row_result)
+            continue
+
+        seen_course_ids[int(result.ders_id)] = row.row_no
+        row_result.matched_ders_id = int(result.ders_id)
+        row_result.match_method = result.match_method
+        matched_rows.append(row_result)
+
+    if unmatched_rows:
+        errors.extend(
+            [
+                f"Satir {row.row_no}: {row.error_message or 'Sistemde eslesen ders bulunamadi.'}"
+                for row in unmatched_rows
+            ]
+        )
+
+    return {
+        "ok": len(errors) == 0,
+        "matched_rows": matched_rows,
+        "unmatched_rows": unmatched_rows,
+        "matched_count": len(matched_rows),
+        "unmatched_count": len(unmatched_rows),
+        "errors": errors,
+    }
+
+
+def _resolve_faculty_name(cur: sqlite3.Cursor, faculty_id: int) -> str | None:
+    cur.execute("SELECT ad FROM fakulte WHERE fakulte_id = ? LIMIT 1", (int(faculty_id),))
+    row = cur.fetchone()
+    return str(row[0] or "") if row else None
+
+
+def _table_exists(cur: sqlite3.Cursor, table_name: str) -> bool:
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (str(table_name),),
+    )
+    return cur.fetchone() is not None
+
+
+def _load_template_courses(
+    cur: sqlite3.Cursor,
+    faculty_id: int,
+    year: int,
+) -> list[dict[str, Any]]:
+    if not _table_exists(cur, "havuz") or not _table_exists(cur, "ders"):
+        raise ValueError("Anket sablonu icin gereken havuz/ders tablolari bulunamadi.")
+
+    try:
+        elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    except Exception:
+        elective_predicate = "1=1"
+
+    if elective_predicate == "0=1":
+        elective_predicate = "1=1"
+
+    code_expr = "NULLIF(TRIM(COALESCE(d.kod, '')), '')"
+    name_expr = "COALESCE(NULLIF(TRIM(d.ad), ''), NULLIF(TRIM(h.ders_adi), ''), 'Ders ' || h.ders_id)"
+
+    cur.execute(
+        f"""
+        SELECT
+            d.ders_id,
+            {code_expr} AS ders_kodu,
+            {name_expr} AS ders_adi,
+            MAX(CASE WHEN h.statu = 1 THEN 1 ELSE 0 END) AS statu_oncelik
+        FROM havuz h
+        JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
+        WHERE h.fakulte_id = ?
+          AND h.yil = ?
+          AND h.statu IN (0, 1)
+          AND {elective_predicate}
+        GROUP BY d.ders_id, {code_expr}, {name_expr}
+        ORDER BY statu_oncelik DESC, ders_adi, d.ders_id
+        """,
+        (int(faculty_id), int(year)),
+    )
+    return [
+        {
+            "ders_id": int(row[0]),
+            "ders_kodu": _clean_text(row[1]),
+            "ders_adi": str(row[2] or "").strip(),
+        }
+        for row in cur.fetchall()
+        if row and row[0] is not None and str(row[2] or "").strip()
+    ]
+
+
+def load_survey_template_context(
+    db_path: str,
+    faculty_id: int,
+    year: int,
+) -> dict[str, Any]:
+    if not os.path.exists(db_path):
+        raise FileNotFoundError("Veritabani bulunamadi.")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        ensure_reporting_schema(conn)
+        cur = conn.cursor()
+        faculty_name = _resolve_faculty_name(cur, int(faculty_id))
+        if not faculty_name:
+            raise ValueError("Secili fakulte bulunamadi.")
+
+        courses = _load_template_courses(cur=cur, faculty_id=int(faculty_id), year=int(year))
+        return {
+            "faculty_name": faculty_name,
+            "year": int(year),
+            "courses": courses,
+        }
+    finally:
+        conn.close()
+
+
+def _get_faculty_year_course_scope(cur: sqlite3.Cursor, faculty_id: int, year: int) -> set[int]:
+    scope_ids: set[int] = set()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('mufredat', 'mufredat_ders', 'bolum', 'havuz')")
+    existing_tables = {str(row[0]) for row in cur.fetchall() if row and row[0]}
+
+    if {"mufredat", "mufredat_ders", "bolum"}.issubset(existing_tables):
+        cur.execute(
+            """
+            SELECT DISTINCT md.ders_id
+            FROM mufredat m
+            JOIN bolum b ON b.bolum_id = m.bolum_id
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            WHERE b.fakulte_id = ?
+              AND m.akademik_yil = ?
+            """,
+            (int(faculty_id), int(year)),
+        )
+        scope_ids.update(int(row[0]) for row in cur.fetchall() if row and row[0] is not None)
+
+    if "havuz" in existing_tables:
+        cur.execute(
+            """
+            SELECT DISTINCT CAST(ders_id AS INTEGER)
+            FROM havuz
+            WHERE fakulte_id = ? AND yil = ?
+            """,
+            (int(faculty_id), int(year)),
+        )
+        scope_ids.update(int(row[0]) for row in cur.fetchall() if row and row[0] is not None)
+
+    if scope_ids:
+        return scope_ids
+
+    try:
+        elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    except Exception:
+        elective_predicate = "1=1"
+
+    cur.execute(
+        f"""
+        SELECT DISTINCT d.ders_id
+        FROM ders d
+        WHERE d.fakulte_id = ?
+          AND {elective_predicate}
+        """,
+        (int(faculty_id),),
+    )
+    scope_ids.update(int(row[0]) for row in cur.fetchall() if row and row[0] is not None)
+    return scope_ids
+
+
+def replace_existing_survey_data(
+    conn: sqlite3.Connection,
+    faculty_id: int,
+    year: int,
+    scope_course_ids: set[int] | None = None,
+) -> dict[str, int]:
+    ensure_survey_import_schema(conn, commit=False)
+    cur = conn.cursor()
+    faculty_id = int(faculty_id)
+    year = int(year)
+    scope_course_ids = set(scope_course_ids or [])
+
+    cur.execute(
+        "SELECT import_id FROM survey_import WHERE fakulte_id = ? AND yil = ? LIMIT 1",
+        (faculty_id, year),
+    )
+    row = cur.fetchone()
+    previous_import_id = int(row[0]) if row and row[0] is not None else None
+
+    if previous_import_id is not None:
+        cur.execute(
+            "SELECT ders_id FROM ders_kriterleri WHERE yil = ? AND anket_import_id = ?",
+            (year, previous_import_id),
+        )
+        scope_course_ids.update(int(item[0]) for item in cur.fetchall() if item and item[0] is not None)
+        cur.execute("SELECT matched_ders_id FROM survey_import_rows WHERE import_id = ?", (previous_import_id,))
+        scope_course_ids.update(int(item[0]) for item in cur.fetchall() if item and item[0] is not None)
+
+    if not scope_course_ids:
+        scope_course_ids = _get_faculty_year_course_scope(cur, faculty_id, year)
+
+    criteria_rows_reset = 0
+    for ders_id in sorted(scope_course_ids):
+        cur.execute(
+            """
+            UPDATE ders_kriterleri
+            SET anket_katilimci = 0,
+                anket_dersi_secen = 0,
+                anket_veri_kaynagi = 'manual',
+                anket_manual_locked = 0,
+                anket_import_id = NULL,
+                anket_imported_at = NULL
+            WHERE ders_id = ? AND yil = ?
+            """,
+            (int(ders_id), year),
+        )
+        criteria_rows_reset += int(cur.rowcount or 0)
+
+    deleted_row_count = 0
+    if previous_import_id is not None:
+        cur.execute("DELETE FROM survey_import_rows WHERE import_id = ?", (previous_import_id,))
+        deleted_row_count = int(cur.rowcount or 0)
+        cur.execute("DELETE FROM survey_import WHERE import_id = ?", (previous_import_id,))
+
+    return {
+        "previous_import_deleted": 1 if previous_import_id is not None else 0,
+        "previous_rows_deleted": deleted_row_count,
+        "criteria_rows_reset": criteria_rows_reset,
+    }
+
+
+def apply_survey_to_criteria(
+    conn: sqlite3.Connection,
+    faculty_id: int,
+    year: int,
+    rows: list[SurveyImportRowResult],
+    source_filename: str | None = None,
+    template_version: str = SURVEY_TEMPLATE_VERSION,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    ensure_survey_import_schema(conn, commit=False)
+    cur = conn.cursor()
+    faculty_id = int(faculty_id)
+    year = int(year)
+    total_participants = compute_total_participants(rows)
+    now = _now_utc()
+
+    matched_course_ids = {int(row.matched_ders_id) for row in rows if row.matched_ders_id is not None}
+    scope_course_ids = _get_faculty_year_course_scope(cur, faculty_id, year) | matched_course_ids
+    replace_stats = replace_existing_survey_data(
+        conn=conn,
+        faculty_id=faculty_id,
+        year=year,
+        scope_course_ids=scope_course_ids,
+    )
+
+    cur.execute(
+        """
+        INSERT INTO survey_import
+            (fakulte_id, yil, total_participants, matched_course_count, unmatched_row_count,
+             source_filename, template_version, notes, imported_at, status)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, 'applied')
+        """,
+        (
+            faculty_id,
+            year,
+            int(total_participants),
+            int(len(matched_course_ids)),
+            source_filename,
+            template_version,
+            notes,
+            now,
+        ),
+    )
+    import_id = int(cur.lastrowid)
+
+    course_pref_map = {int(ders_id): 0 for ders_id in scope_course_ids}
+    for row in rows:
+        if row.matched_ders_id is None:
+            continue
+        course_pref_map[int(row.matched_ders_id)] = int(row.tercih_sayisi)
+        cur.execute(
+            """
+            INSERT INTO survey_import_rows
+                (import_id, row_no, ders_kodu, ders_adi, tercih_sayisi, aciklama,
+                 matched_ders_id, match_method, row_status, error_message, raw_faculte, raw_yil)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                import_id,
+                int(row.row_no),
+                row.ders_kodu,
+                row.ders_adi,
+                int(row.tercih_sayisi),
+                row.aciklama,
+                int(row.matched_ders_id),
+                row.match_method,
+                row.row_status,
+                row.error_message,
+                row.raw_faculte,
+                row.raw_yil,
+            ),
+        )
+
+    created_rows = 0
+    updated_rows = 0
+    for ders_id in sorted(scope_course_ids):
+        tercih_sayisi = int(course_pref_map.get(int(ders_id), 0))
+        cur.execute(
+            """
+            SELECT id
+            FROM ders_kriterleri
+            WHERE ders_id = ? AND yil = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (int(ders_id), year),
+        )
+        existing = cur.fetchone()
+        if existing:
+            cur.execute(
+                """
+                UPDATE ders_kriterleri
+                SET anket_katilimci = ?,
+                    anket_dersi_secen = ?,
+                    anket_veri_kaynagi = 'survey_import',
+                    anket_manual_locked = 1,
+                    anket_import_id = ?,
+                    anket_imported_at = ?
+                WHERE id = ?
+                """,
+                (total_participants, tercih_sayisi, import_id, now, int(existing[0])),
+            )
+            updated_rows += int(cur.rowcount or 0)
+        else:
+            cur.execute(
+                """
+                INSERT INTO ders_kriterleri
+                    (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                     kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen,
+                     anket_veri_kaynagi, anket_manual_locked, anket_import_id, anket_imported_at)
+                VALUES (?, ?, 'Güz', 0, 0, 0.0, 0, 0, ?, ?, 'survey_import', 1, ?, ?)
+                """,
+                (int(ders_id), year, total_participants, tercih_sayisi, import_id, now),
+            )
+            created_rows += 1
+
+    return {
+        "ok": True,
+        "import_id": import_id,
+        "total_participants": total_participants,
+        "scope_course_count": len(scope_course_ids),
+        "created_rows": created_rows,
+        "updated_rows": updated_rows,
+        "replace": replace_stats,
+    }
+
+
+def import_survey_excel(
+    db_path: str,
+    excel_path: str,
+    faculty_id: int,
+    year: int,
+    source_filename: str | None = None,
+) -> dict[str, Any]:
+    if not os.path.exists(db_path):
+        return {"ok": False, "message": "Veritabani bulunamadi.", "errors": ["Veritabani bulunamadi."]}
+    if not os.path.exists(excel_path):
+        return {"ok": False, "message": "Anket dosyasi bulunamadi.", "errors": ["Anket dosyasi bulunamadi."]}
+
+    try:
+        parsed = parse_survey_excel(excel_path)
+    except Exception as exc:
+        return {"ok": False, "message": f"Anket dosyasi okunamadi: {exc}", "errors": [str(exc)]}
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_reporting_schema(conn)
+        ensure_survey_import_schema(conn)
+        cur = conn.cursor()
+        faculty_name = _resolve_faculty_name(cur, int(faculty_id))
+        if not faculty_name:
+            return {"ok": False, "message": "Secili fakulte bulunamadi.", "errors": ["Secili fakulte bulunamadi."]}
+
+        meta = dict(parsed.get("meta") or {})
+        declared_total = meta.get("toplam_katilimci")
+        validation = validate_survey_rows(
+            rows=list(parsed.get("rows") or []),
+            faculty_name=faculty_name,
+            year=int(year),
+            declared_total_participants=declared_total,
+        )
+        warnings = list(parsed.get("warnings") or []) + list(validation.get("warnings") or [])
+        if not validation.get("ok"):
+            return {
+                "ok": False,
+                "message": "Anket belgesi dogrulamasi basarisiz.",
+                "errors": list(validation.get("errors") or []),
+                "warnings": warnings,
+                "matched_count": 0,
+                "unmatched_count": 0,
+            }
+
+        matched = match_courses(
+            conn=conn,
+            rows=list(parsed.get("rows") or []),
+            faculty_id=int(faculty_id),
+            year=int(year),
+        )
+        if not matched.get("ok"):
+            return {
+                "ok": False,
+                "message": "Belgedeki bazi dersler sistemde bulunamadi. Veri uygulanmadi.",
+                "errors": list(matched.get("errors") or []),
+                "warnings": warnings,
+                "matched_count": int(matched.get("matched_count") or 0),
+                "unmatched_count": int(matched.get("unmatched_count") or 0),
+                "matched_rows": [row.as_dict() for row in matched.get("matched_rows") or []],
+                "unmatched_rows": [row.as_dict() for row in matched.get("unmatched_rows") or []],
+            }
+
+        matched_rows = list(matched.get("matched_rows") or [])
+        total_participants = compute_total_participants(matched_rows)
+        declared_total = validation.get("declared_total_participants")
+        if declared_total is not None and int(declared_total) != int(total_participants):
+            return {
+                "ok": False,
+                "message": "Belgedeki toplam_katilimci degeri tercih satirlari toplami ile uyusmuyor.",
+                "errors": [
+                    f"Beklenen toplam_katilimci={int(declared_total)}, hesaplanan={int(total_participants)}."
+                ],
+                "warnings": warnings,
+                "matched_count": int(matched.get("matched_count") or 0),
+                "unmatched_count": int(matched.get("unmatched_count") or 0),
+            }
+
+        conn.execute("BEGIN")
+        applied = apply_survey_to_criteria(
+            conn=conn,
+            faculty_id=int(faculty_id),
+            year=int(year),
+            rows=matched_rows,
+            source_filename=source_filename or os.path.basename(excel_path),
+            template_version=str(parsed.get("template_version") or SURVEY_TEMPLATE_VERSION),
+            notes=meta.get("aciklama"),
+        )
+        conn.commit()
+
+        return {
+            "ok": True,
+            "message": (
+                "Anket belgesi basariyla yuklendi. "
+                f"Toplam katilimci sayisi otomatik hesaplandi: {applied['total_participants']}."
+            ),
+            "faculty_id": int(faculty_id),
+            "year": int(year),
+            "total_participants": int(applied["total_participants"]),
+            "matched_count": int(matched.get("matched_count") or 0),
+            "unmatched_count": int(matched.get("unmatched_count") or 0),
+            "updated_course_count": int(applied.get("updated_rows") or 0),
+            "created_course_count": int(applied.get("created_rows") or 0),
+            "locked_course_count": int(applied.get("scope_course_count") or 0),
+            "replace": dict(applied.get("replace") or {}),
+            "warnings": warnings,
+            "matched_rows": [row.as_dict() for row in matched_rows],
+            "unmatched_rows": [],
+            "import_id": int(applied["import_id"]),
+        }
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": f"Anket yukleme hatasi: {exc}",
+            "errors": [str(exc)],
+            "warnings": list(parsed.get("warnings") or []),
+        }
+    finally:
+        conn.close()
+
+
+def write_survey_template_excel(
+    target_path: str,
+    faculty_name: str | None = None,
+    year: int | None = None,
+    db_path: str | None = None,
+    faculty_id: int | None = None,
+) -> str:
+    template_courses: list[dict[str, Any]] = []
+    if db_path and faculty_id is not None and year is not None:
+        context = load_survey_template_context(
+            db_path=db_path,
+            faculty_id=int(faculty_id),
+            year=int(year),
+        )
+        faculty_name = str(context.get("faculty_name") or faculty_name or "")
+        template_courses = list(context.get("courses") or [])
+        if not template_courses:
+            raise ValueError("Secili fakulte ve yil icin havuzda uygun secmeli ders bulunamadi.")
+
+    faculty_text = faculty_name or "Ornek Fakultesi"
+    year_value = int(year or datetime.now().year)
+
+    if template_courses:
+        survey_rows = [
+            {
+                "fakulte_adi": faculty_text,
+                "yil": year_value,
+                "ders_kodu": course.get("ders_kodu"),
+                "ders_adi": course.get("ders_adi"),
+                "oy_miktari": None,
+            }
+            for course in template_courses
+        ]
+    else:
+        survey_rows = [
+            {
+                "fakulte_adi": faculty_text,
+                "yil": year_value,
+                "ders_kodu": "SEC101",
+                "ders_adi": "Ornek Secmeli Ders 1",
+                "oy_miktari": None,
+            },
+            {
+                "fakulte_adi": faculty_text,
+                "yil": year_value,
+                "ders_kodu": "SEC102",
+                "ders_adi": "Ornek Secmeli Ders 2",
+                "oy_miktari": None,
+            },
+        ]
+    survey_df = pd.DataFrame(survey_rows)
+
+    with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
+        survey_df.to_excel(writer, sheet_name=SURVEY_TEMPLATE_SHEET_NAME, index=False)
+        worksheet = writer.sheets[SURVEY_TEMPLATE_SHEET_NAME]
+        header_columns = list(survey_df.columns)
+        oy_col_idx = header_columns.index("oy_miktari") + 1
+        ders_adi_col_idx = header_columns.index("ders_adi") + 1
+        first_data_row = 2
+        last_data_row = len(survey_rows) + 1
+        total_row = last_data_row + 1
+        oy_letter = _excel_column_letter(oy_col_idx)
+
+        worksheet.cell(row=total_row, column=ders_adi_col_idx, value="TOPLAM")
+        worksheet.cell(
+            row=total_row,
+            column=oy_col_idx,
+            value=f"=SUM({oy_letter}{first_data_row}:{oy_letter}{last_data_row})",
+        )
+        worksheet.cell(row=total_row, column=ders_adi_col_idx).font = Font(bold=True)
+        worksheet.cell(row=total_row, column=oy_col_idx).font = Font(bold=True)
+    return target_path

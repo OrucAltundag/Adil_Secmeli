@@ -42,7 +42,7 @@ class Database:
         self._migrate_ders_kriterleri_anket()
 
     def _migrate_ders_kriterleri_anket(self) -> None:
-        """ders_kriterleri tablosuna anket sütunları ekler (yoksa)."""
+        """ders_kriterleri tablosuna anket ve import metadata sütunları ekler (yoksa)."""
         if not self.conn:
             return
         cur = self.conn.cursor()
@@ -52,9 +52,17 @@ class Database:
                 return
             cur.execute("PRAGMA table_info(ders_kriterleri)")
             cols = {row[1] for row in cur.fetchall()}
-            for col, default in [("anket_katilimci", "0"), ("anket_dersi_secen", "0")]:
+            columns = [
+                ("anket_katilimci", "INTEGER DEFAULT 0"),
+                ("anket_dersi_secen", "INTEGER DEFAULT 0"),
+                ("anket_veri_kaynagi", "TEXT DEFAULT 'manual'"),
+                ("anket_manual_locked", "INTEGER NOT NULL DEFAULT 0"),
+                ("anket_import_id", "INTEGER"),
+                ("anket_imported_at", "TEXT"),
+            ]
+            for col, ddl in columns:
                 if col not in cols:
-                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col} INTEGER DEFAULT {default}")
+                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col} {ddl}")
             self.conn.commit()
         except Exception as e:
             if self.conn:

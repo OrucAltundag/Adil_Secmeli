@@ -63,7 +63,6 @@ except Exception:
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
 from app.services.calculation import run_automatic_scoring
 from app.services.course_type import build_elective_predicate
-from app.services.havuz_karar import mufredat_durumunu_esitle
 from app.services.yearly_workflow import is_yearly_workflow_enabled
 
 
@@ -256,7 +255,12 @@ class AdilSecmeliApp(tk.Tk):
     def auto_connect(self):
         """
         Uygulama acilisinda otomatik veritabani baglantisi kurar.
-        Sirasyla: DB baglan -> havuz seed -> sonraki yil uret -> statu esitle -> UI yenile.
+                Sirasyla: DB baglan -> havuz seed -> (opsiyonel) sonraki yil uret -> UI yenile.
+
+                Not:
+                - Tum yillari kapsayan statu/yil zincirleme esitleme acilista otomatik
+                    calistirilmaz. Bu islem sadece kullanici tetigiyle (ilgili butonlardan)
+                    calistirilir.
         """
         db_path = self.config_data.get("db_path")
 
@@ -294,30 +298,7 @@ class AdilSecmeliApp(tk.Tk):
                 except Exception as e:
                     print(f"[AUTO] Otomatik uretim hatasi: {e}")
 
-            # 4) State-machine esitleme (dinamik yil araligi)
-            try:
-                _, yr = self.db.run_sql(
-                    """
-                    SELECT MIN(yil), MAX(yil) FROM (
-                        SELECT yil as yil FROM havuz
-                        UNION
-                        SELECT akademik_yil as yil FROM mufredat
-                    )
-                    """
-                )
-                min_yil = int(yr[0][0]) if yr and yr[0][0] is not None else None
-                max_yil = int(yr[0][1]) if yr and yr[0][1] is not None else None
-                if min_yil is not None and max_yil is not None and max_yil >= min_yil:
-                    print(f"[AUTO] Statu/yil esitleme: {min_yil} -> {max_yil}")
-                    mufredat_durumunu_esitle(
-                        db_path,
-                        baslangic_yili=min_yil,
-                        bitis_yili=max_yil,
-                    )
-            except Exception as e:
-                print(f"[AUTO] Esitleme uyarisi: {e}")
-
-            # 5) UI yenileme
+            # 4) UI yenileme
             try:
                 self.tab_calc.refresh()
             except Exception:

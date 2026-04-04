@@ -35,6 +35,8 @@ _MSG_CRITERIA_BLOCK = (
     "Yeni yıl müfredatı oluşturulamaz."
 )
 
+_NEXT_YEAR_BATCH_ALGOS = ("mock", "trend", "ahp", "topsis", "lr", "rf", "dt")
+
 
 
 class CalcTab(ttk.Frame):
@@ -138,7 +140,10 @@ class CalcTab(ttk.Frame):
         try:
             if hasattr(self.criteria_view, "load_courses"):
                 restore_id = getattr(self.criteria_view, "selected_course_id", None)
-                self.criteria_view.load_courses(restore_course_id=restore_id)
+                self.criteria_view.load_courses(
+                    restore_course_id=restore_id,
+                    show_warnings=False,
+                )
         except Exception as e:
             print(f"[CalcTab] load_courses hatasi: {e}")
         try:
@@ -407,6 +412,35 @@ class CalcTab(ttk.Frame):
     # Eski kod: Algoritma kontrol merkezi: secili yil icin toplu hesaplama calistir
     # Yeni davranis: "Sonraki Yil Mufredat Uret" butonu artik hem kriter tamlık kontrolu
     # yapar hem de tum algoritmalari calistirip sonraki yil mufredatini uretir.
+
+    def _run_full_algorithm_batch_for_next_year(self):
+        """
+        Eski 'Tumunu Calistir' davranisini korur.
+        Next-year akisi once gorunur algoritmalari tek tek calistirir, sonra
+        mufredat uretim hattina gecer.
+        """
+        batch_results = []
+        for batch_algo_id in _NEXT_YEAR_BATCH_ALGOS:
+            if batch_algo_id not in self.ui_refs:
+                continue
+            self.run_single_step(batch_algo_id)
+
+            status_text = ""
+            status_widget = self.ui_refs.get(batch_algo_id, {}).get("status")
+            if status_widget is not None:
+                try:
+                    status_text = str(status_widget.cget("text") or "")
+                except Exception:
+                    status_text = ""
+
+            batch_results.append(
+                {
+                    "id": batch_algo_id,
+                    "status": status_text or "Bilinmiyor",
+                    "ok": status_text == "Tamamlandi",
+                }
+            )
+        return batch_results
 
     def run_single_step(self, algo_id: str):
         """
@@ -713,6 +747,9 @@ class CalcTab(ttk.Frame):
                         return
 
                 # Kriter kontrolü geçildi - algoritmayı çalıştır (sadece seçili fakülte için)
+                batch_results = self._run_full_algorithm_batch_for_next_year()
+                batch_failures = [item for item in batch_results if not item.get("ok")]
+
                 summary = run_all_algorithms_for_year(
                     yil=int(secili_yil),
                     db_path=db_path,
@@ -730,6 +767,18 @@ class CalcTab(ttk.Frame):
                     f"Ozet: islenen_fakulte={len(processed)} | atlanan_fakulte={len(skipped)} | hata={len(errors)}"
                 )
                 lines.append("")
+
+                if batch_results:
+                    lines.append("Toplu calistirilan algoritmalar:")
+                    for item in batch_results:
+                        lines.append(f"- {item.get('id', '').upper()}: {item.get('status', 'Bilinmiyor')}")
+                    if batch_failures:
+                        lines.append("")
+                        lines.append(
+                            "Uyari: Bazi algoritmalar hata verdi: "
+                            + ", ".join(item.get("id", "").upper() for item in batch_failures)
+                        )
+                    lines.append("")
 
                 if processed:
                     lines.append("Islenen fakulteler:")
@@ -765,7 +814,7 @@ class CalcTab(ttk.Frame):
                     lines.append("Calistirilacak uygun fakulte bulunamadi.")
 
                 sonuc_metni = "\n".join(lines)
-                basarili_mi = bool(summary.get("ok", True)) and len(errors) == 0
+                basarili_mi = bool(summary.get("ok", True)) and len(errors) == 0 and not batch_failures
 
                 try:
                     self._refresh_algo_faculty_options()
@@ -810,6 +859,13 @@ class CalcTab(ttk.Frame):
                         yil=y_ml,
                         curriculum_only=True,
                     )
+                    train_meta = havuz_ai.get_last_training_meta()
+                    if train_meta.get("fallback_used"):
+                        sonuc_metni += (
+                            "\nNot: Mufredat kapsaminda yeterli egitim verisi olmadigi icin "
+                            f"ML egitimi fakulte geneli havuz verisiyle genisletildi "
+                            f"({train_meta.get('target_rows')} -> {train_meta.get('fit_rows')} satir).\n"
+                        )
                     if not pred_df.empty:
                         ders_names = {}
                         try:

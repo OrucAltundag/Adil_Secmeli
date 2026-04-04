@@ -10,6 +10,7 @@
 import sqlite3
 import pandas as pd
 import math
+import numpy as np
 import random
 import os
 import traceback
@@ -34,6 +35,22 @@ logger = logging.getLogger(__name__)
 # ---------- BÃ–LÃœM 1: Karar Motoru (AHP + TOPSIS) ----------
 # AHP Random Index degeri, 4 kriter icin sabit tablo degeri
 RI_4 = 0.90
+# Saaty ikili karsilastirma matrisi:
+# - Basari / Trend = 3
+# - Basari / Populerlik = 5
+# - Basari / Anket = 9
+# - Trend / Populerlik = 2
+# - Trend / Anket = 5
+# - Populerlik / Anket = 4
+AHP_PAIRWISE_MATRIX = np.array(
+    [
+        [1.0, 3.0, 5.0, 9.0],
+        [1.0 / 3.0, 1.0, 2.0, 5.0],
+        [1.0 / 5.0, 1.0 / 2.0, 1.0, 4.0],
+        [1.0 / 9.0, 1.0 / 5.0, 1.0 / 4.0, 1.0],
+    ],
+    dtype=float,
+)
 # Kesinlesme puani baraj degeri â€” bu skorun altinda kalan dersler mufredattan duser
 DROP_SCORE_THRESHOLD = 40.0
 # Ortalama not baraj degeri â€” bu notun altindaki dersler mufredattan duser
@@ -43,6 +60,8 @@ DROP_AVERAGE_GRADE_THRESHOLD = 45.0
 POOL_DEFAULT_SCORE = 50.0
 # Havuz derslerinin anket bazli puan yayilim araligi (50 Â± bu deger)
 POOL_ANKET_SCORE_SPREAD = 10.0
+# Trend hesabi icin varsayilan 3 yillik agirlik seti.
+TREND_DEFAULT_WEIGHTS = (0.50, 0.30, 0.20)
 # Ayni bolum mufredatina fakulte ortak havuzundan en fazla bu kadar dis bolum dersi girebilir.
 MAX_CROSS_DEPARTMENT_COURSES = 1
 
@@ -50,19 +69,31 @@ class KararMotoru:
     def __init__(self, db=None):
         self.db = db
 
+    def ahp_matrisi(self):
+        """Saaty kurallarina gore kurulan 4x4 ikili karsilastirma matrisini doner."""
+        return np.array(AHP_PAIRWISE_MATRIX, copy=True)
+
     def ahp_calistir(self):
-        # 4 kriter: basari, trend, populerlik, anket
-        matris = [
-            [1,    2,    4,    5],
-            [0.5,  1,    3,    4],
-            [0.25, 0.33, 1,    2],
-            [0.20, 0.25, 0.50, 1]
-        ]
-        sutun_top = [sum(col) for col in zip(*matris)]
-        agirliklar = [sum([(r[i] / (sutun_top[i] or 1)) for i in range(4)]) / 4 for r in matris]
-        s = sum(agirliklar) or 1.0
-        agirliklar = [a / s for a in agirliklar]
-        return agirliklar
+        """
+        AHP agirliklarini ozvektor yontemi ile hesaplar.
+
+        Adimlar:
+        1. Ikili karsilastirma matrisinin ozdeger/ozvektorlerini bul
+        2. En buyuk ozdegere karsilik gelen ana ozvektoru sec
+        3. Ozvektoru 1.0 toplamina normalize et
+        """
+        matris = self.ahp_matrisi()
+        eigenvalues, eigenvectors = np.linalg.eig(matris)
+
+        # Perron-Frobenius teoremi geregi pozitif reciproqual AHP matrisinde
+        # en buyuk ozdegere karsilik gelen ozvektor asil agirlik vektorudur.
+        principal_index = int(np.argmax(eigenvalues.real))
+        principal_vector = np.real_if_close(eigenvectors[:, principal_index]).astype(float)
+        principal_vector = np.abs(principal_vector)
+
+        total = float(principal_vector.sum()) or 1.0
+        agirliklar = principal_vector / total
+        return agirliklar.tolist()
 
     def ahp_tutarlilik_kontrolu(self, matris=None, agirliklar=None):
         """
@@ -70,44 +101,95 @@ class KararMotoru:
         DÃ¶ner: (cr: float, gecerli: bool, lambda_max: float)
         """
         if matris is None:
-            matris = [
-                [1, 2, 4, 5], [0.5, 1, 3, 4],
-                [0.25, 0.33, 1, 2], [0.20, 0.25, 0.50, 1]
-            ]
+            matris = self.ahp_matrisi()
+        else:
+            matris = np.array(matris, dtype=float)
         if agirliklar is None:
             agirliklar = self.ahp_calistir()
-        n = len(matris)
-        weighted_sum = [sum(matris[i][j] * agirliklar[j] for j in range(n)) for i in range(n)]
-        lambda_vals = [weighted_sum[i] / (agirliklar[i] or 1e-10) for i in range(n)]
-        lambda_max = sum(lambda_vals) / n
+        agirliklar = np.array(agirliklar, dtype=float)
+
+        # lambda_max, A*w vektorunun w ile eleman bazli bolumunun ortalamasidir.
+        weighted_sum = matris.dot(agirliklar)
+        lambda_vals = weighted_sum / np.where(np.abs(agirliklar) > 1e-10, agirliklar, 1e-10)
+        n = len(agirliklar)
+        lambda_max = float(np.mean(lambda_vals))
         ci = (lambda_max - n) / (n - 1) if n > 1 else 0
         cr = ci / RI_4 if RI_4 else 0
         return cr, cr < 0.10, lambda_max
 
     def gecmis_trend_hesapla(self, gecmis_list):
         """
-        GeÃ§miÅŸ yÄ±llarÄ±n aÄŸÄ±rlÄ±klÄ± ortalamasÄ±nÄ± hesaplar.
+        Gecmis yillarin agirlikli ortalamasini hesaplar.
         gecmis_list: [{"yil": 2024, "oran": 0.85}, {"yil": 2023, "oran": 0.70}, ...]
-        En yeni yÄ±l en yÃ¼ksek aÄŸÄ±rlÄ±ÄŸÄ± alÄ±r.
-        DÃ¶ner: (trend_skoru_float, log_mesaji_str)
+        En yeni yil en yuksek varsayilan agirligi alir.
+
+        Re-scaling kurali:
+        - Null/None/0/gecersiz oranlar "eksik veri" kabul edilir.
+        - Sadece gecerli yillarin varsayilan agirliklari toplanir.
+        - Her gecerli yilin agirligi bu toplama bolunerek normalize edilir.
+        - Boylece eksik yil varsa kalan agirliklar dinamik olarak yeniden dagitilir.
         """
         if not gecmis_list:
-            return 0.0, "GeÃ§miÅŸ veri yok."
+            return 0.0, "Gecmis veri yok."
 
-        agirlik_sirasi = [0.50, 0.30, 0.20]
-        toplam_agirlik = 0.0
+        def _coerce_ratio(raw_value):
+            """
+            Is kurali geregi 0 da eksik veri sayilir; yalnizca pozitif ve sonlu
+            oranlar hesaplamaya katilir.
+            """
+            if raw_value is None:
+                return None
+            try:
+                ratio = float(raw_value)
+            except (TypeError, ValueError):
+                return None
+            if math.isnan(ratio) or math.isinf(ratio) or ratio <= 0.0:
+                return None
+            return max(0.0, min(1.0, ratio))
+
+        slots = []
+        for idx, item in enumerate(list(gecmis_list)[: len(TREND_DEFAULT_WEIGHTS)]):
+            varsayilan_agirlik = TREND_DEFAULT_WEIGHTS[idx]
+            yil = item.get("yil", f"Yil {idx + 1}")
+            oran = _coerce_ratio(item.get("oran"))
+            slots.append(
+                {
+                    "yil": yil,
+                    "oran": oran,
+                    "varsayilan_agirlik": varsayilan_agirlik,
+                }
+            )
+
+        gecerli_yillar = [slot for slot in slots if slot["oran"] is not None]
+        if not gecerli_yillar:
+            return 0.0, "Gecmis veri yok."
+
+        toplam_varsayilan_agirlik = sum(slot["varsayilan_agirlik"] for slot in gecerli_yillar)
+        if toplam_varsayilan_agirlik <= 0:
+            return 0.0, "Gecmis veri yok."
+
+        yeniden_olceklendi = not math.isclose(toplam_varsayilan_agirlik, 1.0, rel_tol=1e-9, abs_tol=1e-9)
         toplam_puan = 0.0
         log_parcalari = []
 
-        for i, item in enumerate(gecmis_list):
-            agirlik = agirlik_sirasi[i] if i < len(agirlik_sirasi) else 0.0
-            oran = float(item.get("oran", 0) or 0)
-            puan = oran * agirlik
-            toplam_puan += puan
-            toplam_agirlik += agirlik
-            log_parcalari.append(f"{item['yil']}: %{oran*100:.1f} x {agirlik:.0%}")
+        for slot in slots:
+            oran = slot["oran"]
+            if oran is None:
+                log_parcalari.append(f"{slot['yil']}: veri yok")
+                continue
 
-        trend = toplam_puan / toplam_agirlik if toplam_agirlik > 0 else 0.0
+            yeni_agirlik = slot["varsayilan_agirlik"] / toplam_varsayilan_agirlik
+            toplam_puan += oran * yeni_agirlik
+
+            if yeniden_olceklendi:
+                log_parcalari.append(
+                    f"{slot['yil']}: %{oran*100:.1f} x {yeni_agirlik:.1%} "
+                    f"(re-scaled, varsayilan {slot['varsayilan_agirlik']:.0%})"
+                )
+            else:
+                log_parcalari.append(f"{slot['yil']}: %{oran*100:.1f} x {yeni_agirlik:.0%}")
+
+        trend = toplam_puan
         log = " | ".join(log_parcalari) + f"  -> Trend: {trend:.4f}"
         return trend, log
 
@@ -738,8 +820,8 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         (int(ders_id), int(yil)),
     )
     gecmis = [{"yil": int(r[0]), "oran": _safe_float2(r[1], basari)} for r in cur.fetchall()]
-    trend, _ = motor.gecmis_trend_hesapla(gecmis) if gecmis else (basari, "")
-    trend = max(0.0, min(1.0, _safe_float2(trend, basari)))
+    trend, _ = motor.gecmis_trend_hesapla(gecmis)
+    trend = max(0.0, min(1.0, _safe_float2(trend, 0.0)))
 
     no_current_year_data = (
         not dk and not pf and not pop

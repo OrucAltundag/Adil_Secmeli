@@ -831,21 +831,7 @@ def reset_year_workflow_for_import(
 def list_active_years_for_faculty(conn: sqlite3.Connection, fakulte_id: int) -> list[int]:
     ensure_yearly_workflow_schema(conn)
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT yil
-        FROM criteria_faculty_status
-        WHERE fakulte_id = ? AND year_active = 1
-        ORDER BY yil
-        """,
-        (int(fakulte_id),),
-    )
-    years = sorted({int(r[0]) for r in cur.fetchall() if r and r[0] is not None})
-    if years:
-        return years
-
-    # Havuz bir fakulte icin "hayali" yil tasiyabilir; ekranda yalnizca
-    # gercekten mufredat kaydi olan akademik yillar gorunsun.
+    # Ekranda sadece gercek mufredat kaydi olan akademik yillar gorunmeli.
     cur.execute(
         """
         SELECT DISTINCT m.akademik_yil
@@ -856,7 +842,26 @@ def list_active_years_for_faculty(conn: sqlite3.Connection, fakulte_id: int) -> 
         """,
         (int(fakulte_id),),
     )
-    return sorted({int(r[0]) for r in cur.fetchall() if r and r[0] is not None})
+    curriculum_years = sorted({int(r[0]) for r in cur.fetchall() if r and r[0] is not None})
+    if not curriculum_years:
+        return []
+
+    cur.execute(
+        """
+        SELECT yil
+        FROM criteria_faculty_status
+        WHERE fakulte_id = ? AND year_active = 1
+        ORDER BY yil
+        """,
+        (int(fakulte_id),),
+    )
+    years = sorted({int(r[0]) for r in cur.fetchall() if r and r[0] is not None})
+    if not years:
+        return curriculum_years
+
+    # Workflow tablosunda aktif olan ama mufredati olmayan yillari filtrele.
+    curriculum_set = set(curriculum_years)
+    return [y for y in years if y in curriculum_set]
 
 
 def get_years_eligible_for_algorithm(conn: sqlite3.Connection, fakulte_id: int) -> list[int]:
