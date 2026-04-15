@@ -10,6 +10,7 @@ saglar.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 DEFAULT_HAVUZ_DONEM = "Guz"
@@ -44,6 +45,263 @@ def _index_names(cur: sqlite3.Cursor, table_name: str) -> set[str]:
         if row and len(row) > 1 and row[1]:
             names.add(str(row[1]))
     return names
+
+
+def _table_sql(cur: sqlite3.Cursor, table_name: str) -> str:
+    cur.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (table_name,),
+    )
+    row = cur.fetchone()
+    return str(row[0] or "") if row else ""
+
+
+def _criteria_term_case_sql(column_name: str) -> str:
+    return (
+        f"CASE "
+        f"WHEN LOWER(SUBSTR(TRIM(COALESCE({column_name}, '')), 1, 1)) = 'b' THEN 'Bahar' "
+        f"ELSE 'Güz' END"
+    )
+
+
+def _create_ders_kriterleri_table(cur: sqlite3.Cursor, table_name: str = "ders_kriterleri") -> None:
+    cur.execute(
+        f"""
+        CREATE TABLE {table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ders_id INTEGER NOT NULL,
+            yil INTEGER NOT NULL,
+            donem TEXT NOT NULL DEFAULT 'Güz',
+            toplam_ogrenci INTEGER DEFAULT 0,
+            gecen_ogrenci INTEGER DEFAULT 0,
+            basari_ortalamasi REAL DEFAULT 0.0,
+            kontenjan INTEGER DEFAULT 0,
+            kayitli_ogrenci INTEGER DEFAULT 0,
+            anket_katilimci INTEGER DEFAULT 0,
+            anket_dersi_secen INTEGER DEFAULT 0,
+            anket_veri_kaynagi TEXT DEFAULT 'manual',
+            anket_manual_locked INTEGER NOT NULL DEFAULT 0,
+            anket_import_id INTEGER,
+            anket_imported_at TEXT,
+            criteria_import_id INTEGER,
+            criteria_veri_kaynagi TEXT DEFAULT 'manual',
+            criteria_manual_override INTEGER NOT NULL DEFAULT 0,
+            criteria_updated_at TEXT,
+            UNIQUE(ders_id, yil, donem)
+        )
+        """
+    )
+
+
+def _needs_ders_kriterleri_rebuild(cur: sqlite3.Cursor) -> bool:
+    if not _table_exists(cur, "ders_kriterleri"):
+        return False
+    canonical_sql = re.sub(r"\s+", "", _table_sql(cur, "ders_kriterleri").lower())
+    return "unique(ders_id,yil,donem)" not in canonical_sql
+
+
+def _rebuild_ders_kriterleri_table(cur: sqlite3.Cursor) -> None:
+    cols = _column_names(cur, "ders_kriterleri")
+    _create_ders_kriterleri_table(cur, "ders_kriterleri__new")
+
+    def select_expr(column_name: str, fallback_sql: str) -> str:
+        return column_name if column_name in cols else fallback_sql
+
+    cur.execute(
+        f"""
+        INSERT INTO ders_kriterleri__new (
+            id,
+            ders_id,
+            yil,
+            donem,
+            toplam_ogrenci,
+            gecen_ogrenci,
+            basari_ortalamasi,
+            kontenjan,
+            kayitli_ogrenci,
+            anket_katilimci,
+            anket_dersi_secen,
+            anket_veri_kaynagi,
+            anket_manual_locked,
+            anket_import_id,
+            anket_imported_at,
+            criteria_import_id,
+            criteria_veri_kaynagi,
+            criteria_manual_override,
+            criteria_updated_at
+        )
+        SELECT
+            old.id,
+            old.ders_id,
+            old.yil,
+            {_criteria_term_case_sql("old.donem" if "donem" in cols else "''")} AS donem,
+            {select_expr("toplam_ogrenci", "0")},
+            {select_expr("gecen_ogrenci", "0")},
+            {select_expr("basari_ortalamasi", "0.0")},
+            {select_expr("kontenjan", "0")},
+            {select_expr("kayitli_ogrenci", "0")},
+            {select_expr("anket_katilimci", "0")},
+            {select_expr("anket_dersi_secen", "0")},
+            COALESCE({select_expr("anket_veri_kaynagi", "'manual'")}, 'manual'),
+            COALESCE({select_expr("anket_manual_locked", "0")}, 0),
+            {select_expr("anket_import_id", "NULL")},
+            {select_expr("anket_imported_at", "NULL")},
+            {select_expr("criteria_import_id", "NULL")},
+            COALESCE({select_expr("criteria_veri_kaynagi", "'manual'")}, 'manual'),
+            COALESCE({select_expr("criteria_manual_override", "0")}, 0),
+            {select_expr("criteria_updated_at", "NULL")}
+        FROM ders_kriterleri AS old
+        JOIN (
+            SELECT
+                MAX(id) AS keep_id
+            FROM ders_kriterleri
+            GROUP BY
+                ders_id,
+                yil,
+                {_criteria_term_case_sql("donem" if "donem" in cols else "''")}
+        ) AS keep
+            ON keep.keep_id = old.id
+        """
+    )
+    cur.execute("DROP TABLE ders_kriterleri")
+    cur.execute("ALTER TABLE ders_kriterleri__new RENAME TO ders_kriterleri")
+
+
+def ensure_criteria_import_schema(conn: sqlite3.Connection, commit: bool = True) -> dict[str, int]:
+    """
+    Kriter belge import semasini hazirlar.
+
+    Hedef:
+    - ders_kriterleri tablosunu donem-aware ve import izli hale getirmek
+    - criteria_import / criteria_import_rows tablolarini olusturmak
+    - raporlama ve aktif belge sorgulari icin indeksleri eklemek
+    """
+    cur = conn.cursor()
+    changed = {
+        "tables_created": 0,
+        "columns_added": 0,
+        "tables_rebuilt": 0,
+        "indexes_created": 0,
+    }
+
+    if not _table_exists(cur, "ders_kriterleri"):
+        _create_ders_kriterleri_table(cur)
+        changed["tables_created"] += 1
+    elif _needs_ders_kriterleri_rebuild(cur):
+        _rebuild_ders_kriterleri_table(cur)
+        changed["tables_rebuilt"] += 1
+
+    if _table_exists(cur, "ders_kriterleri"):
+        cols = _column_names(cur, "ders_kriterleri")
+        criteria_columns = [
+            ("criteria_import_id", "INTEGER"),
+            ("criteria_veri_kaynagi", "TEXT DEFAULT 'manual'"),
+            ("criteria_manual_override", "INTEGER NOT NULL DEFAULT 0"),
+            ("criteria_updated_at", "TEXT"),
+        ]
+        for col_name, ddl in criteria_columns:
+            if col_name not in cols:
+                cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col_name} {ddl}")
+                cols.add(col_name)
+                changed["columns_added"] += 1
+
+        cur.execute(
+            f"""
+            UPDATE ders_kriterleri
+            SET donem = {_criteria_term_case_sql('donem')},
+                criteria_veri_kaynagi = CASE
+                    WHEN COALESCE(TRIM(criteria_veri_kaynagi), '') = '' THEN 'manual'
+                    ELSE criteria_veri_kaynagi
+                END,
+                criteria_manual_override = CASE
+                    WHEN criteria_manual_override IS NULL THEN 0
+                    ELSE criteria_manual_override
+                END
+            """
+        )
+
+    if not _table_exists(cur, "criteria_import"):
+        cur.execute(
+            """
+            CREATE TABLE criteria_import (
+                import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fakulte_id INTEGER NOT NULL,
+                bolum_id INTEGER,
+                yil INTEGER NOT NULL,
+                donem TEXT NOT NULL DEFAULT 'Güz',
+                source_filename TEXT,
+                template_version TEXT,
+                notes TEXT,
+                imported_at TEXT,
+                status TEXT NOT NULL DEFAULT 'applied',
+                version INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        changed["tables_created"] += 1
+
+    if not _table_exists(cur, "criteria_import_rows"):
+        cur.execute(
+            """
+            CREATE TABLE criteria_import_rows (
+                row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_id INTEGER NOT NULL,
+                row_no INTEGER NOT NULL,
+                ders_kodu TEXT,
+                ders_adi TEXT,
+                toplam_ogrenci INTEGER NOT NULL DEFAULT 0,
+                gecen_ogrenci INTEGER NOT NULL DEFAULT 0,
+                basari_ortalamasi REAL NOT NULL DEFAULT 0.0,
+                kontenjan INTEGER NOT NULL DEFAULT 0,
+                kayitli_ogrenci INTEGER NOT NULL DEFAULT 0,
+                matched_ders_id INTEGER,
+                match_method TEXT,
+                row_status TEXT NOT NULL DEFAULT 'matched',
+                error_message TEXT,
+                raw_fakulte TEXT,
+                raw_bolum TEXT,
+                raw_yil INTEGER,
+                raw_donem TEXT
+            )
+            """
+        )
+        changed["tables_created"] += 1
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_ders_kriterleri_scope_term
+        ON ders_kriterleri (yil, donem, ders_id)
+        """
+    )
+    changed["indexes_created"] += 1
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_ders_kriterleri_criteria_import
+        ON ders_kriterleri (criteria_import_id, yil, donem)
+        """
+    )
+    changed["indexes_created"] += 1
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_criteria_import_scope
+        ON criteria_import (fakulte_id, bolum_id, yil, donem, status, version)
+        """
+    )
+    changed["indexes_created"] += 1
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_criteria_import_rows_import
+        ON criteria_import_rows (import_id, row_status)
+        """
+    )
+    changed["indexes_created"] += 1
+
+    if commit:
+        conn.commit()
+    return changed
 
 
 def ensure_ders_code_schema(conn: sqlite3.Connection) -> dict[str, int]:
@@ -362,6 +620,7 @@ def ensure_reporting_schema(conn: sqlite3.Connection) -> dict[str, dict[str, int
         "ders": ensure_ders_code_schema(conn),
         "havuz": ensure_havuz_semester_schema(conn),
         "skor": ensure_skor_schema(conn),
+        "criteria": ensure_criteria_import_schema(conn),
         "survey": ensure_survey_import_schema(conn),
     }
     try:

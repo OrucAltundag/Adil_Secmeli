@@ -5,6 +5,7 @@ import sqlite3
 from typing import Any
 
 from app.db.schema_compat import ensure_reporting_schema
+from app.services.criteria_import_service import summarize_report_criteria_scope
 from app.services.calculation import (
     DROP_AVERAGE_GRADE_THRESHOLD,
     DROP_SCORE_THRESHOLD,
@@ -234,11 +235,28 @@ def build_report_snapshot(
     normalized_term = normalize_term(term)
     conn = _conn_from_db(db)
     elective_predicate = "0=1"
+    department_id: int | None = None
     if conn is not None:
         try:
             elective_predicate = build_elective_predicate(cur=conn.cursor(), alias="d")
         except Exception:
             elective_predicate = "0=1"
+        if department_name:
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT bolum_id
+                    FROM bolum
+                    WHERE fakulte_id = ? AND ad = ?
+                    LIMIT 1
+                    """,
+                    (int(faculty_id), department_name),
+                )
+                row = cur.fetchone()
+                department_id = int(row[0]) if row and row[0] is not None else None
+            except Exception:
+                department_id = None
 
     curriculum_ids = fetch_curriculum_course_ids(db, faculty_id, year, normalized_term)
     score_map = _fetch_score_source_map(db, year, normalized_term)
@@ -332,15 +350,29 @@ def build_report_snapshot(
         ]
 
     avg_score = round(sum(scores) / len(scores), 2) if scores else None
+    criteria_import_summary = (
+        summarize_report_criteria_scope(
+            conn=conn,
+            faculty_id=int(faculty_id),
+            year=int(year),
+            term=normalized_term,
+            department_id=department_id,
+        )
+        if conn is not None
+        else {"mode": "missing", "active_import": None, "display": "Aktif kriter dosyasi yok."}
+    )
+
     notes = [
         f"Skor kaynaklari: mufredattaki dersler AHP+TOPSIS, mufredat disi dersler anket bazli {POOL_DEFAULT_SCORE:.0f}+-{POOL_ANKET_SCORE_SPREAD:.0f}.",
         f"Esikler: kesinlesme puani < {DROP_SCORE_THRESHOLD:.0f} veya ortalama not < {DROP_AVERAGE_GRADE_THRESHOLD:.0f}.",
         f"Rapor kapsami: Fakulte={faculty_name}, Yil={year}, Donem={normalized_term}" + (f", Bolum={department_name}" if department_name else ""),
+        f"Kriter dosyasi: {criteria_import_summary.get('display')}",
     ]
 
     return {
         "pool_rows": pool_rows,
         "curriculum_rows": curriculum_rows,
+        "criteria_import_summary": criteria_import_summary,
         "stats": {
             "total": len(pool_rows),
             "avg_score": avg_score,

@@ -19,6 +19,12 @@ from typing import Any
 
 import pandas as pd
 
+from app.services.criteria_import_service import (
+    FACULTY_SCOPE_LABEL,
+    import_criteria_excel as run_criteria_import,
+    normalize_department_scope_name,
+    write_criteria_template_excel,
+)
 from app.services.curriculum_import_service import import_curriculum_excel as run_curriculum_import
 from app.services.havuz_karar import mufredat_durumunu_esitle
 from app.services.reporting_service import build_report_snapshot, ensure_report_scores
@@ -41,6 +47,8 @@ class ToolsTab(ttk.Frame):
         self.cb_donem: ttk.Combobox | None = None
 
         self.btn_import: ttk.Button | None = None
+        self.btn_criteria_import: ttk.Button | None = None
+        self.btn_criteria_template: ttk.Button | None = None
         self.btn_survey_import: ttk.Button | None = None
         self.btn_survey_template: ttk.Button | None = None
         self.lbl_import_state: ttk.Label | None = None
@@ -50,6 +58,7 @@ class ToolsTab(ttk.Frame):
         self.lbl_pool_rest: ttk.Label | None = None
         self.lbl_pool_chosen: ttk.Label | None = None
         self.lbl_pool_cancelled: ttk.Label | None = None
+        self.lbl_criteria_source: ttk.Label | None = None
 
         self.tree_pool: ttk.Treeview | None = None
         self.tree_curr: ttk.Treeview | None = None
@@ -93,6 +102,25 @@ class ToolsTab(ttk.Frame):
         except Exception:
             return None, faculty_name, year
 
+    def _selected_department_name(self) -> str | None:
+        return normalize_department_scope_name(self.cb_bolum.get() if self.cb_bolum else None)
+
+    def _selected_department_id(self) -> int | None:
+        department_name = self._selected_department_name()
+        faculty_id, _, _ = self._selected_faculty_scope()
+        if faculty_id is None or not department_name or not self._db_ready():
+            return None
+        try:
+            _, rows = self.db.run_sql(
+                "SELECT bolum_id FROM bolum WHERE fakulte_id = ? AND ad = ? LIMIT 1",
+                (int(faculty_id), department_name),
+            )
+            if not rows:
+                return None
+            return int(rows[0][0])
+        except Exception:
+            return None
+
     # ---------------------------------------------------------
     # UI
     # ---------------------------------------------------------
@@ -109,7 +137,7 @@ class ToolsTab(ttk.Frame):
         ttk.Label(top, text="Bolum:").pack(side=tk.LEFT, padx=(0, 6))
         self.cb_bolum = ttk.Combobox(top, state="readonly", width=28)
         self.cb_bolum.pack(side=tk.LEFT, padx=(0, 12))
-        self.cb_bolum.bind("<<ComboboxSelected>>", lambda _e: self.load_report())
+        self.cb_bolum.bind("<<ComboboxSelected>>", self._on_department_change)
 
         ttk.Label(top, text="Yil:").pack(side=tk.LEFT, padx=(0, 6))
         # Ilk mufredat yuklemesinde kullanicinin acikca yil yazabilmesi gerekir;
@@ -139,6 +167,20 @@ class ToolsTab(ttk.Frame):
         self.btn_import = ttk.Button(self._import_zone, text="Mufredat Excel Yukle", command=self.import_curriculum_excel)
         self.btn_import.pack(side=tk.LEFT, padx=(0, 10))
 
+        self.btn_criteria_template = ttk.Button(
+            self._import_zone,
+            text="Kriter Sablonu Indir",
+            command=self.download_criteria_template,
+        )
+        self.btn_criteria_template.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.btn_criteria_import = ttk.Button(
+            self._import_zone,
+            text="Kriter Dosyasi Yukle",
+            command=self.import_criteria_excel,
+        )
+        self.btn_criteria_import.pack(side=tk.LEFT, padx=(0, 10))
+
         self.btn_survey_template = ttk.Button(
             self._import_zone,
             text="Anket Sablonu Indir",
@@ -155,7 +197,7 @@ class ToolsTab(ttk.Frame):
 
         self.lbl_import_state = ttk.Label(
             self._import_zone,
-            text="Mufredat ve anket yukleme secili yil icin aktiftir.",
+            text="Mufredat, kriter ve anket yukleme secili yil icin aktiftir.",
         )
         self.lbl_import_state.pack(side=tk.LEFT)
 
@@ -177,6 +219,8 @@ class ToolsTab(ttk.Frame):
         self.lbl_pool_rest.pack(side=tk.LEFT, padx=6)
         self.lbl_pool_chosen.pack(side=tk.LEFT, padx=6)
         self.lbl_pool_cancelled.pack(side=tk.LEFT, padx=6)
+        self.lbl_criteria_source = ttk.Label(summary, text="Kriter Dosyasi: -")
+        self.lbl_criteria_source.pack(fill=tk.X, padx=6, pady=(8, 0))
 
         paned = tk.PanedWindow(report_zone, orient=tk.HORIZONTAL, sashwidth=6)
         paned.pack(fill=tk.BOTH, expand=True)
@@ -355,10 +399,11 @@ class ToolsTab(ttk.Frame):
                 "SELECT ad FROM bolum WHERE fakulte_id = ? ORDER BY ad",
                 (faculty_id,),
             )
-            departments = [str(r[0]) for r in (bol_rows or []) if r and r[0] is not None]
+            departments = [FACULTY_SCOPE_LABEL]
+            departments.extend(str(r[0]) for r in (bol_rows or []) if r and r[0] is not None)
             self.cb_bolum["values"] = departments
-            if departments and self.cb_bolum.get() not in departments:
-                self.cb_bolum.set(departments[0])
+            if self.cb_bolum.get() not in departments:
+                self.cb_bolum.set(FACULTY_SCOPE_LABEL)
         except Exception as exc:
             self.log(f"Bolum listesi yuklenemedi: {exc}")
         finally:
@@ -370,6 +415,10 @@ class ToolsTab(ttk.Frame):
         self._update_import_state()
         self.load_report()
 
+    def _on_department_change(self, _event):
+        self._update_import_state()
+        self.load_report()
+
     def _update_import_state(self):
         """Yükleme durumunu günceller - artık yıl kısıtlaması yok, seçili yıl için yükleme yapılır."""
         year = self.cb_yil.get() if self.cb_yil else ""
@@ -378,6 +427,11 @@ class ToolsTab(ttk.Frame):
         active = self._db_ready() and parsed_year is not None
         if self.btn_import:
             self.btn_import.config(state=("normal" if active else "disabled"))
+        criteria_active = active and bool((self.cb_fakulte.get() if self.cb_fakulte else "").strip())
+        if self.btn_criteria_import:
+            self.btn_criteria_import.config(state=("normal" if criteria_active else "disabled"))
+        if self.btn_criteria_template:
+            self.btn_criteria_template.config(state=("normal" if criteria_active else "disabled"))
         survey_active = active and bool((self.cb_fakulte.get() if self.cb_fakulte else "").strip())
         if self.btn_survey_import:
             self.btn_survey_import.config(state=("normal" if survey_active else "disabled"))
@@ -390,10 +444,11 @@ class ToolsTab(ttk.Frame):
             self._set_import_state_label("Veritabani baglantisi yok.")
         elif year and parsed_year is None:
             self._set_import_state_label("Gecerli bir akademik yil giriniz.")
-        elif not survey_active:
-            self._set_import_state_label("Anket yukleme icin fakulte ve yil seciniz.")
+        elif not criteria_active:
+            self._set_import_state_label("Kriter ve anket yukleme icin fakulte ve yil seciniz.")
         elif active:
-            self._set_import_state_label(f"Yukleme aktif: fakulte secili, yil {parsed_year}.")
+            scope_text = self._selected_department_name() or FACULTY_SCOPE_LABEL
+            self._set_import_state_label(f"Yukleme aktif: {scope_text} / {parsed_year}.")
 
     # ---------------------------------------------------------
     # Reporting
@@ -407,7 +462,7 @@ class ToolsTab(ttk.Frame):
         faculty_name = self.cb_fakulte.get()
         year_raw = self.cb_yil.get()
         term = self.cb_donem.get() if self.cb_donem else "Guz"
-        department_name = self.cb_bolum.get() if self.cb_bolum else None
+        department_name = self._selected_department_name()
 
         if not faculty_name or not year_raw:
             return
@@ -488,6 +543,9 @@ class ToolsTab(ttk.Frame):
             self.lbl_pool_chosen.config(text=f"Mufredatta(1): {stats.get('chosen_count', 0)}")
         if self.lbl_pool_cancelled:
             self.lbl_pool_cancelled.config(text=f"Kalici Iptal(-2): {stats.get('cancelled_count', 0)}")
+        if self.lbl_criteria_source:
+            summary = snapshot.get("criteria_import_summary") or {}
+            self.lbl_criteria_source.config(text=f"Kriter Dosyasi: {summary.get('display', '-')}")
 
         for note in snapshot.get("notes", []):
             self.log(note)
@@ -495,6 +553,133 @@ class ToolsTab(ttk.Frame):
     # ---------------------------------------------------------
     # Zone A - Import
     # ---------------------------------------------------------
+    def download_criteria_template(self):
+        if not self._db_ready():
+            messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")
+            return
+
+        faculty_id, faculty_name, year = self._selected_faculty_scope()
+        department_id = self._selected_department_id()
+        department_name = self._selected_department_name()
+        term = self.cb_donem.get() if self.cb_donem else "Guz"
+        if faculty_id is None or year is None or not faculty_name:
+            messagebox.showwarning("Uyari", "Once fakulte ve akademik yil seciniz.")
+            return
+
+        scope_label = department_name or FACULTY_SCOPE_LABEL
+        default_name = f"kriter_sablonu_{faculty_name}_{scope_label}_{year}_{term}.xlsx".replace(" ", "_")
+        target_path = filedialog.asksaveasfilename(
+            title="Kriter Sablonunu Kaydet",
+            defaultextension=".xlsx",
+            initialfile=default_name,
+            filetypes=[("Excel", "*.xlsx"), ("Tum dosyalar", "*.*")],
+        )
+        if not target_path:
+            return
+
+        try:
+            write_criteria_template_excel(
+                target_path=target_path,
+                faculty_name=faculty_name,
+                department_name=department_name,
+                year=year,
+                term=term,
+                db_path=self.db_path,
+                faculty_id=faculty_id,
+                department_id=department_id,
+            )
+            self.log(f"Kriter sablonu yazildi: {target_path}")
+            messagebox.showinfo("Tamam", "Kriter sablonu olusturuldu.")
+        except Exception as exc:
+            self.log(f"Kriter sablonu olusturma hatasi: {exc}")
+            messagebox.showerror("Hata", str(exc))
+
+    def import_criteria_excel(self):
+        if not self._db_ready():
+            messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")
+            return
+        if not self.db_path or not os.path.exists(self.db_path):
+            messagebox.showwarning("Uyari", "Veritabani dosyasi bulunamadi.")
+            return
+
+        faculty_id, faculty_name, year = self._selected_faculty_scope()
+        department_id = self._selected_department_id()
+        department_name = self._selected_department_name()
+        term = self.cb_donem.get() if self.cb_donem else "Guz"
+        if faculty_id is None or year is None or not faculty_name:
+            messagebox.showwarning("Uyari", "Once fakulte ve akademik yil seciniz.")
+            return
+
+        excel_path = filedialog.askopenfilename(
+            title="Kriter Excel sec",
+            filetypes=[("Excel", "*.xlsx"), ("Tum dosyalar", "*.*")],
+        )
+        if not excel_path:
+            return
+
+        result = run_criteria_import(
+            db_path=self.db_path,
+            excel_path=excel_path,
+            faculty_id=faculty_id,
+            year=year,
+            term=term,
+            department_id=department_id,
+            source_filename=os.path.basename(excel_path),
+        )
+        if result.get("ok"):
+            scope_text = department_name or FACULTY_SCOPE_LABEL
+            self.log("Kriter yukleme basarili:")
+            self.log(result.get("message", ""))
+            self.log(
+                f" - Kapsam: {faculty_name} / {scope_text} / {year} / {term}"
+            )
+            self.log(
+                f" - Eslesen ders: {result.get('matched_count', 0)} | "
+                f"Guncellenen kriter: {result.get('updated_course_count', 0)} | "
+                f"Yeni kriter satiri: {result.get('created_course_count', 0)}"
+            )
+            replace = result.get("replace") or {}
+            self.log(
+                f" - Onceki ayni kapsam supersede edildi: import={replace.get('previous_imports_superseded', 0)} "
+                f"kriter_reset={replace.get('criteria_rows_reset', 0)} "
+                f"performans_silindi={replace.get('performance_rows_deleted', 0)} "
+                f"populerlik_silindi={replace.get('popularity_rows_deleted', 0)}"
+            )
+            if int(result.get("skipped_department_overrides") or 0) > 0:
+                self.log(
+                    f" - Fakulte geneli importta daha ozel bolum override'lari korundu: "
+                    f"{result.get('skipped_department_overrides')}"
+                )
+            for warn in result.get("warnings", []):
+                self.log(f"Uyari: {warn}")
+            messagebox.showinfo("Tamam", result.get("message", "Kriter yukleme tamamlandi."))
+            self.refresh()
+            try:
+                self.app.tab_calc.refresh(force_reload=True)
+            except Exception:
+                pass
+            try:
+                self.app.tab_view.refresh()
+            except Exception:
+                pass
+        else:
+            self.log("Kriter yukleme basarisiz:")
+            self.log(result.get("message", ""))
+            self.log(
+                f" - Eslesen ders: {result.get('matched_count', 0)} | "
+                f"Eslesemeyen satir: {result.get('unmatched_count', 0)}"
+            )
+            for err in result.get("errors", []):
+                self.log(f"Hata: {err}")
+            for row in result.get("unmatched_rows", [])[:30]:
+                self.log(
+                    f" - Eslesemedi (satir {row.get('row_no')}): "
+                    f"kod={row.get('ders_kodu')} ad={row.get('ders_adi')} neden={row.get('error_message')}"
+                )
+            for warn in result.get("warnings", []):
+                self.log(f"Uyari: {warn}")
+            messagebox.showerror("Hata", result.get("message", "Kriter yukleme basarisiz."))
+
     def download_survey_template(self):
         if not self._db_ready():
             messagebox.showwarning("Uyari", "Veritabani baglantisi yok.")

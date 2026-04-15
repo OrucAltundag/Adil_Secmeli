@@ -11,8 +11,17 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import sqlite3
+from datetime import datetime, timezone
 from typing import Any
-from app.db.schema_compat import ensure_survey_import_schema
+from app.db.schema_compat import ensure_reporting_schema
+from app.services.criteria_import_service import (
+    FACULTY_SCOPE_LABEL,
+    format_criteria_import_summary,
+    get_active_criteria_import,
+    get_criteria_import_by_id,
+    import_criteria_excel as run_criteria_import,
+    normalize_department_scope_name,
+)
 from app.services.yearly_workflow import mark_criteria_status
 
 
@@ -38,6 +47,7 @@ class CriteriaPage:
         self.selected_course_id = None
         self._survey_locked = False
         self._current_survey_record = None
+        self._current_criteria_import_summary = None
 
         self._ensure_table()
 
@@ -45,47 +55,11 @@ class CriteriaPage:
         self.setup_ui()
 
     def _ensure_table(self):
-        """ders_kriterleri tablosu yoksa oluşturur; anket/import alanları yoksa ekler."""
+        """Kriter ve raporlama semalarini migration-safe sekilde hazirlar."""
         if not getattr(self.db, "conn", None):
             return
         try:
-            cur = self.db.conn.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS ders_kriterleri (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ders_id         INTEGER NOT NULL,
-                    yil             INTEGER NOT NULL,
-                    donem           TEXT    DEFAULT 'Güz',
-                    toplam_ogrenci  INTEGER DEFAULT 0,
-                    gecen_ogrenci   INTEGER DEFAULT 0,
-                    basari_ortalamasi REAL  DEFAULT 0.0,
-                    kontenjan       INTEGER DEFAULT 0,
-                    kayitli_ogrenci INTEGER DEFAULT 0,
-                    anket_katilimci INTEGER DEFAULT 0,
-                    anket_dersi_secen INTEGER DEFAULT 0,
-                    anket_veri_kaynagi TEXT DEFAULT 'manual',
-                    anket_manual_locked INTEGER NOT NULL DEFAULT 0,
-                    anket_import_id INTEGER,
-                    anket_imported_at TEXT,
-                    UNIQUE(ders_id, yil),
-                    FOREIGN KEY(ders_id) REFERENCES ders(ders_id)
-                )
-            """)
-            for col_name, ddl in (
-                ("anket_katilimci", "INTEGER DEFAULT 0"),
-                ("anket_dersi_secen", "INTEGER DEFAULT 0"),
-                ("anket_veri_kaynagi", "TEXT DEFAULT 'manual'"),
-                ("anket_manual_locked", "INTEGER NOT NULL DEFAULT 0"),
-                ("anket_import_id", "INTEGER"),
-                ("anket_imported_at", "TEXT"),
-            ):
-                try:
-                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col_name} {ddl}")
-                    self.db.conn.commit()
-                except sqlite3.OperationalError:
-                    pass
-            ensure_survey_import_schema(self.db.conn)
-            self.db.conn.commit()
+            ensure_reporting_schema(self.db.conn)
         except Exception as e:
             print(f"ders_kriterleri tablo oluşturma hatası: {e}")
 
@@ -217,7 +191,7 @@ class CriteriaPage:
         tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
         # Excel'den Toplu Kriter Yükle
-        tk.Button(parent, text="📂 Excel'den Toplu Yükle", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
+        tk.Button(parent, text="📂 Kriter Dosyasi Yukle", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=10)
 
     def create_form_ui(self, parent):
@@ -231,38 +205,48 @@ class CriteriaPage:
         self.lbl_selected_course = tk.Label(self.form_frame, text="Lütfen soldan bir ders seçiniz.", 
                                             bg="#f8fafc", fg="#334155", font=("Segoe UI", 12, "bold"))
         self.lbl_selected_course.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 20))
+        self.lbl_criteria_source_info = tk.Label(
+            self.form_frame,
+            text="Aktif kriter dosyasi: -",
+            bg="#f8fafc",
+            fg="#475569",
+            font=("Segoe UI", 9, "italic"),
+            wraplength=360,
+            justify="left",
+        )
+        self.lbl_criteria_source_info.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
         # --- GİRİŞ ALANLARI ---
         
         # 1. Akademik Başarı Verileri
-        self.create_section_header(1, "1. Akademik Performans")
-        self.ent_toplam_ogrenci = self.create_input_row(2, "Dersi Alan Toplam Öğrenci:", "0")
-        self.ent_gecen_ogrenci = self.create_input_row(3, "Dersi Geçen Öğrenci:", "0")
-        self.ent_ortalama = self.create_input_row(4, "Ders Not Ortalaması (0-100):", "0.0")
+        self.create_section_header(2, "1. Akademik Performans")
+        self.ent_toplam_ogrenci = self.create_input_row(3, "Dersi Alan Toplam Öğrenci:", "0")
+        self.ent_gecen_ogrenci = self.create_input_row(4, "Dersi Geçen Öğrenci:", "0")
+        self.ent_ortalama = self.create_input_row(5, "Ders Not Ortalaması (0-100):", "0.0")
         
         # Otomatik Hesaplanan: Başarı Oranı
-        tk.Label(self.form_frame, text="Başarı Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=5, column=0, sticky="w", pady=5)
+        tk.Label(self.form_frame, text="Başarı Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=6, column=0, sticky="w", pady=5)
         self.lbl_basari_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
-        self.lbl_basari_sonuc.grid(row=5, column=1, sticky="w")
+        self.lbl_basari_sonuc.grid(row=6, column=1, sticky="w")
 
         # 2. Kontenjan ve İlgi
-        self.create_section_header(6, "2. Kontenjan ve Popülerlik")
-        self.ent_kontenjan = self.create_input_row(7, "Ders Kontenjanı:", "0")
-        self.ent_kayitli = self.create_input_row(8, "Kayıtlı Öğrenci (otomatik):", "0")
+        self.create_section_header(7, "2. Kontenjan ve Popülerlik")
+        self.ent_kontenjan = self.create_input_row(8, "Ders Kontenjanı:", "0")
+        self.ent_kayitli = self.create_input_row(9, "Kayıtlı Öğrenci (otomatik):", "0")
         
         # Otomatik Hesaplanan: Doluluk
-        tk.Label(self.form_frame, text="Doluluk Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=9, column=0, sticky="w", pady=5)
+        tk.Label(self.form_frame, text="Doluluk Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=10, column=0, sticky="w", pady=5)
         self.lbl_doluluk_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
-        self.lbl_doluluk_sonuc.grid(row=9, column=1, sticky="w")
+        self.lbl_doluluk_sonuc.grid(row=10, column=1, sticky="w")
 
         # 3. Anket Tercihi
-        self.create_section_header(10, "3. Anket Tercihi")
-        self.ent_anket_katilimci = self.create_input_row(11, "Ankete Katılan Toplam Öğrenci (otomatik):", "0")
+        self.create_section_header(11, "3. Anket Tercihi")
+        self.ent_anket_katilimci = self.create_input_row(12, "Ankete Katılan Toplam Öğrenci (otomatik):", "0")
         self.ent_anket_katilimci.config(state="disabled")
-        self.ent_anket_dersi_secen = self.create_input_row(12, "Bu Dersi Seçen Öğrenci:", "0")
-        tk.Label(self.form_frame, text="Anket Tercih Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=13, column=0, sticky="w", pady=5)
+        self.ent_anket_dersi_secen = self.create_input_row(13, "Bu Dersi Seçen Öğrenci:", "0")
+        tk.Label(self.form_frame, text="Anket Tercih Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=14, column=0, sticky="w", pady=5)
         self.lbl_anket_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
-        self.lbl_anket_sonuc.grid(row=13, column=1, sticky="w")
+        self.lbl_anket_sonuc.grid(row=14, column=1, sticky="w")
         self.lbl_anket_kaynak_info = tk.Label(
             self.form_frame,
             text="Anket verisi manuel girise acik.",
@@ -272,13 +256,13 @@ class CriteriaPage:
             wraplength=280,
             justify="left",
         )
-        self.lbl_anket_kaynak_info.grid(row=14, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_anket_kaynak_info.grid(row=15, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # KAYDET BUTONU
         btn_save = tk.Button(self.form_frame, text="💾 VERİLERİ KAYDET VE GÜNCELLE", 
                              bg="#16a34a", fg="white", font=("Segoe UI", 10, "bold"),
                              command=self.save_data, cursor="hand2")
-        btn_save.grid(row=15, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
+        btn_save.grid(row=16, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
 
     def create_section_header(self, row, text):
         tk.Label(self.form_frame, text=text, bg="#f8fafc", fg="#2563eb", 
@@ -293,38 +277,77 @@ class CriteriaPage:
         entry.bind("<KeyRelease>", self.update_calculations)
         return entry
 
+    def _selected_faculty_id(self) -> int | None:
+        faculty_name = self.cb_fakulte.get()
+        if not faculty_name or not getattr(self.db, "conn", None):
+            return None
+        try:
+            _, rows = self.db.run_sql("SELECT fakulte_id FROM fakulte WHERE ad=? LIMIT 1", (faculty_name,))
+            if not rows:
+                return None
+            return int(rows[0][0])
+        except Exception:
+            return None
+
+    def _selected_department_name(self) -> str | None:
+        return normalize_department_scope_name(self.cb_bolum.get())
+
+    def _selected_department_id(self) -> int | None:
+        faculty_id = self._selected_faculty_id()
+        department_name = self._selected_department_name()
+        if faculty_id is None or not department_name:
+            return None
+        try:
+            _, rows = self.db.run_sql(
+                "SELECT bolum_id FROM bolum WHERE fakulte_id=? AND ad=? LIMIT 1",
+                (int(faculty_id), department_name),
+            )
+            if not rows:
+                return None
+            return int(rows[0][0])
+        except Exception:
+            return None
+
+    def _now_utc(self) -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
     # --- VERİ İŞLEMLERİ ---
 
     def import_kriterler_excel(self):
-        """Excel'den ders kriterlerini toplu yükler."""
+        """Secili kapsam icin kriter dosyasini uygular."""
         path = filedialog.askopenfilename(
             title="Kriter Excel Seç",
             filetypes=[("Excel", "*.xlsx *.xls"), ("Tümü", "*.*")]
         )
         if not path:
             return
-        db_path = None
-        if self.app:
-            db_path = getattr(self.app, "db_path", None)
-        if not db_path:
-            import json
-            try:
-                with open("config.json", "r", encoding="utf-8") as f:
-                    db_path = json.load(f).get("db_path")
-            except Exception:
-                pass
+        db_path = getattr(self.app, "db_path", None) if self.app else None
         if not db_path or not os.path.exists(db_path):
             messagebox.showwarning("Uyarı", "Veritabanı bağlantısı yok.")
             return
+        faculty_id = self._selected_faculty_id()
+        department_id = self._selected_department_id()
+        year_raw = self.cb_yil.get()
+        term = self.cb_donem.get() or "Güz"
+        if faculty_id is None or not year_raw:
+            messagebox.showwarning("Uyarı", "Lütfen önce fakülte, yıl ve dönem seçiniz.")
+            return
         try:
-            from app.etl.import_kriterler_excel import run_import as run_kriter_import
-            ok, msg, counts = run_kriter_import(excel_path=path, db_path=db_path)
-            if ok:
-                messagebox.showinfo("Tamam", msg)
+            result = run_criteria_import(
+                db_path=db_path,
+                excel_path=path,
+                faculty_id=int(faculty_id),
+                year=int(year_raw),
+                term=term,
+                department_id=int(department_id) if department_id is not None else None,
+                source_filename=os.path.basename(path),
+            )
+            if result.get("ok"):
+                messagebox.showinfo("Tamam", result.get("message", "Kriter dosyasi yuklendi."))
                 self.load_courses()
                 self._refresh_related_views()
             else:
-                messagebox.showerror("Hata", msg)
+                messagebox.showerror("Hata", result.get("message", "Kriter dosyasi yuklenemedi."))
         except Exception as e:
             messagebox.showerror("Hata", f"Import hatası: {e}")
 
@@ -358,12 +381,14 @@ class CriteriaPage:
             fid = res[0][0]
             self._current_fakulte_id = int(fid)  # Fakülte ID'sini sakla
             _, res_bolum = self.db.run_sql("SELECT ad FROM bolum WHERE fakulte_id=?", (fid,))
-            vals = [str(r[0]) for r in res_bolum] if res_bolum else []
+            vals = [FACULTY_SCOPE_LABEL]
+            if res_bolum:
+                vals.extend(str(r[0]) for r in res_bolum)
             self.cb_bolum["values"] = vals
             if _preserve_bolum and _preserve_bolum in vals:
                 self.cb_bolum.set(_preserve_bolum)
             elif vals:
-                self.cb_bolum.current(0)
+                self.cb_bolum.set(FACULTY_SCOPE_LABEL)
             # Bölüm değişince yıl listesini de güncelle
             self._refresh_years_for_selection()
         except Exception as e:
@@ -382,7 +407,7 @@ class CriteriaPage:
             return
         
         fakulte = self.cb_fakulte.get()
-        bolum = self.cb_bolum.get()
+        bolum = self._selected_department_name()
         
         if not fakulte:
             self.cb_yil["values"] = []
@@ -455,7 +480,7 @@ class CriteriaPage:
         self.tree.delete(*self.tree.get_children())
 
         fakulte = self.cb_fakulte.get()
-        bolum = self.cb_bolum.get()
+        bolum = self._selected_department_name()
         yil = self.cb_yil.get()
         donem = self.cb_donem.get()
         kriter_filtre = self.cb_kriter_filtre.get()
@@ -491,7 +516,11 @@ class CriteriaPage:
                     JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
                     JOIN ders d ON d.ders_id = md.ders_id
                     LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?
-                        AND (dk.donem = ? OR dk.donem IS NULL OR dk.donem = ''))
+                        AND (
+                            LOWER(SUBSTR(TRIM(COALESCE(dk.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                            OR dk.donem IS NULL
+                            OR dk.donem = ''
+                        ))
                     WHERE f.ad = ?
                       AND (? = '' OR b.ad = ?)
                       AND m.akademik_yil = ?
@@ -518,7 +547,11 @@ class CriteriaPage:
                     JOIN fakulte f ON d.fakulte_id = f.fakulte_id
                     LEFT JOIN bolum b ON b.bolum_id = d.bolum_id
                     LEFT JOIN ders_kriterleri dk ON (dk.ders_id = d.ders_id AND dk.yil = ?
-                        AND (dk.donem = ? OR dk.donem IS NULL OR dk.donem = ''))
+                        AND (
+                            LOWER(SUBSTR(TRIM(COALESCE(dk.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                            OR dk.donem IS NULL
+                            OR dk.donem = ''
+                        ))
                     WHERE f.ad = ?
                       AND (? = '' OR b.ad = ?)
                       AND (LOWER(COALESCE(d.{col_tip},'')) LIKE '%seçmeli%'
@@ -580,19 +613,26 @@ class CriteriaPage:
 
     def _check_in_mufredat(self, yil: int, donem: str) -> bool:
         """Ders bu yıl/dönem/bölüm müfredatında mı?"""
-        bolum = self.cb_bolum.get()
-        if not bolum:
-            return False
+        bolum = self._selected_department_name()
+        faculty_id = self._selected_faculty_id()
         try:
-            _, rows = self.db.run_sql("""
+            params: list[Any] = [self.selected_course_id, int(yil), str(donem).strip()]
+            department_clause = ""
+            if bolum:
+                department_clause = "AND b.ad = ?"
+                params.append(bolum)
+            elif faculty_id is not None:
+                department_clause = "AND b.fakulte_id = ?"
+                params.append(int(faculty_id))
+            _, rows = self.db.run_sql(f"""
                 SELECT 1 FROM mufredat m
                 JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
                 JOIN bolum b ON m.bolum_id = b.bolum_id
                 WHERE md.ders_id = ? AND m.akademik_yil = ?
-                  AND LOWER(COALESCE(m.donem,'Güz')) = LOWER(?)
-                  AND b.ad = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(m.donem,'Güz')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                  {department_clause}
                 LIMIT 1
-            """, (self.selected_course_id, yil, donem, bolum))
+            """, tuple(params))
             return bool(rows)
         except Exception:
             return False
@@ -650,6 +690,41 @@ class CriteriaPage:
                     fg="#475569",
                 )
 
+    def _update_criteria_source_info(self, record: dict[str, Any] | None = None):
+        if not getattr(self, "lbl_criteria_source_info", None):
+            return
+
+        summary = None
+        if record and record.get("criteria_import_id") is not None:
+            try:
+                summary = get_criteria_import_by_id(self.db.conn, int(record.get("criteria_import_id")))
+            except Exception:
+                summary = None
+        if summary is None:
+            faculty_id = self._selected_faculty_id()
+            year_text = self.cb_yil.get()
+            term = self.cb_donem.get() or "Güz"
+            department_id = self._selected_department_id()
+            if faculty_id is not None and year_text:
+                try:
+                    summary = get_active_criteria_import(
+                        self.db.conn,
+                        faculty_id=int(faculty_id),
+                        year=int(year_text),
+                        term=term,
+                        department_id=int(department_id) if department_id is not None else None,
+                    )
+                except Exception:
+                    summary = None
+
+        self._current_criteria_import_summary = summary
+        text = f"Aktif kriter dosyasi: {format_criteria_import_summary(summary)}"
+        if record and int(record.get("criteria_manual_override") or 0) == 1:
+            text += " | Bu ders icin manuel override aktif."
+        elif record and str(record.get("criteria_veri_kaynagi") or "").strip().lower() == "manual":
+            text += " | Bu ders manuel kriter verisi kullaniyor."
+        self.lbl_criteria_source_info.config(text=text)
+
     def _fetch_saved_criteria_record(self, ders_id, yil, donem):
         """ders_kriterleri kaydini acik kolon adlariyla dondurur."""
         columns = [
@@ -665,6 +740,10 @@ class CriteriaPage:
             "anket_manual_locked",
             "anket_import_id",
             "anket_imported_at",
+            "criteria_import_id",
+            "criteria_veri_kaynagi",
+            "criteria_manual_override",
+            "criteria_updated_at",
         ]
         select_parts = [
             "donem",
@@ -685,6 +764,16 @@ class CriteriaPage:
             "anket_imported_at"
             if self._has_col("ders_kriterleri", "anket_imported_at")
             else "NULL AS anket_imported_at",
+            "criteria_import_id" if self._has_col("ders_kriterleri", "criteria_import_id") else "NULL AS criteria_import_id",
+            "COALESCE(criteria_veri_kaynagi, 'manual') AS criteria_veri_kaynagi"
+            if self._has_col("ders_kriterleri", "criteria_veri_kaynagi")
+            else "'manual' AS criteria_veri_kaynagi",
+            "COALESCE(criteria_manual_override, 0) AS criteria_manual_override"
+            if self._has_col("ders_kriterleri", "criteria_manual_override")
+            else "0 AS criteria_manual_override",
+            "criteria_updated_at"
+            if self._has_col("ders_kriterleri", "criteria_updated_at")
+            else "NULL AS criteria_updated_at",
         ]
         base_query = f"""
             SELECT {", ".join(select_parts)}
@@ -693,11 +782,11 @@ class CriteriaPage:
         """
         queries = [
             (
-                base_query + " AND (donem = ? OR donem IS NULL OR donem = '')",
+                base_query + " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)) ORDER BY id DESC LIMIT 1",
                 (int(ders_id), int(yil), str(donem).strip()),
             ),
             (
-                base_query + " LIMIT 1",
+                base_query + " ORDER BY id DESC LIMIT 1",
                 (int(ders_id), int(yil)),
             ),
         ]
@@ -769,9 +858,10 @@ class CriteriaPage:
         try:
             saved_record = self._fetch_saved_criteria_record(self.selected_course_id, int(yil), donem)
             self._current_survey_record = saved_record
+            self._update_criteria_source_info(saved_record)
 
             if saved_record:
-                self.cb_donem.set(str(saved_record.get("donem") or "Güz"))
+                self.cb_donem.set("Bahar" if str(saved_record.get("donem") or "").lower().startswith("b") else "Güz")
                 self.ent_toplam_ogrenci.delete(0, tk.END)
                 self.ent_toplam_ogrenci.insert(0, str(saved_record.get("toplam_ogrenci") or 0))
                 self.ent_gecen_ogrenci.delete(0, tk.END)
@@ -796,6 +886,7 @@ class CriteriaPage:
                     self._apply_survey_lock_state(False)
             else:
                 self._current_survey_record = None
+                self._update_criteria_source_info(None)
                 # ders_kriterleri yoksa performans+populerlikten doldur
                 _, pr = self.db.run_sql(
                     "SELECT ortalama_not, basari_orani FROM performans WHERE ders_id=? AND akademik_yil=? LIMIT 1",
@@ -847,6 +938,7 @@ class CriteriaPage:
     def clear_form_inputs(self):
         """Formu güvenli şekilde temizler"""
         self._current_survey_record = None
+        self._current_criteria_import_summary = None
         self.ent_toplam_ogrenci.delete(0, tk.END); self.ent_toplam_ogrenci.insert(0, "0")
         self.ent_gecen_ogrenci.delete(0, tk.END); self.ent_gecen_ogrenci.insert(0, "0")
         self.ent_ortalama.delete(0, tk.END); self.ent_ortalama.insert(0, "0.0")
@@ -856,6 +948,8 @@ class CriteriaPage:
         self.ent_anket_katilimci.config(state="disabled")
         self.ent_anket_dersi_secen.delete(0, tk.END); self.ent_anket_dersi_secen.insert(0, "0")
         self.lbl_anket_sonuc.config(text="-")
+        if getattr(self, "lbl_criteria_source_info", None):
+            self.lbl_criteria_source_info.config(text="Aktif kriter dosyasi: -")
         self._apply_survey_lock_state(False)
 
     def update_calculations(self, event=None):
@@ -900,7 +994,7 @@ class CriteriaPage:
 
         yil = int(self.cb_yil.get())
         donem = (self.cb_donem.get() or "Güz").strip()
-        donem_db = "Güz" if str(donem).lower() in ("güz", "guz") else ("Bahar" if str(donem).lower() == "bahar" else donem)
+        donem_db = "Bahar" if str(donem).lower().startswith("b") else "Güz"
         in_mufredat = getattr(self, "_course_in_mufredat", True)
 
         try:
@@ -930,36 +1024,109 @@ class CriteriaPage:
                 anket_import_id = None
                 anket_imported_at = None
 
+            if existing_record and existing_record.get("criteria_import_id") is not None:
+                criteria_import_id = existing_record.get("criteria_import_id")
+                criteria_veri_kaynagi = "manual_override"
+                criteria_manual_override = 1
+            else:
+                criteria_import_id = None
+                criteria_veri_kaynagi = "manual"
+                criteria_manual_override = 0
+            criteria_updated_at = self._now_utc()
+
             basari_orani = (gecen / top_ogr) if top_ogr > 0 else 0.0
             doluluk_orani = min(kayit / kont, 1.0) if kont > 0 else 0.0
 
             cur = self.db.conn.cursor()
 
             # ── 1. ders_kriterleri ──
-            cur.execute("DELETE FROM ders_kriterleri WHERE ders_id=? AND yil=?", (c_id, yil))
-            cur.execute("""
-                INSERT INTO ders_kriterleri
-                    (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
-                     basari_ortalamasi, kontenjan, kayitli_ogrenci,
-                     anket_katilimci, anket_dersi_secen, anket_veri_kaynagi,
-                     anket_manual_locked, anket_import_id, anket_imported_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                c_id,
-                yil,
-                donem,
-                top_ogr,
-                gecen,
-                ort,
-                kont,
-                kayit,
-                ank_kat,
-                ank_sec,
-                anket_veri_kaynagi,
-                anket_manual_locked,
-                anket_import_id,
-                anket_imported_at,
-            ))
+            cur.execute(
+                """
+                SELECT id
+                FROM ders_kriterleri
+                WHERE ders_id = ?
+                  AND yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (c_id, yil, donem_db),
+            )
+            existing_row = cur.fetchone()
+            if existing_row:
+                cur.execute(
+                    """
+                    UPDATE ders_kriterleri
+                    SET donem = ?,
+                        toplam_ogrenci = ?,
+                        gecen_ogrenci = ?,
+                        basari_ortalamasi = ?,
+                        kontenjan = ?,
+                        kayitli_ogrenci = ?,
+                        anket_katilimci = ?,
+                        anket_dersi_secen = ?,
+                        anket_veri_kaynagi = ?,
+                        anket_manual_locked = ?,
+                        anket_import_id = ?,
+                        anket_imported_at = ?,
+                        criteria_import_id = ?,
+                        criteria_veri_kaynagi = ?,
+                        criteria_manual_override = ?,
+                        criteria_updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        donem_db,
+                        top_ogr,
+                        gecen,
+                        ort,
+                        kont,
+                        kayit,
+                        ank_kat,
+                        ank_sec,
+                        anket_veri_kaynagi,
+                        anket_manual_locked,
+                        anket_import_id,
+                        anket_imported_at,
+                        criteria_import_id,
+                        criteria_veri_kaynagi,
+                        criteria_manual_override,
+                        criteria_updated_at,
+                        int(existing_row[0]),
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO ders_kriterleri
+                        (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
+                         basari_ortalamasi, kontenjan, kayitli_ogrenci,
+                         anket_katilimci, anket_dersi_secen, anket_veri_kaynagi,
+                         anket_manual_locked, anket_import_id, anket_imported_at,
+                         criteria_import_id, criteria_veri_kaynagi, criteria_manual_override, criteria_updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        c_id,
+                        yil,
+                        donem_db,
+                        top_ogr,
+                        gecen,
+                        ort,
+                        kont,
+                        kayit,
+                        ank_kat,
+                        ank_sec,
+                        anket_veri_kaynagi,
+                        anket_manual_locked,
+                        anket_import_id,
+                        anket_imported_at,
+                        criteria_import_id,
+                        criteria_veri_kaynagi,
+                        criteria_manual_override,
+                        criteria_updated_at,
+                    ),
+                )
 
             if in_mufredat:
                 cur.execute(
@@ -990,27 +1157,14 @@ class CriteriaPage:
 
             status_messages = []
             try:
-                _, fac_rows = self.db.run_sql(
-                    "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
-                    (self.cb_fakulte.get(),),
-                )
-                dep_rows = []
-                if fac_rows:
-                    _, dep_rows = self.db.run_sql(
-                        """
-                        SELECT bolum_id
-                        FROM bolum
-                        WHERE ad = ? AND fakulte_id = ?
-                        LIMIT 1
-                        """,
-                        (self.cb_bolum.get(), int(fac_rows[0][0])),
-                    )
-                if fac_rows and dep_rows:
+                faculty_id = self._selected_faculty_id()
+                department_id = self._selected_department_id()
+                if faculty_id is not None:
                     status_result = mark_criteria_status(
                         conn=self.db.conn,
                         yil=int(yil),
-                        fakulte_id=int(fac_rows[0][0]),
-                        bolum_id=int(dep_rows[0][0]),
+                        fakulte_id=int(faculty_id),
+                        bolum_id=int(department_id) if department_id is not None else None,
                     )
                     status_messages = [
                         str(msg)
@@ -1027,6 +1181,8 @@ class CriteriaPage:
                 msg += "\n(Müfredatta olmayan ders – yalnızca temel kriterler kaydedildi.)"
             if survey_locked:
                 msg += "\nAnket alanlari belge ile dolduruldugu icin mevcut anket verisi korunarak kaydedildi."
+            if int(criteria_manual_override or 0) == 1:
+                msg += "\nBu ders icin kriter dosyasi uzerine manuel override kaydedildi."
             if status_messages:
                 msg += "\n\n" + "\n".join(status_messages)
             messagebox.showinfo("Başarılı", msg)
