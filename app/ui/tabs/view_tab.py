@@ -13,6 +13,10 @@ from tkinter import ttk, messagebox
 import sqlite3
 import math
 
+from app.core.config import load_app_config
+from app.core.permissions import UserContext, can
+from app.services.report_table_service import ReportTableService
+
 
 PAGE_SIZE = 100
 
@@ -25,10 +29,13 @@ class ViewTab(ttk.Frame):
     - SQL Runner popup
     """
 
-    def __init__(self, parent, app):
+    def __init__(self, parent, app, table_service=None, config=None, user_context=None):
         super().__init__(parent)
         self.app = app
         self.db = app.db
+        self.config = config or getattr(app, "app_config", None) or load_app_config()
+        self.user_context = user_context or getattr(app, "user_context", None) or UserContext.demo_admin(self.config)
+        self._table_service_override = table_service
 
         self.current_table = None
         self._all_rows = []
@@ -62,11 +69,23 @@ class ViewTab(ttk.Frame):
                                        font=("Segoe UI", 8))
         self._lbl_row_count.pack(fill=tk.X, padx=8)
 
-        tk.Button(
+        sql_allowed = self._is_sql_console_allowed()
+        sql_button = tk.Button(
             sidebar, text="SQL Calistir", bg="#334155", fg="white",
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             command=self._open_sql_runner,
-        ).pack(fill=tk.X, padx=6, pady=6)
+            state=(tk.NORMAL if sql_allowed else tk.DISABLED),
+        )
+        sql_button.pack(fill=tk.X, padx=6, pady=6)
+        if not sql_allowed:
+            tk.Label(
+                sidebar,
+                text="SQL Console yalnızca geliştirici/yönetici modunda kullanılabilir.",
+                bg="#0f172a",
+                fg="#f59e0b",
+                font=("Segoe UI", 7),
+                wraplength=190,
+            ).pack(fill=tk.X, padx=8, pady=(0, 6))
 
         # --- SAG: Icerik ---
         right = tk.Frame(self, bg="#f8fafc")
@@ -134,10 +153,21 @@ class ViewTab(ttk.Frame):
     def refresh(self):
         self.fill_tables()
 
+    def _service(self):
+        if self._table_service_override is not None:
+            return self._table_service_override
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            raise RuntimeError("Veritabanı bağlantısı yok.")
+        return ReportTableService(conn)
+
+    def _is_sql_console_allowed(self) -> bool:
+        return can(self.user_context, "use_sql_console", config=self.config)
+
     def fill_tables(self):
         self.lst_tables.delete(0, tk.END)
         try:
-            tables = self.db.tables()
+            tables = self._service().list_tables().unwrap()
         except Exception as e:
             messagebox.showerror("DB Hatasi", f"Tablolar listelenemedi:\n{e}")
             return
@@ -169,7 +199,8 @@ class ViewTab(ttk.Frame):
         self._col_filters = {}
 
         try:
-            cols, rows = self.db.head(table, limit=50000)
+            data = self._service().table_head(table, limit=50000).unwrap()
+            cols, rows = data["columns"], data["rows"]
         except Exception as e:
             messagebox.showerror("Hata", f"Tablo okunamadi:\n{e}")
             return
@@ -320,6 +351,12 @@ class ViewTab(ttk.Frame):
     #  SQL RUNNER
     # =========================================================
     def _open_sql_runner(self):
+        if not self._is_sql_console_allowed():
+            messagebox.showwarning(
+                "SQL Console",
+                "SQL Console yalnızca geliştirici/yönetici modunda kullanılabilir.",
+            )
+            return
         win = tk.Toplevel(self)
         win.title("SQL Calistir")
         win.geometry("960x600")
@@ -361,8 +398,17 @@ class ViewTab(ttk.Frame):
             q = txt.get("1.0", tk.END).strip()
             if not q:
                 return
+            service = self._service()
+            if getattr(service, "is_dangerous_sql", lambda _q: False)(q):
+                approved = messagebox.askyesno(
+                    "SQL Console Uyarısı",
+                    "Bu sorgu veriyi veya şemayı değiştirebilir. Devam etmek istiyor musunuz?",
+                )
+                if not approved:
+                    return
             try:
-                cols, rows = self.db.run_sql(q)
+                result = service.run_admin_sql(q, user_id=self.user_context.user_id).unwrap()
+                cols, rows = result.get("columns") or [], result.get("rows") or []
                 if cols:
                     sql_tree.delete(*sql_tree.get_children())
                     sql_tree["columns"] = cols

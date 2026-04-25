@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 # sklearn modelleri icin minimum egitim verisi satir sayisi
 MIN_SAMPLES_SKLEARN = 10
+ML_ADVISORY_NOTE = (
+    "Bu model mevcut veri miktariyla destekleyici/deneysel calistirilir. "
+    "Nihai karar AHP/TOPSIS + kurallar + state machine tarafindan verilir."
+)
 
 
 def _sf(val, default=0.0):
@@ -276,6 +280,10 @@ class HavuzAIEngine:
             ).round(2)
             df["dt_tahmin"] = df["statu"].astype(int)
             df["prediction_mode"] = "fallback"
+            df["ml_usage_role"] = "advisory_ml"
+            df["advisory_only"] = True
+            df["should_influence_decision"] = False
+            df["ml_governance_note"] = ML_ADVISORY_NOTE
             return df
 
         feat = self._feature_cols()
@@ -285,6 +293,10 @@ class HavuzAIEngine:
         df["rf_tahmin"] = np.clip(self.model_rf.predict(X), 0, 100).round(2)
         df["dt_tahmin"] = self.model_dt.predict(X)
         df["prediction_mode"] = "model"
+        df["ml_usage_role"] = "advisory_ml"
+        df["advisory_only"] = True
+        df["should_influence_decision"] = False
+        df["ml_governance_note"] = ML_ADVISORY_NOTE
         if meta.get("fallback_used"):
             df["training_scope"] = meta.get("fit_scope")
         return df
@@ -297,7 +309,10 @@ class HavuzAIEngine:
             curriculum_only=curriculum_only,
         )
         if df.empty or len(df) < MIN_SAMPLES_SKLEARN:
-            return f"Egitim verisi yetersiz ({len(df)} satir, minimum {MIN_SAMPLES_SKLEARN})."
+            return (
+                f"Egitim verisi yetersiz ({len(df)} satir, minimum {MIN_SAMPLES_SKLEARN}).\n"
+                f"Not: {ML_ADVISORY_NOTE}"
+            )
 
         feat = self._feature_cols()
         X = df[feat].values
@@ -321,6 +336,8 @@ class HavuzAIEngine:
                 f"=== Lineer Regresyon (Basari Tahmini) ===",
                 f"K-Fold (K={n_splits}) MAE: {mae:.2f}",
                 f"Egitim verisi: {len(X)} satir",
+                f"Kullanim rolu: advisory_ml | Karara etkisi: hayir",
+                f"Not: {ML_ADVISORY_NOTE}",
             ]
             if meta.get("fallback_used"):
                 lines.append(
@@ -348,6 +365,8 @@ class HavuzAIEngine:
                 f"=== Karar Agaci (Statu Tahmini) ===",
                 f"K-Fold (K={n_splits}) Accuracy: {scores.mean()*100:.1f}%",
                 f"Egitim verisi: {len(X)} satir",
+                f"Kullanim rolu: advisory_ml | Karara etkisi: hayir",
+                f"Not: {ML_ADVISORY_NOTE}",
             ]
             if meta.get("fallback_used"):
                 lines.append(
@@ -381,6 +400,8 @@ class HavuzAIEngine:
                 f"=== Random Forest (Kesinlesme Puani Tahmini) ===",
                 f"K-Fold (K={n_splits}) MAE: {mae:.2f}",
                 f"Egitim verisi: {len(X)} satir",
+                f"Kullanim rolu: advisory_ml | Karara etkisi: hayir",
+                f"Not: {ML_ADVISORY_NOTE}",
             ]
             if meta.get("fallback_used"):
                 lines.append(

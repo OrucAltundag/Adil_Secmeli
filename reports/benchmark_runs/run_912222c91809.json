@@ -1,0 +1,1921 @@
+{
+  "run": {
+    "run_id": "run_912222c91809",
+    "scenario_name": "real_ml_prediction",
+    "dataset_name": "sample_benchmark_dataset",
+    "started_at": "2026-04-23T12:33:28.753769",
+    "finished_at": "2026-04-23T12:33:33.243000",
+    "status": "completed",
+    "algorithms": [
+      "RandomPredictor",
+      "MajorityClassPredictor",
+      "NaiveBayes",
+      "LogisticRegression",
+      "RandomForest",
+      "XGBoostLike"
+    ],
+    "metrics": [
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 0.3333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 0.16666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 0.3333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 0.2222222222222222,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 0.5,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.29962944914008,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.18333333333333332,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.517526455026455,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 0.4744000034406781,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 18971.33207151297,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.00518798828125,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 0.1111111111111111,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 0.012345679012345678,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 0.1111111111111111,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 0.022222222222222223,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 0.5,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.38316212431993246,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.29074074074074074,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 0.18309999722987413,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 49153.4687938902,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.003437042236328125,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.2314814814814815,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.717200046405196,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 768.1015911955155,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.07751178741455078,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.5092592592592592,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 600.9640999836847,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 14.975936166976258,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.22858524322509766,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.5545634920634921,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 2734.4115999294445,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 3.291384515861557,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 1.2928962707519531,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.2076719576719577,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 1050.4921999527141,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 8.56741249521426,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 2.053421974182129,
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  "payload": {
+    "scenario": {
+      "name": "real_ml_prediction",
+      "description": "Real-data supervised prediction benchmark.",
+      "problem_type": "prediction",
+      "dataset_layer": "derived",
+      "table_name": "student_course_features",
+      "target_column": "course_id",
+      "top_k": 5,
+      "use_synthetic_tier": null,
+      "algorithm_names": [
+        "RandomPredictor",
+        "MajorityClassPredictor",
+        "NaiveBayes",
+        "LogisticRegression",
+        "RandomForest",
+        "XGBoostLike"
+      ],
+      "metadata": {}
+    },
+    "results": {
+      "RandomPredictor": {
+        "output": {
+          "algorithm_name": "RandomPredictor",
+          "task_type": "prediction",
+          "predictions": [
+            1001,
+            1007,
+            1006,
+            1004,
+            1004,
+            1007,
+            1001,
+            1006,
+            1002
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.125,
+          "explanation": "Random uniform sampling across classes=[1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008]",
+          "runtime_ms": 0.0697999494150281,
+          "parameters": {
+            "random_seed": 42
+          },
+          "artifacts": {}
+        },
+        "metrics": {
+          "classification": {
+            "accuracy": 0.3333333333333333,
+            "precision": 0.16666666666666666,
+            "recall": 0.3333333333333333,
+            "f1": 0.2222222222222222,
+            "roc_auc": 0.5
+          },
+          "recommendation": {
+            "hit_at_k": 0.6666666666666666,
+            "ndcg_at_k": 0.29962944914008,
+            "map_at_k": 0.18333333333333332,
+            "coverage": 1.0,
+            "diversity": 0.517526455026455,
+            "top_k_accuracy": 0.6666666666666666
+          },
+          "performance": {
+            "latency_ms": 0.4744000034406781,
+            "throughput_per_sec": 18971.33207151297,
+            "memory_peak_mb": 0.00518798828125
+          }
+        }
+      },
+      "MajorityClassPredictor": {
+        "output": {
+          "algorithm_name": "MajorityClassPredictor",
+          "task_type": "prediction",
+          "predictions": [
+            1003,
+            1003,
+            1003,
+            1003,
+            1003,
+            1003,
+            1003,
+            1003,
+            1003
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.16666666666666666,
+          "explanation": "Always predicts majority class=1003",
+          "runtime_ms": 0.013699987903237343,
+          "parameters": {},
+          "artifacts": {
+            "class_distribution": {
+              "1003": 6,
+              "1001": 5,
+              "1002": 6,
+              "1007": 3,
+              "1005": 5,
+              "1004": 2,
+              "1006": 4,
+              "1008": 5
+            }
+          }
+        },
+        "metrics": {
+          "classification": {
+            "accuracy": 0.1111111111111111,
+            "precision": 0.012345679012345678,
+            "recall": 0.1111111111111111,
+            "f1": 0.022222222222222223,
+            "roc_auc": 0.5
+          },
+          "recommendation": {
+            "hit_at_k": 0.6666666666666666,
+            "ndcg_at_k": 0.38316212431993246,
+            "map_at_k": 0.29074074074074074,
+            "coverage": 0.625,
+            "diversity": 0.0,
+            "top_k_accuracy": 0.6666666666666666
+          },
+          "performance": {
+            "latency_ms": 0.18309999722987413,
+            "throughput_per_sec": 49153.4687938902,
+            "memory_peak_mb": 0.003437042236328125
+          }
+        }
+      },
+      "NaiveBayes": {
+        "output": {
+          "algorithm_name": "NaiveBayes",
+          "task_type": "prediction",
+          "predictions": [
+            1002,
+            1001,
+            1006,
+            1004,
+            1005,
+            1007,
+            1003,
+            1008,
+            1001
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 1.0,
+          "explanation": "NaiveBayes explanation unavailable for this estimator.",
+          "runtime_ms": 4.73960000090301,
+          "parameters": {},
+          "artifacts": {
+            "classes": [
+              1001,
+              1002,
+              1003,
+              1004,
+              1005,
+              1006,
+              1007,
+              1008
+            ],
+            "feature_importance": {}
+          }
+        },
+        "metrics": {
+          "classification": {
+            "accuracy": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "roc_auc": 1.0
+          },
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "map_at_k": 1.0,
+            "coverage": 1.0,
+            "diversity": 0.2314814814814815,
+            "top_k_accuracy": 1.0
+          },
+          "performance": {
+            "latency_ms": 11.717200046405196,
+            "throughput_per_sec": 768.1015911955155,
+            "memory_peak_mb": 0.07751178741455078
+          }
+        }
+      },
+      "LogisticRegression": {
+        "output": {
+          "algorithm_name": "LogisticRegression",
+          "task_type": "prediction",
+          "predictions": [
+            1002,
+            1001,
+            1006,
+            1004,
+            1005,
+            1007,
+            1003,
+            1008,
+            1001
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.7229675284326759,
+          "explanation": "LogisticRegression important features: course_faculty_id_10.0=0.2923, course_faculty_id_11.0=0.2883, course_department_id_101.0=0.2692, course_faculty_id_12.0=0.2683, course_department_id_201.0=0.2297",
+          "runtime_ms": 4.372600000351667,
+          "parameters": {},
+          "artifacts": {
+            "classes": [
+              1001,
+              1002,
+              1003,
+              1004,
+              1005,
+              1006,
+              1007,
+              1008
+            ],
+            "feature_importance": {
+              "preference_rank": 0.11343177916246264,
+              "preference_score": 0.07565425461880608,
+              "student_faculty_id": 0.0012984093233890663,
+              "student_department_id": 0.0032469401617620137,
+              "gpa": 0.1281602270968845,
+              "capacity": 0.1761133227801199,
+              "difficulty_score": 0.14708208848290322,
+              "instructor_effect_score": 0.16087825446282303,
+              "satisfaction": 0.07250373797687486,
+              "contribution": 0.07107309494645572,
+              "general_sentiment": 0.07493752608276007,
+              "academic_preparedness": 0.1281602270968845,
+              "preference_strength": 0.09445687191159045,
+              "satisfaction_signal": 0.072357168508851,
+              "course_capacity_signal": 0.1761133227801199,
+              "composite_score": 0.03783798314042797,
+              "faculty_id_10.0": 0.04332621214855886,
+              "faculty_id_11.0": 0.08663009040161539,
+              "faculty_id_12.0": 0.04329041242627243,
+              "faculty_id_nan": 0.0,
+              "department_id_101.0": 0.09449099144002508,
+              "department_id_102.0": 0.10598299404290032,
+              "department_id_201.0": 0.049807222362278754,
+              "department_id_202.0": 0.06705753284952548,
+              "department_id_301.0": 0.0784805524534742,
+              "department_id_302.0": 0.07975319284688898,
+              "department_id_nan": 0.0,
+              "gender_F": 0.12823807070081927,
+              "gender_M": 0.12819767938823035,
+              "gender_nan": 0.0,
+              "term_Bahar": 0.15272565263560775,
+              "term_Guz": 0.15273107147186565,
+              "term_nan": 0.0,
+              "course_faculty_id_10.0": 0.2923469507744501,
+              "course_faculty_id_11.0": 0.2883052799474699,
+              "course_faculty_id_12.0": 0.26829011011788123,
+              "course_faculty_id_nan": 0.0,
+              "course_department_id_101.0": 0.2691970443245328,
+              "course_department_id_102.0": 0.18790301257393854,
+              "course_department_id_201.0": 0.22967694390299814,
+              "course_department_id_202.0": 0.12787618623875333,
+              "course_department_id_301.0": 0.1798799028695578,
+              "course_department_id_302.0": 0.1687480004022153,
+              "course_department_id_nan": 0.0,
+              "code_OSD101": 0.20900726557432014,
+              "code_OSD102": 0.18790301257393854,
+              "code_OSD103": 0.20739912499619526,
+              "code_OSD104": 0.12787618623875333,
+              "code_OSD105": 0.1798799028695578,
+              "code_OSD106": 0.1687480004022153,
+              "code_OSD107": 0.1663068581396931,
+              "code_OSD108": 0.19810331657243752,
+              "code_nan": 0.0,
+              "name_AI Fundamentals": 0.18790301257393854,
+              "name_Control Systems": 0.20739912499619526,
+              "name_Cyber Security": 0.12787618623875333,
+              "name_Data Analytics": 0.20900726557432014,
+              "name_Digital Design": 0.1798799028695578,
+              "name_Optimization Methods": 0.1663068581396931,
+              "name_Project Management": 0.19810331657243752,
+              "name_Signal Processing": 0.1687480004022153,
+              "name_nan": 0.0
+            }
+          }
+        },
+        "metrics": {
+          "classification": {
+            "accuracy": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "roc_auc": 1.0
+          },
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "map_at_k": 1.0,
+            "coverage": 1.0,
+            "diversity": 0.5092592592592592,
+            "top_k_accuracy": 1.0
+          },
+          "performance": {
+            "latency_ms": 600.9640999836847,
+            "throughput_per_sec": 14.975936166976258,
+            "memory_peak_mb": 0.22858524322509766
+          }
+        }
+      },
+      "RandomForest": {
+        "output": {
+          "algorithm_name": "RandomForest",
+          "task_type": "prediction",
+          "predictions": [
+            1002,
+            1001,
+            1006,
+            1004,
+            1005,
+            1007,
+            1003,
+            1008,
+            1001
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.8266666666666667,
+          "explanation": "RandomForest important features: instructor_effect_score=0.0719, difficulty_score=0.0612, course_capacity_signal=0.0457, capacity=0.0427, code_OSD101=0.0329",
+          "runtime_ms": 430.2278000395745,
+          "parameters": {
+            "n_estimators": 300,
+            "random_seed": 42
+          },
+          "artifacts": {
+            "classes": [
+              1001,
+              1002,
+              1003,
+              1004,
+              1005,
+              1006,
+              1007,
+              1008
+            ],
+            "feature_importance": {
+              "preference_rank": 0.004691153932590106,
+              "preference_score": 0.012807806622170115,
+              "student_faculty_id": 0.002129175862095118,
+              "student_department_id": 0.0033053740328176434,
+              "gpa": 0.020860973777469153,
+              "capacity": 0.04272895464399437,
+              "difficulty_score": 0.06119545259721729,
+              "instructor_effect_score": 0.07189309954580879,
+              "satisfaction": 0.013261144687134133,
+              "contribution": 0.010612823556329323,
+              "general_sentiment": 0.01338136764165436,
+              "academic_preparedness": 0.015484978944677413,
+              "preference_strength": 0.014534722361902237,
+              "satisfaction_signal": 0.012865790420297153,
+              "course_capacity_signal": 0.04568745305330886,
+              "composite_score": 0.014503600777130416,
+              "faculty_id_10.0": 0.0024588731551416255,
+              "faculty_id_11.0": 0.00187720684863929,
+              "faculty_id_12.0": 0.001621738356965171,
+              "faculty_id_nan": 0.0,
+              "department_id_101.0": 0.0015993470722966878,
+              "department_id_102.0": 0.0018941651158550998,
+              "department_id_201.0": 0.00105396725188392,
+              "department_id_202.0": 0.0010372342520592348,
+              "department_id_301.0": 0.0012229757830679228,
+              "department_id_302.0": 0.0023790673790673794,
+              "department_id_nan": 0.0,
+              "gender_F": 0.0024002850995268683,
+              "gender_M": 0.002232251331691108,
+              "gender_nan": 0.0,
+              "term_Bahar": 0.0031500340174636173,
+              "term_Guz": 0.004273964131106988,
+              "term_nan": 0.0,
+              "course_faculty_id_10.0": 0.029314261619297455,
+              "course_faculty_id_11.0": 0.027003043322592197,
+              "course_faculty_id_12.0": 0.02977928826533572,
+              "course_faculty_id_nan": 0.0,
+              "course_department_id_101.0": 0.030510635563267142,
+              "course_department_id_102.0": 0.024120039718574113,
+              "course_department_id_201.0": 0.02428058185201044,
+              "course_department_id_202.0": 0.016734300896811105,
+              "course_department_id_301.0": 0.02343804429620539,
+              "course_department_id_302.0": 0.026413005958118737,
+              "course_department_id_nan": 0.0,
+              "code_OSD101": 0.03292460317460316,
+              "code_OSD102": 0.02072255892255893,
+              "code_OSD103": 0.028092523558274986,
+              "code_OSD104": 0.01281314546020428,
+              "code_OSD105": 0.025392488555177287,
+              "code_OSD106": 0.019071249027470233,
+              "code_OSD107": 0.02395483649813023,
+              "code_OSD108": 0.02682932053438968,
+              "code_nan": 0.0,
+              "name_AI Fundamentals": 0.02693890447403306,
+              "name_Control Systems": 0.02491135848278707,
+              "name_Cyber Security": 0.015907762768309228,
+              "name_Data Analytics": 0.030264836789041443,
+              "name_Digital Design": 0.02337737200143216,
+              "name_Optimization Methods": 0.023028035456606873,
+              "name_Project Management": 0.02427647096869707,
+              "name_Signal Processing": 0.022756349584710567,
+              "name_nan": 0.0
+            }
+          }
+        },
+        "metrics": {
+          "classification": {
+            "accuracy": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "roc_auc": 1.0
+          },
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "map_at_k": 1.0,
+            "coverage": 1.0,
+            "diversity": 0.5545634920634921,
+            "top_k_accuracy": 1.0
+          },
+          "performance": {
+            "latency_ms": 2734.4115999294445,
+            "throughput_per_sec": 3.291384515861557,
+            "memory_peak_mb": 1.2928962707519531
+          }
+        }
+      },
+      "XGBoostLike": {
+        "output": {
+          "algorithm_name": "XGBoostFallback",
+          "task_type": "prediction",
+          "predictions": [
+            1002,
+            1001,
+            1006,
+            1004,
+            1005,
+            1007,
+            1003,
+            1008,
+            1001
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.99999996526916,
+          "explanation": "XGBoostFallback important features: difficulty_score=0.1156, instructor_effect_score=0.0992, name_Signal Processing=0.0872, code_OSD103=0.0857, name_Data Analytics=0.0850",
+          "runtime_ms": 38.697500014677644,
+          "parameters": {
+            "random_seed": 42
+          },
+          "artifacts": {
+            "classes": [
+              1001,
+              1002,
+              1003,
+              1004,
+              1005,
+              1006,
+              1007,
+              1008
+            ],
+            "feature_importance": {
+              "preference_rank": 0.0,
+              "preference_score": 0.0,
+              "student_faculty_id": 0.0,
+              "student_department_id": 0.0,
+              "gpa": 0.0,
+              "capacity": 0.017590596969865476,
+              "difficulty_score": 0.11557926235539023,
+              "instructor_effect_score": 0.09917819808294706,
+              "satisfaction": 0.0,
+              "contribution": 0.0,
+              "general_sentiment": 1.5137427125619405e-17,
+              "academic_preparedness": 0.0,
+              "preference_strength": 0.0,
+              "satisfaction_signal": 0.0,
+              "course_capacity_signal": 0.007777464595244215,
+              "composite_score": 0.0,
+              "faculty_id_10.0": 0.0,
+              "faculty_id_11.0": 0.0,
+              "faculty_id_12.0": 1.0017415009601079e-17,
+              "faculty_id_nan": 0.0,
+              "department_id_101.0": 0.0,
+              "department_id_102.0": 0.0,
+              "department_id_201.0": 1.73635193499752e-17,
+              "department_id_202.0": 0.0,
+              "department_id_301.0": 0.0,
+              "department_id_302.0": 0.0,
+              "department_id_nan": 0.0,
+              "gender_F": 0.0,
+              "gender_M": 0.0,
+              "gender_nan": 0.0,
+              "term_Bahar": 0.0,
+              "term_Guz": 0.0,
+              "term_nan": 0.0,
+              "course_faculty_id_10.0": 2.1905670291768664e-10,
+              "course_faculty_id_11.0": 0.0,
+              "course_faculty_id_12.0": 1.1491206738167488e-09,
+              "course_faculty_id_nan": 0.0,
+              "course_department_id_101.0": 3.012728710306211e-11,
+              "course_department_id_102.0": 0.04813738378663103,
+              "course_department_id_201.0": 0.0,
+              "course_department_id_202.0": 0.02374896901300407,
+              "course_department_id_301.0": 0.06446727092135064,
+              "course_department_id_302.0": 0.01929224559257337,
+              "course_department_id_nan": 0.0,
+              "code_OSD101": 0.05470584817136312,
+              "code_OSD102": 0.009359459000067023,
+              "code_OSD103": 0.08570493526327112,
+              "code_OSD104": 0.027362988143152134,
+              "code_OSD105": 0.04078314022801976,
+              "code_OSD106": 0.008050421052057704,
+              "code_OSD107": 0.0006258488561797278,
+              "code_OSD108": 0.02439629021697108,
+              "code_nan": 0.0,
+              "name_AI Fundamentals": 0.049372024361128676,
+              "name_Control Systems": 0.07654755611072926,
+              "name_Cyber Security": 0.004282422358454968,
+              "name_Data Analytics": 0.08495844902975333,
+              "name_Digital Design": 0.03441388462788178,
+              "name_Optimization Methods": 0.009538082711888596,
+              "name_Project Management": 0.006965035822261321,
+              "name_Signal Processing": 0.0871622213315095,
+              "name_nan": 0.0
+            }
+          }
+        },
+        "metrics": {
+          "classification": {
+            "accuracy": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "roc_auc": 1.0
+          },
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "map_at_k": 1.0,
+            "coverage": 1.0,
+            "diversity": 0.2076719576719577,
+            "top_k_accuracy": 1.0
+          },
+          "performance": {
+            "latency_ms": 1050.4921999527141,
+            "throughput_per_sec": 8.56741249521426,
+            "memory_peak_mb": 2.053421974182129
+          }
+        }
+      }
+    },
+    "metrics": [
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 0.3333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 0.16666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 0.3333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 0.2222222222222222,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 0.5,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.29962944914008,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.18333333333333332,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.517526455026455,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 0.4744000034406781,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 18971.33207151297,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomPredictor",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.00518798828125,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 0.1111111111111111,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 0.012345679012345678,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 0.1111111111111111,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 0.022222222222222223,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 0.5,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.38316212431993246,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.29074074074074074,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 0.6666666666666666,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 0.18309999722987413,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 49153.4687938902,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "MajorityClassPredictor",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.003437042236328125,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.2314814814814815,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.717200046405196,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 768.1015911955155,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "NaiveBayes",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.07751178741455078,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.5092592592592592,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 600.9640999836847,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 14.975936166976258,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "LogisticRegression",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.22858524322509766,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.5545634920634921,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 2734.4115999294445,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 3.291384515861557,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "RandomForest",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 1.2928962707519531,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "precision",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "recall",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "f1",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "classification",
+        "metric_name": "roc_auc",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.2076719576719577,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "recommendation",
+        "metric_name": "top_k_accuracy",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 1050.4921999527141,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 8.56741249521426,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_912222c91809",
+        "algorithm_name": "XGBoostLike",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 2.053421974182129,
+        "metadata": {}
+      }
+    ]
+  }
+}

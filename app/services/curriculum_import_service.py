@@ -7,6 +7,18 @@ import sqlite3
 from typing import Any
 
 import pandas as pd
+from app.db.sqlite_connection import connect_sqlite
+from app.db.schema_compat import ensure_import_governance_schema, ensure_reporting_schema
+from app.services.import_audit_service import (
+    create_import_batch,
+    extract_excel_metadata,
+    mark_batch_failed_by_path,
+    record_import_issue,
+    update_import_status,
+)
+from app.services.import_impact_service import recalculate_import_impact
+from app.services.import_lineage_service import record_value_source
+from app.services.import_quality_service import evaluate_import_quality
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
     reset_year_workflow_for_import,
@@ -439,18 +451,33 @@ def import_curriculum_excel(
     db_path: str,
     excel_path: str,
     target_year: int = 2022,
+    auto_activate: bool = True,
+    uploaded_by: str | None = None,
 ) -> dict[str, Any]:
     if not os.path.exists(db_path):
         return ImportResult(False, "Veritabani bulunamadi.", target_year=target_year).as_dict()
     if not os.path.exists(excel_path):
         return ImportResult(False, "Excel dosyasi bulunamadi.", target_year=target_year).as_dict()
 
-    parsed_rows, warnings = parse_curriculum_excel(excel_path)
+    try:
+        parsed_rows, warnings = parse_curriculum_excel(excel_path)
+    except Exception as exc:
+        try:
+            mark_batch_failed_by_path(
+                db_path,
+                excel_path,
+                "curriculum",
+                str(exc),
+                original_filename=os.path.basename(excel_path),
+                year=int(target_year),
+            )
+        except Exception:
+            pass
+        return ImportResult(False, f"Excel dosyasi okunamadi: {exc}", target_year=target_year).as_dict()
     if not parsed_rows:
         return ImportResult(False, "Excel icinde aktarilabilir satir yok.", target_year=target_year, warnings=warnings).as_dict()
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(db_path, row_factory=True)
     cur = conn.cursor()
 
     errors: list[str] = []
@@ -458,23 +485,90 @@ def import_curriculum_excel(
     scope_names: dict[tuple[int, int, int, str], tuple[str, str]] = {}
 
     try:
+        ensure_reporting_schema(conn)
+        ensure_import_governance_schema(conn)
+        try:
+            metadata = extract_excel_metadata(excel_path)
+        except Exception:
+            metadata = {
+                "sheet_names": [],
+                "columns": [],
+                "row_count": len(parsed_rows),
+                "column_count": 0,
+            }
+        batch = create_import_batch(
+            conn,
+            import_type="curriculum",
+            original_filename=os.path.basename(excel_path),
+            file_path=excel_path,
+            sheet_names=list(metadata.get("sheet_names") or []),
+            columns=list(metadata.get("columns") or []),
+            row_count=int(metadata.get("row_count") or len(parsed_rows)),
+            column_count=int(metadata.get("column_count") or 0),
+            year=int(target_year),
+            uploaded_by=uploaded_by,
+            status="uploaded",
+        )
+        import_batch_id = int(batch["import_batch_id"])
+        conn.commit()
+
         for item in parsed_rows:
             year = int(item["yil"])
             if year != int(target_year):
-                errors.append(f"Yalnizca {target_year} aktarimi desteklenir. Satir yili={year}")
+                message = f"Yalnizca {target_year} aktarimi desteklenir. Satir yili={year}"
+                errors.append(message)
+                record_import_issue(
+                    conn,
+                    import_batch_id=import_batch_id,
+                    row_number=int(item.get("row_no") or 0),
+                    issue_type="invalid_year",
+                    severity="error",
+                    message=message,
+                    suggestion="Satirdaki akademik yil bilgisini hedef yil ile ayni yapin.",
+                )
                 continue
 
             faculty_id = _find_faculty_id(cur, item["fakulte"])
             if faculty_id is None:
-                errors.append(f"Fakulte bulunamadi: {item['fakulte']}")
+                message = f"Fakulte bulunamadi: {item['fakulte']}"
+                errors.append(message)
+                record_import_issue(
+                    conn,
+                    import_batch_id=import_batch_id,
+                    row_number=int(item.get("row_no") or 0),
+                    issue_type="invalid_scope",
+                    severity="error",
+                    message=message,
+                    suggestion="Fakulte adini sistemdeki fakulte adi ile ayni olacak sekilde duzeltin.",
+                )
                 continue
             department_id = _find_department_id(cur, faculty_id, item["bolum"])
             if department_id is None:
-                errors.append(f"Bolum bulunamadi: {item['bolum']} (fakulte={item['fakulte']})")
+                message = f"Bolum bulunamadi: {item['bolum']} (fakulte={item['fakulte']})"
+                errors.append(message)
+                record_import_issue(
+                    conn,
+                    import_batch_id=import_batch_id,
+                    row_number=int(item.get("row_no") or 0),
+                    issue_type="invalid_scope",
+                    severity="error",
+                    message=message,
+                    suggestion="Bolum adini secili fakulte altindaki bolum kaydi ile uyumlu hale getirin.",
+                )
                 continue
             course_id = _find_course_id(cur, item.get("ders_adi"), item.get("ders_kodu"))
             if course_id is None:
-                errors.append(f"Ders bulunamadi: kod={item.get('ders_kodu')} ad={item.get('ders_adi')}")
+                message = f"Ders bulunamadi: kod={item.get('ders_kodu')} ad={item.get('ders_adi')}"
+                errors.append(message)
+                record_import_issue(
+                    conn,
+                    import_batch_id=import_batch_id,
+                    row_number=int(item.get("row_no") or 0),
+                    issue_type="course_not_matched",
+                    severity="error",
+                    message=message,
+                    suggestion="Ders kodu veya ders adini sistemdeki ders kaydi ile eslesecek sekilde duzeltin.",
+                )
                 continue
 
             scope = (int(faculty_id), int(department_id), int(year), normalize_term(item["donem"]))
@@ -482,14 +576,26 @@ def import_curriculum_excel(
             scope_names[scope] = (item["fakulte"], item["bolum"])
 
         if errors:
-            conn.rollback()
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(
+                conn,
+                import_batch_id,
+                "pending_review",
+                error_message="Yukleme dogrulamasi basarisiz.",
+                validation_summary={"ok": False, "errors": errors, "warnings": warnings},
+            )
+            conn.commit()
             return ImportResult(
                 False,
                 "Yukleme dogrulamasi basarisiz.",
                 target_year=target_year,
                 warnings=warnings,
                 errors=errors,
-            ).as_dict()
+            ).as_dict() | {
+                "import_batch_id": import_batch_id,
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
+            }
 
         # Cross-semester validation: ayni ders hem Guz hem Bahar'da olamaz.
         grouped_by_year_scope: dict[tuple[int, int, int], dict[str, set[int]]] = {}
@@ -509,14 +615,36 @@ def import_curriculum_excel(
                 )
 
         if errors:
-            conn.rollback()
+            for error in errors:
+                record_import_issue(
+                    conn,
+                    import_batch_id=import_batch_id,
+                    row_number=0,
+                    issue_type="invalid_semester",
+                    severity="error",
+                    message=error,
+                    suggestion="Ayni dersi ayni kapsamda hem Guz hem Bahar donemine koymayin.",
+                )
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(
+                conn,
+                import_batch_id,
+                "pending_review",
+                error_message="Cross-semester dogrulamasi basarisiz.",
+                validation_summary={"ok": False, "errors": errors, "warnings": warnings},
+            )
+            conn.commit()
             return ImportResult(
                 False,
                 "Cross-semester dogrulamasi basarisiz.",
                 target_year=target_year,
                 warnings=warnings,
                 errors=errors,
-            ).as_dict()
+            ).as_dict() | {
+                "import_batch_id": import_batch_id,
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
+            }
 
         created = 0
         updated = 0
@@ -554,6 +682,21 @@ def import_curriculum_excel(
                 )
                 links_added += int(cur.rowcount or 0)
 
+            for ders_id in sorted(incoming_courses):
+                record_value_source(
+                    conn=conn,
+                    course_id=int(ders_id),
+                    year=int(year),
+                    field_name="curriculum_membership",
+                    value=term,
+                    source_type="curriculum_import",
+                    faculty_id=int(faculty_id),
+                    department_id=int(department_id),
+                    source_import_batch_id=int(import_batch_id),
+                    is_locked=True,
+                    deactivate_existing=False,
+                )
+
             faculty_name, department_name = scope_names.get(scope, (str(faculty_id), str(department_id)))
             compare.append(
                 {
@@ -572,6 +715,28 @@ def import_curriculum_excel(
             target_year=int(target_year),
             scope_courses=scope_courses,
         )
+        quality = evaluate_import_quality(conn, import_batch_id)
+        status = "pending_review" if quality.quality_level == "low" else "validated"
+        update_import_status(
+            conn,
+            import_batch_id,
+            status,
+            validation_summary={
+                "ok": True,
+                "warnings": warnings,
+                "scope_count": len(scope_courses),
+                "links_added": links_added,
+                "links_removed": links_removed,
+            },
+        )
+        if auto_activate and quality.quality_level != "low":
+            from app.services.import_audit_service import activate_import
+
+            activate_import(conn, import_batch_id, user=uploaded_by)
+        try:
+            recalculate_import_impact(conn, import_batch_id)
+        except Exception:
+            pass
         conn.commit()
         msg = (
             f"Yukleme tamamlandi. kapsam={len(scope_courses)}, olusturulan={created}, "
@@ -598,9 +763,23 @@ def import_curriculum_excel(
             warnings=warnings,
             errors=[],
             compare=compare,
-        ).as_dict()
+        ).as_dict() | {
+            "import_batch_id": import_batch_id,
+            "import_status": "active" if auto_activate and quality.quality_level != "low" else status,
+            "quality_score": quality.quality_score,
+            "quality_level": quality.quality_level,
+            "duplicate": bool(batch.get("duplicate")),
+            "duplicate_of_import_batch_id": batch.get("duplicate_of_import_batch_id"),
+        }
     except Exception as exc:
         conn.rollback()
+        try:
+            failed_batch_id = locals().get("import_batch_id")
+            if failed_batch_id is not None:
+                update_import_status(conn, int(failed_batch_id), "failed", error_message=str(exc))
+                conn.commit()
+        except Exception:
+            pass
         return ImportResult(
             False,
             f"Yukleme hatasi: {exc}",

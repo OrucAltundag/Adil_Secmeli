@@ -93,6 +93,39 @@ def calculate_next_status_semester(
     )
 
 
+def calculate_next_status_governed(
+    prev_statu: int,
+    prev_sayac: int,
+    in_mufredat_this_year: bool,
+    conn: sqlite3.Connection | None = None,
+    context: dict | None = None,
+) -> tuple[int, int, dict]:
+    """
+    Geriye uyumlu adapter.
+
+    Eski mekanik sonucu önce üretir; veritabanı bağlantısı ve bağlam verilirse
+    yeni akademik yaşam döngüsü state machine'i ile recommended/final ayrımını
+    hesaplar. Hata durumunda legacy sonucu bozmaz.
+    """
+    legacy_statu, legacy_sayac = calculate_next_status(prev_statu, prev_sayac, in_mufredat_this_year)
+    payload = dict(context or {})
+    payload.setdefault("legacy_recommended_status", legacy_statu)
+    payload.setdefault("legacy_counter_after", legacy_sayac)
+    payload.setdefault("current_status", prev_statu)
+    payload.setdefault("counter_before", prev_sayac)
+    payload.setdefault("in_mufredat_this_year", in_mufredat_this_year)
+    if conn is None or "course_id" not in payload or "year" not in payload:
+        return legacy_statu, legacy_sayac, payload
+    try:
+        from app.services.pool_state_machine_service import evaluate_course_state_transition
+
+        result = evaluate_course_state_transition(conn, payload)
+        return int(result["final_status"]), int(result["counter_after"]), result
+    except Exception as exc:
+        payload["governance_error"] = str(exc)
+        return legacy_statu, legacy_sayac, payload
+
+
 def enforce_cross_semester_constraints(assignments: dict[str, set[int] | list[int]]) -> dict[str, list[int]]:
     """
     Guz/Bahar listelerinde ayni dersi tekillestirir.

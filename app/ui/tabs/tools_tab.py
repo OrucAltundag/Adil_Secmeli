@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import datetime
 import os
-import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 import pandas as pd
 
+from app.db.sqlite_connection import is_database_locked_error
 from app.services.criteria_import_service import (
     FACULTY_SCOPE_LABEL,
     import_criteria_excel as run_criteria_import,
@@ -28,6 +28,7 @@ from app.services.criteria_import_service import (
 from app.services.curriculum_import_service import import_curriculum_excel as run_curriculum_import
 from app.services.havuz_karar import mufredat_durumunu_esitle
 from app.services.reporting_service import build_report_snapshot, ensure_report_scores
+from app.services.system_service import SystemService
 from app.services.survey_import_service import (
     import_survey_excel as run_survey_import,
     write_survey_template_excel,
@@ -81,6 +82,50 @@ class ToolsTab(ttk.Frame):
             return
         self.txt_log.insert(tk.END, str(msg) + "\n")
         self.txt_log.see(tk.END)
+
+    def _format_operation_error(self, exc: Exception) -> str:
+        if is_database_locked_error(exc):
+            return (
+                "Veritabani su anda baska bir islem tarafindan kullaniliyor. "
+                "Lutfen devam eden yukleme/rapor islemi bittikten sonra tekrar deneyin. "
+                "Sorun surerse uygulamayi kapatip yeniden acin."
+            )
+        return str(exc)
+
+    def _release_ui_db_connection(self) -> bool:
+        """Close the long-lived UI connection before service-level write operations."""
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            return False
+        try:
+            try:
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            conn.close()
+        finally:
+            self.db.conn = None
+        return True
+
+    def _restore_ui_db_connection(self):
+        self.db_path = getattr(self.app, "db_path", self.db_path)
+        if self._db_ready() or not self.db_path or not os.path.exists(self.db_path):
+            return
+        self.db.connect(self.db_path)
+
+    def _run_external_db_operation(self, operation):
+        released = self._release_ui_db_connection()
+        try:
+            return operation()
+        finally:
+            if released:
+                try:
+                    self._restore_ui_db_connection()
+                except Exception as exc:
+                    self.log(f"Veritabani baglantisi yeniden acilamadi: {exc}")
 
     def _set_import_state_label(self, text: str):
         if self.lbl_import_state:
@@ -578,21 +623,23 @@ class ToolsTab(ttk.Frame):
             return
 
         try:
-            write_criteria_template_excel(
-                target_path=target_path,
-                faculty_name=faculty_name,
-                department_name=department_name,
-                year=year,
-                term=term,
-                db_path=self.db_path,
-                faculty_id=faculty_id,
-                department_id=department_id,
+            self._run_external_db_operation(
+                lambda: write_criteria_template_excel(
+                    target_path=target_path,
+                    faculty_name=faculty_name,
+                    department_name=department_name,
+                    year=year,
+                    term=term,
+                    db_path=self.db_path,
+                    faculty_id=faculty_id,
+                    department_id=department_id,
+                )
             )
             self.log(f"Kriter sablonu yazildi: {target_path}")
             messagebox.showinfo("Tamam", "Kriter sablonu olusturuldu.")
         except Exception as exc:
             self.log(f"Kriter sablonu olusturma hatasi: {exc}")
-            messagebox.showerror("Hata", str(exc))
+            messagebox.showerror("Hata", self._format_operation_error(exc))
 
     def import_criteria_excel(self):
         if not self._db_ready():
@@ -617,15 +664,22 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
-        result = run_criteria_import(
-            db_path=self.db_path,
-            excel_path=excel_path,
-            faculty_id=faculty_id,
-            year=year,
-            term=term,
-            department_id=department_id,
-            source_filename=os.path.basename(excel_path),
-        )
+        try:
+            result = self._run_external_db_operation(
+                lambda: run_criteria_import(
+                    db_path=self.db_path,
+                    excel_path=excel_path,
+                    faculty_id=faculty_id,
+                    year=year,
+                    term=term,
+                    department_id=department_id,
+                    source_filename=os.path.basename(excel_path),
+                )
+            )
+        except Exception as exc:
+            self.log(f"Kriter yukleme hatasi: {exc}")
+            messagebox.showerror("Hata", self._format_operation_error(exc))
+            return
         if result.get("ok"):
             scope_text = department_name or FACULTY_SCOPE_LABEL
             self.log("Kriter yukleme basarili:")
@@ -701,18 +755,20 @@ class ToolsTab(ttk.Frame):
             return
 
         try:
-            write_survey_template_excel(
-                target_path=target_path,
-                faculty_name=faculty_name,
-                year=year,
-                db_path=self.db_path,
-                faculty_id=faculty_id,
+            self._run_external_db_operation(
+                lambda: write_survey_template_excel(
+                    target_path=target_path,
+                    faculty_name=faculty_name,
+                    year=year,
+                    db_path=self.db_path,
+                    faculty_id=faculty_id,
+                )
             )
             self.log(f"Anket sablonu yazildi: {target_path}")
             messagebox.showinfo("Tamam", "Anket sablonu olusturuldu.")
         except Exception as exc:
             self.log(f"Anket sablonu olusturma hatasi: {exc}")
-            messagebox.showerror("Hata", str(exc))
+            messagebox.showerror("Hata", self._format_operation_error(exc))
 
     def import_curriculum_excel(self):
         if not self._db_ready():
@@ -737,7 +793,18 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
-        result = run_curriculum_import(db_path=self.db_path, excel_path=excel_path, target_year=target_year)
+        try:
+            result = self._run_external_db_operation(
+                lambda: run_curriculum_import(
+                    db_path=self.db_path,
+                    excel_path=excel_path,
+                    target_year=target_year,
+                )
+            )
+        except Exception as exc:
+            self.log(f"Yukleme hatasi: {exc}")
+            messagebox.showerror("Hata", self._format_operation_error(exc))
+            return
         if result.get("ok"):
             self.log("Yukleme basarili:")
             self.log(result.get("message", ""))
@@ -783,13 +850,20 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
-        result = run_survey_import(
-            db_path=self.db_path,
-            excel_path=excel_path,
-            faculty_id=faculty_id,
-            year=year,
-            source_filename=os.path.basename(excel_path),
-        )
+        try:
+            result = self._run_external_db_operation(
+                lambda: run_survey_import(
+                    db_path=self.db_path,
+                    excel_path=excel_path,
+                    faculty_id=faculty_id,
+                    year=year,
+                    source_filename=os.path.basename(excel_path),
+                )
+            )
+        except Exception as exc:
+            self.log(f"Anket yukleme hatasi: {exc}")
+            messagebox.showerror("Hata", self._format_operation_error(exc))
+            return
         if result.get("ok"):
             self.log("Anket yukleme basarili:")
             self.log(result.get("message", ""))
@@ -867,17 +941,19 @@ class ToolsTab(ttk.Frame):
                 return
             min_yil = int(rows[0][0])
             max_yil = int(rows[0][1]) if rows[0][1] is not None else min_yil
-            mufredat_durumunu_esitle(
-                self.db_path,
-                baslangic_yili=min_yil,
-                bitis_yili=max_yil,
+            self._run_external_db_operation(
+                lambda: mufredat_durumunu_esitle(
+                    self.db_path,
+                    baslangic_yili=min_yil,
+                    bitis_yili=max_yil,
+                )
             )
             self.log("Statu/Yil esitleme tamamlandi.")
             self.load_report()
             messagebox.showinfo("Tamam", "Statu/Yil esitleme tamamlandi.")
         except Exception as exc:
             self.log(f"Statu/Yil esitleme hatasi: {exc}")
-            messagebox.showerror("Hata", str(exc))
+            messagebox.showerror("Hata", self._format_operation_error(exc))
 
     def backup_db(self):
         if not self.db_path or not os.path.exists(self.db_path):
@@ -896,12 +972,15 @@ class ToolsTab(ttk.Frame):
             return
 
         try:
-            shutil.copy2(self.db_path, target)
+            def _backup():
+                SystemService(db_path=self.db_path).backup_database(target, source_path=self.db_path).unwrap()
+
+            self._run_external_db_operation(_backup)
             self.log(f"DB yedeklendi: {target}")
             messagebox.showinfo("Tamam", "Yedek alindi.")
         except Exception as exc:
             self.log(f"DB yedekleme hatasi: {exc}")
-            messagebox.showerror("Hata", str(exc))
+            messagebox.showerror("Hata", self._format_operation_error(exc))
 
     # ---------------------------------------------------------
     # Zone C - Export
@@ -937,4 +1016,4 @@ class ToolsTab(ttk.Frame):
             messagebox.showinfo("Tamam", "Disa aktarim tamamlandi.")
         except Exception as exc:
             self.log(f"Export hatasi: {exc}")
-            messagebox.showerror("Hata", str(exc))
+            messagebox.showerror("Hata", self._format_operation_error(exc))

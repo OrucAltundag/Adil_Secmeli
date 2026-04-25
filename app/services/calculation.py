@@ -15,12 +15,21 @@ import random
 import os
 import traceback
 import logging
+from app.db.schema_compat import ensure_pool_state_governance_schema
 from app.services.havuz_karar import calculate_next_status
 from app.services.course_type import (
     build_elective_predicate,
     filter_elective_course_ids,
     get_existing_type_columns,
 )
+from app.services.data_confidence_service import calculate_course_data_confidence
+from app.services.pool_state_machine_service import (
+    evaluate_course_state_transition,
+    get_governance_flags,
+    save_state_transition,
+)
+from app.services.pool_state_policy_service import resolve_policy as resolve_pool_state_policy
+from app.services.trend_analysis_service import analyze_course_trend
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
     get_missing_criteria,
@@ -73,7 +82,7 @@ class KararMotoru:
         """Saaty kurallarina gore kurulan 4x4 ikili karsilastirma matrisini doner."""
         return np.array(AHP_PAIRWISE_MATRIX, copy=True)
 
-    def ahp_calistir(self):
+    def ahp_calistir(self, profile=None):
         """
         AHP agirliklarini ozvektor yontemi ile hesaplar.
 
@@ -82,6 +91,12 @@ class KararMotoru:
         2. En buyuk ozdegere karsilik gelen ana ozvektoru sec
         3. Ozvektoru 1.0 toplamina normalize et
         """
+        if profile and isinstance(profile, dict) and profile.get("weights"):
+            weights = profile.get("weights") or {}
+            keys = ["basari", "trend", "populerlik", "anket"]
+            values = [float(weights.get(key, 0.0)) for key in keys]
+            total = sum(values) or 1.0
+            return [value / total for value in values]
         matris = self.ahp_matrisi()
         eigenvalues, eigenvectors = np.linalg.eig(matris)
 
@@ -193,7 +208,7 @@ class KararMotoru:
         log = " | ".join(log_parcalari) + f"  -> Trend: {trend:.4f}"
         return trend, log
 
-    def topsis_calistir(self, df, agirliklar):
+    def topsis_calistir(self, df, agirliklar, criteria_keys=None, benefit_map=None):
         """
         TOPSIS: Veri akÄ±ÅŸÄ± AHP'den gelen aÄŸÄ±rlÄ±klarla.
         1) KarekÃ¶k toplamlarÄ± ile normalize
@@ -208,9 +223,15 @@ class KararMotoru:
         def _safe_div(a, b, default=0.0):
             return a / b if b and abs(b) > 1e-10 else default
 
-        sutunlar = ["basari", "trend", "populerlik", "anket"]
-        w_sum = sum(agirliklar) or 1.0
-        w = [float(a) / w_sum for a in agirliklar]
+        sutunlar = [c for c in list(criteria_keys or ["basari", "trend", "populerlik", "anket"]) if c in df.columns]
+        if not sutunlar:
+            return pd.DataFrame(), {}
+        raw_weights = list(agirliklar or [])
+        if len(raw_weights) != len(sutunlar):
+            raw_weights = raw_weights[: len(sutunlar)] + [1.0] * max(0, len(sutunlar) - len(raw_weights))
+        w_sum = sum(raw_weights) or 1.0
+        w = [float(a) / w_sum for a in raw_weights]
+        benefit_map = dict(benefit_map or {})
 
         # 1. Vector normalization: r_ij = x_ij / sqrt(sum(x_ij^2))
         sqrt_sums = {}
@@ -227,9 +248,15 @@ class KararMotoru:
         for i, c in enumerate(sutunlar):
             V[c] = R[c] * w[i]
 
-        # 3. Ä°deal Ã§Ã¶zÃ¼mler (tÃ¼m kriterler "ne kadar yÃ¼ksek o kadar iyi")
-        A_plus = {c: V[c].max() for c in sutunlar}
-        A_minus = {c: V[c].min() for c in sutunlar}
+        # 3. Ideal çözümler. Benefit kriterlerde yüksek, cost kriterlerde düşük değer iyidir.
+        A_plus = {
+            c: V[c].max() if bool(benefit_map.get(c, True)) else V[c].min()
+            for c in sutunlar
+        }
+        A_minus = {
+            c: V[c].min() if bool(benefit_map.get(c, True)) else V[c].max()
+            for c in sutunlar
+        }
 
         sonuclar = []
         for i, (idx, row) in enumerate(df.iterrows()):
@@ -249,7 +276,13 @@ class KararMotoru:
             })
 
         df_sonuc = pd.DataFrame(sonuclar).sort_values(by="AHP_TOPSIS_Skor", ascending=False)
-        meta = {"agirliklar": w, "sutunlar": sutunlar, "A_plus": A_plus, "A_minus": A_minus}
+        meta = {
+            "agirliklar": w,
+            "sutunlar": sutunlar,
+            "A_plus": A_plus,
+            "A_minus": A_minus,
+            "benefit_map": {c: bool(benefit_map.get(c, True)) for c in sutunlar},
+        }
         return df_sonuc, meta
 
 
@@ -511,6 +544,14 @@ def _normalize_term_key(value):
 def _table_has_column(cur, table_name, column_name):
     cur.execute(f"PRAGMA table_info({table_name})")
     return column_name in {str(row[1]) for row in cur.fetchall()}
+
+
+def _table_exists(cur, table_name):
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (str(table_name),),
+    )
+    return cur.fetchone() is not None
 
 
 def _havuz_has_donem_col(cur):
@@ -933,15 +974,25 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     ders_cols = {str(r[1]) for r in cur.fetchall()}
     has_fakulte_col = "fakulte_id" in ders_cols
     has_bolum_col = "bolum_id" in ders_cols
+    has_bolum_table = _table_exists(cur, "bolum")
+
+    elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    has_elective_filter = elective_predicate != "0=1"
+
+    def _elective_filter(course_ids):
+        normalized = {int(d) for d in (course_ids or []) if d is not None}
+        if not normalized:
+            return set()
+        return filter_elective_course_ids(cur, normalized) if has_elective_filter else normalized
 
     curriculum_ids = _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem)
-    curriculum_ids = filter_elective_course_ids(cur, curriculum_ids)
+    curriculum_ids = _elective_filter(curriculum_ids)
 
     aday_dersler = set(curriculum_ids)
-    elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    candidate_predicate = elective_predicate if has_elective_filter else "1=1"
 
-    if elective_predicate != "0=1":
-        if has_fakulte_col and has_bolum_col:
+    if candidate_predicate:
+        if has_fakulte_col and has_bolum_col and has_bolum_table:
             cur.execute(
                 f"""
                 SELECT DISTINCT d.ders_id
@@ -954,7 +1005,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                         WHERE b.bolum_id = d.bolum_id AND b.fakulte_id = ?
                     )
                 )
-                  AND {elective_predicate}
+                  AND {candidate_predicate}
                 """,
                 (fakulte_id, fakulte_id),
             )
@@ -964,18 +1015,18 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                 SELECT DISTINCT d.ders_id
                 FROM ders d
                 WHERE d.fakulte_id = ?
-                  AND {elective_predicate}
+                  AND {candidate_predicate}
                 """,
                 (fakulte_id,),
             )
-        elif has_bolum_col:
+        elif has_bolum_col and has_bolum_table:
             cur.execute(
                 f"""
                 SELECT DISTINCT d.ders_id
                 FROM ders d
                 JOIN bolum b ON d.bolum_id = b.bolum_id
                 WHERE b.fakulte_id = ?
-                  AND {elective_predicate}
+                  AND {candidate_predicate}
                 """,
                 (fakulte_id,),
             )
@@ -984,7 +1035,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                 f"""
                 SELECT DISTINCT d.ders_id
                 FROM ders d
-                WHERE {elective_predicate}
+                WHERE {candidate_predicate}
                 """
             )
         aday_dersler.update(int(r[0]) for r in cur.fetchall() if r and r[0] is not None)
@@ -1001,8 +1052,8 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     cur.execute(havuz_query, tuple(havuz_params))
     aday_dersler.update(int(r[0]) for r in cur.fetchall() if r and r[0] is not None)
 
-    aday_dersler.update(filter_elective_course_ids(cur, include_course_ids))
-    aday_dersler = filter_elective_course_ids(cur, aday_dersler)
+    aday_dersler.update(_elective_filter(include_course_ids))
+    aday_dersler = _elective_filter(aday_dersler)
 
     if not aday_dersler:
         return {
@@ -1036,7 +1087,29 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                 }
 
     motor = KararMotoru()
-    agirliklar = motor.ahp_calistir()
+    ahp_profile = None
+    try:
+        from app.services.ahp_profile_service import DEFAULT_CRITERIA_KEYS, resolve_ahp_profile
+        from app.services.criteria_definition_service import criteria_direction_map
+
+        ahp_profile = resolve_ahp_profile(
+            cur.connection,
+            faculty_id=fakulte_id,
+            department_id=None,
+            year=akademik_yil,
+        )
+        benefit_map = criteria_direction_map(cur.connection)
+        profile_weights = ahp_profile.get("weights", {})
+        profile_keys = [key for key in ahp_profile.get("criteria_keys", DEFAULT_CRITERIA_KEYS) if key in DEFAULT_CRITERIA_KEYS]
+        if set(profile_keys) >= {"basari", "trend", "populerlik", "anket"}:
+            agirliklar = [float(profile_weights.get(key, 0.0)) for key in ["basari", "trend", "populerlik", "anket"]]
+        else:
+            agirliklar = motor.ahp_calistir()
+    except Exception as ahp_exc:
+        logger.warning("AHP profili cozumlenemedi, legacy agirliklar kullaniliyor: %s", ahp_exc)
+        agirliklar = motor.ahp_calistir()
+        ahp_profile = None
+        benefit_map = {"basari": True, "trend": True, "populerlik": True, "anket": True}
     metric_map = {}
     for ders_id in sorted(aday_dersler):
         m = _read_course_metrics(cur, ders_id, akademik_yil, donem, motor)
@@ -1046,7 +1119,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     curriculum_course_ids = _get_curriculum_course_ids(
         cur=cur, fakulte_id=fakulte_id, akademik_yil=akademik_yil, donem=donem
     )
-    curriculum_course_ids = filter_elective_course_ids(cur, curriculum_course_ids)
+    curriculum_course_ids = _elective_filter(curriculum_course_ids)
 
     curriculum_courses = sorted(d for d in aday_dersler if d in curriculum_course_ids)
     pool_courses = sorted(d for d in aday_dersler if d not in curriculum_course_ids)
@@ -1059,7 +1132,15 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     if curriculum_courses:
         df_cur = pd.DataFrame([metric_map[cid] for cid in curriculum_courses])
         if not df_cur.empty:
-            df_sonuc, meta = motor.topsis_calistir(df_cur, agirliklar)
+            df_sonuc, meta = motor.topsis_calistir(
+                df_cur,
+                agirliklar,
+                criteria_keys=["basari", "trend", "populerlik", "anket"],
+                benefit_map=benefit_map,
+            )
+            if ahp_profile:
+                meta["ahp_profile_id"] = ahp_profile.get("id")
+                meta["ahp_profile_version"] = ahp_profile.get("version")
             if not df_sonuc.empty:
                 for _, r in df_sonuc.iterrows():
                     d_id = int(r.get("ders_id", 0) or 0)
@@ -1109,6 +1190,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
         "ders_meta": ders_meta,
         "df_sonuc": df_sonuc,
         "meta": meta,
+        "ahp_profile": ahp_profile,
     }
 
 def _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem="G"):
@@ -1415,6 +1497,23 @@ def generate_next_year_curricula(
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
+        ensure_pool_state_governance_schema(conn, commit=False)
+        decision_policy = None
+        try:
+            from app.db.schema_compat import ensure_decision_governance_schema
+            from app.services.decision_policy_service import resolve_decision_policy
+
+            ensure_decision_governance_schema(conn, commit=False)
+            decision_policy = resolve_decision_policy(
+                conn,
+                faculty_id=fakulte_id,
+                department_id=None,
+                year=akademik_yil,
+            )
+            if float(drop_score_threshold) == float(DROP_SCORE_THRESHOLD):
+                drop_score_threshold = float(decision_policy.get("rest_threshold", DROP_SCORE_THRESHOLD))
+        except Exception as policy_exc:
+            logger.warning("Karar politikasi cozumlenemedi, legacy esikler kullaniliyor: %s", policy_exc)
         havuz_has_donem = _havuz_has_donem_col(cur)
         normalized_rows = _normalize_mufredat_faculty_ids(cur)
 
@@ -1422,6 +1521,45 @@ def generate_next_year_curricula(
         fak = cur.fetchone()
         if not fak:
             return {"ok": False, "error": f"Fakulte bulunamadi: {fakulte_id}"}
+
+        try:
+            from app.services.criteria_completion_service import can_run_algorithm
+
+            criteria_gate = can_run_algorithm(
+                conn,
+                year=akademik_yil,
+                faculty_id=fakulte_id,
+                semester=donem,
+                scope_type="faculty",
+            )
+            if not criteria_gate.get("can_run"):
+                gate_summary = criteria_gate.get("summary") or {}
+                missing_matrix = [
+                    {
+                        "ders_id": row.get("course_id"),
+                        "ders": row.get("course_name"),
+                        "criterion_key": row.get("criterion_key"),
+                        "missing_reason": row.get("missing_reason"),
+                        "invalid_reason": row.get("invalid_reason"),
+                    }
+                    for row in (gate_summary.get("matrix") or [])
+                    if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
+                ]
+                return {
+                    "ok": False,
+                    "error": criteria_gate.get("blocking_reason")
+                    or "Kriter tamlık kontrolü algoritma çalıştırmayı engelledi.",
+                    "missing_criteria": missing_matrix,
+                    "criteria_completion": {
+                        "completion_ratio": criteria_gate.get("completion_ratio"),
+                        "completion_level": criteria_gate.get("completion_level"),
+                        "required_completion_ratio": criteria_gate.get("required_completion_ratio"),
+                        "override_active": criteria_gate.get("override_active"),
+                        "risk": criteria_gate.get("risk"),
+                    },
+                }
+        except Exception as criteria_gate_exc:
+            logger.warning("Gelismis kriter tamlik kapisi uygulanamadi: %s", criteria_gate_exc)
 
         cur.execute(
             "SELECT bolum_id, ad FROM bolum WHERE fakulte_id = ? ORDER BY bolum_id",
@@ -1934,20 +2072,135 @@ def generate_next_year_curricula(
         cur.execute(cleanup_sql, tuple(cleanup_params))
 
         upsert_count = 0
+        pool_transition_count = 0
+        pool_policy_cache: dict[tuple[int, int | None, str], dict] = {}
+
+        def _pool_policy_for_course(target_bolum_id):
+            cache_key = (int(fakulte_id), int(target_bolum_id) if target_bolum_id is not None else None, term_key)
+            if cache_key not in pool_policy_cache:
+                pool_policy_cache[cache_key] = resolve_pool_state_policy(
+                    conn,
+                    year=sonraki_yil,
+                    faculty_id=fakulte_id,
+                    department_id=int(target_bolum_id) if target_bolum_id is not None else None,
+                    semester=donem,
+                )
+            return pool_policy_cache[cache_key]
+
         for ders_id, bolum_id, ders_adi in tum_dersler:
             eff_statu, eff_sayac = _effective_prev_state(ders_id)
-            yeni_statu, yeni_sayac = calculate_next_status(
+            legacy_statu, legacy_sayac = calculate_next_status(
                 int(eff_statu),
                 int(eff_sayac),
                 ders_id in secilenler,
             )
+            yeni_statu, yeni_sayac = legacy_statu, legacy_sayac
+            transition_score_val = _safe_float2(skor_map.get(int(ders_id)), 0.0) if int(ders_id) in skor_map else None
             skor_val = None
+            lifecycle_payload = {
+                "recommended_status": legacy_statu,
+                "final_status": legacy_statu,
+                "lifecycle_label": None,
+                "approval_required": 0,
+                "approval_status": "not_required",
+                "transition_id": None,
+                "explanation": None,
+                "policy_id": None,
+            }
+
+            try:
+                pool_policy = _pool_policy_for_course(bolum_id)
+                trend = analyze_course_trend(cur, int(ders_id), akademik_yil)
+                confidence = calculate_course_data_confidence(
+                    cur=cur,
+                    course_id=int(ders_id),
+                    year=akademik_yil,
+                    semester=donem,
+                    policy=pool_policy,
+                )
+                confidence_score = confidence.get("score")
+                if (
+                    float(confidence_score or 0.0) <= 0.0
+                    and not confidence.get("has_recent_data")
+                    and not confidence.get("has_trend_data")
+                ):
+                    confidence_score = None
+                flags = get_governance_flags(conn, int(ders_id))
+                course_type = (ders_meta.get(int(ders_id), {}) or {}).get("tip")
+                transition = evaluate_course_state_transition(
+                    conn,
+                    {
+                        "course_id": int(ders_id),
+                        "year": sonraki_yil,
+                        "semester": donem,
+                        "faculty_id": fakulte_id,
+                        "department_id": bolum_id,
+                        "current_status": eff_statu,
+                        "counter_before": eff_sayac,
+                        "years_in_pool": eff_sayac if int(eff_statu) == 0 else 0,
+                        "years_in_rest": eff_sayac if int(eff_statu) == -1 else 0,
+                        "topsis_score": transition_score_val,
+                        "trend_score": trend.get("trend_score"),
+                        "trend_label": trend.get("trend_label"),
+                        "data_confidence_score": confidence_score,
+                        "data_confidence_level": confidence.get("level"),
+                        "course_type": course_type,
+                        "governance_flags": flags,
+                        "policy": pool_policy,
+                        "in_mufredat_this_year": int(ders_id) in secilenler,
+                        "legacy_recommended_status": legacy_statu,
+                        "legacy_counter_after": legacy_sayac,
+                    },
+                )
+                transition_id = save_state_transition(conn, transition)
+                yeni_statu = int(transition.get("final_status", legacy_statu))
+                yeni_sayac = int(transition.get("counter_after", legacy_sayac))
+                lifecycle_payload = {
+                    "recommended_status": int(transition.get("recommended_status", legacy_statu)),
+                    "final_status": yeni_statu,
+                    "lifecycle_label": transition.get("lifecycle_label"),
+                    "approval_required": 1 if transition.get("approval_required") else 0,
+                    "approval_status": transition.get("approval_status"),
+                    "transition_id": transition_id,
+                    "explanation": transition.get("explanation"),
+                    "policy_id": transition.get("policy_id"),
+                }
+                pool_transition_count += 1
+            except Exception as pool_exc:
+                logger.warning(
+                    "generate_next_year_curricula: havuz lifecycle kaydi yazilamadi "
+                    "(ders=%s yil=%s): %s",
+                    ders_id,
+                    sonraki_yil,
+                    pool_exc,
+                )
 
             update_sql = """
-                UPDATE havuz SET bolum_id=?, statu=?, sayac=?, skor=?, ders_adi=?
+                UPDATE havuz
+                SET bolum_id=?, statu=?, sayac=?, skor=?, ders_adi=?,
+                    recommended_status=?, final_status=?, lifecycle_label=?,
+                    approval_required=?, approval_status=?, transition_id=?,
+                    explanation=?, policy_id=?
                 WHERE ders_id=? AND fakulte_id=? AND yil=?
             """
-            update_params = [bolum_id, yeni_statu, yeni_sayac, skor_val, ders_adi or "", str(ders_id), fakulte_id, sonraki_yil]
+            update_params = [
+                bolum_id,
+                yeni_statu,
+                yeni_sayac,
+                skor_val,
+                ders_adi or "",
+                lifecycle_payload["recommended_status"],
+                lifecycle_payload["final_status"],
+                lifecycle_payload["lifecycle_label"],
+                lifecycle_payload["approval_required"],
+                lifecycle_payload["approval_status"],
+                lifecycle_payload["transition_id"],
+                lifecycle_payload["explanation"],
+                lifecycle_payload["policy_id"],
+                str(ders_id),
+                fakulte_id,
+                sonraki_yil,
+            ]
             if havuz_has_donem:
                 update_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
                 update_params.append(term_key)
@@ -1956,8 +2209,12 @@ def generate_next_year_curricula(
                 if havuz_has_donem:
                     cur.execute(
                         """
-                        INSERT INTO havuz (ders_id, yil, fakulte_id, bolum_id, donem, statu, sayac, skor, ders_adi)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO havuz (
+                            ders_id, yil, fakulte_id, bolum_id, donem, statu, sayac, skor, ders_adi,
+                            recommended_status, final_status, lifecycle_label, approval_required,
+                            approval_status, transition_id, explanation, policy_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             str(ders_id),
@@ -1969,17 +2226,75 @@ def generate_next_year_curricula(
                             yeni_sayac,
                             skor_val,
                             ders_adi or "",
+                            lifecycle_payload["recommended_status"],
+                            lifecycle_payload["final_status"],
+                            lifecycle_payload["lifecycle_label"],
+                            lifecycle_payload["approval_required"],
+                            lifecycle_payload["approval_status"],
+                            lifecycle_payload["transition_id"],
+                            lifecycle_payload["explanation"],
+                            lifecycle_payload["policy_id"],
                         ),
                     )
                 else:
                     cur.execute(
                         """
-                        INSERT INTO havuz (ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO havuz (
+                            ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi,
+                            recommended_status, final_status, lifecycle_label, approval_required,
+                            approval_status, transition_id, explanation, policy_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (str(ders_id), sonraki_yil, fakulte_id, bolum_id, yeni_statu, yeni_sayac, skor_val, ders_adi or ""),
+                        (
+                            str(ders_id),
+                            sonraki_yil,
+                            fakulte_id,
+                            bolum_id,
+                            yeni_statu,
+                            yeni_sayac,
+                            skor_val,
+                            ders_adi or "",
+                            lifecycle_payload["recommended_status"],
+                            lifecycle_payload["final_status"],
+                            lifecycle_payload["lifecycle_label"],
+                            lifecycle_payload["approval_required"],
+                            lifecycle_payload["approval_status"],
+                            lifecycle_payload["transition_id"],
+                            lifecycle_payload["explanation"],
+                            lifecycle_payload["policy_id"],
+                        ),
                     )
             upsert_count += 1
+
+        decision_governance_result = {}
+        try:
+            from app.services.decision_run_service import safe_record_decision_run
+
+            decision_governance_result = safe_record_decision_run(
+                conn=conn,
+                year=akademik_yil,
+                faculty_id=fakulte_id,
+                semester=donem,
+                generation_result={
+                    "fakulte_id": fakulte_id,
+                    "year_from": akademik_yil,
+                    "year_to": sonraki_yil,
+                    "donem": donem,
+                    "department_count": len(bolum_sonuc),
+                    "pool_rows_upserted": upsert_count,
+                    "pool_state_transitions": pool_transition_count,
+                },
+            )
+        except Exception as governance_exc:
+            decision_governance_result = {"ok": False, "error": str(governance_exc)}
+            logger.warning(
+                "generate_next_year_curricula: decision governance kaydi yazilamadi "
+                "(fakulte=%s yil=%s): %s",
+                fakulte_id,
+                akademik_yil,
+                governance_exc,
+            )
 
         conn.commit()
 
@@ -1993,8 +2308,10 @@ def generate_next_year_curricula(
             "departments": bolum_sonuc,
             "missing_curricula": eksik_mufredat,
             "pool_rows_upserted": upsert_count,
+            "pool_state_transitions": pool_transition_count,
             "year_score_upserted": year_score_upserts,
             "normalized_curricula": normalized_rows,
+            "decision_governance": decision_governance_result,
         }
 
     except Exception as exc:
@@ -2073,12 +2390,26 @@ def run_all_algorithms_for_year(
         status_conn.row_factory = sqlite3.Row
         try:
             ensure_yearly_workflow_schema(status_conn)
-            complete = is_faculty_criteria_complete(
-                status_conn,
-                yil=yil,
-                fakulte_id=fakulte_id_iter,
-                refresh=True,
-            )
+            try:
+                from app.services.criteria_completion_service import can_run_algorithm
+
+                gate = can_run_algorithm(
+                    status_conn,
+                    year=yil,
+                    faculty_id=fakulte_id_iter,
+                    semester=donem,
+                    scope_type="faculty",
+                )
+                complete = bool(gate.get("can_run"))
+            except Exception as gate_exc:
+                logger.warning("Gelismis kriter tamlik kapisi kullanilamadi: %s", gate_exc)
+                gate = {}
+                complete = is_faculty_criteria_complete(
+                    status_conn,
+                    yil=yil,
+                    fakulte_id=fakulte_id_iter,
+                    refresh=True,
+                )
             faculty_status = get_faculty_year_status(
                 status_conn,
                 fakulte_id=fakulte_id_iter,
@@ -2086,14 +2417,31 @@ def run_all_algorithms_for_year(
                 refresh=False,
             )
             if not complete:
-                missing = get_missing_criteria(
-                    status_conn,
-                    yil=yil,
-                    fakulte_id=fakulte_id_iter,
-                )
-                skip_msg = (
+                gate_summary = gate.get("summary") or {}
+                if gate_summary.get("matrix"):
+                    missing = [
+                        {
+                            "ders_id": row.get("course_id"),
+                            "ders": row.get("course_name"),
+                            "criterion_key": row.get("criterion_key"),
+                            "missing_reason": row.get("missing_reason"),
+                            "invalid_reason": row.get("invalid_reason"),
+                        }
+                        for row in gate_summary.get("matrix", [])
+                        if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
+                    ]
+                else:
+                    missing = get_missing_criteria(
+                        status_conn,
+                        yil=yil,
+                        fakulte_id=fakulte_id_iter,
+                    )
+                legacy_skip = (
                     f"{fakulte_adi} fakultesi icin {yil} yili kriter girisi eksik oldugundan hesaplama yapilmadi."
                 )
+                skip_msg = legacy_skip
+                if gate.get("blocking_reason"):
+                    skip_msg = f"{legacy_skip} {gate.get('blocking_reason')}"
                 summary["skipped"].append(
                     {
                         "fakulte_id": fakulte_id_iter,
@@ -2101,6 +2449,9 @@ def run_all_algorithms_for_year(
                         "year": yil,
                         "reason": skip_msg,
                         "criteria_status": faculty_status.get("criteria_status", "not_started"),
+                        "completion_ratio": gate.get("completion_ratio"),
+                        "completion_level": gate.get("completion_level"),
+                        "override_active": gate.get("override_active"),
                         "missing_criteria": missing,
                     }
                 )
@@ -2141,6 +2492,24 @@ def run_all_algorithms_for_year(
                     success=False,
                 )
                 err_msg = result.get("error", "Bilinmeyen hata")
+                try:
+                    from app.services.decision_run_service import record_failed_decision_run
+
+                    record_failed_decision_run(
+                        db_path=db_path,
+                        year=yil,
+                        faculty_id=fakulte_id_iter,
+                        semester=donem,
+                        error_message=err_msg,
+                    )
+                except Exception as governance_exc:
+                    logger.warning(
+                        "run_all_algorithms_for_year: failed decision_run yazilamadi "
+                        "(fakulte=%s yil=%s): %s",
+                        fakulte_id_iter,
+                        yil,
+                        governance_exc,
+                    )
                 summary["ok"] = False
                 summary["errors"].append(
                     {
@@ -2368,7 +2737,7 @@ def _write_curriculum_generation_log(db_path, overall):
         return
     conn = None
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         _ensure_curriculum_log_table(cur)
@@ -2386,7 +2755,7 @@ def _write_curriculum_generation_log(db_path, overall):
         for e in errors[:10]:
             summary_parts.append(f"[Hata] {e.get('fakulte', '?')} {e.get('error', '')}")
         summary_text = "\n".join(summary_parts) if summary_parts else "Yeni uretim yok."
-        created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         cur.execute(
             """
             INSERT INTO curriculum_generation_log

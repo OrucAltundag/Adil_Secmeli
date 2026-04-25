@@ -128,7 +128,7 @@ def test_build_report_snapshot_respects_faculty_and_term():
 
         assert curriculum_ids == [101]
         assert pool_sources[101] == "TOPSIS"
-        assert pool_sources[102].startswith("Anket")
+        assert pool_sources[103].startswith("Anket")
     finally:
         db.conn.close()
         try:

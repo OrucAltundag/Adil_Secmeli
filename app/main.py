@@ -12,6 +12,17 @@ import os
 import sys
 import warnings
 
+# app/main.py doğrudan çalıştırılırsa proje kökünü önce path'e ekle.
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from app.core.config import load_app_config
+from app.core.logging_config import configure_logging
+from app.core.permissions import UserContext, can
+from app.db.session import init_database
+
 warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
 
 # ---------- Headless (ekransız) ortam kontrolü ----------
@@ -29,18 +40,17 @@ HEADLESS = is_headless_environment()
 
 def _default_api_port() -> int:
     try:
-        return int(os.environ.get("ADIL_SECMELI_API_PORT", "8000"))
+        return int(os.environ.get("ADIL_SECMELI_API_PORT", load_app_config().api_port))
     except (TypeError, ValueError):
         return 8000
 
 
-DEFAULT_API_HOST = os.environ.get("ADIL_SECMELI_API_HOST", "0.0.0.0")
+DEFAULT_API_HOST = os.environ.get("ADIL_SECMELI_API_HOST", load_app_config().api_host)
 DEFAULT_API_PORT = _default_api_port()
 
 # ---------- Proje kökünü Python path'e ekle ----------
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 # ---------- Veritabanı ve temel bileşenler ----------
 from app.db.sqlite_db import Database
@@ -71,10 +81,8 @@ from app.services.yearly_workflow import is_yearly_workflow_enabled
 # BÖLÜM 1: Yapılandırma (config.json)
 # =============================================================================
 def load_config():
-    default = {
-        "db_path": "./adil_secimli.db",
-        "charts": {"bins": 15}
-    }
+    default = load_app_config().as_legacy_dict()
+    default.setdefault("charts", {"bins": 15})
     cfg_path = os.path.join(os.getcwd(), "config.json")
     if os.path.exists(cfg_path):
         try:
@@ -126,15 +134,41 @@ def run_gui() -> int:
         return 1
 
 
+def run_migrate() -> int:
+    try:
+        result = init_database()
+        print(f"[MIGRATE] Schema compatibility tamamlandi: {result.get('db_path')}")
+        return 0
+    except Exception as exc:
+        print(f"[MIGRATE] Hata: {exc}")
+        return 1
+
+
+def run_schema_check() -> int:
+    try:
+        from app.services.schema_health_service import generate_schema_health_report
+
+        print(generate_schema_health_report(config=load_app_config()))
+        return 0
+    except Exception as exc:
+        print(f"[SCHEMA-CHECK] Hata: {exc}")
+        return 1
+
+
+def run_benchmark_mode() -> int:
+    print("[BENCHMARK] Benchmark paneli GUI icinde aciliyor.")
+    return run_gui()
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Adil Seçmeli giriş noktası (GUI veya headless API modu)."
     )
     parser.add_argument(
         "--mode",
-        choices=("auto", "gui", "api"),
+        choices=("auto", "gui", "api", "benchmark", "migrate", "schema-check"),
         default="auto",
-        help="auto: headless ise API, degilse GUI; gui: masaustu arayuzu zorla; api: REST API baslat",
+        help="auto: headless ise API, degilse GUI; gui/api/benchmark/migrate/schema-check modlarini zorla",
     )
     parser.add_argument(
         "--host",
@@ -148,12 +182,22 @@ def main(argv=None) -> int:
         help="API portu (headless veya --mode api icin).",
     )
     args = parser.parse_args(argv)
+    configure_logging(load_app_config())
 
     if args.mode == "api":
         return run_api_server(args.host, args.port)
 
     if args.mode == "gui":
         return run_gui()
+
+    if args.mode == "benchmark":
+        return run_benchmark_mode()
+
+    if args.mode == "migrate":
+        return run_migrate()
+
+    if args.mode == "schema-check":
+        return run_schema_check()
 
     if HEADLESS:
         print(build_headless_message(args.host, args.port))
@@ -177,15 +221,27 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.analysis_tab import AnalysisTab
         from app.ui.tabs.calc_tab import CalcTab
         from app.ui.tabs.tools_tab import ToolsTab
+        from app.ui.tabs.decision_center_page import DecisionCenterPage
+        from app.ui.tabs.ahp_weight_page import AHPWeightPage
+        from app.ui.tabs.semester_planning_page import SemesterPlanningPage
+        from app.ui.tabs.data_management_page import DataManagementPage
+        from app.ui.tabs.data_quality_page import DataQualityPage
+        from app.ui.tabs.system_health_page import SystemHealthPage
+        from app.ui.benchmark import BenchmarkPanel
         from app.ui.style import apply_style
 
         apply_style(self)
+        self.app_config = load_app_config()
+        configure_logging(self.app_config)
+        self.user_context = UserContext.demo_admin(self.app_config)
         self.config_data = load_config()
-        self.db = Database()
         self.db_path = self.config_data.get("db_path")
+        if self.db_path:
+            self.db_path = os.path.abspath(self.db_path)
+        self.db = Database(self.db_path) if self.db_path and os.path.exists(self.db_path) else Database()
         self.current_table = None
 
-        self.state = AppState(db_path=self.config_data.get("db_path"))
+        self.state = AppState(db_path=self.db_path)
         
         
         # Grafik ve Cache değişkenleri
@@ -234,13 +290,41 @@ class AdilSecmeliApp(tk.Tk):
         self.tab_tools = ToolsTab(self.nb, app=self)
         self.nb.add(self.tab_tools, text="Rapor & Yukleme")
 
+        # 4. SEKME: Veri Yönetimi
+        self.tab_data_management = DataManagementPage(self.nb, app=self)
+        self.nb.add(self.tab_data_management, text="Veri Yönetimi")
+
 
         # 🔔 Notebook tab değişim event’i
         self.nb.bind("<<NotebookTabChanged>>", self.on_tab_change)
 
-        # 4. SEKME: Hesaplama & Test (CalcTab)
+        # 5. SEKME: Hesaplama & Test (CalcTab)
         self.tab_calc = CalcTab(self.nb, app=self)
         self.nb.add(self.tab_calc, text="🧮 Hesaplama & Test")
+
+        # 6. SEKME: Karar Merkezi
+        self.tab_decision_center = DecisionCenterPage(self.nb, app=self)
+        self.nb.add(self.tab_decision_center, text="Karar Merkezi")
+
+        # 7. SEKME: AHP Ağırlık Yönetimi
+        self.tab_ahp_weight = AHPWeightPage(self.nb, app=self)
+        self.nb.add(self.tab_ahp_weight, text="AHP Ağırlık Yönetimi")
+
+        # 8. SEKME: Dönem Planlama
+        self.tab_semester_planning = SemesterPlanningPage(self.nb, app=self)
+        self.nb.add(self.tab_semester_planning, text="Dönem Planlama")
+
+        # 8.5. SEKME: Veri Kalitesi Kontrolü
+        self.tab_data_quality = DataQualityPage(self.nb, app=self, db_path=self.db_path)
+        self.nb.add(self.tab_data_quality, text="Veri Kalitesi")
+
+        # 9. SEKME: Benchmark Platformu
+        self.tab_benchmark = BenchmarkPanel(self.nb, app=self)
+        self.nb.add(self.tab_benchmark, text="Benchmark Platformu")
+
+        # 10. SEKME: Sistem Sağlığı
+        self.tab_system_health = SystemHealthPage(self.nb, app=self)
+        self.nb.add(self.tab_system_health, text="Sistem Sağlığı")
 
 
         # Otomatik Bağlan
@@ -311,6 +395,10 @@ class AdilSecmeliApp(tk.Tk):
                 self.tab_calc.page_pool.refresh()
             except Exception:
                 pass
+            try:
+                self.tab_decision_center.refresh()
+            except Exception:
+                pass
 
         except FileNotFoundError:
             messagebox.showwarning(
@@ -360,6 +448,10 @@ class AdilSecmeliApp(tk.Tk):
                 pass
             try:
                 self.tab_calc.page_pool.refresh()
+            except Exception:
+                pass
+            try:
+                self.tab_decision_center.refresh()
             except Exception:
                 pass
 
@@ -421,6 +513,12 @@ class AdilSecmeliApp(tk.Tk):
 
 
     def open_sql_runner(self):
+        if not can(getattr(self, "user_context", None), "use_sql_console", config=getattr(self, "app_config", None)):
+            messagebox.showwarning(
+                "SQL Console",
+                "SQL Console yalnızca geliştirici/yönetici modunda kullanılabilir.",
+            )
+            return
         win = tk.Toplevel(self)
         win.title("SQL Çalıştır")
         win.geometry("900x600")
@@ -473,6 +571,21 @@ class AdilSecmeliApp(tk.Tk):
             if "Rapor" in current_tab_text:
                 self.tab_tools.refresh()
 
+            if "Benchmark" in current_tab_text:
+                self.tab_benchmark.refresh()
+
+            if "Karar Merkezi" in current_tab_text:
+                self.tab_decision_center.refresh()
+
+            if "AHP Ağırlık" in current_tab_text:
+                self.tab_ahp_weight.refresh()
+
+            if "Dönem Planlama" in current_tab_text:
+                self.tab_semester_planning.refresh()
+
+            if "Sistem Sağlığı" in current_tab_text:
+                self.tab_system_health.refresh()
+
 
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -494,6 +607,21 @@ class AdilSecmeliApp(tk.Tk):
 
         if "Hesaplama" in selected_tab:
             self.tab_calc.refresh()
+
+        if "Benchmark" in selected_tab:
+            self.tab_benchmark.refresh()
+
+        if "Karar Merkezi" in selected_tab:
+            self.tab_decision_center.refresh()
+
+        if "AHP Ağırlık" in selected_tab:
+            self.tab_ahp_weight.refresh()
+
+        if "Dönem Planlama" in selected_tab:
+            self.tab_semester_planning.refresh()
+
+        if "Sistem Sağlığı" in selected_tab:
+            self.tab_system_health.refresh()
 
 
     def ensure_pool_initialized_once(self):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import json
 import os
 import sqlite3
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import pandas as pd
 from openpyxl.styles import Font
 
+from app.db.sqlite_connection import connect_sqlite, is_database_locked_error
 from app.db.schema_compat import ensure_reporting_schema, ensure_survey_import_schema
 from app.services.course_matcher import (
     load_faculty_course_candidates,
@@ -17,6 +19,19 @@ from app.services.course_matcher import (
     normalize_course_text,
 )
 from app.services.course_type import build_elective_predicate
+from app.services.import_audit_service import (
+    calculate_row_hash,
+    create_import_batch,
+    extract_excel_metadata,
+    link_source_import,
+    mark_batch_failed_by_path,
+    record_import_issue,
+    update_import_status,
+)
+from app.services.import_diff_service import recalculate_import_diff
+from app.services.import_impact_service import recalculate_import_impact
+from app.services.import_lineage_service import record_value_source
+from app.services.import_quality_service import evaluate_import_quality
 
 
 SURVEY_TEMPLATE_VERSION = "survey-import-v1"
@@ -422,9 +437,14 @@ def load_survey_template_context(
     if not os.path.exists(db_path):
         raise FileNotFoundError("Veritabani bulunamadi.")
 
-    conn = sqlite3.connect(db_path)
+    conn = connect_sqlite(db_path)
     try:
-        ensure_reporting_schema(conn)
+        try:
+            ensure_reporting_schema(conn)
+        except sqlite3.OperationalError as exc:
+            if not is_database_locked_error(exc):
+                raise
+            conn.rollback()
         cur = conn.cursor()
         faculty_name = _resolve_faculty_name(cur, int(faculty_id))
         if not faculty_name:
@@ -541,8 +561,10 @@ def replace_existing_survey_data(
 
     deleted_row_count = 0
     if previous_import_id is not None:
-        cur.execute("DELETE FROM survey_import_rows WHERE import_id = ?", (previous_import_id,))
-        deleted_row_count = int(cur.rowcount or 0)
+        # Audit trail icin eski satir kayitlarini koruyoruz. survey_import
+        # kaydi UNIQUE(fakulte_id, yil) nedeniyle silinir; satirlar
+        # import_batch_id ile diff/rollback raporlarinda okunabilir kalir.
+        deleted_row_count = 0
         cur.execute("DELETE FROM survey_import WHERE import_id = ?", (previous_import_id,))
 
     return {
@@ -560,6 +582,7 @@ def apply_survey_to_criteria(
     source_filename: str | None = None,
     template_version: str = SURVEY_TEMPLATE_VERSION,
     notes: str | None = None,
+    import_batch_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_survey_import_schema(conn, commit=False)
     cur = conn.cursor()
@@ -596,8 +619,14 @@ def apply_survey_to_criteria(
         ),
     )
     import_id = int(cur.lastrowid)
+    if import_batch_id is not None:
+        cur.execute(
+            "UPDATE survey_import SET import_batch_id = ? WHERE import_id = ?",
+            (int(import_batch_id), int(import_id)),
+        )
 
     course_pref_map = {int(ders_id): 0 for ders_id in scope_course_ids}
+    row_id_by_course: dict[int, int] = {}
     for row in rows:
         if row.matched_ders_id is None:
             continue
@@ -624,6 +653,35 @@ def apply_survey_to_criteria(
                 row.raw_yil,
             ),
         )
+        import_row_id = int(cur.lastrowid)
+        row_id_by_course[int(row.matched_ders_id)] = import_row_id
+        if import_batch_id is not None:
+            normalized_row = asdict(row)
+            cur.execute(
+                """
+                UPDATE survey_import_rows
+                SET import_batch_id = ?, normalized_row_json = ?, row_hash = ?
+                WHERE row_id = ?
+                """,
+                (
+                    int(import_batch_id),
+                    json.dumps(normalized_row, ensure_ascii=False, sort_keys=True, default=str),
+                    calculate_row_hash(normalized_row),
+                    int(import_row_id),
+                ),
+            )
+            if row.error_message:
+                record_import_issue(
+                    conn,
+                    import_batch_id=int(import_batch_id),
+                    source_row_id=int(import_row_id),
+                    row_number=int(row.row_no),
+                    message=str(row.error_message),
+                )
+                cur.execute(
+                    "UPDATE survey_import_rows SET issue_count = COALESCE(issue_count, 0) + 1 WHERE row_id = ?",
+                    (int(import_row_id),),
+                )
 
     created_rows = 0
     updated_rows = 0
@@ -667,6 +725,34 @@ def apply_survey_to_criteria(
                 (int(ders_id), year, total_participants, tercih_sayisi, import_id, now),
             )
             created_rows += 1
+        if import_batch_id is not None:
+            source_row_id = row_id_by_course.get(int(ders_id))
+            record_value_source(
+                conn=conn,
+                course_id=int(ders_id),
+                year=int(year),
+                field_name="anket_katilimci",
+                value=total_participants,
+                source_type="survey_import",
+                faculty_id=int(faculty_id),
+                source_import_batch_id=int(import_batch_id),
+                source_row_id=source_row_id,
+                is_locked=True,
+                deactivate_existing=True,
+            )
+            record_value_source(
+                conn=conn,
+                course_id=int(ders_id),
+                year=int(year),
+                field_name="anket_dersi_secen",
+                value=tercih_sayisi,
+                source_type="survey_import",
+                faculty_id=int(faculty_id),
+                source_import_batch_id=int(import_batch_id),
+                source_row_id=source_row_id,
+                is_locked=True,
+                deactivate_existing=True,
+            )
 
     return {
         "ok": True,
@@ -685,6 +771,8 @@ def import_survey_excel(
     faculty_id: int,
     year: int,
     source_filename: str | None = None,
+    auto_activate: bool = True,
+    uploaded_by: str | None = None,
 ) -> dict[str, Any]:
     if not os.path.exists(db_path):
         return {"ok": False, "message": "Veritabani bulunamadi.", "errors": ["Veritabani bulunamadi."]}
@@ -694,16 +782,63 @@ def import_survey_excel(
     try:
         parsed = parse_survey_excel(excel_path)
     except Exception as exc:
+        try:
+            mark_batch_failed_by_path(
+                db_path,
+                excel_path,
+                "survey",
+                str(exc),
+                original_filename=source_filename or os.path.basename(excel_path),
+                faculty_id=int(faculty_id),
+                year=int(year),
+            )
+        except Exception:
+            pass
         return {"ok": False, "message": f"Anket dosyasi okunamadi: {exc}", "errors": [str(exc)]}
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(db_path, row_factory=True)
     try:
         ensure_reporting_schema(conn)
         ensure_survey_import_schema(conn)
         cur = conn.cursor()
+        try:
+            metadata = extract_excel_metadata(excel_path)
+        except Exception:
+            metadata = {
+                "sheet_names": [str(parsed.get("sheet_name") or "Anket")],
+                "columns": [],
+                "row_count": len(parsed.get("rows") or []),
+                "column_count": 0,
+            }
+        batch = create_import_batch(
+            conn,
+            import_type="survey",
+            original_filename=source_filename or os.path.basename(excel_path),
+            file_path=excel_path,
+            sheet_names=list(metadata.get("sheet_names") or []),
+            columns=list(metadata.get("columns") or []),
+            row_count=int(metadata.get("row_count") or len(parsed.get("rows") or [])),
+            column_count=int(metadata.get("column_count") or 0),
+            faculty_id=int(faculty_id),
+            year=int(year),
+            uploaded_by=uploaded_by,
+            status="uploaded",
+        )
+        import_batch_id = int(batch["import_batch_id"])
+        conn.commit()
         faculty_name = _resolve_faculty_name(cur, int(faculty_id))
         if not faculty_name:
+            record_import_issue(
+                conn,
+                import_batch_id=import_batch_id,
+                row_number=0,
+                severity="critical",
+                issue_type="invalid_scope",
+                message="Secili fakulte bulunamadi.",
+                suggestion="Import kapsaminda gecerli bir fakulte secin.",
+            )
+            update_import_status(conn, import_batch_id, "failed", error_message="Secili fakulte bulunamadi.")
+            conn.commit()
             return {"ok": False, "message": "Secili fakulte bulunamadi.", "errors": ["Secili fakulte bulunamadi."]}
 
         meta = dict(parsed.get("meta") or {})
@@ -716,6 +851,17 @@ def import_survey_excel(
         )
         warnings = list(parsed.get("warnings") or []) + list(validation.get("warnings") or [])
         if not validation.get("ok"):
+            for error in list(validation.get("errors") or []):
+                record_import_issue(conn, import_batch_id=import_batch_id, row_number=0, message=str(error))
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(
+                conn,
+                import_batch_id,
+                "failed",
+                error_message="Anket belgesi dogrulamasi basarisiz.",
+                validation_summary={"ok": False, "errors": list(validation.get("errors") or []), "warnings": warnings},
+            )
+            conn.commit()
             return {
                 "ok": False,
                 "message": "Anket belgesi dogrulamasi basarisiz.",
@@ -723,6 +869,9 @@ def import_survey_excel(
                 "warnings": warnings,
                 "matched_count": 0,
                 "unmatched_count": 0,
+                "import_batch_id": import_batch_id,
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
             }
 
         matched = match_courses(
@@ -732,6 +881,30 @@ def import_survey_excel(
             year=int(year),
         )
         if not matched.get("ok"):
+            for unmatched in matched.get("unmatched_rows") or []:
+                row_dict = unmatched.as_dict() if hasattr(unmatched, "as_dict") else {}
+                record_import_issue(
+                    conn,
+                    import_batch_id=import_batch_id,
+                    row_number=int(row_dict.get("row_no") or 0),
+                    issue_type="course_not_matched",
+                    severity="error",
+                    message=row_dict.get("error_message") or "Ders sistemde bulunamadi.",
+                    suggestion="Ders kodu veya adini sistemdeki ders kaydi ile uyumlu hale getirin.",
+                )
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(
+                conn,
+                import_batch_id,
+                "pending_review",
+                error_message="Belgedeki bazi dersler sistemde bulunamadi.",
+                validation_summary={
+                    "ok": False,
+                    "matched_count": int(matched.get("matched_count") or 0),
+                    "unmatched_count": int(matched.get("unmatched_count") or 0),
+                },
+            )
+            conn.commit()
             return {
                 "ok": False,
                 "message": "Belgedeki bazi dersler sistemde bulunamadi. Veri uygulanmadi.",
@@ -741,12 +914,30 @@ def import_survey_excel(
                 "unmatched_count": int(matched.get("unmatched_count") or 0),
                 "matched_rows": [row.as_dict() for row in matched.get("matched_rows") or []],
                 "unmatched_rows": [row.as_dict() for row in matched.get("unmatched_rows") or []],
+                "import_batch_id": import_batch_id,
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
             }
 
         matched_rows = list(matched.get("matched_rows") or [])
         total_participants = compute_total_participants(matched_rows)
         declared_total = validation.get("declared_total_participants")
         if declared_total is not None and int(declared_total) != int(total_participants):
+            record_import_issue(
+                conn,
+                import_batch_id=import_batch_id,
+                row_number=0,
+                issue_type="invalid_numeric_value",
+                severity="error",
+                message=(
+                    "Belgedeki toplam_katilimci degeri tercih satirlari toplami ile uyusmuyor. "
+                    f"Beklenen={int(declared_total)}, hesaplanan={int(total_participants)}."
+                ),
+                suggestion="toplam_katilimci degerini satir toplamiyla uyumlu hale getirin.",
+            )
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(conn, import_batch_id, "pending_review", error_message="Toplam katilimci uyusmazligi.")
+            conn.commit()
             return {
                 "ok": False,
                 "message": "Belgedeki toplam_katilimci degeri tercih satirlari toplami ile uyusmuyor.",
@@ -756,6 +947,9 @@ def import_survey_excel(
                 "warnings": warnings,
                 "matched_count": int(matched.get("matched_count") or 0),
                 "unmatched_count": int(matched.get("unmatched_count") or 0),
+                "import_batch_id": import_batch_id,
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
             }
 
         conn.execute("BEGIN")
@@ -767,7 +961,41 @@ def import_survey_excel(
             source_filename=source_filename or os.path.basename(excel_path),
             template_version=str(parsed.get("template_version") or SURVEY_TEMPLATE_VERSION),
             notes=meta.get("aciklama"),
+            import_batch_id=import_batch_id,
         )
+        link_source_import(
+            conn,
+            import_batch_id=import_batch_id,
+            source_table="survey_import",
+            source_import_id=int(applied["import_id"]),
+            file_hash_sha256=batch.get("file_hash_sha256"),
+            file_size=batch.get("file_size"),
+        )
+        quality = evaluate_import_quality(conn, import_batch_id)
+        status = "pending_review" if quality.quality_level == "low" else "validated"
+        update_import_status(
+            conn,
+            import_batch_id,
+            status,
+            validation_summary={
+                "ok": True,
+                "matched_count": int(matched.get("matched_count") or 0),
+                "unmatched_count": int(matched.get("unmatched_count") or 0),
+                "warnings": warnings,
+            },
+        )
+        if auto_activate and quality.quality_level != "low":
+            from app.services.import_audit_service import activate_import
+
+            activate_import(conn, import_batch_id, user=uploaded_by)
+        try:
+            recalculate_import_diff(conn, import_batch_id)
+        except Exception:
+            pass
+        try:
+            recalculate_import_impact(conn, import_batch_id)
+        except Exception:
+            pass
         conn.commit()
 
         return {
@@ -789,9 +1017,22 @@ def import_survey_excel(
             "matched_rows": [row.as_dict() for row in matched_rows],
             "unmatched_rows": [],
             "import_id": int(applied["import_id"]),
+            "import_batch_id": import_batch_id,
+            "import_status": "active" if auto_activate and quality.quality_level != "low" else status,
+            "quality_score": quality.quality_score,
+            "quality_level": quality.quality_level,
+            "duplicate": bool(batch.get("duplicate")),
+            "duplicate_of_import_batch_id": batch.get("duplicate_of_import_batch_id"),
         }
     except Exception as exc:
         conn.rollback()
+        try:
+            failed_batch_id = locals().get("import_batch_id")
+            if failed_batch_id is not None:
+                update_import_status(conn, int(failed_batch_id), "failed", error_message=str(exc))
+                conn.commit()
+        except Exception:
+            pass
         return {
             "ok": False,
             "message": f"Anket yukleme hatasi: {exc}",

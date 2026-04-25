@@ -45,5 +45,24 @@ uvicorn app.api.main:app --host 0.0.0.0 --port 8000
 ## Kritik Dokumanlar
 
 - [Production Gap Closure](docs/PRODUCTION_GAP_CLOSURE.md)
+- [Decision Governance](docs/decision_governance.md)
+- [Import Governance](docs/import_governance.md)
+- [Criteria Completion Governance](docs/criteria_completion_governance.md)
+- [Pool State Machine Governance](docs/pool_state_machine_governance.md)
+- [ML Governance](docs/ml_governance.md)
+- [Algorithm Governance](docs/algorithm_governance.md)
+- [AHP Governance](docs/ahp_governance.md)
+- [Semester Planning Governance](docs/semester_planning_governance.md)
+- [Architecture](docs/architecture.md)
+- [Database Schema Policy](docs/database_schema_policy.md)
+- [Developer Guidelines](docs/developer_guidelines.md)
 - [Migration Strategy](docs/MIGRATION_STRATEGY.md)
 - [Runbook](docs/RUNBOOK_PRODUCTION.md)
+
+Not: Projede cok sayida algoritma bulunmasina ragmen bu algoritmalar ayni karar seviyesinde kullanilmaz. Nihai mufredat/havuz karari AHP + TOPSIS + kural motoru + state machine hattiyla verilir. XGBoost, Naive Bayes, Logistic Regression ve clustering algoritmalari benchmark, baseline veya kesifsel analiz amaciyla kullanilir.
+
+Not: AHP agirliklari kodda sabit tutulmaz; global/fakulte/bolum/yil bazli AHP profillerinden gelir. Her profil ikili karsilastirma matrisi, uretilen agirliklar, consistency ratio, onay durumu ve versiyon bilgisiyle saklanir. Karar calismalari kullanilan AHP profilini ve agirlik snapshot'ini kaydeder.
+
+Not: Donem dengeleme sistemi baslangicta 4+4 varsayilan politikasiyla calisir; ancak bu kural sabit degildir. Fakulte/bolum/yil bazli donem planlama politikalariyla guz ve bahar icin minimum-maksimum ders hedefleri, ders uygunlugu, ogretim uyesi uygunlugu, kaynak kisitlari, on kosullar, kontenjan ve talep dengesi dikkate alinir.
+
+Not: Projede resmi veri erisim yolu SQLAlchemy model + repository/service katmanidir. Alembic resmi schema migration aracidir. Runtime schema compatibility yalnizca eski SQLite dosyalariyla geriye donuk uyumluluk icin kontrollu bir guvenlik agidir. UI ve API dogrudan veritabanina erismez; ortak servisleri kullanir.

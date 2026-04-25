@@ -16,7 +16,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from app.services.course_analyzer import analyze_single_course, VeriEksikHatasi
+from app.services.course_analyzer import analyze_single_course
 
 
 # ---------------------------------------------------------------------------
@@ -856,7 +856,10 @@ class CourseAnalysisTab(ttk.Frame):
             self._mark_all_steps_error(result["error"])
             return
 
-        self._fill_criteria(result.get("criteria", {}))
+        self._fill_criteria(
+            result.get("criteria", {}),
+            result.get("criteria_status", {}),
+        )
         self._fill_steps(result.get("steps", {}))
         self._fill_decision(
             result.get("decision", {}),
@@ -867,28 +870,52 @@ class CourseAnalysisTab(ttk.Frame):
     # =========================================================
     #  KRITERLER PANEL
     # =========================================================
-    def _fill_criteria(self, criteria: dict):
+    def _fill_criteria(self, criteria: dict, criteria_status: dict = None):
         self.tree_krit.delete(*self.tree_krit.get_children())
+        criteria_status = criteria_status or {}
 
         if not criteria:
             self.warn_frame.pack(fill=tk.X, before=self.tree_krit)
             self.warn_lbl.config(text="Bu ders icin kriter verisi bulunamadi.")
-            self.btn_start.config(state="disabled")
+            self.btn_start.config(state="normal")
             return
 
-        self.warn_frame.pack_forget()
+        missing = bool(criteria.get("_missing")) or criteria_status.get("ok") is False
+        if missing:
+            self.warn_frame.pack(fill=tk.X, before=self.tree_krit)
+            self.warn_lbl.config(
+                text=criteria_status.get("message")
+                or criteria.get("_missing_reason")
+                or "Bu ders icin kriter verisi bulunamadi; hesaplanabilen adimlar gosteriliyor."
+            )
+        else:
+            self.warn_frame.pack_forget()
         self.btn_start.config(state="normal")
 
+        def _num(key: str, fmt: str) -> str:
+            if missing:
+                return "-"
+            return fmt.format(criteria.get(key, 0))
+
+        def _ratio(key: str) -> str:
+            if missing:
+                return "-"
+            return f"%{criteria.get(key, 0) * 100:.1f}"
+
         anket_val = criteria.get('anket_orani', 0.5)
-        anket_text = f"%{anket_val*100:.1f}" if anket_val != 0.5 else "%50.0 (varsayilan)"
+        if missing:
+            anket_text = "%50.0 (notr varsayilan)"
+        else:
+            anket_text = f"%{anket_val*100:.1f}" if anket_val != 0.5 else "%50.0 (varsayilan)"
         rows = [
-            ("Toplam Ogrenci",    f"{criteria.get('toplam_ogrenci', 0):.0f}"),
-            ("Gecen Ogrenci",     f"{criteria.get('gecen_ogrenci', 0):.0f}"),
-            ("Not Ortalamasi",    f"{criteria.get('basari_ortalamasi', 0):.1f}"),
-            ("Kontenjan",         f"{criteria.get('kontenjan', 0):.0f}"),
-            ("Kayitli (Talep)",   f"{criteria.get('kayitli_ogrenci', 0):.0f}"),
-            ("Basari Orani",      f"%{criteria.get('basari_orani', 0)*100:.1f}"),
-            ("Doluluk Orani",     f"%{criteria.get('doluluk_orani', 0)*100:.1f}"),
+            ("Veri Durumu",       "Eksik" if missing else "Hazir"),
+            ("Toplam Ogrenci",    _num("toplam_ogrenci", "{:.0f}")),
+            ("Gecen Ogrenci",     _num("gecen_ogrenci", "{:.0f}")),
+            ("Not Ortalamasi",    _num("basari_ortalamasi", "{:.1f}")),
+            ("Kontenjan",         _num("kontenjan", "{:.0f}")),
+            ("Kayitli (Talep)",   _num("kayitli_ogrenci", "{:.0f}")),
+            ("Basari Orani",      _ratio("basari_orani")),
+            ("Doluluk Orani",     _ratio("doluluk_orani")),
             ("Anket Orani",       anket_text),
         ]
         for k, v in rows:
@@ -916,6 +943,8 @@ class CourseAnalysisTab(ttk.Frame):
                 f"lambda_max = {ahp.get('lambda_max',0):.4f}  |  "
                 f"Sure: {ahp.get('elapsed_ms',0):.1f} ms"
             )
+            if ahp.get("note"):
+                txt += f"\nNot: {ahp.get('note')}"
             self._set_step_state("ahp", "ok", txt)
 
         # Trend
@@ -964,12 +993,21 @@ class CourseAnalysisTab(ttk.Frame):
                 f"Kesinlesme (0-100): {topsis.get('score_100',0):.2f}\n"
                 f"Sure: {topsis.get('elapsed_ms',0):.1f} ms"
             )
+            if topsis.get("message"):
+                txt += f"\nNot: {topsis.get('message')}"
             self._set_step_state("topsis", "ok", txt)
 
         # RF
         rf = steps.get("rf", {})
         if "error" in rf:
             self._set_step_state("rf", "error", f"Hata: {rf['error']}")
+        elif rf.get("status") == "not_calculated":
+            txt = (
+                "Tahmin hesaplanmadi.\n"
+                f"Mesaj: {rf.get('message', 'Kriter verisi yetersiz.')}\n"
+                f"Sure: {rf.get('elapsed_ms',0):.1f} ms"
+            )
+            self._set_step_state("rf", "ok", txt)
         else:
             method = rf.get("method", "?")
             method_label = {"sklearn_rf": "sklearn RandomForest", "rule_based": "Kural Tabanli"}.get(method, method)
@@ -991,6 +1029,14 @@ class CourseAnalysisTab(ttk.Frame):
         dt_reason = steps.get("dt_reason", "—")
         if "error" in dt:
             self._set_step_state("dt", "error", f"Hata: {dt['error']}")
+        elif dt.get("status") == "not_calculated":
+            txt = (
+                "Karar agaci tahmini hesaplanmadi.\n"
+                f"Mesaj: {dt.get('message', 'Kriter verisi yetersiz.')}\n"
+                f"Sure: {dt.get('elapsed_ms',0):.1f} ms\n"
+                f"---\nKarar Gerekcesi:\n{dt_reason}"
+            )
+            self._set_step_state("dt", "ok", txt)
         else:
             dt_method = dt.get("method", "?")
             dt_label = {"sklearn_dt": "sklearn DecisionTree", "rule_based": "Kural Tabanli"}.get(dt_method, dt_method)

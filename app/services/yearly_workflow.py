@@ -453,6 +453,19 @@ def is_department_criteria_complete(
     fakulte_id: int,
     bolum_id: int,
 ) -> bool:
+    try:
+        from app.services.criteria_completion_service import can_run_algorithm
+
+        gate = can_run_algorithm(
+            conn,
+            year=int(yil),
+            faculty_id=int(fakulte_id),
+            department_id=int(bolum_id),
+            scope_type="department",
+        )
+        return bool(gate.get("can_run"))
+    except Exception:
+        pass
     ensure_yearly_workflow_schema(conn)
     cur = conn.cursor()
     progress = _department_progress(cur, int(yil), int(fakulte_id), int(bolum_id))
@@ -465,6 +478,25 @@ def is_faculty_criteria_complete(
     fakulte_id: int,
     refresh: bool = True,
 ) -> bool:
+    try:
+        from app.services.criteria_completion_service import can_run_algorithm, refresh_completion_status
+
+        if refresh:
+            refresh_completion_status(
+                conn,
+                scope_type="faculty",
+                year=int(yil),
+                faculty_id=int(fakulte_id),
+            )
+        gate = can_run_algorithm(
+            conn,
+            year=int(yil),
+            faculty_id=int(fakulte_id),
+            scope_type="faculty",
+        )
+        return bool(gate.get("can_run"))
+    except Exception:
+        pass
     ensure_yearly_workflow_schema(conn)
     cur = conn.cursor()
     departments = _departments_for_faculty_year(cur, int(fakulte_id), int(yil))
@@ -526,6 +558,95 @@ def mark_criteria_status(
     - bolum_id verilirse bolum + fakulte durumunu gunceller.
     - bolum_id verilmezse fakultedeki tum bolumleri yeniden hesaplar.
     """
+    try:
+        from app.services.criteria_completion_service import refresh_completion_status
+
+        ensure_yearly_workflow_schema(conn)
+        cur = conn.cursor()
+        yil = int(yil)
+        fakulte_id = int(fakulte_id)
+        departments = _departments_for_faculty_year(cur, fakulte_id, yil)
+        if bolum_id is not None:
+            bolum_id = int(bolum_id)
+            departments = [item for item in departments if int(item[0]) == bolum_id]
+            if not departments:
+                departments = [(bolum_id, _department_name(cur, bolum_id))]
+
+        department_result = None
+        for dep_id, dep_name in departments:
+            dep_summary = refresh_completion_status(
+                conn,
+                scope_type="department",
+                year=yil,
+                faculty_id=fakulte_id,
+                department_id=int(dep_id),
+                commit=False,
+            )
+            if bolum_id is not None and int(dep_id) == int(bolum_id):
+                department_result = {
+                    "bolum_id": int(dep_id),
+                    "bolum": dep_name or str(dep_id),
+                    "criteria_status": dep_summary.get("criteria_status"),
+                    "completion_ratio": dep_summary.get("completion_ratio"),
+                    "completion_level": dep_summary.get("completion_level"),
+                    "can_run_algorithm": dep_summary.get("can_run_algorithm"),
+                    "blocking_reason": dep_summary.get("blocking_reason"),
+                    "required_course_count": dep_summary.get("total_courses", 0),
+                    "completed_course_count": dep_summary.get("completed_courses", 0),
+                    "missing_course_count": dep_summary.get("missing_courses", 0),
+                    "missing_ids": [
+                        int(row["course_id"])
+                        for row in dep_summary.get("matrix", [])
+                        if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
+                    ],
+                }
+
+        faculty_summary = refresh_completion_status(
+            conn,
+            scope_type="faculty",
+            year=yil,
+            faculty_id=fakulte_id,
+            commit=False,
+        )
+        conn.commit()
+
+        messages: list[str] = []
+        if department_result and department_result.get("criteria_status") == STATUS_COMPLETED:
+            messages.append(
+                f"{department_result['bolum']} bolumu, {yil} yili kriter girdisi tamamlanmistir."
+            )
+        if faculty_summary.get("criteria_status") == STATUS_COMPLETED:
+            messages.append(
+                f"{_faculty_name(cur, fakulte_id)} fakultesindeki kriter girdileri {yil} yili icin tamamlanmistir."
+            )
+        if faculty_summary.get("blocking_reason"):
+            messages.append(str(faculty_summary["blocking_reason"]))
+
+        return {
+            "yil": yil,
+            "fakulte_id": fakulte_id,
+            "fakulte": _faculty_name(cur, fakulte_id),
+            "department": department_result,
+            "faculty": {
+                "criteria_status": faculty_summary.get("criteria_status"),
+                "completion_ratio": faculty_summary.get("completion_ratio"),
+                "completion_level": faculty_summary.get("completion_level"),
+                "can_run_algorithm": faculty_summary.get("can_run_algorithm"),
+                "blocking_reason": faculty_summary.get("blocking_reason"),
+                "total_department_count": faculty_summary.get("total_department_count", 0),
+                "completed_department_count": faculty_summary.get("completed_department_count", 0),
+            },
+            "department_completed_now": bool(
+                department_result and department_result.get("criteria_status") == STATUS_COMPLETED
+            ),
+            "faculty_completed_now": bool(faculty_summary.get("criteria_status") == STATUS_COMPLETED),
+            "messages": messages,
+            "advanced_completion": faculty_summary,
+        }
+    except Exception:
+        # Yeni yonetisim hesabi beklenmeyen bir legacy veriyle karsilasirsa
+        # eski status hesaplamasi geriye donuk guvenli yol olarak korunur.
+        pass
     ensure_yearly_workflow_schema(conn)
     cur = conn.cursor()
     yil = int(yil)
@@ -898,8 +1019,20 @@ def get_years_eligible_for_algorithm(conn: sqlite3.Connection, fakulte_id: int) 
     candidates = [int(r[0]) for r in cur.fetchall() if r and r[0] is not None]
     eligible: list[int] = []
     for y in candidates:
-        if is_faculty_criteria_complete(conn, y, int(fakulte_id), refresh=True):
-            eligible.append(y)
+        try:
+            from app.services.criteria_completion_service import can_run_algorithm
+
+            gate = can_run_algorithm(
+                conn,
+                year=int(y),
+                faculty_id=int(fakulte_id),
+                scope_type="faculty",
+            )
+            if bool(gate.get("can_run")):
+                eligible.append(y)
+        except Exception:
+            if is_faculty_criteria_complete(conn, y, int(fakulte_id), refresh=True):
+                eligible.append(y)
     return sorted(set(eligible))
 
 

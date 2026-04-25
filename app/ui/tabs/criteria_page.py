@@ -9,8 +9,9 @@
 
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import sqlite3
+import csv
 from datetime import datetime, timezone
 from typing import Any
 from app.db.schema_compat import ensure_reporting_schema
@@ -23,6 +24,9 @@ from app.services.criteria_import_service import (
     normalize_department_scope_name,
 )
 from app.services.yearly_workflow import mark_criteria_status
+from app.services.criteria_completion_service import get_completion_summary
+from app.services.criteria_override_service import request_override
+from app.services.criteria_task_service import generate_tasks_for_missing_criteria
 
 
 class CriteriaPage:
@@ -139,6 +143,7 @@ class CriteriaPage:
         paned.add(right_frame)
         
         self.create_form_ui(right_frame)
+        self.create_completion_panel()
 
         # Fakülte listesi uygulama veritabani baglantisi kurulduktan sonra
         # refresh() veya ilk veri yuklemesinde doldurulur.
@@ -264,6 +269,59 @@ class CriteriaPage:
                              command=self.save_data, cursor="hand2")
         btn_save.grid(row=16, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
 
+    def create_completion_panel(self):
+        panel = ttk.LabelFrame(self.parent, text="Gelişmiş Tamlık Paneli", padding=8)
+        panel.pack(fill=tk.BOTH, expand=False, padx=8, pady=(0, 8))
+
+        actions = ttk.Frame(panel)
+        actions.pack(fill=tk.X, pady=(0, 6))
+        self.lbl_completion_summary = ttk.Label(
+            actions,
+            text="Tamlık bilgisi için fakülte, yıl ve dönem seçip yenileyin.",
+        )
+        self.lbl_completion_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(actions, text="Yenile", command=self.refresh_completion_panel).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(actions, text="Eksiklerden Görev Oluştur", command=self._generate_completion_tasks).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(actions, text="Override Talep Et", command=self._request_completion_override).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(actions, text="CSV Dışa Aktar", command=self._export_completion_matrix).pack(side=tk.RIGHT, padx=4)
+
+        nb = ttk.Notebook(panel)
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        matrix_frame = ttk.Frame(nb)
+        nb.add(matrix_frame, text="Eksik Kriter Matrisi")
+        columns = ("ders", "başarı", "ortalama", "kontenjan", "kayıtlı", "anket", "trend", "durum")
+        self.tree_completion_matrix = ttk.Treeview(matrix_frame, columns=columns, show="headings", height=6)
+        for col in columns:
+            self.tree_completion_matrix.heading(col, text=col.title())
+            self.tree_completion_matrix.column(col, width=120, anchor=tk.W)
+        matrix_y = ttk.Scrollbar(matrix_frame, orient=tk.VERTICAL, command=self.tree_completion_matrix.yview)
+        matrix_x = ttk.Scrollbar(matrix_frame, orient=tk.HORIZONTAL, command=self.tree_completion_matrix.xview)
+        self.tree_completion_matrix.configure(yscrollcommand=matrix_y.set, xscrollcommand=matrix_x.set)
+        self.tree_completion_matrix.grid(row=0, column=0, sticky="nsew")
+        matrix_y.grid(row=0, column=1, sticky="ns")
+        matrix_x.grid(row=1, column=0, sticky="ew")
+        matrix_frame.columnconfigure(0, weight=1)
+        matrix_frame.rowconfigure(0, weight=1)
+
+        issues_frame = ttk.Frame(nb)
+        nb.add(issues_frame, text="Validation Issues")
+        issue_cols = ("ders", "alan", "seviye", "tip", "mesaj", "öneri")
+        self.tree_completion_issues = ttk.Treeview(issues_frame, columns=issue_cols, show="headings", height=6)
+        for col in issue_cols:
+            self.tree_completion_issues.heading(col, text=col.title())
+            self.tree_completion_issues.column(col, width=150, anchor=tk.W)
+        issue_y = ttk.Scrollbar(issues_frame, orient=tk.VERTICAL, command=self.tree_completion_issues.yview)
+        issue_x = ttk.Scrollbar(issues_frame, orient=tk.HORIZONTAL, command=self.tree_completion_issues.xview)
+        self.tree_completion_issues.configure(yscrollcommand=issue_y.set, xscrollcommand=issue_x.set)
+        self.tree_completion_issues.grid(row=0, column=0, sticky="nsew")
+        issue_y.grid(row=0, column=1, sticky="ns")
+        issue_x.grid(row=1, column=0, sticky="ew")
+        issues_frame.columnconfigure(0, weight=1)
+        issues_frame.rowconfigure(0, weight=1)
+
+        self._last_completion_summary = None
+
     def create_section_header(self, row, text):
         tk.Label(self.form_frame, text=text, bg="#f8fafc", fg="#2563eb", 
                  font=("Segoe UI", 10, "bold", "underline")).grid(row=row, column=0, columnspan=2, sticky="w", pady=(15, 5))
@@ -307,6 +365,198 @@ class CriteriaPage:
             return int(rows[0][0])
         except Exception:
             return None
+
+    def _selected_completion_scope(self) -> tuple[str, int | None, int | None, int | None, str | None]:
+        faculty_id = self._selected_faculty_id()
+        department_id = self._selected_department_id()
+        year_raw = self.cb_yil.get()
+        year = int(year_raw) if str(year_raw or "").strip().isdigit() else None
+        semester = self.cb_donem.get() or "Güz"
+        scope_type = "department" if department_id is not None else "faculty"
+        return scope_type, faculty_id, department_id, year, semester
+
+    def _matrix_display_value(self, row: dict[str, Any]) -> str:
+        if row.get("missing_reason") and "istisna" in str(row.get("missing_reason")).lower():
+            return "Yeni ders istisnası"
+        if row.get("is_present") and row.get("is_valid"):
+            return "Var"
+        if row.get("is_present") and not row.get("is_valid"):
+            return "Geçersiz"
+        if not row.get("is_required"):
+            return "Opsiyonel"
+        return "Eksik"
+
+    def refresh_completion_panel(self):
+        if not getattr(self.db, "conn", None):
+            return
+        for tree_name in ("tree_completion_matrix", "tree_completion_issues"):
+            tree = getattr(self, tree_name, None)
+            if tree:
+                tree.delete(*tree.get_children())
+        try:
+            scope_type, faculty_id, department_id, year, semester = self._selected_completion_scope()
+            if faculty_id is None or year is None:
+                self.lbl_completion_summary.config(text="Fakülte, yıl ve dönem seçimi bekleniyor.")
+                return
+            summary = get_completion_summary(
+                self.db.conn,
+                scope_type=scope_type,
+                year=int(year),
+                faculty_id=int(faculty_id),
+                department_id=int(department_id) if department_id is not None else None,
+                semester=semester,
+                refresh=True,
+            )
+            self._last_completion_summary = summary
+            risk = summary.get("missing_data_risk") or {}
+            durum = "Hazır" if summary.get("can_run_algorithm") else "Engellendi"
+            if summary.get("override_active"):
+                durum = "Override ile hazır" if summary.get("can_run_algorithm") else "Override bekliyor"
+            self.lbl_completion_summary.config(
+                text=(
+                    f"Tamlık: %{float(summary.get('completion_ratio') or 0) * 100:.1f} | "
+                    f"Seviye: {summary.get('completion_level')} | "
+                    f"Algoritma: {durum} | "
+                    f"Eksik zorunlu: {summary.get('missing_required_fields')} | "
+                    f"Geçersiz: {summary.get('invalid_required_fields')} | "
+                    f"Risk: {risk.get('risk_level', 'low')}"
+                )
+            )
+            by_course: dict[int, dict[str, Any]] = {}
+            for row in summary.get("matrix") or []:
+                cid = int(row.get("course_id"))
+                item = by_course.setdefault(
+                    cid,
+                    {
+                        "name": row.get("course_code") or row.get("course_name") or str(cid),
+                        "fields": {},
+                        "status": "Tamam",
+                    },
+                )
+                item["fields"][row.get("criterion_key")] = self._matrix_display_value(row)
+                if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid")):
+                    item["status"] = "Eksik/Geçersiz"
+            for item in by_course.values():
+                fields = item["fields"]
+                self.tree_completion_matrix.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        item["name"],
+                        fields.get("passed_students") or fields.get("total_students") or "-",
+                        fields.get("average_grade") or "-",
+                        fields.get("capacity") or "-",
+                        fields.get("enrolled_students") or "-",
+                        fields.get("survey_count") or "-",
+                        fields.get("trend") or "-",
+                        item["status"],
+                    ),
+                )
+            course_names = {
+                int(row.get("course_id")): row.get("course_code") or row.get("course_name") or str(row.get("course_id"))
+                for row in summary.get("matrix") or []
+                if row.get("course_id") is not None
+            }
+            for issue in summary.get("validation_issues") or []:
+                self.tree_completion_issues.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        course_names.get(int(issue.get("course_id") or 0), issue.get("course_id") or ""),
+                        issue.get("field_name") or issue.get("criterion_key") or "",
+                        issue.get("severity") or "",
+                        issue.get("issue_type") or "",
+                        issue.get("message") or "",
+                        issue.get("suggestion") or "",
+                    ),
+                )
+        except Exception as exc:
+            messagebox.showerror("Tamlık Paneli", f"Tamlık bilgisi yüklenemedi:\n{exc}")
+
+    def _generate_completion_tasks(self):
+        try:
+            if not self._last_completion_summary:
+                self.refresh_completion_panel()
+            summary = self._last_completion_summary
+            if not summary:
+                return
+            created = generate_tasks_for_missing_criteria(self.db.conn, summary)
+            self.db.conn.commit()
+            messagebox.showinfo("Görevler", f"{len(created)} yeni tamlık görevi oluşturuldu.")
+        except Exception as exc:
+            messagebox.showerror("Görevler", f"Görev oluşturulamadı:\n{exc}")
+
+    def _request_completion_override(self):
+        try:
+            if not self._last_completion_summary:
+                self.refresh_completion_panel()
+            summary = self._last_completion_summary
+            if not summary:
+                return
+            reason = simpledialog.askstring("Override Talebi", "Override gerekçesi:")
+            if not reason:
+                return
+            missing_fields = sorted(
+                {
+                    str(row.get("criterion_key"))
+                    for row in summary.get("matrix") or []
+                    if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
+                }
+            )
+            override = request_override(
+                self.db.conn,
+                scope_type=str(summary.get("scope_type") or "faculty"),
+                year=int(summary.get("year")),
+                faculty_id=summary.get("faculty_id"),
+                department_id=summary.get("department_id"),
+                semester=summary.get("semester"),
+                missing_fields=missing_fields,
+                validation_issues=summary.get("validation_issues") or [],
+                reason=reason,
+                requested_by="ui",
+            )
+            self.db.conn.commit()
+            messagebox.showinfo("Override", f"Override talebi kaydedildi. Durum: {override.get('approval_status')}")
+            self.refresh_completion_panel()
+        except Exception as exc:
+            messagebox.showerror("Override", f"Override talebi oluşturulamadı:\n{exc}")
+
+    def _export_completion_matrix(self):
+        if not self._last_completion_summary:
+            self.refresh_completion_panel()
+        summary = self._last_completion_summary
+        if not summary:
+            return
+        path = filedialog.asksaveasfilename(
+            title="Tamlık Matrisi CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Tümü", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as fh:
+                writer = csv.DictWriter(
+                    fh,
+                    fieldnames=[
+                        "course_id",
+                        "course_code",
+                        "course_name",
+                        "criterion_key",
+                        "is_required",
+                        "is_present",
+                        "is_valid",
+                        "missing_reason",
+                        "invalid_reason",
+                        "source_type",
+                    ],
+                )
+                writer.writeheader()
+                for row in summary.get("matrix") or []:
+                    writer.writerow({key: row.get(key) for key in writer.fieldnames})
+            messagebox.showinfo("Dışa Aktar", "Tamlık matrisi CSV olarak dışa aktarıldı.")
+        except Exception as exc:
+            messagebox.showerror("Dışa Aktar", f"CSV oluşturulamadı:\n{exc}")
 
     def _now_utc(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -589,6 +839,10 @@ class CriteriaPage:
                         self.tree.selection_set(item_id)
                         self.tree.see(item_id)
                         break
+            try:
+                self.refresh_completion_panel()
+            except Exception:
+                pass
 
         except Exception as e:
             import traceback

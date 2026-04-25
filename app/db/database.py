@@ -18,6 +18,7 @@ import threading
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 from app.core.settings import load_settings
+from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
 
 _lock = threading.Lock()
@@ -91,7 +92,7 @@ def ensure_runtime_sqlite_schema(sqlite_path: str) -> dict:
     try:
         import sqlite3
 
-        conn = sqlite3.connect(sqlite_path)
+        conn = connect_sqlite(sqlite_path)
         try:
             result = ensure_reporting_schema(conn)
             return {"ok": True, "result": result}

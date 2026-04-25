@@ -24,6 +24,8 @@ from app.services.havuz_karar import (
     normalize_semester,
 )
 from app.services.course_type import build_elective_predicate
+from app.services.semester_planning_engine import generate_semester_plan
+from app.services.semester_planning_policy_service import resolve_policy
 
 
 SEMESTER_ORDER = [DONEM_GUZ, DONEM_BAHAR]
@@ -178,60 +180,63 @@ def _rebalance_department(
     year: int,
     block_size: int = 4,
 ) -> tuple[dict[str, list[int]], int]:
-    existing = {
-        DONEM_GUZ: _fetch_curriculum_courses(cur, department_id, year, DONEM_GUZ),
-        DONEM_BAHAR: _fetch_curriculum_courses(cur, department_id, year, DONEM_BAHAR),
-    }
     candidates = _fetch_candidate_courses(cur, faculty_id, department_id)
     if not candidates:
-        return existing, 0
+        return {
+            DONEM_GUZ: _fetch_curriculum_courses(cur, department_id, year, DONEM_GUZ),
+            DONEM_BAHAR: _fetch_curriculum_courses(cur, department_id, year, DONEM_BAHAR),
+        }, 0
 
     scores_g = _scores_for_term(cur, faculty_id, year, DONEM_GUZ, candidates)
     scores_b = _scores_for_term(cur, faculty_id, year, DONEM_BAHAR, candidates)
+    candidate_payload = []
+    for ders_id in candidates:
+        candidate_payload.append(
+            {
+                "course_id": int(ders_id),
+                "score": max(float(scores_g.get(int(ders_id), 0.0)), float(scores_b.get(int(ders_id), 0.0))),
+            }
+        )
 
-    ranked_g = _sort_by_score(candidates, scores_g)
-    ranked_b = _sort_by_score(candidates, scores_b)
-
-    selected_g = _fill_block(existing[DONEM_GUZ], ranked_g, blocked=set(), block_size=block_size)
-    selected_b = _fill_block(existing[DONEM_BAHAR], ranked_b, blocked=set(), block_size=block_size)
-
-    conflicts_removed = 0
-    intersections = set(selected_g) & set(selected_b)
-    for ders_id in sorted(intersections):
-        score_g = float(scores_g.get(ders_id, 0.0))
-        score_b = float(scores_b.get(ders_id, 0.0))
-        if score_b > score_g:
-            selected_g = [d for d in selected_g if d != ders_id]
-        else:
-            selected_b = [d for d in selected_b if d != ders_id]
-        conflicts_removed += 1
-
-    selected_g = _fill_block(selected_g, ranked_g, blocked=set(selected_b), block_size=block_size)
-    selected_b = _fill_block(selected_b, ranked_b, blocked=set(selected_g), block_size=block_size)
-
-    # Son guvence: cross-semester tekillik.
-    constrained = enforce_cross_semester_constraints(
-        {
-            DONEM_GUZ: selected_g,
-            DONEM_BAHAR: selected_b,
-        }
+    policy = resolve_policy(
+        cur.connection,
+        year=int(year),
+        faculty_id=int(faculty_id),
+        department_id=int(department_id),
+        curriculum_year=int(year),
     )
-    selected_g = constrained[DONEM_GUZ][: int(block_size)]
-    selected_b = constrained[DONEM_BAHAR][: int(block_size)]
+    # Eski block_size parametresi imza uyumlulugu icin korunur. Varsayilan
+    # 4+4 artik policy'den gelir; farkli block_size veren legacy cagrilar
+    # kapsamli policy yoksa ayni sonucu alabilsin diye runtime override edilir.
+    if int(block_size) != 4 and policy.get("scope_type") == "global" and policy.get("name", "").startswith("Varsayılan"):
+        policy = dict(policy)
+        policy.update(
+            {
+                "total_elective_target": int(block_size) * 2,
+                "fall_min": int(block_size),
+                "fall_max": int(block_size),
+                "spring_min": int(block_size),
+                "spring_max": int(block_size),
+            }
+        )
 
-    # Bahar eksik kaldiysa, ortak ranking ile tamamla.
-    combined = sorted(
-        candidates,
-        key=lambda d: max(float(scores_g.get(int(d), 0.0)), float(scores_b.get(int(d), 0.0))),
-        reverse=True,
+    result = generate_semester_plan(
+        cur.connection,
+        year=int(year),
+        faculty_id=int(faculty_id),
+        department_id=int(department_id),
+        candidate_courses=candidate_payload,
+        policy=policy,
+        curriculum_year=int(year),
+        persist=True,
+        run_name=f"Dual dönem planı {department_id}-{year}",
+        generate_alternatives=True,
     )
-    selected_b = _fill_block(selected_b, combined, blocked=set(selected_g), block_size=block_size)
-    selected_g = _fill_block(selected_g, combined, blocked=set(selected_b), block_size=block_size)
-
     out = {
-        DONEM_GUZ: selected_g[: int(block_size)],
-        DONEM_BAHAR: selected_b[: int(block_size)],
+        DONEM_GUZ: [int(d) for d in result.get("fall_course_ids", [])],
+        DONEM_BAHAR: [int(d) for d in result.get("spring_course_ids", [])],
     }
+    conflicts_removed = len([v for v in result.get("constraint_violations", []) if v.get("constraint_type") == "repeat"])
     return out, conflicts_removed
 
 

@@ -1,0 +1,59 @@
+{
+  "runs": [
+    {
+      "scenario": "real_mcdm_recommendation",
+      "run_id": "run_77fdefcf5ddd",
+      "stored_at": "reports\\benchmark_runs\\run_77fdefcf5ddd.json",
+      "algorithms": [
+        "AHP",
+        "TOPSIS",
+        "VIKOR",
+        "PROMETHEE_II"
+      ]
+    },
+    {
+      "scenario": "real_ml_prediction",
+      "run_id": "run_912222c91809",
+      "stored_at": "reports\\benchmark_runs\\run_912222c91809.json",
+      "algorithms": [
+        "RandomPredictor",
+        "MajorityClassPredictor",
+        "NaiveBayes",
+        "LogisticRegression",
+        "RandomForest",
+        "XGBoostLike"
+      ]
+    },
+    {
+      "scenario": "allocation_fairness",
+      "run_id": "run_81e7e41ad5fc",
+      "stored_at": "reports\\benchmark_runs\\run_81e7e41ad5fc.json",
+      "algorithms": [
+        "GaleShapley",
+        "RandomAllocation",
+        "GreedyAllocation",
+        "FirstComeFirstServed",
+        "MinimumRegretAllocation"
+      ]
+    },
+    {
+      "scenario": "clustering_exploration",
+      "run_id": "run_7488a8a74ee7",
+      "stored_at": "reports\\benchmark_runs\\run_7488a8a74ee7.json",
+      "algorithms": [
+        "KMeans",
+        "HierarchicalClustering",
+        "DBSCAN"
+      ]
+    }
+  ],
+  "recommendation": {
+    "algorithm": "XGBoostLike",
+    "confidence": 0.942125,
+    "reason": "Selected from historical benchmark outcomes across 4 runs.",
+    "source": "history",
+    "candidates": [
+      "real_ml_prediction"
+    ]
+  }
+}

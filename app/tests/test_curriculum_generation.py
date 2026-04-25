@@ -209,12 +209,19 @@ def test_drop_rule_reasons_and_state_machine():
         cur = conn.cursor()
         cur.execute("SELECT statu, sayac FROM havuz WHERE ders_id='101' AND yil=2024")
         s1 = cur.fetchone()
-        cur.execute("SELECT statu, sayac FROM havuz WHERE ders_id='102' AND yil=2024")
+        cur.execute(
+            "SELECT statu, sayac, recommended_status, final_status, approval_required, approval_status "
+            "FROM havuz WHERE ders_id='102' AND yil=2024"
+        )
         s2 = cur.fetchone()
         conn.close()
 
         assert s1 == (-1, 1)   # ilk dusus -> dinlenme
-        assert s2 == (-2, 2)   # ikinci dusus -> kalici iptal
+        assert s2[0:2] == (-1, 2)   # ikinci dusus -> iptal adayi, onay bekler
+        assert s2[2] == -2
+        assert s2[3] != -2
+        assert s2[4] == 1
+        assert s2[5] == "pending"
     finally:
         try:
             os.unlink(path)

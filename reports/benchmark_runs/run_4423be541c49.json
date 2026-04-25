@@ -1,0 +1,1069 @@
+{
+  "run": {
+    "run_id": "run_4423be541c49",
+    "scenario_name": "real_mcdm_recommendation",
+    "dataset_name": "sample_benchmark_dataset",
+    "started_at": "2026-04-23T12:12:09.320980",
+    "finished_at": "2026-04-23T12:12:09.368409",
+    "status": "completed",
+    "algorithms": [
+      "AHP",
+      "TOPSIS",
+      "VIKOR",
+      "PROMETHEE_II"
+    ],
+    "metrics": [
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.5147714448836774,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.35333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.058520573598065284,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 14.328000019304454,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 558.3472912633591,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.13074302673339844,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.6548086577531307,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.4833333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.643726309578718,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 7.697200053371489,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1039.3389732018047,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.05481433868408203,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.5147714448836774,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.35333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.058520573598065284,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 6.657699937932193,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1201.616184956018,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.054747581481933594,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.6548086577531307,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.4833333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.2465984809580359,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 9.458199958316982,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 845.8269052522276,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.05480766296386719,
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  "payload": {
+    "scenario": {
+      "name": "real_mcdm_recommendation",
+      "description": "Real-data ranking benchmark for explainable MCDM methods.",
+      "problem_type": "ranking",
+      "dataset_layer": "derived",
+      "table_name": "student_course_features_unencoded",
+      "target_column": "course_id",
+      "top_k": 5,
+      "use_synthetic_tier": null,
+      "algorithm_names": [
+        "AHP",
+        "TOPSIS",
+        "VIKOR",
+        "PROMETHEE_II"
+      ],
+      "metadata": {}
+    },
+    "results": {
+      "AHP": {
+        "output": {
+          "algorithm_name": "AHP",
+          "task_type": "ranking",
+          "predictions": [],
+          "recommendations": [
+            {
+              "item_id": 1006,
+              "score": 0.39878504403493215,
+              "rank": 1
+            },
+            {
+              "item_id": 1002,
+              "score": 0.39108534496773256,
+              "rank": 2
+            },
+            {
+              "item_id": 1005,
+              "score": 0.352880051077099,
+              "rank": 3
+            },
+            {
+              "item_id": 1004,
+              "score": 0.32469583454671475,
+              "rank": 4
+            },
+            {
+              "item_id": 1003,
+              "score": 0.3230516105573683,
+              "rank": 5
+            }
+          ],
+          "assignments": [],
+          "confidence": 1.0,
+          "explanation": "AHP weights=[0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476], CR=0.0000 (acceptable < 0.10)",
+          "runtime_ms": 13.5731000918895,
+          "parameters": {
+            "consistency_ratio": 0.0,
+            "consistency_index": 0.0,
+            "lambda_max": 21.0
+          },
+          "artifacts": {
+            "weights": [
+              0.047619047619047616,
+              0.04761904761904759,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.04761904761904762,
+              0.04761904761904762,
+              0.04761904761904762,
+              0.04761904761904759
+            ],
+            "lambda_max": 21.0,
+            "consistency_index": 0.0,
+            "consistency_ratio": 0.0
+          }
+        },
+        "metrics": {
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 0.5147714448836774,
+            "map_at_k": 0.35333333333333333,
+            "coverage": 0.625,
+            "diversity": 0.0
+          },
+          "academic": {
+            "ranking_similarity_ground_truth": 0.058520573598065284
+          },
+          "performance": {
+            "latency_ms": 14.328000019304454,
+            "throughput_per_sec": 558.3472912633591,
+            "memory_peak_mb": 0.13074302673339844
+          }
+        }
+      },
+      "TOPSIS": {
+        "output": {
+          "algorithm_name": "TOPSIS",
+          "task_type": "ranking",
+          "predictions": [],
+          "recommendations": [
+            {
+              "item_id": 1002,
+              "score": 0.6252746756260543,
+              "rank": 1
+            },
+            {
+              "item_id": 1006,
+              "score": 0.6143539483515367,
+              "rank": 2
+            },
+            {
+              "item_id": 1005,
+              "score": 0.5432291999055475,
+              "rank": 3
+            },
+            {
+              "item_id": 1003,
+              "score": 0.5036915888897592,
+              "rank": 4
+            },
+            {
+              "item_id": 1004,
+              "score": 0.4962381004202991,
+              "rank": 5
+            }
+          ],
+          "assignments": [],
+          "confidence": 0.5182222477088072,
+          "explanation": "TOPSIS with weights=[0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476, 0.0476]",
+          "runtime_ms": 7.632900029420853,
+          "parameters": {
+            "weights": [
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616
+            ]
+          },
+          "artifacts": {
+            "ideal_best": [
+              0.020763398846180517,
+              0.022208993303654025,
+              0.0229028138296227,
+              0.0173580218339117,
+              0.01955038712842225,
+              0.02364234745079832,
+              0.018529841003586327,
+              0.02487558941493746,
+              0.02652790545386455,
+              0.0259572717789175,
+              0.027340191200870556,
+              0.022716224011342042,
+              0.022209967755228037,
+              0.02338072230429472,
+              0.0173580218339117,
+              0.01955038712842225,
+              0.02364234745079832,
+              0.0221544290737413,
+              0.022772814900773215,
+              0.02652790545386455,
+              0.020669835433679118
+            ],
+            "ideal_worst": [
+              0.014252841580852727,
+              0.00832837248887026,
+              0.010746066633826596,
+              0.016081696699065253,
+              0.012600835453865904,
+              0.008281316758177983,
+              0.015441534169655274,
+              0.008319319638770474,
+              0.0,
+              0.0,
+              0.0,
+              0.009092016666340068,
+              0.0092965386659924,
+              0.009679116222745665,
+              0.016081696699065253,
+              0.012600835453865904,
+              0.008281316758177983,
+              0.01103799950497191,
+              0.009361021535251425,
+              0.0,
+              0.01436747803701327
+            ],
+            "scores": [
+              0.45463077830490595,
+              0.6252746756260543,
+              0.5036915888897592,
+              0.4962381004202991,
+              0.5432291999055475,
+              0.6143539483515367,
+              0.48988038528016664,
+              0.418479304892188
+            ]
+          }
+        },
+        "metrics": {
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 0.6548086577531307,
+            "map_at_k": 0.4833333333333333,
+            "coverage": 0.625,
+            "diversity": 0.0
+          },
+          "academic": {
+            "ranking_similarity_ground_truth": 0.643726309578718
+          },
+          "performance": {
+            "latency_ms": 7.697200053371489,
+            "throughput_per_sec": 1039.3389732018047,
+            "memory_peak_mb": 0.05481433868408203
+          }
+        }
+      },
+      "VIKOR": {
+        "output": {
+          "algorithm_name": "VIKOR",
+          "task_type": "ranking",
+          "predictions": [],
+          "recommendations": [
+            {
+              "item_id": 1006,
+              "score": 1.0,
+              "rank": 1
+            },
+            {
+              "item_id": 1002,
+              "score": 0.3754937039272839,
+              "rank": 2
+            },
+            {
+              "item_id": 1005,
+              "score": 0.3588127939245236,
+              "rank": 3
+            },
+            {
+              "item_id": 1004,
+              "score": 0.2948650972731617,
+              "rank": 4
+            },
+            {
+              "item_id": 1003,
+              "score": 0.1928389622797413,
+              "rank": 5
+            }
+          ],
+          "assignments": [],
+          "confidence": 0.29621171187189865,
+          "explanation": "VIKOR compromise ranking with v=0.5",
+          "runtime_ms": 6.591300014406443,
+          "parameters": {
+            "v": 0.5,
+            "weights": [
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616
+            ]
+          },
+          "artifacts": {
+            "q_values": [
+              1.0,
+              0.6245062960727161,
+              0.8071610377202587,
+              0.7051349027268383,
+              0.6411872060754764,
+              0.0,
+              0.9230569664588388,
+              0.9292598959706824
+            ],
+            "s_values": [
+              0.7344481456426957,
+              0.32074101585210607,
+              0.5219842540723669,
+              0.5435739437130033,
+              0.34494281748346917,
+              0.1835639024934338,
+              0.649674736046834,
+              0.6565089283057143
+            ],
+            "r_values": [
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.043758043758043756,
+              0.047451256753582326,
+              0.03174603174603175,
+              0.047619047619047616,
+              0.047619047619047616
+            ]
+          }
+        },
+        "metrics": {
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 0.5147714448836774,
+            "map_at_k": 0.35333333333333333,
+            "coverage": 0.625,
+            "diversity": 0.0
+          },
+          "academic": {
+            "ranking_similarity_ground_truth": 0.058520573598065284
+          },
+          "performance": {
+            "latency_ms": 6.657699937932193,
+            "throughput_per_sec": 1201.616184956018,
+            "memory_peak_mb": 0.054747581481933594
+          }
+        }
+      },
+      "PROMETHEE_II": {
+        "output": {
+          "algorithm_name": "PROMETHEE_II",
+          "task_type": "ranking",
+          "predictions": [],
+          "recommendations": [
+            {
+              "item_id": 1005,
+              "score": 8.775171612664701,
+              "rank": 1
+            },
+            {
+              "item_id": 1006,
+              "score": 7.574061228340033,
+              "rank": 2
+            },
+            {
+              "item_id": 1008,
+              "score": 2.2066846124515136,
+              "rank": 3
+            },
+            {
+              "item_id": 1003,
+              "score": 2.032499281216862,
+              "rank": 4
+            },
+            {
+              "item_id": 1004,
+              "score": 0.7295395022706885,
+              "rank": 5
+            }
+          ],
+          "assignments": [],
+          "confidence": 1.0,
+          "explanation": "PROMETHEE-II outranking via net preference flow.",
+          "runtime_ms": 9.334500064142048,
+          "parameters": {
+            "weights": [
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616,
+              0.047619047619047616
+            ]
+          },
+          "artifacts": {
+            "leaving_flow": [
+              0.30292712027831087,
+              0.765490988583569,
+              3.6801727512967943,
+              3.0237904562644147,
+              8.846987983494678,
+              7.778362830696482,
+              0.08702871533228676,
+              3.8122790677371885
+            ],
+            "entering_flow": [
+              7.276024489198914,
+              6.1114474315367175,
+              1.6476734700799323,
+              2.294250953993726,
+              0.07181637082997627,
+              0.20430160235644923,
+              9.085931140402334,
+              1.6055944552856751
+            ],
+            "net_flow": [
+              -6.973097368920603,
+              -5.345956442953149,
+              2.032499281216862,
+              0.7295395022706885,
+              8.775171612664701,
+              7.574061228340033,
+              -8.998902425070048,
+              2.2066846124515136
+            ]
+          }
+        },
+        "metrics": {
+          "recommendation": {
+            "hit_at_k": 1.0,
+            "ndcg_at_k": 0.6548086577531307,
+            "map_at_k": 0.4833333333333333,
+            "coverage": 0.625,
+            "diversity": 0.0
+          },
+          "academic": {
+            "ranking_similarity_ground_truth": 0.2465984809580359
+          },
+          "performance": {
+            "latency_ms": 9.458199958316982,
+            "throughput_per_sec": 845.8269052522276,
+            "memory_peak_mb": 0.05480766296386719
+          }
+        }
+      }
+    },
+    "metrics": [
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.5147714448836774,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.35333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.058520573598065284,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 14.328000019304454,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 558.3472912633591,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "AHP",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.13074302673339844,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.6548086577531307,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.4833333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.643726309578718,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 7.697200053371489,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1039.3389732018047,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "TOPSIS",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.05481433868408203,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.5147714448836774,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.35333333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.058520573598065284,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 6.657699937932193,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1201.616184956018,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "VIKOR",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.054747581481933594,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "hit_at_k",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "ndcg_at_k",
+        "metric_value": 0.6548086577531307,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "map_at_k",
+        "metric_value": 0.4833333333333333,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "coverage",
+        "metric_value": 0.625,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "recommendation",
+        "metric_name": "diversity",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "academic",
+        "metric_name": "ranking_similarity_ground_truth",
+        "metric_value": 0.2465984809580359,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 9.458199958316982,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 845.8269052522276,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_4423be541c49",
+        "algorithm_name": "PROMETHEE_II",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.05480766296386719,
+        "metadata": {}
+      }
+    ]
+  }
+}
