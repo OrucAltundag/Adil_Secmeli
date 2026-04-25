@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any
 
 import pandas as pd
+from app.db.sqlite_connection import connect_sqlite
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
     reset_year_workflow_for_import,
@@ -449,8 +450,7 @@ def import_curriculum_excel(
     if not parsed_rows:
         return ImportResult(False, "Excel icinde aktarilabilir satir yok.", target_year=target_year, warnings=warnings).as_dict()
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(db_path, row_factory=True)
     cur = conn.cursor()
 
     errors: list[str] = []

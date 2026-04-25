@@ -17,6 +17,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Generator, Optional
 
+from app.db.sqlite_connection import connect_sqlite
 
 DEFAULT_DB_PATH = "data/adil_secmeli.db"
 
@@ -47,8 +48,7 @@ def db_session(db_path: Optional[str] = None) -> Generator[sqlite3.Connection, N
             cur.execute("SELECT * FROM ders")
     """
     path = resolve_db_path(db_path)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(path, row_factory=True)
     try:
         yield conn
     finally:
@@ -61,6 +61,4 @@ def get_conn(db_path: Optional[str] = None) -> sqlite3.Connection:
     Context manager kullanmak daha guvenlidir: db_session(db_path)
     """
     path = resolve_db_path(db_path)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_sqlite(path, row_factory=True)

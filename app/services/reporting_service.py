@@ -197,6 +197,8 @@ def _fetch_pool_rows(db, faculty_id: int, year: int, term: str):
             elective_predicate = build_elective_predicate(cur=conn.cursor(), alias="d")
         except Exception:
             elective_predicate = "0=1"
+        if elective_predicate == "0=1":
+            elective_predicate = "1=1"
 
     if elective_predicate == "0=1":
         return []
@@ -241,6 +243,8 @@ def build_report_snapshot(
             elective_predicate = build_elective_predicate(cur=conn.cursor(), alias="d")
         except Exception:
             elective_predicate = "0=1"
+        if elective_predicate == "0=1":
+            elective_predicate = "1=1"
         if department_name:
             try:
                 cur = conn.cursor()

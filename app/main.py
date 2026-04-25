@@ -177,6 +177,7 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.analysis_tab import AnalysisTab
         from app.ui.tabs.calc_tab import CalcTab
         from app.ui.tabs.tools_tab import ToolsTab
+        from app.ui.benchmark import BenchmarkPanel
         from app.ui.style import apply_style
 
         apply_style(self)
@@ -241,6 +242,10 @@ class AdilSecmeliApp(tk.Tk):
         # 4. SEKME: Hesaplama & Test (CalcTab)
         self.tab_calc = CalcTab(self.nb, app=self)
         self.nb.add(self.tab_calc, text="🧮 Hesaplama & Test")
+
+        # 5. SEKME: Benchmark Platformu
+        self.tab_benchmark = BenchmarkPanel(self.nb, app=self)
+        self.nb.add(self.tab_benchmark, text="Benchmark Platformu")
 
 
         # Otomatik Bağlan
@@ -473,6 +478,9 @@ class AdilSecmeliApp(tk.Tk):
             if "Rapor" in current_tab_text:
                 self.tab_tools.refresh()
 
+            if "Benchmark" in current_tab_text:
+                self.tab_benchmark.refresh()
+
 
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -494,6 +502,9 @@ class AdilSecmeliApp(tk.Tk):
 
         if "Hesaplama" in selected_tab:
             self.tab_calc.refresh()
+
+        if "Benchmark" in selected_tab:
+            self.tab_benchmark.refresh()
 
 
     def ensure_pool_initialized_once(self):

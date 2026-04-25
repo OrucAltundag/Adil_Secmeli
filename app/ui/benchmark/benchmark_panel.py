@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import tkinter as tk
+from tkinter import ttk
+
+from app.ui.benchmark.api_client import BenchmarkApiClient
+from app.ui.benchmark.pages import (
+    AlgorithmExplorerPage,
+    AllocationFairnessPage,
+    ComparisonPage,
+    DashboardPage,
+    DatasetLabPage,
+    DecisionEnginePage,
+    RunHistoryPage,
+)
+from app.ui.benchmark.widgets import COLORS
+
+
+class BenchmarkPanel(ttk.Frame):
+    """Main Benchmark Platform tab with left navigation and stacked pages."""
+
+    def __init__(self, parent, app=None):
+        super().__init__(parent)
+        self.app = app
+        self.api = BenchmarkApiClient()
+        self.nav_buttons: dict[str, tk.Button] = {}
+        self.pages: dict[str, ttk.Frame] = {}
+        self.active_page = ""
+        self._build()
+
+    def _build(self) -> None:
+        self.configure(style="BenchmarkRoot.TFrame")
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.nav = tk.Frame(self, bg=COLORS["navy"], width=230)
+        self.nav.grid(row=0, column=0, sticky="ns")
+        self.nav.grid_propagate(False)
+
+        title = tk.Label(
+            self.nav,
+            text="Benchmark\nPlatformu",
+            bg=COLORS["navy"],
+            fg="#FFFFFF",
+            font=("Segoe UI", 16, "bold"),
+            justify="left",
+        )
+        title.pack(fill=tk.X, padx=18, pady=(20, 18))
+
+        self.stack = ttk.Frame(self)
+        self.stack.grid(row=0, column=1, sticky="nsew")
+        self.stack.rowconfigure(0, weight=1)
+        self.stack.columnconfigure(0, weight=1)
+
+        page_defs = [
+            ("dashboard", "Benchmark Dashboard", DashboardPage),
+            ("comparison", "Algorithm Comparison", ComparisonPage),
+            ("dataset_lab", "Dataset Lab", DatasetLabPage),
+            ("algorithm_explorer", "Algorithm Explorer", AlgorithmExplorerPage),
+            ("allocation_fairness", "Allocation Fairness", AllocationFairnessPage),
+            ("decision_engine", "Decision Engine", DecisionEnginePage),
+            ("run_history", "Run History", RunHistoryPage),
+        ]
+
+        for key, label, page_cls in page_defs:
+            self._add_nav_button(key, label)
+            page = page_cls(self.stack, self.api)
+            page.grid(row=0, column=0, sticky="nsew")
+            self.pages[key] = page
+
+        footer = tk.Label(
+            self.nav,
+            text="API: http://127.0.0.1:8000\nMock fallback aktif",
+            bg=COLORS["navy"],
+            fg="#CBD5E1",
+            font=("Segoe UI", 8),
+            justify="left",
+        )
+        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=18, pady=16)
+
+        self.show_page("dashboard")
+
+    def _add_nav_button(self, key: str, label: str) -> None:
+        btn = tk.Button(
+            self.nav,
+            text=label,
+            anchor="w",
+            command=lambda k=key: self.show_page(k),
+            bg=COLORS["navy"],
+            fg="#E2E8F0",
+            activebackground="#1E293B",
+            activeforeground="#FFFFFF",
+            relief="flat",
+            bd=0,
+            padx=18,
+            pady=10,
+            font=("Segoe UI", 10, "bold"),
+        )
+        btn.pack(fill=tk.X, padx=10, pady=2)
+        self.nav_buttons[key] = btn
+
+    def show_page(self, key: str) -> None:
+        if key not in self.pages:
+            return
+        for btn_key, btn in self.nav_buttons.items():
+            if btn_key == key:
+                btn.configure(bg=COLORS["blue"], fg="#FFFFFF")
+            else:
+                btn.configure(bg=COLORS["navy"], fg="#E2E8F0")
+        self.pages[key].tkraise()
+        self.active_page = key
+
+    def refresh(self) -> None:
+        page = self.pages.get(self.active_page)
+        if hasattr(page, "load_runs"):
+            page.load_runs()
+        elif hasattr(page, "load_data"):
+            page.load_data()

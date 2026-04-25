@@ -9,6 +9,7 @@
 
 from fastapi import FastAPI
 from app.api import routes
+from app.dashboard import api_routes as benchmark_routes
 
 app = FastAPI(
     title="Adil Seçmeli API",
@@ -17,6 +18,7 @@ app = FastAPI(
 )
 
 app.include_router(routes.router, prefix="/api/v1", tags=["v1"])
+app.include_router(benchmark_routes.router, prefix="/api/v1/benchmark", tags=["benchmark"])
 
 
 @app.get("/")

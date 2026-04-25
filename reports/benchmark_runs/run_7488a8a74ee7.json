@@ -1,0 +1,630 @@
+{
+  "run": {
+    "run_id": "run_7488a8a74ee7",
+    "scenario_name": "clustering_exploration",
+    "dataset_name": "sample_benchmark_dataset",
+    "started_at": "2026-04-23T12:33:33.309593",
+    "finished_at": "2026-04-23T12:33:34.849545",
+    "status": "completed",
+    "algorithms": [
+      "KMeans",
+      "HierarchicalClustering",
+      "DBSCAN"
+    ],
+    "metrics": [
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "clustering",
+        "metric_name": "silhouette",
+        "metric_value": 0.4441242407092374,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "clustering",
+        "metric_name": "davies_bouldin",
+        "metric_value": 1.353409291288758,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "clustering",
+        "metric_name": "calinski_harabasz",
+        "metric_value": 13587.712317568834,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "academic",
+        "metric_name": "pattern_reproduction",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 1438.643000088632,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 31.279476560361143,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.22261333465576172,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "clustering",
+        "metric_name": "silhouette",
+        "metric_value": 0.4500724219567803,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "clustering",
+        "metric_name": "davies_bouldin",
+        "metric_value": 1.2590492092141108,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "clustering",
+        "metric_name": "calinski_harabasz",
+        "metric_value": 13538.641953401013,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "academic",
+        "metric_name": "pattern_reproduction",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 81.53670001775026,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 551.8987154275762,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.6768302917480469,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "clustering",
+        "metric_name": "silhouette",
+        "metric_value": -1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "clustering",
+        "metric_name": "davies_bouldin",
+        "metric_value": Infinity,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "clustering",
+        "metric_name": "calinski_harabasz",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "academic",
+        "metric_name": "pattern_reproduction",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 7.6466999016702175,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 5884.891597507436,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.10942268371582031,
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  "payload": {
+    "scenario": {
+      "name": "clustering_exploration",
+      "description": "Unsupervised segmentation quality benchmark.",
+      "problem_type": "clustering",
+      "dataset_layer": "derived",
+      "table_name": "student_course_features",
+      "target_column": "course_id",
+      "top_k": 5,
+      "use_synthetic_tier": null,
+      "algorithm_names": [
+        "KMeans",
+        "HierarchicalClustering",
+        "DBSCAN"
+      ],
+      "metadata": {}
+    },
+    "results": {
+      "KMeans": {
+        "output": {
+          "algorithm_name": "KMeans",
+          "task_type": "clustering",
+          "predictions": [
+            2,
+            2,
+            2,
+            2,
+            4,
+            4,
+            2,
+            2,
+            4,
+            4,
+            4,
+            4,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            3,
+            3,
+            3,
+            3,
+            3,
+            1,
+            1,
+            1,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.2,
+          "explanation": "KMeans produced 5 clusters",
+          "runtime_ms": 1438.5941000655293,
+          "parameters": {
+            "n_clusters": 5,
+            "random_seed": 42
+          },
+          "artifacts": {
+            "cluster_sizes": {
+              "0": 15,
+              "2": 9,
+              "3": 8,
+              "1": 7,
+              "4": 6
+            }
+          }
+        },
+        "metrics": {
+          "clustering": {
+            "silhouette": 0.4441242407092374,
+            "davies_bouldin": 1.353409291288758,
+            "calinski_harabasz": 13587.712317568834
+          },
+          "academic": {
+            "pattern_reproduction": 0.0
+          },
+          "performance": {
+            "latency_ms": 1438.643000088632,
+            "throughput_per_sec": 31.279476560361143,
+            "memory_peak_mb": 0.22261333465576172
+          }
+        }
+      },
+      "HierarchicalClustering": {
+        "output": {
+          "algorithm_name": "HierarchicalClustering",
+          "task_type": "clustering",
+          "predictions": [
+            2,
+            2,
+            2,
+            2,
+            4,
+            4,
+            2,
+            2,
+            2,
+            4,
+            4,
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            3,
+            3,
+            1,
+            3,
+            3,
+            1,
+            1,
+            1,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 0.2,
+          "explanation": "HierarchicalClustering produced 5 clusters",
+          "runtime_ms": 81.4989999635145,
+          "parameters": {
+            "n_clusters": 5,
+            "linkage": "ward"
+          },
+          "artifacts": {
+            "cluster_sizes": {
+              "0": 15,
+              "2": 11,
+              "1": 8,
+              "3": 7,
+              "4": 4
+            }
+          }
+        },
+        "metrics": {
+          "clustering": {
+            "silhouette": 0.4500724219567803,
+            "davies_bouldin": 1.2590492092141108,
+            "calinski_harabasz": 13538.641953401013
+          },
+          "academic": {
+            "pattern_reproduction": 0.0
+          },
+          "performance": {
+            "latency_ms": 81.53670001775026,
+            "throughput_per_sec": 551.8987154275762,
+            "memory_peak_mb": 0.6768302917480469
+          }
+        }
+      },
+      "DBSCAN": {
+        "output": {
+          "algorithm_name": "DBSCAN",
+          "task_type": "clustering",
+          "predictions": [
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1
+          ],
+          "recommendations": [],
+          "assignments": [],
+          "confidence": 1.0,
+          "explanation": "DBSCAN produced 0 clusters",
+          "runtime_ms": 7.625100086443126,
+          "parameters": {
+            "eps": 0.5,
+            "min_samples": 5
+          },
+          "artifacts": {
+            "cluster_sizes": {
+              "-1": 45
+            }
+          }
+        },
+        "metrics": {
+          "clustering": {
+            "silhouette": -1.0,
+            "davies_bouldin": Infinity,
+            "calinski_harabasz": 0.0
+          },
+          "academic": {
+            "pattern_reproduction": 0.0
+          },
+          "performance": {
+            "latency_ms": 7.6466999016702175,
+            "throughput_per_sec": 5884.891597507436,
+            "memory_peak_mb": 0.10942268371582031
+          }
+        }
+      }
+    },
+    "metrics": [
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "clustering",
+        "metric_name": "silhouette",
+        "metric_value": 0.4441242407092374,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "clustering",
+        "metric_name": "davies_bouldin",
+        "metric_value": 1.353409291288758,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "clustering",
+        "metric_name": "calinski_harabasz",
+        "metric_value": 13587.712317568834,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "academic",
+        "metric_name": "pattern_reproduction",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 1438.643000088632,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 31.279476560361143,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "KMeans",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.22261333465576172,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "clustering",
+        "metric_name": "silhouette",
+        "metric_value": 0.4500724219567803,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "clustering",
+        "metric_name": "davies_bouldin",
+        "metric_value": 1.2590492092141108,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "clustering",
+        "metric_name": "calinski_harabasz",
+        "metric_value": 13538.641953401013,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "academic",
+        "metric_name": "pattern_reproduction",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 81.53670001775026,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 551.8987154275762,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "HierarchicalClustering",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.6768302917480469,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "clustering",
+        "metric_name": "silhouette",
+        "metric_value": -1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "clustering",
+        "metric_name": "davies_bouldin",
+        "metric_value": Infinity,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "clustering",
+        "metric_name": "calinski_harabasz",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "academic",
+        "metric_name": "pattern_reproduction",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 7.6466999016702175,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 5884.891597507436,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_7488a8a74ee7",
+        "algorithm_name": "DBSCAN",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.10942268371582031,
+        "metadata": {}
+      }
+    ]
+  }
+}

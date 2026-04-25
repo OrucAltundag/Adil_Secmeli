@@ -9,3 +9,6 @@ _arsiv/
 exports/*.csv
 exports/*.xlsx
 *.log
+*.db-journal
+*.db-wal
+*.db-shm

@@ -513,6 +513,14 @@ def _table_has_column(cur, table_name, column_name):
     return column_name in {str(row[1]) for row in cur.fetchall()}
 
 
+def _table_exists(cur, table_name):
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (str(table_name),),
+    )
+    return cur.fetchone() is not None
+
+
 def _havuz_has_donem_col(cur):
     return _table_has_column(cur, "havuz", "donem")
 
@@ -933,15 +941,25 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     ders_cols = {str(r[1]) for r in cur.fetchall()}
     has_fakulte_col = "fakulte_id" in ders_cols
     has_bolum_col = "bolum_id" in ders_cols
+    has_bolum_table = _table_exists(cur, "bolum")
+
+    elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    has_elective_filter = elective_predicate != "0=1"
+
+    def _elective_filter(course_ids):
+        normalized = {int(d) for d in (course_ids or []) if d is not None}
+        if not normalized:
+            return set()
+        return filter_elective_course_ids(cur, normalized) if has_elective_filter else normalized
 
     curriculum_ids = _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem)
-    curriculum_ids = filter_elective_course_ids(cur, curriculum_ids)
+    curriculum_ids = _elective_filter(curriculum_ids)
 
     aday_dersler = set(curriculum_ids)
-    elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    candidate_predicate = elective_predicate if has_elective_filter else "1=1"
 
-    if elective_predicate != "0=1":
-        if has_fakulte_col and has_bolum_col:
+    if candidate_predicate:
+        if has_fakulte_col and has_bolum_col and has_bolum_table:
             cur.execute(
                 f"""
                 SELECT DISTINCT d.ders_id
@@ -954,7 +972,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                         WHERE b.bolum_id = d.bolum_id AND b.fakulte_id = ?
                     )
                 )
-                  AND {elective_predicate}
+                  AND {candidate_predicate}
                 """,
                 (fakulte_id, fakulte_id),
             )
@@ -964,18 +982,18 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                 SELECT DISTINCT d.ders_id
                 FROM ders d
                 WHERE d.fakulte_id = ?
-                  AND {elective_predicate}
+                  AND {candidate_predicate}
                 """,
                 (fakulte_id,),
             )
-        elif has_bolum_col:
+        elif has_bolum_col and has_bolum_table:
             cur.execute(
                 f"""
                 SELECT DISTINCT d.ders_id
                 FROM ders d
                 JOIN bolum b ON d.bolum_id = b.bolum_id
                 WHERE b.fakulte_id = ?
-                  AND {elective_predicate}
+                  AND {candidate_predicate}
                 """,
                 (fakulte_id,),
             )
@@ -984,7 +1002,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                 f"""
                 SELECT DISTINCT d.ders_id
                 FROM ders d
-                WHERE {elective_predicate}
+                WHERE {candidate_predicate}
                 """
             )
         aday_dersler.update(int(r[0]) for r in cur.fetchall() if r and r[0] is not None)
@@ -1001,8 +1019,8 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     cur.execute(havuz_query, tuple(havuz_params))
     aday_dersler.update(int(r[0]) for r in cur.fetchall() if r and r[0] is not None)
 
-    aday_dersler.update(filter_elective_course_ids(cur, include_course_ids))
-    aday_dersler = filter_elective_course_ids(cur, aday_dersler)
+    aday_dersler.update(_elective_filter(include_course_ids))
+    aday_dersler = _elective_filter(aday_dersler)
 
     if not aday_dersler:
         return {
@@ -1046,7 +1064,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     curriculum_course_ids = _get_curriculum_course_ids(
         cur=cur, fakulte_id=fakulte_id, akademik_yil=akademik_yil, donem=donem
     )
-    curriculum_course_ids = filter_elective_course_ids(cur, curriculum_course_ids)
+    curriculum_course_ids = _elective_filter(curriculum_course_ids)
 
     curriculum_courses = sorted(d for d in aday_dersler if d in curriculum_course_ids)
     pool_courses = sorted(d for d in aday_dersler if d not in curriculum_course_ids)

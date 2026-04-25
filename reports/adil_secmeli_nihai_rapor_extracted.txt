@@ -1,0 +1,363 @@
+
+
+--- PAGE 1 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+ADIL SECMELI
+Algoritma Karsilastirma ve Karar Destek 
+Platformu
+Nihai Planlama ve Projelendirme Raporu
+Bu belge, mevcut Adil Secmeli projesinin klasik bir ders secme uygulamasindan  
+cikarilarak  cok  algoritmali,  karsilastirmali  ve  karar  destek  odakli  bir  platforma  
+donusturulmesi icin hazirlanmistir.
+Raporun amaci; proje kapsamini netlestirmek, veri stratejisini tanimlamak, algoritma  
+gruplarini siniflandirmak, benchmark ve metrik altyapisini belirlemek ve gelistirme  
+surecini teslim edilebilir asamalara ayirmaktir.
+Bu  yapi  sayesinde  proje  yalnizca  calisan  bir  yazilim  olmakla  kalmayacak;  ayni  
+zamanda akademik dayanaklari olan, olculebilir, karsilastirilabilir ve savunulabilir bir  
+sistem haline gelecektir.
+Tarih: 22 Nisan 2026
+
+--- PAGE 2 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+1. Giris ve Donusum Vizyonu
+Projenin  cikis  noktasi,  ortak  secmeli  ders  tercihlerini  inceleyen  akademik  bir  
+calismayi  yazilimsal  olarak  yorumlama  fikridir.  Ancak  bu  yapi  tek  basina  sinirli  
+kalmakta; sadece secim yapan bir uygulama olmanin otesine gecememektedir.
+Bu  raporda  onerilen  yeni  yon,  projeyi  ders  secme  uygulamasindan  cikarip  bir  
+algoritma deney laboratuvari ve karar destek platformu haline getirmektir. Boylece  
+sistem yalnizca veri tutan veya secim yapan bir arac degil; farkli algoritmalarin ayni  
+problem uzayindaki davranislarini olcen, karsilastiran ve anlamlandiran bir yapıya  
+donusur.
+Bu donusum, projeyi hem akademik acidan daha guclu hem de yazilim muhendisligi  
+bakimindan  daha  olgun  bir  seviyeye  tasir.  Ozellikle  mevcut  repoda  bulunan  
+masaustu uygulama, REST API, Alembic migration duzeni, dual-semester motoru,  
+raporlama servisi ve akademik-plan endpointi gibi bilesenler bu genisleme icin guclu  
+bir cekirdek olusturmaktadir.
+2. Problem Tanimi ve Kapsam
+Universitelerde  ogrencilerin  ders  secim  davranislari  birden  fazla  degiskenden  
+etkilenir.  Fakulte,  bolum,  cinsiyet,  ders  icerigi,  ogretim  uyesi  etkisi,  arkadas  
+tavsiyesi, kisisel gelisim beklentisi ve mezuniyet katkisi gibi faktorler karar surecinde 
+birlikte rol oynar.
+Bu nedenle sistemin cozecegi problem tek boyutlu degildir. Ogrencinin hangi dersi  
+sececeginin  tahmini,  ogrenciye  uygun  derslerin  onerilmesi,  ogrencilerin  ilgi  
+profillerine  gore  gruplanmasi,  kontenjanli  derslere  adil  yerlestirme  yapilmasi  ve  
+mufredat duzeyinde karar destek saglanmasi ayni proje kapsaminda ele alinmalidir.
+Nihai hedef, tek algoritmali bir cozum gelistirmek degil; farkli algoritma gruplarini  
+ortak  veri  zemini  uzerinde  test  eden,  hiz-dogruluk-adalet-aciklanabilirlik  
+eksenlerinde karsilastiran moduler bir cerceve olusturmaktir.
+3. Hedef Tanimi
+Adil  Secmeli  projesinin  nihai  hedefi,  farkli  veri  senaryolari  ve  karar  problemleri  
+uzerinde  calisabilen  bir  Algoritma  Karsilastirma  ve  Karar  Destek  Cercevesi  
+olusturmaktir.
+Bu hedef dogrultusunda sistemin beklenen temel islevleri su sekilde tanimlanabilir:  
+gercek ve sentetik veriyle calisma, birden fazla algoritma grubunu ayni veri uzerinde  
+kosturma, benchmark sonuclari uretme, metriklerle karsilastirma yapma ve duruma  
+en uygun algoritmayi onerebilme.
+Boyle bir yapi sayesinde proje, sadece islevsel bir uygulama degil; ayni zamanda  
+kucuk capli bir arastirma platformu ve urun prototipi niteligine kavusur.
+
+--- PAGE 3 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+4. Sistem Mimarisi
+Sistem  alti  ana  katmandan  olusacak  sekilde  tasarlanmistir.  Her  katman  ayrik  
+sorumluluk  alanlarina  sahip  olacak  ve  mevcut  repo  yapisiyla  uyumlu  olarak  
+genisletilecektir.
+4.1 Veri Katmani: Gercek veri, makaleden turetilmis veri, sentetik veri ve ozellik  
+muhendisligi sureclerini kapsar.
+4.2 Algoritma Katmani:  MCDM, makine ogrenmesi, kumeleme ve optimizasyon  
+algoritmalarini ortak bir arayuz altinda toplar.
+4.3  Benchmark  Katmani:  Ayni  veri  seti  uzerinde  farkli  algoritmalarin  tekrar  
+edilebilir bicimde calistirilmasini ve sonuclarin kaydini saglar.
+4.4 Metrik Katmani:  Dogruluk, onerı kalitesi, adalet, performans ve akademik  
+tutarlilik olcumlerini icerir.
+4.5  Karar  Katmani:  Algorithm  Manager  veya  benzeri  bir  secim  motoru  ile  
+senaryoya uygun algoritmayi oneren mantigi barindirir.
+4.6 Gorsellestirme ve Raporlama Katmani:  Dashboard, API ciktilari ve rapor  
+ekranlari uzerinden sonuclarin sunulmasini saglar.
+5. Veri Stratejisi
+Veri stratejisi bu projenin en kritik unsurudur. Akademik guvenilirlik ile muhendislik  
+olgunlugunu  ayni  anda  gosterebilmek  icin  gercek  veri  ve  sentetik  veri  birlikte  
+kullanilmalidir; ancak gelistirme sirasinda once gercek veriyle dogruluk, daha sonra  
+sentetik veriyle olcek testi yapilmalidir.
+Makalede yer alan 5389 ogrenci ve 115 OSD dersi, sistem icin guclu bir ground truth  
+zemini saglamaktadir. Tercihler, fakulte, bolum, cinsiyet ve anket faktorleri birlikte  
+ele alindigi icin veri modeli yalnizca tek bir secim bilgisinden ibaret olmayacak; cok  
+boyutlu bir karar uzayi barindiracaktir.
+Eksik alanlar ile turetilmis alanlar acik sekilde ayrilmalidir. Ornegin GPA, ders zorluk  
+skoru veya hoca skoru gibi makalede dogrudan tam olarak yer almayan bilesenler  
+sentetik veya derived olarak etiketlenmeli, gercek veri ile karistirilmamalidir.
+5.1 Veri Turleri
+Veri Turu Amac Aciklama
+Raw Real Akademik dogrulama
+Makaleden veya gercek 
+kaynaktan alinan temel 
+veri.
+Derived from Paper Eksik alan tamamlama Makalede dolayli bulunan 
+veya turetilen degiskenler.
+Synthetic Stres testi ve olcekleme Dagilim koruyan 
+simulasyon verileri.
+
+--- PAGE 4 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+5.2 Temel Varliklar ve Ozellikler
+ Student: ogrenciye ait fakulte, bolum, cinsiyet, donem, GPA ve benzeri alanlar.
+ Course: dersin bagli oldugu fakulte, bolum, kontenjan, zorluk skoru, ogretim 
+uyesi etkisi ve benzeri nitelikler.
+ Preference: ogrencinin ders tercih sirasi ve secim davranisini gosteren kayitlar.
+ SurveyResponse: anket kaynakli memnuniyet ve karar faktorleri.
+ Allocation: yerlestirme sonuclari ve kontenjan bazli kararlar.
+ BenchmarkRun ve MetricResult: deney sonuclarinin tekrar uretilebilir bicimde 
+saklanmasini saglayan varliklar.
+5.3 Feature Engineering ve Agirlik Vektorlugu
+Kategorik degiskenler icin one-hot encoding, label encoding veya ordinal encoding  
+kullanilabilecek; secilen algoritmaya gore donusum stratejisi degistirilebilir bicimde  
+kurgulanacaktir.
+Anket  verileri  1-5  Likert  veya  0-1  normalize  skor  seklinde  yorumlanarak  ders  
+memnuniyeti, ders katkisi ve genel tatmin gibi bilesik skorlar uretilecektir.
+Makaledeki agirlik vektoru mantigi veri katmaninda temel bir kavram olarak ele  
+alinacak; boylece MCDM algoritmalari ile akademik bulgular arasinda dogrudan bir  
+kopru kurulacaktir.
+6. Sentetik Veri Motoru
+Sentetik veri motoru, sistemin yalnizca akademik degil ayni zamanda muhendislik  
+olarak da olgun oldugunu gosteren ana bilesenlerden biridir. Bu motor, gercek veri  
+dagilimini bozmadan daha buyuk veri setleri olusturmak icin kullanilacaktir.
+Bootstrap tabanli uretim, gurultu ekleme, sinif dengesizligi yaratma, kapasite sinirli  
+ders simulasyonu ve random seed standardizasyonu bu katmanin temel bilesenleri  
+olacaktir.
+Uretilecek  senaryolarin  en  az  5k,  10k,  50k,  100k  ve  250k  kayit  seviyelerinde  
+tanimlanmasi planlanmaktadir. Bu sayede benchmark ve throughput testleri farkli  
+olceklerde tekrar edilebilir bicimde yapilabilir.
+7. Algoritma Gruplari
+Sistemde  yer  alacak  algoritmalar  problem  tiplerine  gore  dort  ana  grupta  
+siniflandirilacaktir.  Bu  siniflandirma  hem  yazilim  mimarisini  hem  de  benchmark  
+tablolarini sade ve anlasilir hale getirir.
+7.1 Cok Kriterli Karar Verme (MCDM)
+Bu  grup,  ogrenciye  en  uygun  derslerin  kural-temelli  ve  aciklanabilir  bicimde  
+siralanmasina odaklanir. AHP ile kriter agirliklari hesaplanacak, TOPSIS ve VIKOR ile  
+ideal cozum yakinligi uzerinden dersler siralanacaktir.
+
+--- PAGE 5 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+Tutarlilik  orani  hesabinin  AHP  modulu  icine  dahil  edilmesi  gereklidir.  Boylece  
+agirliklandirma sureci savunulabilir ve akademik olarak daha guclu hale gelir.
+PROMETHEE veya ELECTRE gibi ek bir yontemin opsiyonel olarak dahil edilmesi,  
+sistemin yalnizca iki algoritmayla sinirli olmadigini gosterecektir.
+7.2 Makine Ogrenmesi
+Bu  grup,  ogrencinin  hangi  dersi  veya  hangi  fakulteyi  sececegini  tahmin  etmek, 
+memnuniyet olasiligini hesaplamak ve genellenebilir tahminler uretmek amaciyla  
+kullanilacaktir.
+Majority  class,  random  choice  ve  popularity-based  recommender  gibi  baseline  
+modeller  mutlaka  bulunmali;  cunku  karsilastirma,  baz  cizgisi  olmadan  anlamli  
+degildir.
+Naive Bayes, Logistic Regression ve Random Forest ilk cekirdek modeller olarak  
+secilmeli;  ileri  seviye  asamada  XGBoost  veya  LightGBM  entegrasyonu  
+dusunulmelidir. Ayrica feature importance veya SHAP benzeri aciklanabilirlik ciktilari  
+ile kararlarin nedenleri de desteklenmelidir.
+7.3 Kumeleme ve Kesifsel Analiz
+Kumeleme algoritmalari, ogrencileri ilgi profillerine gore ayirmak ve veri icindeki gizli 
+oruntuleri ortaya cikarmak icin kullanilacaktir.
+K-Means, Hierarchical Clustering ve DBSCAN temel adaylardir. Silhouette, Davies-
+Bouldin ve Calinski-Harabasz gibi metriklerle kumeleme kalitesi olculecektir.
+Bu  grup  sayesinde  makaledeki  belirli  oruntulerin  sistem  tarafindan  dogal  olarak 
+yakalanip yakalanmadigi test edilebilir. Ornegin EEM ogrencilerinin fizik ile iliskili  
+derslere  ilgisinin  kume  yapisinda  ortaya  cikmasi  akademik  tutarlilik  acisindan  
+onemlidir.
+7.4 Yerlestirme ve Optimizasyon
+Kontenjanli ders secim problemleri icin adil dagitim ve optimizasyon algoritmalari  
+gerekir. Bu kapsamda Gale-Shapley tabanli bir yerlestirme modulu temel cozum  
+olarak gelistirilecektir.
+Karsilastirma  amaciyla  random  allocation,  first-come-first-served,  greedy  utility  
+maximization ve minimum regret allocation gibi alternatif allocatorlar da sisteme  
+eklenmelidir.
+Bu grubun asil hedefi, yalnizca yerlestirme yapmak degil; farkli adalet tanimlari  
+altinda  hangi  yontemin  daha  dengeli  ve  daha  tatmin  edici  sonuc  verdigini  
+gostermektir.
+8. Algoritma Sozlesmesi ve Ortak Arayuz
+Tum algoritmalarin ortak bir sozlesmeye uymasi, sistemin benchmark altyapisini  
+sadeleştirir ve yeni algoritmalarin eklenmesini kolaylastirir.
+
+--- PAGE 6 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+Temel  arayuzde  fit,  predict,  recommend,  score  ve  explain  benzeri  metotlar  
+bulunmali; problem turlerine gore IPredictor, IRanker, IAllocator ve IClusterer gibi alt  
+arayuzler tanimlanmalidir.
+Her algoritma standart bir cikti uretmelidir: oneriler veya tahminler, guven skoru,  
+aciklama bilgisi, calisma suresi ve kullanilan parametreler. Bu standart cikti olmadan  
+saglikli benchmark raporu olusturmak zordur.
+9. Benchmark ve Deney Yonetimi
+Projenin kalbi benchmark sistemidir. Ayni veri seti, ayni senaryo ve kontrol edilen  
+parametreler  altinda  farkli  algoritmalar  kosturulacak;  elde  edilen  sonuclar  ortak  
+metriklerle karsilastirilacaktir.
+ExperimentRunner benzeri bir bilesen veri setini, algoritmayi, konfigürasyonu ve  
+hedef  problemi  alip  deney  baslatacak;  sonuclari  BenchmarkRun  ve  MetricResult 
+yapilarina kaydedecektir.
+Bu yapi sayesinde tekrar uretilebilir deneyler, senaryo bazli karsilastirma tablolari ve  
+dashboard  tarafinda  kullanilabilecek  gecmis  performans  kayitlari  olusturulmus  
+olacaktir.
+10. Metrik Sistemi
+Algoritmalarin  yalnizca  calisiyor  olmasi  yeterli  degildir;  ayni  zamanda  ne  kadar  
+dogru, ne kadar hizli, ne kadar adil ve ne kadar aciklanabilir olduklari da olculmelidir.
+Metrik Grubu Ornek Metrikler Amac
+Dogruluk
+Accuracy, Precision, Recall, 
+F1, ROC-AUC, Top-K 
+Accuracy
+Tahmin gucunu olcmek
+Oneri Kalitesi Hit@K, NDCG@K, MAP@K, 
+Coverage, Diversity
+Oneri sistemlerini 
+degerlendirmek
+Kumeleme Silhouette, Davies-Bouldin, 
+Purity
+Kesifsel analizin kalitesini 
+olcmek
+Adalet
+Ortalama tercih sirasi, ilk 3 
+tercih orani, envy score, 
+seat fill rate
+Yerlestirme ve dagitim 
+dengesini olcmek
+Performans
+Egitim suresi, inference 
+suresi, bellek kullanimi, 
+throughput
+Sistem verimliligini gormek
+Akademik Tutarlilik
+Populer derslerin dogru 
+siralanmasi, makale 
+oruntulerini yakalama
+Makaleyle ortusmeyi test 
+etmek
+
+--- PAGE 7 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+11. Dashboard ve Raporlama
+Dashboard  katmani,  algoritmalarin  yalnizca  backend  tarafinda  calismasini  degil;  
+sonuclarin anlasilir ve karsilastirilabilir bicimde sunulmasini da saglayacaktir.
+Bu ekranda veri seti secimi, senaryo secimi, algoritmalari yan yana karsilastirma,  
+metrik tablolari, grafikler ve en iyi algoritma onerisi yer almalidir.
+Mevcut  repoda  bulunan  raporlama  servisleri  ve  REST  API  mimarisi,  dashboard  
+tarafinin uygulanmasi icin ciddi bir avantaj saglamaktadir.
+12. Algorithm Manager ve Meta Karar Katmani
+Baslangic asamasinda kural tabanli bir Algorithm Manager yeterlidir. Ornegin veri  
+boyutu 10 binin altindaysa ve aciklanabilirlik onemliyse AHP, TOPSIS veya Logistic  
+Regression  tercih  edilebilir;  veri  buyudukce  Random  Forest  veya  XGBoost  one  
+cikarilabilir.
+Kontenjan ve yerlestirme problemi bulunan durumlarda Gale-Shapley veya diger  
+allocatorlar;  kesifsel  analiz  ihtiyacinda  ise  K-Means  veya  Hierarchical  Clustering  
+secilebilir.
+Daha ileri bir asamada bu secim mantigi, gecmis benchmark sonuclarina gore en  
+uygun algoritmayi otomatik onerilen bir meta-karar katmanina donusturulebilir.
+13. Onerilen Klasor Yapisi
+Yeni moduller mevcut cekirdegi bozmadan eklenecek sekilde su yapida organize  
+edilebilir:
+app/
+  algorithms/
+    base.py
+    mcdm/
+    ml/
+    clustering/
+    allocation/
+  benchmark/
+    runner.py
+    registry.py
+    scenarios.py
+    result_store.py
+  datasets/
+    loaders.py
+    preprocess.py
+    feature_engineering.py
+    synthetic_generator.py
+  metrics/
+    classification.py
+    ranking.py
+    clustering.py
+    fairness.py
+    performance.py
+
+--- PAGE 8 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+  dashboard/
+    api_routes.py
+    serializers.py
+  services/
+    algorithm_manager.py
+    experiment_service.py
+14. Gelistirme Fazlari ve 50 Adimlik Yol Haritasinin 
+Sentezi
+Daha once belirlenen detayli yol haritasi, burada uygulama kolayligi icin bes ana  
+gelistirme fazi halinde birlestirilmistir. Her faz, somut ciktilar ve teslim edilebilir alt  
+urunler icerir.
+Faz 1 - Veri ve Altyapi: README kapsam guncellemesi, veri sozlugu, ortak veri  
+modelleri, gercek veri pipelinei, eksik veri politikalari, sentetik veri altyapisi ve ortak  
+algoritma arayuzleri.
+Faz 2 - Ilk Calisan Algoritmalar: Baseline modeller, AHP, TOPSIS, Naive Bayes,  
+Random Forest ve Gale-Shapley gibi cekirdek algoritmalarin entegrasyonu.
+Faz 3 - Benchmark ve Metrikler: ExperimentRunner, sonuc deposu, karsilastirma 
+senaryolari, siniflandirma ve adalet metriklerinin aktif hale getirilmesi.
+Faz 4 - Dashboard ve Raporlama:  Algoritmalari yan yana gosteren ekranlar,  
+senaryo secimi, grafikler ve rapor servislerinin genisletilmesi.
+Faz 5 - Meta Karar ve Olcekleme:  100k ve uzeri sentetik testler, throughput  
+olcumleri ve Algorithm Manager ile otomatik secim mantiginin gelistirilmesi.
+15. Teslimat Plani
+1. Teslimat 1: Temiz veri seti, preprocessing akisi, sentetik veri uretici ve 
+benchmark kayit modeli.
+2. Teslimat 2: Baseline algoritmalar ile birlikte AHP, TOPSIS, Naive Bayes, Random 
+Forest ve Gale-Shapley modullerinin ilk calisan surumu.
+3. Teslimat 3: Accuracy, precision, recall, F1, ranking metricleri, fairness metricleri 
+ve confusion matrix tabanli raporlamanin tamamlanmasi.
+4. Teslimat 4: Dashboard uzerinden veri seti secimi, algoritma karsilastirmasi ve 
+grafiksel sonuc gosterimi.
+5. Teslimat 5: Algorithm Manager ve benchmark sonuclarina dayali meta-karar 
+mantiginin devreye alinmasi.
+16. Demo ve Sunum Stratejisi
+Ilk demoda uc senaryonun mutlaka gosterilmesi tavsiye edilir: gercek veri uzerinde  
+AHP/TOPSIS, gercek veri uzerinde ML modelleri ve kontenjanli veri senaryosunda  
+Gale-Shapley ile rastgele yerlestirmenin karsilastirilmasi.
+
+--- PAGE 9 ---
+Adil Secmeli - Nihai Proje Planlama ve Projelendirme Raporu
+Hazirlayan: Cengaver | 22 Nisan 2026
+Bu uc senaryo bir arada sunuldugunda sistemin hem akademik hem de muhendislik  
+kimligi belirgin hale gelir. Biri aciklanabilir karar verme, biri veri odakli tahminleme,  
+digeri ise adalet ve optimizasyon boyutunu temsil eder.
+Sunum sirasinda kullanilabilecek ana cumle su sekilde ozetlenebilir: Bu projede tek  
+bir  cozum  uretmek  yerine,  farkli  algoritmalarin  ayni  problem  uzerindeki  
+davranislarini karsilastiran ve en uygun cozumu dinamik olarak secebilen bir karar  
+destek sistemi gelistirilmistir.
+17. Beklenen Katkilar ve Sonuc
+Bu  proje  tamamlandiginda  ortaya  cikacak  yapi,  klasik  bir  ders  secme  
+uygulamasindan belirgin bicimde farkli olacaktir. Sistem; veri yonetimi, algoritma  
+tasarimi,  benchmark,  adalet  metrikleri,  dashboard  ve  meta-karar  katmaniyla  
+butuncul bir platform haline gelecektir.
+Akademik acidan bakildiginda proje makaledeki egilimlerin ne kadar iyi yakalandigini 
+gosterecek,  yazilim  muhendisligi  acisindan  ise  modulerlik,  tekrar  uretilebilirlik,  
+olcekleme ve operasyonel disiplin sergileyecektir.
+Sonuc olarak Adil Secmeli, veriye dayali, karsilastirmali, aciklanabilir ve adil kararlar  
+ureten  bir  algoritma  deney  laboratuvari  ve  karar  destek  platformu  olarak  
+konumlandirilabilir.  Bu  donusum,  projeyi  hem  daha  savunulabilir  hem  de  daha  
+etkileyici bir bitirme projesi seviyesine tasir.
+Ek A - Hedeflenen Problem Tipleri
+ Recommendation: ogrenciye uygun ders onerme.
+ Prediction: ogrencinin secimini veya memnuniyetini tahmin etme.
+ Segmentation: ogrencileri ilgi profillerine gore gruplama.
+ Allocation: kontenjanli derslere adil yerlestirme.
+ Curriculum Decision: ders ekleme, kaldirma veya yeniden duzenleme kararlarini 
+destekleme.
+Ek B - Onerilen Ilk Uygulama Sirasi
+6. Gercek veri pipelinei
+7. Baseline modeller ile AHP ve TOPSIS
+8. Naive Bayes ve Random Forest
+9. Gale-Shapley ve alternatif allocatorlar
+10.Benchmark runner
+11.Dashboard
+12.Sentetik veri ve 100k testleri
+13.Meta secim motoru

@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 from openpyxl.styles import Font
 
+from app.db.sqlite_connection import connect_sqlite, is_database_locked_error
 from app.db.schema_compat import ensure_criteria_import_schema, ensure_reporting_schema
 from app.services.course_matcher import (
     CourseCandidate,
@@ -429,9 +430,14 @@ def load_criteria_template_context(
     if not os.path.exists(db_path):
         raise FileNotFoundError("Veritabani bulunamadi.")
 
-    conn = sqlite3.connect(db_path)
+    conn = connect_sqlite(db_path)
     try:
-        ensure_reporting_schema(conn)
+        try:
+            ensure_reporting_schema(conn)
+        except sqlite3.OperationalError as exc:
+            if not is_database_locked_error(exc):
+                raise
+            conn.rollback()
         cur = conn.cursor()
         faculty_name = _resolve_faculty_name(cur, int(faculty_id))
         if not faculty_name:
@@ -1200,8 +1206,7 @@ def import_criteria_excel(
     except Exception as exc:
         return {"ok": False, "message": f"Kriter dosyasi okunamadi: {exc}", "errors": [str(exc)]}
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(db_path, row_factory=True)
     try:
         ensure_reporting_schema(conn)
         ensure_criteria_import_schema(conn)

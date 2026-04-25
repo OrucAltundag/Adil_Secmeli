@@ -1,0 +1,1273 @@
+{
+  "run": {
+    "run_id": "run_81e7e41ad5fc",
+    "scenario_name": "allocation_fairness",
+    "dataset_name": "sample_benchmark_dataset",
+    "started_at": "2026-04-23T12:33:33.246748",
+    "finished_at": "2026-04-23T12:33:33.307587",
+    "status": "completed",
+    "algorithms": [
+      "GaleShapley",
+      "RandomAllocation",
+      "GreedyAllocation",
+      "FirstComeFirstServed",
+      "MinimumRegretAllocation"
+    ],
+    "metrics": [
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 10.131100076250732,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1480.5894608782828,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.038825035095214844,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 2.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.255500023253262,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1332.681797255635,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.03798198699951172,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 10.353899910114706,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1448.729476836697,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.03774452209472656,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.334800045005977,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1323.3581483961757,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.03877544403076172,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.479400098323822,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1306.6884916913248,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.038349151611328125,
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  "payload": {
+    "scenario": {
+      "name": "allocation_fairness",
+      "description": "Capacity-constrained allocation and fairness comparison.",
+      "problem_type": "allocation",
+      "dataset_layer": "raw_real",
+      "table_name": "preferences",
+      "target_column": "course_id",
+      "top_k": 3,
+      "use_synthetic_tier": null,
+      "algorithm_names": [
+        "GaleShapley",
+        "RandomAllocation",
+        "GreedyAllocation",
+        "FirstComeFirstServed",
+        "MinimumRegretAllocation"
+      ],
+      "metadata": {}
+    },
+    "results": {
+      "GaleShapley": {
+        "output": {
+          "algorithm_name": "GaleShapley",
+          "task_type": "allocation",
+          "predictions": [],
+          "recommendations": [],
+          "assignments": [
+            {
+              "student_id": 1,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 2,
+              "course_id": 1001,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 3,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 4,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 5,
+              "course_id": 1007,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 6,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 7,
+              "course_id": 1004,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 8,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 9,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 10,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 11,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 12,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 13,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 14,
+              "course_id": 1008,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            },
+            {
+              "student_id": 15,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GaleShapley"
+            }
+          ],
+          "confidence": 1.0,
+          "explanation": "Gale-Shapley many-to-one stable matching using student GPA as course-side priority.",
+          "runtime_ms": 10.113699943758547,
+          "parameters": {},
+          "artifacts": {}
+        },
+        "metrics": {
+          "fairness": {
+            "average_rank": 1.0,
+            "top_k_satisfaction": 1.0,
+            "envy_score": 0.0,
+            "seat_fill_rate": 0.40540540540540543
+          },
+          "performance": {
+            "latency_ms": 10.131100076250732,
+            "throughput_per_sec": 1480.5894608782828,
+            "memory_peak_mb": 0.038825035095214844
+          }
+        }
+      },
+      "RandomAllocation": {
+        "output": {
+          "algorithm_name": "RandomAllocation",
+          "task_type": "allocation",
+          "predictions": [],
+          "recommendations": [],
+          "assignments": [
+            {
+              "student_id": 1,
+              "course_id": 1007,
+              "rank_received": 3,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 2,
+              "course_id": 1001,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 3,
+              "course_id": 1006,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 4,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 5,
+              "course_id": 1002,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 6,
+              "course_id": 1001,
+              "rank_received": 3,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 7,
+              "course_id": 1005,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 8,
+              "course_id": 1002,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 9,
+              "course_id": 1003,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 10,
+              "course_id": 1001,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 11,
+              "course_id": 1002,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 12,
+              "course_id": 1001,
+              "rank_received": 3,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 13,
+              "course_id": 1001,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 14,
+              "course_id": 1008,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            },
+            {
+              "student_id": 15,
+              "course_id": 1006,
+              "rank_received": 2,
+              "allocated": true,
+              "algorithm": "RandomAllocation"
+            }
+          ],
+          "confidence": 1.0,
+          "explanation": "Random capacity-constrained allocation baseline.",
+          "runtime_ms": 11.239300016313791,
+          "parameters": {
+            "random_seed": 42
+          },
+          "artifacts": {}
+        },
+        "metrics": {
+          "fairness": {
+            "average_rank": 2.0,
+            "top_k_satisfaction": 1.0,
+            "envy_score": 0.0,
+            "seat_fill_rate": 0.40540540540540543
+          },
+          "performance": {
+            "latency_ms": 11.255500023253262,
+            "throughput_per_sec": 1332.681797255635,
+            "memory_peak_mb": 0.03798198699951172
+          }
+        }
+      },
+      "GreedyAllocation": {
+        "output": {
+          "algorithm_name": "GreedyAllocation",
+          "task_type": "allocation",
+          "predictions": [],
+          "recommendations": [],
+          "assignments": [
+            {
+              "student_id": 1,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 2,
+              "course_id": 1001,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 3,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 4,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 5,
+              "course_id": 1007,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 6,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 7,
+              "course_id": 1004,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 8,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 9,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 10,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 11,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 12,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 13,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 14,
+              "course_id": 1008,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            },
+            {
+              "student_id": 15,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "GreedyAllocation"
+            }
+          ],
+          "confidence": 1.0,
+          "explanation": "Greedy utility maximization using inverse rank utility.",
+          "runtime_ms": 10.3386000264436,
+          "parameters": {},
+          "artifacts": {}
+        },
+        "metrics": {
+          "fairness": {
+            "average_rank": 1.0,
+            "top_k_satisfaction": 1.0,
+            "envy_score": 0.0,
+            "seat_fill_rate": 0.40540540540540543
+          },
+          "performance": {
+            "latency_ms": 10.353899910114706,
+            "throughput_per_sec": 1448.729476836697,
+            "memory_peak_mb": 0.03774452209472656
+          }
+        }
+      },
+      "FirstComeFirstServed": {
+        "output": {
+          "algorithm_name": "FirstComeFirstServed",
+          "task_type": "allocation",
+          "predictions": [],
+          "recommendations": [],
+          "assignments": [
+            {
+              "student_id": 1,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 2,
+              "course_id": 1001,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 3,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 4,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 5,
+              "course_id": 1007,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 6,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 7,
+              "course_id": 1004,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 8,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 9,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 10,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 11,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 12,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 13,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 14,
+              "course_id": 1008,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            },
+            {
+              "student_id": 15,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "FirstComeFirstServed"
+            }
+          ],
+          "confidence": 1.0,
+          "explanation": "FCFS allocation in student iteration order.",
+          "runtime_ms": 11.321700061671436,
+          "parameters": {},
+          "artifacts": {}
+        },
+        "metrics": {
+          "fairness": {
+            "average_rank": 1.0,
+            "top_k_satisfaction": 1.0,
+            "envy_score": 0.0,
+            "seat_fill_rate": 0.40540540540540543
+          },
+          "performance": {
+            "latency_ms": 11.334800045005977,
+            "throughput_per_sec": 1323.3581483961757,
+            "memory_peak_mb": 0.03877544403076172
+          }
+        }
+      },
+      "MinimumRegretAllocation": {
+        "output": {
+          "algorithm_name": "MinimumRegretAllocation",
+          "task_type": "allocation",
+          "predictions": [],
+          "recommendations": [],
+          "assignments": [
+            {
+              "student_id": 1,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 2,
+              "course_id": 1001,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 3,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 4,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 5,
+              "course_id": 1007,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 6,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 7,
+              "course_id": 1004,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 8,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 9,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 10,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 11,
+              "course_id": 1006,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 12,
+              "course_id": 1003,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 13,
+              "course_id": 1002,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 14,
+              "course_id": 1008,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            },
+            {
+              "student_id": 15,
+              "course_id": 1005,
+              "rank_received": 1,
+              "allocated": true,
+              "algorithm": "MinimumRegretAllocation"
+            }
+          ],
+          "confidence": 1.0,
+          "explanation": "Minimum-regret assignment via global low-rank matching (mean rank=1.00).",
+          "runtime_ms": 11.464400100521743,
+          "parameters": {},
+          "artifacts": {
+            "mean_rank_regret": 1.0
+          }
+        },
+        "metrics": {
+          "fairness": {
+            "average_rank": 1.0,
+            "top_k_satisfaction": 1.0,
+            "envy_score": 0.0,
+            "seat_fill_rate": 0.40540540540540543
+          },
+          "performance": {
+            "latency_ms": 11.479400098323822,
+            "throughput_per_sec": 1306.6884916913248,
+            "memory_peak_mb": 0.038349151611328125
+          }
+        }
+      }
+    },
+    "metrics": [
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 10.131100076250732,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1480.5894608782828,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GaleShapley",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.038825035095214844,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 2.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.255500023253262,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1332.681797255635,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "RandomAllocation",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.03798198699951172,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 10.353899910114706,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1448.729476836697,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "GreedyAllocation",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.03774452209472656,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.334800045005977,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1323.3581483961757,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "FirstComeFirstServed",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.03877544403076172,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "average_rank",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "top_k_satisfaction",
+        "metric_value": 1.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "envy_score",
+        "metric_value": 0.0,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "fairness",
+        "metric_name": "seat_fill_rate",
+        "metric_value": 0.40540540540540543,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "performance",
+        "metric_name": "latency_ms",
+        "metric_value": 11.479400098323822,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "performance",
+        "metric_name": "throughput_per_sec",
+        "metric_value": 1306.6884916913248,
+        "metadata": {}
+      },
+      {
+        "run_id": "run_81e7e41ad5fc",
+        "algorithm_name": "MinimumRegretAllocation",
+        "metric_group": "performance",
+        "metric_name": "memory_peak_mb",
+        "metric_value": 0.038349151611328125,
+        "metadata": {}
+      }
+    ]
+  }
+}

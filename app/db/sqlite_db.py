@@ -13,6 +13,7 @@ import sqlite3
 from typing import Any, Optional, Sequence
 
 import pandas as pd
+from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
 
 
@@ -36,8 +37,7 @@ class Database:
     def connect(self, db_path: str) -> None:
         if not os.path.exists(db_path):
             raise FileNotFoundError(f"Veritabanı bulunamadı: {db_path}")
-        self.conn = sqlite3.connect(db_path)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = connect_sqlite(db_path, row_factory=True)
         ensure_reporting_schema(self.conn)
         self._migrate_ders_kriterleri_anket()
 

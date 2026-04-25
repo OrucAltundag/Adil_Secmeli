@@ -85,6 +85,34 @@ def _statu_label(statu: int) -> str:
     }.get(statu, f"Bilinmiyor ({statu})")
 
 
+def _not_calculated_step(message: str) -> dict:
+    """Algoritma adimi calismadiginda UI'nin gosterebilecegi standart paket."""
+    return {
+        "status": "not_calculated",
+        "message": message,
+        "elapsed_ms": 0.0,
+    }
+
+
+def _missing_criteria(reason: str) -> dict:
+    """
+    Kriter bulunamadiginda analiz akisini kesmemek icin guvenli bos kriter paketi.
+    Bu degerler karar uretmek icin kullanilmaz; sadece UI'nin tabloyu doldurmasini saglar.
+    """
+    return {
+        "toplam_ogrenci": 0.0,
+        "gecen_ogrenci": 0.0,
+        "basari_ortalamasi": 0.0,
+        "kontenjan": 0.0,
+        "kayitli_ogrenci": 0.0,
+        "basari_orani": 0.0,
+        "doluluk_orani": 0.0,
+        "anket_orani": 0.5,
+        "_missing": True,
+        "_missing_reason": reason,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Veritabanı veri çekiciler
 # ---------------------------------------------------------------------------
@@ -222,6 +250,76 @@ def _fetch_prev_pool(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
         return {"year": prev_year, "statu": int(row[0] or 0),
                 "sayac": int(row[1] or 0), "skor": _safe_float(row[2])}
     return {"year": prev_year, "statu": 0, "sayac": 0, "skor": 0.0}
+
+
+def _fetch_observed_state(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
+    """
+    Secili yil icin eldeki gercek durumu okur.
+    Havuz kaydi varsa onu, yoksa mufredat uyeligini kullanir.
+    """
+    try:
+        cur.execute(
+            """SELECT statu, sayac, skor FROM havuz
+               WHERE CAST(ders_id AS INTEGER)=? AND yil=?
+               ORDER BY rowid DESC LIMIT 1""",
+            (course_id, year),
+        )
+        row = cur.fetchone()
+        if row:
+            return {
+                "year": year,
+                "statu": int(row[0] or 0),
+                "sayac": int(row[1] or 0),
+                "skor": _safe_float(row[2]) if row[2] is not None else None,
+                "source": "havuz",
+            }
+    except sqlite3.OperationalError:
+        try:
+            cur.execute(
+                """SELECT statu, sayac FROM havuz
+                   WHERE CAST(ders_id AS INTEGER)=? AND yil=?
+                   ORDER BY rowid DESC LIMIT 1""",
+                (course_id, year),
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "year": year,
+                    "statu": int(row[0] or 0),
+                    "sayac": int(row[1] or 0),
+                    "skor": None,
+                    "source": "havuz",
+                }
+        except Exception:
+            pass
+
+    try:
+        cur.execute(
+            """SELECT 1
+               FROM mufredat m
+               JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+               WHERE md.ders_id = ? AND m.akademik_yil = ?
+               LIMIT 1""",
+            (course_id, year),
+        )
+        if cur.fetchone():
+            return {
+                "year": year,
+                "statu": STATU_MUFREDATTA,
+                "sayac": 0,
+                "skor": None,
+                "source": "mufredat",
+            }
+    except Exception:
+        pass
+
+    return {
+        "year": year,
+        "statu": STATU_HAVUZDA,
+        "sayac": 0,
+        "skor": None,
+        "source": "default",
+    }
 
 
 def _resolve_course_faculty_id(cur: sqlite3.Cursor, course_meta: dict, course_id: int, year: int) -> Optional[int]:
@@ -654,6 +752,14 @@ def _run_dt(criteria: dict, prev_pool: dict) -> dict:
 def _build_dt_reason(criteria: dict, topsis: dict, in_mufredat: bool,
                      next_statu: int, next_sayac: int, prev_pool: dict) -> str:
     """Karar aciklamasini insan dilinde uretir."""
+    if criteria.get("_missing"):
+        reason = criteria.get("_missing_reason") or "Kriter verisi bulunamadi."
+        return (
+            f"Kriter verisi eksik: {reason} "
+            "Bu nedenle RF/DT ve state machine nihai karar simulasyonu calistirilmadi; "
+            "ekranda dersin mevcut havuz/mufredat durumu ve hesaplanabilen adimlar gosterildi."
+        )
+
     basari = _safe_float(criteria.get("basari_orani")) * 100
     doluluk = _safe_float(criteria.get("doluluk_orani")) * 100
     ortalama_not = _safe_float(criteria.get("basari_ortalamasi"))
@@ -739,7 +845,8 @@ def analyze_single_course(
     Dönüş
     ------
     dict  — Tüm ara çıktıları ve nihai kararı içerir.
-    dict with {"error": "..."} — Veri eksikliği veya kritik hata durumunda.
+    dict with {"error": "..."} — Yalnizca kritik hata durumunda.
+    Kriter eksikligi kritik hata degildir; sonuc kismi analiz olarak doner.
     """
     t_total = time.perf_counter()
 
@@ -773,13 +880,28 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 2. Kriter verisi
         # ------------------------------------------------------------------
+        criteria_missing = False
         try:
             criteria = _fetch_criteria(cur, course_id, year)
             result["criteria"] = criteria
+            result["criteria_status"] = {
+                "ok": True,
+                "message": "Kriter verisi bulundu.",
+            }
         except VeriEksikHatasi as exc:
-            return {"error": str(exc)}
+            criteria_missing = True
+            msg = str(exc)
+            criteria = _missing_criteria(msg)
+            result["criteria"] = criteria
+            result["criteria_status"] = {"ok": False, "message": msg}
+            result["errors"].append(msg)
         except Exception as exc:
-            return {"error": f"Kriter verisi alinamadi: {exc}"}
+            criteria_missing = True
+            msg = f"Kriter verisi alinamadi: {exc}"
+            criteria = _missing_criteria(msg)
+            result["criteria"] = criteria
+            result["criteria_status"] = {"ok": False, "message": msg}
+            result["errors"].append(msg)
 
         # ------------------------------------------------------------------
         # 3. Geçmiş trend verisi
@@ -799,10 +921,16 @@ def analyze_single_course(
         except Exception as exc:
             result["errors"].append(f"Onceki yil havuz kaydi alinamadi: {exc}")
 
+        observed_state = _fetch_observed_state(cur, course_id, year)
+
         # ------------------------------------------------------------------
         # 5. AHP
         # ------------------------------------------------------------------
         ahp_result = _run_ahp(criteria)
+        if criteria_missing and "error" not in ahp_result:
+            ahp_result["note"] = (
+                "AHP agirliklari global karar matrisinden gelir; ders kriteri eksik olsa da gosterildi."
+            )
         result["steps"]["ahp"] = ahp_result
         if "error" in ahp_result:
             result["errors"].append(f"AHP: {ahp_result['error']}")
@@ -829,6 +957,11 @@ def analyze_single_course(
             fakulte_id=fakulte_id,
             donem="G",
         )
+        if criteria_missing and "error" not in topsis_result:
+            topsis_result["message"] = (
+                "Kriter verisi eksik; varsa skor merkezi TOPSIS/havuz fallback "
+                "hesabindan gelir ve nihai karar simulasyonu icin kullanilmadi."
+            )
         result["steps"]["topsis"] = topsis_result
         if "error" in topsis_result:
             result["errors"].append(f"TOPSIS: {topsis_result['error']}")
@@ -841,7 +974,12 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 8. RF
         # ------------------------------------------------------------------
-        rf_result = _run_rf(criteria, prev_pool, db_path=path)
+        if criteria_missing:
+            rf_result = _not_calculated_step(
+                "Kriter verisi eksik oldugu icin RandomForest tahmini yapilmadi."
+            )
+        else:
+            rf_result = _run_rf(criteria, prev_pool, db_path=path)
         result["steps"]["rf"] = rf_result
         if "error" in rf_result:
             result["errors"].append(f"RF: {rf_result['error']}")
@@ -857,9 +995,14 @@ def analyze_single_course(
                 (course_id,)
             )
             row_gt = cur.fetchone()
-            in_mufredat = bool(row_gt and int(row_gt[0]) == STATU_MUFREDATTA)
+            in_mufredat = bool((row_gt and int(row_gt[0]) == STATU_MUFREDATTA)
+                               or observed_state.get("statu") == STATU_MUFREDATTA)
             is_ground_truth = True
             drop_reasons = []
+        elif criteria_missing:
+            in_mufredat = observed_state.get("statu") == STATU_MUFREDATTA
+            is_ground_truth = False
+            drop_reasons = ["Kriter verisi eksik"]
         else:
             if score_available:
                 drop_flag, drop_reasons = should_drop_course(
@@ -879,18 +1022,25 @@ def analyze_single_course(
         # 10. State machine
         # ------------------------------------------------------------------
         if is_ground_truth:
-            cur.execute(
-                "SELECT statu, sayac FROM havuz WHERE CAST(ders_id AS INTEGER)=? AND yil=2022 LIMIT 1",
-                (course_id,)
-            )
-            row_gt2 = cur.fetchone()
-            next_statu = int(row_gt2[0]) if row_gt2 else 0
-            next_sayac = int(row_gt2[1]) if row_gt2 else 0
+            next_statu = int(observed_state.get("statu", 0))
+            next_sayac = int(observed_state.get("sayac", 0))
             sm_note = "2022 Ground Truth: state machine hesabi yapilmadi."
+        elif criteria_missing:
+            next_statu = int(observed_state.get("statu", STATU_HAVUZDA))
+            next_sayac = int(observed_state.get("sayac", 0))
+            src = observed_state.get("source", "mevcut kayit")
+            sm_note = (
+                "Kriter verisi eksik oldugu icin state machine simulasyonu yapilmadi. "
+                f"Mevcut durum kaynagi: {src}."
+            )
         elif not score_available:
-            next_statu = int(prev_pool.get("statu", 0))
-            next_sayac = int(prev_pool.get("sayac", 0))
-            sm_note = "Kesinlesme puani henuz hesaplanmadigi icin state machine simulasyonu yapilmadi."
+            next_statu = int(observed_state.get("statu", prev_pool.get("statu", 0)))
+            next_sayac = int(observed_state.get("sayac", prev_pool.get("sayac", 0)))
+            src = observed_state.get("source", "mevcut kayit")
+            sm_note = (
+                "Kesinlesme puani henuz hesaplanmadigi icin state machine simulasyonu yapilmadi. "
+                f"Mevcut durum kaynagi: {src}."
+            )
         else:
             prev_statu = prev_pool.get("statu", 0)
             prev_sayac = prev_pool.get("sayac", 0)
@@ -906,7 +1056,12 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 11. DT (Karar Agaci) tahmini + karar gerekcesi
         # ------------------------------------------------------------------
-        dt_result = _run_dt(criteria, prev_pool)
+        if criteria_missing:
+            dt_result = _not_calculated_step(
+                "Kriter verisi eksik oldugu icin DecisionTree tahmini yapilmadi."
+            )
+        else:
+            dt_result = _run_dt(criteria, prev_pool)
         result["steps"]["dt"] = dt_result
 
         dt_reason = _build_dt_reason(
@@ -922,6 +1077,8 @@ def analyze_single_course(
             "score_final": round(skor_final, 2) if score_available else None,
             "in_mufredat_this_year": in_mufredat,
             "is_ground_truth": is_ground_truth,
+            "criteria_missing": criteria_missing,
+            "observed_state": observed_state,
             "prev": prev_pool,
             "next": {"statu": next_statu, "sayac": next_sayac},
             "label": _statu_label(next_statu),

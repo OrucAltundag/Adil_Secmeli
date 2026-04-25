@@ -1,0 +1,186 @@
+{
+  "run": {
+    "run_id": "run_example_001",
+    "scenario_name": "real_ml_prediction",
+    "dataset_name": "sample_benchmark_dataset",
+    "started_at": "2026-04-22T18:00:00",
+    "finished_at": "2026-04-22T18:00:08",
+    "status": "completed",
+    "algorithms": [
+      "RandomPredictor",
+      "MajorityClassPredictor",
+      "NaiveBayes",
+      "LogisticRegression",
+      "RandomForest",
+      "XGBoostLike"
+    ],
+    "metrics": []
+  },
+  "payload": {
+    "scenario": {
+      "name": "real_ml_prediction",
+      "description": "Real-data supervised prediction benchmark.",
+      "problem_type": "prediction",
+      "dataset_layer": "derived",
+      "table_name": "student_course_features",
+      "target_column": "course_id",
+      "top_k": 5,
+      "use_synthetic_tier": null,
+      "algorithm_names": [
+        "RandomPredictor",
+        "MajorityClassPredictor",
+        "NaiveBayes",
+        "LogisticRegression",
+        "RandomForest",
+        "XGBoostLike"
+      ],
+      "metadata": {}
+    },
+    "results": {
+      "RandomPredictor": {
+        "metrics": {
+          "classification": {
+            "accuracy": 0.18,
+            "precision": 0.16,
+            "recall": 0.18,
+            "f1": 0.17,
+            "roc_auc": 0.49
+          },
+          "recommendation": {
+            "hit_at_k": 0.43,
+            "ndcg_at_k": 0.24,
+            "map_at_k": 0.21,
+            "coverage": 1.0,
+            "diversity": 0.82,
+            "top_k_accuracy": 0.43
+          },
+          "performance": {
+            "latency_ms": 3.2,
+            "throughput_per_sec": 6200.0,
+            "memory_peak_mb": 0.9
+          }
+        }
+      },
+      "MajorityClassPredictor": {
+        "metrics": {
+          "classification": {
+            "accuracy": 0.28,
+            "precision": 0.08,
+            "recall": 0.28,
+            "f1": 0.12,
+            "roc_auc": 0.5
+          },
+          "recommendation": {
+            "hit_at_k": 0.28,
+            "ndcg_at_k": 0.17,
+            "map_at_k": 0.14,
+            "coverage": 0.12,
+            "diversity": 0.0,
+            "top_k_accuracy": 0.28
+          },
+          "performance": {
+            "latency_ms": 1.8,
+            "throughput_per_sec": 9100.0,
+            "memory_peak_mb": 0.5
+          }
+        }
+      },
+      "NaiveBayes": {
+        "metrics": {
+          "classification": {
+            "accuracy": 0.56,
+            "precision": 0.53,
+            "recall": 0.56,
+            "f1": 0.54,
+            "roc_auc": 0.73
+          },
+          "recommendation": {
+            "hit_at_k": 0.79,
+            "ndcg_at_k": 0.61,
+            "map_at_k": 0.57,
+            "coverage": 0.88,
+            "diversity": 0.71,
+            "top_k_accuracy": 0.79
+          },
+          "performance": {
+            "latency_ms": 4.9,
+            "throughput_per_sec": 4200.0,
+            "memory_peak_mb": 1.7
+          }
+        }
+      },
+      "LogisticRegression": {
+        "metrics": {
+          "classification": {
+            "accuracy": 0.63,
+            "precision": 0.61,
+            "recall": 0.63,
+            "f1": 0.62,
+            "roc_auc": 0.81
+          },
+          "recommendation": {
+            "hit_at_k": 0.84,
+            "ndcg_at_k": 0.69,
+            "map_at_k": 0.65,
+            "coverage": 0.86,
+            "diversity": 0.67,
+            "top_k_accuracy": 0.84
+          },
+          "performance": {
+            "latency_ms": 6.1,
+            "throughput_per_sec": 3400.0,
+            "memory_peak_mb": 2.1
+          }
+        }
+      },
+      "RandomForest": {
+        "metrics": {
+          "classification": {
+            "accuracy": 0.69,
+            "precision": 0.67,
+            "recall": 0.69,
+            "f1": 0.68,
+            "roc_auc": 0.87
+          },
+          "recommendation": {
+            "hit_at_k": 0.88,
+            "ndcg_at_k": 0.74,
+            "map_at_k": 0.71,
+            "coverage": 0.91,
+            "diversity": 0.72,
+            "top_k_accuracy": 0.88
+          },
+          "performance": {
+            "latency_ms": 16.8,
+            "throughput_per_sec": 1500.0,
+            "memory_peak_mb": 6.8
+          }
+        }
+      },
+      "XGBoostLike": {
+        "metrics": {
+          "classification": {
+            "accuracy": 0.71,
+            "precision": 0.69,
+            "recall": 0.71,
+            "f1": 0.70,
+            "roc_auc": 0.89
+          },
+          "recommendation": {
+            "hit_at_k": 0.90,
+            "ndcg_at_k": 0.77,
+            "map_at_k": 0.73,
+            "coverage": 0.93,
+            "diversity": 0.74,
+            "top_k_accuracy": 0.90
+          },
+          "performance": {
+            "latency_ms": 20.9,
+            "throughput_per_sec": 1220.0,
+            "memory_peak_mb": 8.9
+          }
+        }
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.settings import load_settings
+from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
 from app.services.calculation import run_all_algorithms_for_year
 from app.services.course_type import build_elective_predicate
@@ -44,8 +45,7 @@ def _open_connection() -> sqlite3.Connection:
     path = _get_db_path()
     if not os.path.exists(path):
         raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(path, row_factory=True)
     ensure_reporting_schema(conn)
     return conn
 

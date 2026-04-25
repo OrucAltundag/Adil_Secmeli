@@ -296,6 +296,8 @@ def _make_mock_db_path(
     prev_statu: int = 0,
     prev_sayac: int = 0,
     add_criteria: bool = True,
+    include_curriculum: bool = True,
+    current_havuz_statu: int = None,
     gt_statu: int = None,       # 2022 havuz kaydi icin
 ) -> str:
     """Gecici dosyada mock SQLite veritabani olusturur; yol dondurur (thread-safe test icin)."""
@@ -420,10 +422,17 @@ def _make_mock_db_path(
             (2, str(alt_ders_id), prev_year, 2, 0, 0, 35.0),
         ],
     )
+    next_havuz_id = 3
+    if current_havuz_statu is not None:
+        cur.execute(
+            "INSERT INTO havuz VALUES (?,?,?,?,?,?,?)",
+            (next_havuz_id, str(ders_id), yil, 2, current_havuz_statu, prev_sayac, None),
+        )
+        next_havuz_id += 1
     if gt_statu is not None and yil == 2022:
         cur.execute(
             "INSERT INTO havuz VALUES (?,?,?,?,?,?,?)",
-            (3, str(ders_id), 2022, 2, gt_statu, 0, 70.0),
+            (next_havuz_id, str(ders_id), 2022, 2, gt_statu, 0, 70.0),
         )
 
     # mufredat
@@ -437,10 +446,11 @@ def _make_mock_db_path(
     )
     cur.execute("CREATE TABLE mufredat_ders (mufredat_id INTEGER, ders_id INTEGER)")
     cur.execute("INSERT INTO mufredat VALUES (1, 2, ?, 'G')", (yil,))
-    cur.executemany(
-        "INSERT INTO mufredat_ders VALUES (?, ?)",
-        [(1, ders_id), (1, alt_ders_id)],
-    )
+    if include_curriculum:
+        cur.executemany(
+            "INSERT INTO mufredat_ders VALUES (?, ?)",
+            [(1, ders_id), (1, alt_ders_id)],
+        )
 
     conn.commit()
     conn.close()
@@ -450,11 +460,36 @@ def _make_mock_db_path(
 # --- Entegrasyon testleri ---
 
 def test_analiz_veri_eksik_hata():
-    """Kriter verisi olmayan ders -> error key donmeli."""
+    """Kriter verisi olmayan ders -> kismi analiz donmeli, fatal error donmemeli."""
     path = _make_mock_db_path(add_criteria=False)
     try:
         result = analyze_single_course(99, 2023, path)
-        assert "error" in result, "Kriter eksikken 'error' donmeli"
+        assert "error" not in result, f"Kriter eksigi fatal olmamali: {result.get('error')}"
+        assert result["criteria_status"]["ok"] is False
+        assert result["criteria"]["_missing"] is True
+        assert result["steps"]["rf"]["status"] == "not_calculated"
+        assert result["steps"]["dt"]["status"] == "not_calculated"
+        assert "decision" in result
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def test_analiz_havuz_dersi_kriter_yok_status_gosterir():
+    """Havuzda bekleyen kriter eksik ders de analiz ekranina durumuyla donmeli."""
+    path = _make_mock_db_path(
+        add_criteria=False,
+        include_curriculum=False,
+        current_havuz_statu=STATU_HAVUZDA,
+    )
+    try:
+        result = analyze_single_course(99, 2023, path)
+        assert "error" not in result
+        assert result["criteria_status"]["ok"] is False
+        assert result["decision"]["next"]["statu"] == STATU_HAVUZDA
+        assert result["decision"]["observed_state"]["source"] == "havuz"
     finally:
         try:
             os.unlink(path)
