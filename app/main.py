@@ -221,6 +221,7 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.analysis_tab import AnalysisTab
         from app.ui.tabs.calc_tab import CalcTab
         from app.ui.tabs.tools_tab import ToolsTab
+<<<<<<< HEAD
         from app.ui.tabs.decision_center_page import DecisionCenterPage
         from app.ui.tabs.ahp_weight_page import AHPWeightPage
         from app.ui.tabs.semester_planning_page import SemesterPlanningPage
@@ -228,6 +229,8 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.data_quality_page import DataQualityPage
         from app.ui.tabs.system_health_page import SystemHealthPage
         from app.ui.tabs.security_readiness_page import SecurityReadinessPage
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
         from app.ui.benchmark import BenchmarkPanel
         from app.ui.style import apply_style
 
@@ -303,9 +306,16 @@ class AdilSecmeliApp(tk.Tk):
         self.tab_calc = CalcTab(self.nb, app=self)
         self.nb.add(self.tab_calc, text="🧮 Hesaplama & Test")
 
+<<<<<<< HEAD
         # 6. SEKME: AHP Ağırlık Yönetimi (Karar ayarları)
         self.tab_ahp_weight = AHPWeightPage(self.nb, app=self)
         self.nb.add(self.tab_ahp_weight, text="⚖️ AHP Ağırlık Yönetimi")
+=======
+        # 5. SEKME: Benchmark Platformu
+        self.tab_benchmark = BenchmarkPanel(self.nb, app=self)
+        self.nb.add(self.tab_benchmark, text="Benchmark Platformu")
+
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
         # 7. SEKME: Karar Merkezi (Ana karar hattı)
         self.tab_decision_center = DecisionCenterPage(self.nb, app=self)
@@ -577,6 +587,7 @@ class AdilSecmeliApp(tk.Tk):
             if "Benchmark" in current_tab_text:
                 self.tab_benchmark.refresh()
 
+<<<<<<< HEAD
             if "Karar Merkezi" in current_tab_text:
                 self.tab_decision_center.refresh()
 
@@ -592,6 +603,8 @@ class AdilSecmeliApp(tk.Tk):
             if "Güvenlik" in current_tab_text:
                 self.tab_security_readiness.refresh_data()
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -617,6 +630,7 @@ class AdilSecmeliApp(tk.Tk):
         if "Benchmark" in selected_tab:
             self.tab_benchmark.refresh()
 
+<<<<<<< HEAD
         if "Karar Merkezi" in selected_tab:
             self.tab_decision_center.refresh()
 
@@ -632,6 +646,8 @@ class AdilSecmeliApp(tk.Tk):
         if "Güvenlik" in selected_tab:
             self.tab_security_readiness.refresh_data()
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
     def ensure_pool_initialized_once(self):
         """Havuz tablosu bos ise ilk kez mufredat yillarindan seed olusturur."""

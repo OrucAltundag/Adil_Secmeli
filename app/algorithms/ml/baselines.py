@@ -11,6 +11,7 @@ import pandas as pd
 from app.algorithms.base import AlgorithmOutput, IPredictor, IRanker
 
 
+<<<<<<< HEAD
 def baseline_algorithm_metadata() -> dict[str, dict[str, str]]:
     return {
         "RandomPredictor": {"algorithm_key": "random_predictor", "usage_role": "benchmark_only", "label": "Sadece benchmark"},
@@ -22,6 +23,9 @@ def baseline_algorithm_metadata() -> dict[str, dict[str, str]]:
 class RandomPredictor(IPredictor):
     usage_role = "benchmark_only"
 
+=======
+class RandomPredictor(IPredictor):
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self, classes: list[Any] | None = None, random_seed: int = 42) -> None:
         super().__init__(name="RandomPredictor", task_type="prediction", parameters={"random_seed": random_seed})
         self.classes = classes or []
@@ -83,8 +87,11 @@ class RandomPredictor(IPredictor):
 
 
 class MajorityClassPredictor(IPredictor):
+<<<<<<< HEAD
     usage_role = "benchmark_only"
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self) -> None:
         super().__init__(name="MajorityClassPredictor", task_type="prediction")
         self.majority_class: Any | None = None
@@ -143,8 +150,11 @@ class MajorityClassPredictor(IPredictor):
 
 
 class PopularityRecommender(IRanker):
+<<<<<<< HEAD
     usage_role = "benchmark_only"
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self) -> None:
         super().__init__(name="PopularityRecommender", task_type="ranking")
         self.popularity: dict[Any, float] = {}
@@ -190,3 +200,7 @@ class PopularityRecommender(IRanker):
 
     def explain(self, X: pd.DataFrame | None = None) -> str:
         return "PopularityRecommender ranks items by observed interaction frequency."
+<<<<<<< HEAD
+=======
+
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942

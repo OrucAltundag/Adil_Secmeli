@@ -10,6 +10,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.api import routes
+<<<<<<< HEAD
 from app.core.config import load_app_config
 from app.core.errors import AppError, app_error_from_exception
 from app.core.logging_config import configure_logging
@@ -20,6 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 config = load_app_config()
 configure_logging(config)
+=======
+from app.dashboard import api_routes as benchmark_routes
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
 app = FastAPI(
     title=f"{config.project_name} API",
@@ -52,7 +56,10 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=rate_limit_middleware)
 
 app.include_router(routes.router, prefix="/api/v1", tags=["v1"])
 app.include_router(benchmark_routes.router, prefix="/api/v1/benchmark", tags=["benchmark"])
+<<<<<<< HEAD
 app.include_router(security_routes.router, prefix="/api/v1")
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
 
 @app.get("/")

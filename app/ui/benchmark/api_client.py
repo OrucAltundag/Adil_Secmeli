@@ -66,6 +66,7 @@ class BenchmarkApiClient:
         safe_id = urllib.parse.quote(str(run_id), safe="")
         return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/runs/{safe_id}"), lambda: mock_data.get_mock_run_detail(run_id))
 
+<<<<<<< HEAD
     def get_ml_readiness(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/ml/readiness"), mock_data.get_mock_ml_readiness)
 
@@ -84,6 +85,8 @@ class BenchmarkApiClient:
     def get_governed_runs(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/governed-runs"), mock_data.get_mock_governed_runs)
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def _normalize_run_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         algorithms = payload.get("algorithm_names") or payload.get("algorithms") or []
         return {

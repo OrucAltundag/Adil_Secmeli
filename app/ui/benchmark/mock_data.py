@@ -35,6 +35,7 @@ SCENARIOS = [
 
 
 ALGORITHMS = [
+<<<<<<< HEAD
     {"name": "AHP", "group": "MCDM", "usage_role": "production_decision", "role_label": "Ana karar motoru"},
     {"name": "TOPSIS", "group": "MCDM", "usage_role": "production_decision", "role_label": "Ana karar motoru"},
     {"name": "VIKOR", "group": "MCDM", "usage_role": "benchmark_only", "role_label": "Sadece benchmark"},
@@ -175,6 +176,30 @@ GOVERNED_RUNS = {
 }
 
 
+=======
+    {"name": "AHP", "group": "MCDM"},
+    {"name": "TOPSIS", "group": "MCDM"},
+    {"name": "VIKOR", "group": "MCDM"},
+    {"name": "PROMETHEE_II", "group": "MCDM"},
+    {"name": "RandomPredictor", "group": "ML"},
+    {"name": "MajorityClassPredictor", "group": "ML"},
+    {"name": "PopularityRecommender", "group": "ML"},
+    {"name": "NaiveBayes", "group": "ML"},
+    {"name": "LogisticRegression", "group": "ML"},
+    {"name": "RandomForest", "group": "ML"},
+    {"name": "XGBoostLike", "group": "ML"},
+    {"name": "KMeans", "group": "Clustering"},
+    {"name": "HierarchicalClustering", "group": "Clustering"},
+    {"name": "DBSCAN", "group": "Clustering"},
+    {"name": "GaleShapley", "group": "Allocation"},
+    {"name": "RandomAllocation", "group": "Allocation"},
+    {"name": "GreedyAllocation", "group": "Allocation"},
+    {"name": "FirstComeFirstServed", "group": "Allocation"},
+    {"name": "MinimumRegretAllocation", "group": "Allocation"},
+]
+
+
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 DATASETS = [
     "raw_real",
     "derived",
@@ -371,6 +396,7 @@ def get_mock_algorithms():
     return {"algorithms": deepcopy(ALGORITHMS)}
 
 
+<<<<<<< HEAD
 def get_mock_ml_readiness():
     return deepcopy(ML_READINESS)
 
@@ -395,6 +421,8 @@ def get_mock_governed_runs():
     return deepcopy(GOVERNED_RUNS)
 
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
 def get_mock_dataset_load_result():
     return {
         "dataset_name": "mock_benchmark_dataset",

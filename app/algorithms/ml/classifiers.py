@@ -130,6 +130,7 @@ class SklearnPredictorBase(IPredictor):
         return out.fillna(0.0)
 
 
+<<<<<<< HEAD
 def ml_algorithm_metadata() -> dict[str, dict[str, str]]:
     """Benchmark ekranları için ML kullanım rolü metadata'sı."""
     return {
@@ -144,20 +145,29 @@ def ml_algorithm_metadata() -> dict[str, dict[str, str]]:
 class NaiveBayesPredictor(SklearnPredictorBase):
     usage_role = "benchmark_only"
 
+=======
+class NaiveBayesPredictor(SklearnPredictorBase):
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self) -> None:
         super().__init__(name="NaiveBayes", estimator=GaussianNB())
 
 
 class LogisticRegressionPredictor(SklearnPredictorBase):
+<<<<<<< HEAD
     usage_role = "benchmark_only"
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self) -> None:
         super().__init__(name="LogisticRegression", estimator=_build_lr_estimator())
 
 
 class RandomForestPredictor(SklearnPredictorBase):
+<<<<<<< HEAD
     usage_role = "advisory_ml"
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self, n_estimators: int = 300, random_seed: int = 42) -> None:
         super().__init__(
             name="RandomForest",
@@ -174,8 +184,11 @@ class RandomForestPredictor(SklearnPredictorBase):
 class XGBoostLikePredictor(SklearnPredictorBase):
     """Uses XGBoost when available, otherwise GradientBoosting fallback."""
 
+<<<<<<< HEAD
     usage_role = "benchmark_only"
 
+=======
+>>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self, random_seed: int = 42) -> None:
         estimator: Any
         model_name = "XGBoostFallback"
