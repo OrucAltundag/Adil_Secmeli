@@ -1,6 +1,16 @@
 # Adil Seçmeli — Modül Haritası
 
+**Son Güncelleme**: 2026-05-11 — Sistem Bütünlük Raporu uyum kapsamında modüle yeni bölümler (Karar, Veri Kalitesi, AHP, Dönem Planlama, Benchmark, Güvenlik) eklenmiştir.
+
 Bu belge, projedeki `.py` dosyalarının hangi bölümle ilgili olduğunu ve birbirleriyle ilişkisini açıklar. Geliştirme sırasında hangi dosyayı düzenleyeceğinizi hızlıca bulmak için kullanın.
+
+---
+
+## 0. Ürün Akışı (Sistemin Deneyimlendiği Sıra)
+
+Masaüstü uygulaması (app/main.py) şu ürün akışına göre sekmeleri düzenler:
+
+- Sistem Sağlığı → Güvenlik → Veri Yönetimi → Veri Kalitesi → Hesaplama & Test → AHP → Karar Merkezi → Dönem Planlama → Rapor → Analiz → Benchmark → Tablo Görüntüle
 
 ---
 
@@ -154,3 +164,4 @@ havuz_karar.py → havuz statü güncellemesi
 | Kriter girişi değişikliği | `app/ui/tabs/criteria_page.py` |
 | API endpoint ekleme | `app/api/routes.py` |
 | Excel import değişikliği | `app/etl/`, `app/utils/import_excel.py` |
+

@@ -8,7 +8,9 @@ import os
 import sqlite3
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, Depends
+from app.schemas.auth import UserContext
+from app.services.permission_service import require_action
 
 from app.core.config import load_app_config
 from app.core.settings import load_settings
@@ -893,7 +895,7 @@ def aktif_yillar(fakulte_id: int):
 
 
 @router.post("/algoritma/tumunu-calistir")
-def algoritma_tumunu_calistir(yil: int, donem: Optional[str] = "Guz"):
+def algoritma_tumunu_calistir(yil: int, donem: Optional[str] = "Guz", user: UserContext = Depends(require_action("run_algorithm"))):
     result = run_all_algorithms_for_year(
         yil=int(yil),
         db_path=_get_db_path(),
@@ -905,7 +907,7 @@ def algoritma_tumunu_calistir(yil: int, donem: Optional[str] = "Guz"):
 
 
 @router.post("/mufredat/yukle")
-async def mufredat_yukle(file: UploadFile = File(...), hedef_yil: int = Form(...)):
+async def mufredat_yukle(file: UploadFile = File(...), hedef_yil: int = Form(...), user: UserContext = Depends(require_action("import_data"))):
     filename = str(file.filename or "")
     if not filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Sadece .xlsx dosyasi desteklenir")
@@ -2850,6 +2852,63 @@ def data_readiness(
         conn.close()
 
 
+@router.get("/data/confidence")
+def data_confidence(
+    year: Optional[int] = None,
+    course_id: Optional[int] = None,
+    faculty_id: Optional[int] = None,
+    department_id: Optional[int] = None,
+    level: Optional[str] = None,
+    limit: int = 500,
+):
+    """Ders veri güveni kayıtlarını listele."""
+    where_parts = []
+    params: list[Any] = []
+    if year is not None:
+        where_parts.append("cdc.year = ?")
+        params.append(int(year))
+    if course_id is not None:
+        where_parts.append("cdc.course_id = ?")
+        params.append(int(course_id))
+    if faculty_id is not None:
+        where_parts.append("d.fakulte_id = ?")
+        params.append(int(faculty_id))
+    if department_id is not None:
+        where_parts.append("d.bolum_id = ?")
+        params.append(int(department_id))
+    if level:
+        where_parts.append("cdc.level = ?")
+        params.append(level)
+    where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+    try:
+        cols, rows = _run_query(
+            f"""
+            SELECT cdc.id, cdc.decision_run_id, cdc.course_id, cdc.year,
+                   d.kod AS course_code, d.ad AS course_name,
+                   cdc.score AS confidence_score, cdc.level AS confidence_level,
+                   cdc.has_success_data, cdc.has_popularity_data,
+                   cdc.has_survey_data, cdc.has_trend_data, cdc.has_recent_data,
+                   cdc.survey_count, cdc.data_points_count,
+                   cdc.missing_fields_json, cdc.explanation, cdc.created_at
+            FROM course_data_confidence cdc
+            LEFT JOIN ders d ON d.ders_id = cdc.course_id
+            WHERE {where_clause}
+            ORDER BY cdc.score ASC, d.ad
+            LIMIT ?
+            """,
+            params + [limit],
+        )
+    except sqlite3.OperationalError:
+        return {"data": [], "count": 0}
+
+    data = []
+    for row in rows:
+        item = dict(zip(cols, row))
+        item["missing_fields"] = _safe_json(item.get("missing_fields_json"), [])
+        data.append(item)
+    return {"data": data, "count": len(data)}
+
+
 @router.post("/data/coverage/generate")
 def data_coverage_generate(payload: dict[str, Any] = Body(default_factory=dict)):
     """Yeni kapsama raporu oluştur ve kaydet"""
@@ -2897,23 +2956,33 @@ def data_missing(
     limit: int = 500,
 ):
     """Eksik veri öğelerini listele"""
+    where_parts = ["year = ?"]
+    params: list[Any] = [int(year)]
+    if course_id is not None:
+        where_parts.append("course_id = ?")
+        params.append(int(course_id))
+    if faculty_id is not None:
+        where_parts.append("faculty_id = ?")
+        params.append(int(faculty_id))
+    if department_id is not None:
+        where_parts.append("department_id = ?")
+        params.append(int(department_id))
+    if severity:
+        where_parts.append("severity = ?")
+        params.append(severity)
+    where_clause = " AND ".join(where_parts)
     cols, rows = _run_query(
-        f"""
+        """
         SELECT id, course_id, year, semester, missing_field, severity,
-               message, detected_at, is_resolved
+               message, detected_at,
+               CASE WHEN resolved_at IS NULL THEN 0 ELSE 1 END AS is_resolved,
+               resolved_at, resolved_by
         FROM missing_data_items
-        WHERE year = ?
-            {'AND course_id = ?' if course_id else ''}
-            {'AND severity = ?' if severity else ''}
+        WHERE """ + where_clause + """
         ORDER BY severity DESC, detected_at DESC
         LIMIT ?
         """,
-        tuple(
-            [year] +
-            ([course_id] if course_id else []) +
-            ([severity] if severity else []) +
-            [limit]
-        ),
+        params + [limit],
     )
     
     data = []
@@ -2932,7 +3001,7 @@ def data_missing_resolve(item_id: int, payload: dict[str, Any] = Body(default_fa
         cur.execute(
             """
             UPDATE missing_data_items
-            SET is_resolved = 1, resolved_at = ?, resolved_by = ?
+            SET resolved_at = ?, resolved_by = ?
             WHERE id = ?
             """,
             (
@@ -3027,18 +3096,23 @@ def data_collection_priorities(
         where_parts.append("year = ?")
         params.append(int(year))
     if is_completed is not None:
-        where_parts.append("is_completed = ?")
-        params.append(int(is_completed))
+        where_parts.append("status = ?")
+        params.append("completed" if int(is_completed) else "open")
     
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"
     
     cols, rows = _run_query(
         f"""
-        SELECT id, course_id, data_type, priority_level, reason,
-               estimated_effort, is_completed, created_at
+        SELECT id, course_id,
+               target_entity_type AS data_type,
+               priority_rank AS priority_level,
+               priority_reason AS reason,
+               expected_impact AS estimated_effort,
+               CASE WHEN status = 'completed' THEN 1 ELSE 0 END AS is_completed,
+               status, created_at
         FROM data_collection_priorities
         WHERE {where_clause}
-        ORDER BY priority_level DESC, course_id
+        ORDER BY priority_rank ASC, course_id
         LIMIT ?
         """,
         params + [limit],
@@ -3060,7 +3134,7 @@ def data_collection_priority_complete(priority_id: int):
         cur.execute(
             """
             UPDATE data_collection_priorities
-            SET is_completed = 1, completed_at = ?
+            SET status = 'completed', completed_at = ?
             WHERE id = ?
             """,
             (datetime.now(timezone.utc).isoformat(), int(priority_id)),
@@ -3094,11 +3168,10 @@ def decisions_outcomes(
         params.append(int(course_id))
     if confidence_level:
         # confidence_level: 'low', 'medium', 'high'
-        where_parts.append("CASE")
-        where_parts.append("  WHEN cd.data_confidence_score >= 0.75 THEN 'high'")
-        where_parts.append("  WHEN cd.data_confidence_score >= 0.50 THEN 'medium'")
-        where_parts.append("  ELSE 'low'")
-        where_parts.append("END = ?")
+        where_parts.append(
+            "(CASE WHEN cd.data_confidence_score >= 0.75 THEN 'high' "
+            "WHEN cd.data_confidence_score >= 0.50 THEN 'medium' ELSE 'low' END) = ?"
+        )
         params.append(confidence_level)
     
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"
@@ -3129,4 +3202,3 @@ def decisions_outcomes(
 
 
 from datetime import datetime, timezone
-

@@ -58,6 +58,19 @@ def _table_sql(cur: sqlite3.Cursor, table_name: str) -> str:
     return str(row[0] or "") if row else ""
 
 
+def _ensure_columns(cur: sqlite3.Cursor, table_name: str, columns: list[tuple[str, str]]) -> int:
+    if not _table_exists(cur, table_name):
+        return 0
+    existing = _column_names(cur, table_name)
+    added = 0
+    for column_name, column_type in columns:
+        if column_name not in existing:
+            cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+            existing.add(column_name)
+            added += 1
+    return added
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -112,19 +125,26 @@ def _log_schema_compat(
 
 def _log_schema_compat_result(conn: sqlite3.Connection, name: str, result: dict[str, Any]) -> None:
     tables_created = int(result.get("tables_created") or 0)
-    columns_added = int(result.get("columns_added") or 0)
+    columns_added = int(result.get("columns_added") or result.get("column_added") or 0)
+    tables_rebuilt = int(result.get("tables_rebuilt") or 0)
     indexes_created = int(result.get("indexes_created") or 0)
     if tables_created:
         action_type = "create_table"
     elif columns_added:
         action_type = "add_column"
+    elif tables_rebuilt:
+        action_type = "rebuild_table"
     elif indexes_created:
-        action_type = "create_index"
+        # Most schema helpers use CREATE INDEX IF NOT EXISTS and report the
+        # attempted index count, not actual changes. Avoid write-heavy log spam
+        # on every GUI/API connection after the schema is already healthy.
+        return
     else:
-        action_type = "skip"
+        return
     message = (
         f"{name}: tables_created={tables_created}, "
-        f"columns_added={columns_added}, indexes_created={indexes_created}"
+        f"columns_added={columns_added}, tables_rebuilt={tables_rebuilt}, "
+        f"indexes_created={indexes_created}"
     )
     _log_schema_compat(conn, action_type=action_type, table_name=name, success=True, message=message)
 
@@ -150,12 +170,124 @@ def ensure_architecture_schema(conn: sqlite3.Connection, commit: bool = True) ->
             CREATE TABLE sql_console_audit_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT,
+                client_id TEXT,
+                role TEXT,
                 sql_text TEXT NOT NULL,
                 statement_type TEXT,
+                read_only INTEGER NOT NULL DEFAULT 1,
+                dangerous INTEGER NOT NULL DEFAULT 0,
+                allowed INTEGER NOT NULL DEFAULT 0,
                 success INTEGER NOT NULL DEFAULT 0,
                 error_message TEXT,
                 row_count INTEGER,
-                executed_at TEXT NOT NULL
+                executed_at TEXT NOT NULL,
+                environment TEXT,
+                request_id TEXT
+            )
+        """,
+        "api_clients": """
+            CREATE TABLE api_clients (
+                id TEXT PRIMARY KEY,
+                client_name TEXT NOT NULL,
+                api_key_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'api_client',
+                faculty_id INTEGER,
+                department_id INTEGER,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT,
+                last_used_at TEXT,
+                notes TEXT
+            )
+        """,
+        "secure_import_jobs": """
+            CREATE TABLE secure_import_jobs (
+                id TEXT PRIMARY KEY,
+                import_type TEXT NOT NULL,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT,
+                file_hash TEXT NOT NULL,
+                file_size_bytes INTEGER NOT NULL,
+                mime_type TEXT,
+                uploaded_by TEXT,
+                uploaded_at TEXT,
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                semester TEXT,
+                status TEXT NOT NULL DEFAULT 'uploaded',
+                validation_summary_json TEXT,
+                preview_summary_json TEXT,
+                row_count INTEGER,
+                warning_count INTEGER,
+                error_count INTEGER,
+                critical_count INTEGER,
+                approval_required INTEGER NOT NULL DEFAULT 1,
+                approved_by TEXT,
+                approved_at TEXT,
+                rejected_by TEXT,
+                rejected_at TEXT,
+                rejection_reason TEXT,
+                applied_by TEXT,
+                applied_at TEXT,
+                rollback_available INTEGER NOT NULL DEFAULT 0,
+                rollback_snapshot_id TEXT,
+                notes TEXT
+            )
+        """,
+        "secure_import_job_rows": """
+            CREATE TABLE secure_import_job_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_job_id TEXT NOT NULL,
+                row_number INTEGER NOT NULL,
+                raw_data_json TEXT NOT NULL,
+                normalized_data_json TEXT,
+                matched_course_id INTEGER,
+                row_status TEXT NOT NULL DEFAULT 'valid',
+                issues_json TEXT,
+                created_at TEXT
+            )
+        """,
+        "security_audit_logs": """
+            CREATE TABLE security_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                actor_type TEXT NOT NULL,
+                actor_id TEXT,
+                role TEXT,
+                faculty_id INTEGER,
+                department_id INTEGER,
+                resource_type TEXT,
+                resource_id TEXT,
+                action TEXT NOT NULL,
+                success INTEGER NOT NULL DEFAULT 1,
+                severity TEXT NOT NULL DEFAULT 'info',
+                message TEXT NOT NULL,
+                before_json TEXT,
+                after_json TEXT,
+                metadata_json TEXT,
+                request_id TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                created_at TEXT,
+                previous_hash TEXT,
+                event_hash TEXT
+            )
+        """,
+        "data_snapshots": """
+            CREATE TABLE data_snapshots (
+                id TEXT PRIMARY KEY,
+                snapshot_type TEXT NOT NULL,
+                scope_type TEXT NOT NULL,
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                related_import_job_id TEXT,
+                related_decision_run_id INTEGER,
+                snapshot_path TEXT,
+                snapshot_hash TEXT,
+                created_by TEXT,
+                created_at TEXT,
+                notes TEXT
             )
         """,
     }
@@ -171,9 +303,131 @@ def ensure_architecture_schema(conn: sqlite3.Connection, commit: bool = True) ->
                 success=True,
                 message="Mimari denetim/audit tablosu oluşturuldu.",
             )
+    for table_name, columns in {
+        "schema_compat_logs": [
+            ("action_type", "TEXT"),
+            ("table_name", "TEXT"),
+            ("column_name", "TEXT"),
+            ("index_name", "TEXT"),
+            ("sql_text", "TEXT"),
+            ("success", "INTEGER NOT NULL DEFAULT 1"),
+            ("message", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "sql_console_audit_logs": [
+            ("user_id", "TEXT"),
+            ("client_id", "TEXT"),
+            ("role", "TEXT"),
+            ("sql_text", "TEXT"),
+            ("statement_type", "TEXT"),
+            ("read_only", "INTEGER NOT NULL DEFAULT 1"),
+            ("dangerous", "INTEGER NOT NULL DEFAULT 0"),
+            ("allowed", "INTEGER NOT NULL DEFAULT 0"),
+            ("success", "INTEGER NOT NULL DEFAULT 0"),
+            ("error_message", "TEXT"),
+            ("row_count", "INTEGER"),
+            ("executed_at", "TEXT"),
+            ("environment", "TEXT"),
+            ("request_id", "TEXT"),
+        ],
+        "api_clients": [
+            ("client_name", "TEXT"),
+            ("api_key_hash", "TEXT"),
+            ("role", "TEXT NOT NULL DEFAULT 'api_client'"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("is_active", "INTEGER NOT NULL DEFAULT 1"),
+            ("created_at", "TEXT"),
+            ("last_used_at", "TEXT"),
+            ("notes", "TEXT"),
+        ],
+        "secure_import_jobs": [
+            ("import_type", "TEXT"),
+            ("original_filename", "TEXT"),
+            ("stored_filename", "TEXT"),
+            ("file_hash", "TEXT"),
+            ("file_size_bytes", "INTEGER"),
+            ("mime_type", "TEXT"),
+            ("uploaded_by", "TEXT"),
+            ("uploaded_at", "TEXT"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("semester", "TEXT"),
+            ("status", "TEXT NOT NULL DEFAULT 'uploaded'"),
+            ("validation_summary_json", "TEXT"),
+            ("preview_summary_json", "TEXT"),
+            ("row_count", "INTEGER"),
+            ("warning_count", "INTEGER"),
+            ("error_count", "INTEGER"),
+            ("critical_count", "INTEGER"),
+            ("approval_required", "INTEGER NOT NULL DEFAULT 1"),
+            ("approved_by", "TEXT"),
+            ("approved_at", "TEXT"),
+            ("rejected_by", "TEXT"),
+            ("rejected_at", "TEXT"),
+            ("rejection_reason", "TEXT"),
+            ("applied_by", "TEXT"),
+            ("applied_at", "TEXT"),
+            ("rollback_available", "INTEGER NOT NULL DEFAULT 0"),
+            ("rollback_snapshot_id", "TEXT"),
+            ("notes", "TEXT"),
+        ],
+        "secure_import_job_rows": [
+            ("import_job_id", "TEXT"),
+            ("row_number", "INTEGER"),
+            ("raw_data_json", "TEXT"),
+            ("normalized_data_json", "TEXT"),
+            ("matched_course_id", "INTEGER"),
+            ("row_status", "TEXT NOT NULL DEFAULT 'valid'"),
+            ("issues_json", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "security_audit_logs": [
+            ("event_type", "TEXT"),
+            ("actor_type", "TEXT"),
+            ("actor_id", "TEXT"),
+            ("role", "TEXT"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("resource_type", "TEXT"),
+            ("resource_id", "TEXT"),
+            ("action", "TEXT"),
+            ("success", "INTEGER NOT NULL DEFAULT 1"),
+            ("severity", "TEXT NOT NULL DEFAULT 'info'"),
+            ("message", "TEXT"),
+            ("before_json", "TEXT"),
+            ("after_json", "TEXT"),
+            ("metadata_json", "TEXT"),
+            ("request_id", "TEXT"),
+            ("ip_address", "TEXT"),
+            ("user_agent", "TEXT"),
+            ("created_at", "TEXT"),
+            ("previous_hash", "TEXT"),
+            ("event_hash", "TEXT"),
+        ],
+        "data_snapshots": [
+            ("snapshot_type", "TEXT"),
+            ("scope_type", "TEXT NOT NULL DEFAULT 'global'"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("related_import_job_id", "TEXT"),
+            ("related_decision_run_id", "INTEGER"),
+            ("snapshot_path", "TEXT"),
+            ("snapshot_hash", "TEXT"),
+            ("created_by", "TEXT"),
+            ("created_at", "TEXT"),
+            ("notes", "TEXT"),
+        ],
+    }.items():
+        changed["columns_added"] += _ensure_columns(cur, table_name, columns)
     indexes = [
         "CREATE INDEX IF NOT EXISTS ix_schema_compat_logs_created ON schema_compat_logs (created_at)",
         "CREATE INDEX IF NOT EXISTS ix_sql_console_audit_executed ON sql_console_audit_logs (executed_at)",
+        "CREATE INDEX IF NOT EXISTS ix_api_clients_active ON api_clients (is_active, role)",
+        "CREATE INDEX IF NOT EXISTS ix_secure_import_jobs_status ON secure_import_jobs (status, uploaded_at)",
+        "CREATE INDEX IF NOT EXISTS ix_security_audit_logs_created ON security_audit_logs (created_at, event_type)",
     ]
     for ddl in indexes:
         cur.execute(ddl)
@@ -492,30 +746,54 @@ def ensure_havuz_semester_schema(conn: sqlite3.Connection) -> dict[str, int]:
 
     cur.execute(
         """
-        UPDATE havuz
-        SET donem = CASE
-            WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = 'b' THEN 'Bahar'
-            ELSE 'Guz'
-        END
+        SELECT COUNT(*)
+        FROM havuz
         WHERE donem IS NULL
            OR TRIM(COALESCE(donem, '')) = ''
            OR LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) NOT IN ('g', 'b')
         """
     )
-    changed["rows_normalized"] = int(cur.rowcount or 0)
+    needs_normalization = int((cur.fetchone() or [0])[0] or 0)
+    if needs_normalization:
+        cur.execute(
+            """
+            UPDATE havuz
+            SET donem = CASE
+                WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = 'b' THEN 'Bahar'
+                ELSE 'Guz'
+            END
+            WHERE donem IS NULL
+               OR TRIM(COALESCE(donem, '')) = ''
+               OR LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) NOT IN ('g', 'b')
+            """
+        )
+        changed["rows_normalized"] = int(cur.rowcount or 0)
 
     # Unique index olusturmadan once duplicate satirlari temizle.
     cur.execute(
         """
-        DELETE FROM havuz
-        WHERE id NOT IN (
-            SELECT MIN(id)
+        SELECT COUNT(*)
+        FROM (
+            SELECT 1
             FROM havuz
             GROUP BY ders_id, fakulte_id, yil, donem
+            HAVING COUNT(*) > 1
         )
         """
     )
-    changed["duplicates_removed"] = int(cur.rowcount or 0)
+    duplicate_groups = int((cur.fetchone() or [0])[0] or 0)
+    if duplicate_groups:
+        cur.execute(
+            """
+            DELETE FROM havuz
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM havuz
+                GROUP BY ders_id, fakulte_id, yil, donem
+            )
+            """
+        )
+        changed["duplicates_removed"] = int(cur.rowcount or 0)
 
     idx_names = _index_names(cur, "havuz")
     if "uq_havuz_ders_fac_yil_donem" not in idx_names:
@@ -596,31 +874,58 @@ def ensure_skor_schema(conn: sqlite3.Connection) -> dict[str, int]:
 
     cur.execute(
         """
-        UPDATE skor
-        SET donem = CASE
-            WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = 'b' THEN 'Bahar'
-            ELSE 'Guz'
-        END
+        SELECT COUNT(*)
+        FROM skor
+        WHERE donem IS NULL
+           OR TRIM(COALESCE(donem, '')) = ''
+           OR LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) NOT IN ('g', 'b')
         """
     )
-    changed["rows_normalized"] = int(cur.rowcount or 0)
+    needs_normalization = int((cur.fetchone() or [0])[0] or 0)
+    if needs_normalization:
+        cur.execute(
+            """
+            UPDATE skor
+            SET donem = CASE
+                WHEN LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = 'b' THEN 'Bahar'
+                ELSE 'Guz'
+            END
+            WHERE donem IS NULL
+               OR TRIM(COALESCE(donem, '')) = ''
+               OR LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) NOT IN ('g', 'b')
+            """
+        )
+        changed["rows_normalized"] = int(cur.rowcount or 0)
 
     idx_names = _index_names(cur, "skor")
     if "uq_skor_ders_year_term" not in idx_names:
         pk_col = "skor_id" if "skor_id" in cols else ("id" if "id" in cols else "rowid")
         cur.execute(
-            f"""
-            DELETE FROM skor
-            WHERE {pk_col} NOT IN (
-                SELECT MIN({pk_col})
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
                 FROM skor
                 GROUP BY ders_id, akademik_yil, donem
+                HAVING COUNT(*) > 1
             )
             """
         )
+        duplicate_groups = int((cur.fetchone() or [0])[0] or 0)
+        if duplicate_groups:
+            cur.execute(
+                f"""
+                DELETE FROM skor
+                WHERE {pk_col} NOT IN (
+                    SELECT MIN({pk_col})
+                    FROM skor
+                    GROUP BY ders_id, akademik_yil, donem
+                )
+                """
+            )
         cur.execute(
             """
-            CREATE UNIQUE INDEX uq_skor_ders_year_term
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_skor_ders_year_term
             ON skor (ders_id, akademik_yil, donem)
             """
         )
@@ -2662,6 +2967,357 @@ def ensure_semester_planning_schema(conn: sqlite3.Connection, commit: bool = Tru
     return changed
 
 
+def ensure_data_quality_schema(conn: sqlite3.Connection, commit: bool = True) -> dict[str, int]:
+    """Data quality, readiness, confidence follow-up tablolarini hazirlar."""
+    cur = conn.cursor()
+    changed = {"tables_created": 0, "columns_added": 0, "indexes_created": 0}
+    tables = {
+        "data_coverage_reports": """
+            CREATE TABLE data_coverage_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type TEXT NOT NULL DEFAULT 'global',
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                semester TEXT,
+                total_courses INTEGER NOT NULL DEFAULT 0,
+                courses_with_criteria INTEGER NOT NULL DEFAULT 0,
+                courses_with_performance INTEGER NOT NULL DEFAULT 0,
+                courses_with_popularity INTEGER NOT NULL DEFAULT 0,
+                courses_with_survey INTEGER NOT NULL DEFAULT 0,
+                courses_with_score INTEGER NOT NULL DEFAULT 0,
+                courses_with_trend_data INTEGER NOT NULL DEFAULT 0,
+                criteria_coverage_ratio REAL NOT NULL DEFAULT 0.0,
+                performance_coverage_ratio REAL NOT NULL DEFAULT 0.0,
+                popularity_coverage_ratio REAL NOT NULL DEFAULT 0.0,
+                survey_coverage_ratio REAL NOT NULL DEFAULT 0.0,
+                score_coverage_ratio REAL NOT NULL DEFAULT 0.0,
+                trend_coverage_ratio REAL NOT NULL DEFAULT 0.0,
+                overall_coverage_score REAL NOT NULL DEFAULT 0.0,
+                missing_data_summary_json TEXT,
+                recommendations_json TEXT,
+                created_at TEXT
+            )
+        """,
+        "data_readiness_assessments": """
+            CREATE TABLE data_readiness_assessments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type TEXT NOT NULL DEFAULT 'global',
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                readiness_score REAL NOT NULL DEFAULT 0.0,
+                readiness_level TEXT NOT NULL DEFAULT 'not_ready',
+                criteria_coverage_score REAL NOT NULL DEFAULT 0.0,
+                performance_coverage_score REAL NOT NULL DEFAULT 0.0,
+                popularity_coverage_score REAL NOT NULL DEFAULT 0.0,
+                survey_coverage_score REAL NOT NULL DEFAULT 0.0,
+                trend_readiness_score REAL NOT NULL DEFAULT 0.0,
+                validation_quality_score REAL NOT NULL DEFAULT 0.0,
+                data_confidence_average REAL NOT NULL DEFAULT 0.0,
+                blocking_issues_count INTEGER NOT NULL DEFAULT 0,
+                warning_issues_count INTEGER NOT NULL DEFAULT 0,
+                recommendation_summary TEXT,
+                created_at TEXT
+            )
+        """,
+        "missing_data_items": """
+            CREATE TABLE missing_data_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                semester TEXT,
+                faculty_id INTEGER,
+                department_id INTEGER,
+                missing_field TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'warning',
+                required_for_decision INTEGER NOT NULL DEFAULT 1,
+                message TEXT,
+                suggested_action TEXT,
+                detected_at TEXT,
+                resolved_at TEXT,
+                resolved_by TEXT
+            )
+        """,
+        "data_validation_issues": """
+            CREATE TABLE data_validation_issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_type TEXT NOT NULL DEFAULT 'manual_entry',
+                source_id INTEGER,
+                source_row_id INTEGER,
+                course_id INTEGER,
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                field_name TEXT,
+                issue_type TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'warning',
+                message TEXT,
+                suggested_action TEXT,
+                raw_value TEXT,
+                normalized_value TEXT,
+                is_resolved INTEGER NOT NULL DEFAULT 0,
+                resolved_by TEXT,
+                resolved_at TEXT,
+                created_at TEXT
+            )
+        """,
+        "low_confidence_decision_flags": """
+            CREATE TABLE low_confidence_decision_flags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                decision_run_id INTEGER NOT NULL,
+                course_decision_id INTEGER,
+                course_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                confidence_score REAL NOT NULL DEFAULT 0.0,
+                confidence_level TEXT NOT NULL DEFAULT 'low',
+                reason TEXT,
+                recommended_action TEXT,
+                created_at TEXT,
+                resolved_at TEXT
+            )
+        """,
+        "data_collection_priorities": """
+            CREATE TABLE data_collection_priorities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type TEXT NOT NULL DEFAULT 'global',
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                priority_rank INTEGER NOT NULL DEFAULT 100,
+                target_entity_type TEXT NOT NULL,
+                course_id INTEGER,
+                missing_field TEXT,
+                priority_reason TEXT,
+                expected_impact TEXT NOT NULL DEFAULT 'medium',
+                suggested_action TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT,
+                completed_at TEXT
+            )
+        """,
+        "post_decision_outcomes": """
+            CREATE TABLE post_decision_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                decision_run_id INTEGER,
+                course_decision_id INTEGER,
+                course_id INTEGER NOT NULL,
+                decision_year INTEGER NOT NULL,
+                outcome_year INTEGER NOT NULL,
+                final_status_applied INTEGER,
+                actual_enrollment INTEGER,
+                actual_capacity INTEGER,
+                actual_fill_rate REAL,
+                actual_success_rate REAL,
+                actual_average_grade REAL,
+                actual_survey_demand INTEGER,
+                outcome_label TEXT,
+                decision_was_effective INTEGER,
+                notes TEXT,
+                created_at TEXT
+            )
+        """,
+        "fairness_metric_items": """
+            CREATE TABLE fairness_metric_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fairness_report_id INTEGER NOT NULL,
+                metric_key TEXT NOT NULL,
+                metric_value REAL,
+                metric_level TEXT NOT NULL DEFAULT 'warning',
+                explanation TEXT,
+                created_at TEXT
+            )
+        """,
+        "ml_dataset_snapshots": """
+            CREATE TABLE ml_dataset_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_name TEXT,
+                scope_json TEXT,
+                year INTEGER,
+                feature_schema_version TEXT NOT NULL,
+                sample_count INTEGER NOT NULL DEFAULT 0,
+                feature_count INTEGER NOT NULL DEFAULT 0,
+                target_column TEXT,
+                coverage_score REAL NOT NULL DEFAULT 0.0,
+                average_confidence_score REAL NOT NULL DEFAULT 0.0,
+                missing_data_summary_json TEXT,
+                created_at TEXT
+            )
+        """,
+    }
+    for table_name, ddl in tables.items():
+        if not _table_exists(cur, table_name):
+            cur.execute(ddl)
+            changed["tables_created"] += 1
+
+    for table_name, columns in {
+        "data_coverage_reports": [
+            ("scope_type", "TEXT NOT NULL DEFAULT 'global'"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("semester", "TEXT"),
+            ("total_courses", "INTEGER NOT NULL DEFAULT 0"),
+            ("courses_with_criteria", "INTEGER NOT NULL DEFAULT 0"),
+            ("courses_with_performance", "INTEGER NOT NULL DEFAULT 0"),
+            ("courses_with_popularity", "INTEGER NOT NULL DEFAULT 0"),
+            ("courses_with_survey", "INTEGER NOT NULL DEFAULT 0"),
+            ("courses_with_score", "INTEGER NOT NULL DEFAULT 0"),
+            ("courses_with_trend_data", "INTEGER NOT NULL DEFAULT 0"),
+            ("criteria_coverage_ratio", "REAL NOT NULL DEFAULT 0.0"),
+            ("performance_coverage_ratio", "REAL NOT NULL DEFAULT 0.0"),
+            ("popularity_coverage_ratio", "REAL NOT NULL DEFAULT 0.0"),
+            ("survey_coverage_ratio", "REAL NOT NULL DEFAULT 0.0"),
+            ("score_coverage_ratio", "REAL NOT NULL DEFAULT 0.0"),
+            ("trend_coverage_ratio", "REAL NOT NULL DEFAULT 0.0"),
+            ("overall_coverage_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("missing_data_summary_json", "TEXT"),
+            ("recommendations_json", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "data_readiness_assessments": [
+            ("scope_type", "TEXT NOT NULL DEFAULT 'global'"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("readiness_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("readiness_level", "TEXT NOT NULL DEFAULT 'not_ready'"),
+            ("criteria_coverage_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("performance_coverage_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("popularity_coverage_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("survey_coverage_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("trend_readiness_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("validation_quality_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("data_confidence_average", "REAL NOT NULL DEFAULT 0.0"),
+            ("blocking_issues_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("warning_issues_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("recommendation_summary", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "missing_data_items": [
+            ("course_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("semester", "TEXT"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("missing_field", "TEXT"),
+            ("severity", "TEXT NOT NULL DEFAULT 'warning'"),
+            ("required_for_decision", "INTEGER NOT NULL DEFAULT 1"),
+            ("message", "TEXT"),
+            ("suggested_action", "TEXT"),
+            ("detected_at", "TEXT"),
+            ("resolved_at", "TEXT"),
+            ("resolved_by", "TEXT"),
+        ],
+        "data_validation_issues": [
+            ("source_type", "TEXT NOT NULL DEFAULT 'manual_entry'"),
+            ("source_id", "INTEGER"),
+            ("source_row_id", "INTEGER"),
+            ("course_id", "INTEGER"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("field_name", "TEXT"),
+            ("issue_type", "TEXT"),
+            ("severity", "TEXT NOT NULL DEFAULT 'warning'"),
+            ("message", "TEXT"),
+            ("suggested_action", "TEXT"),
+            ("raw_value", "TEXT"),
+            ("normalized_value", "TEXT"),
+            ("is_resolved", "INTEGER NOT NULL DEFAULT 0"),
+            ("resolved_by", "TEXT"),
+            ("resolved_at", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "low_confidence_decision_flags": [
+            ("decision_run_id", "INTEGER"),
+            ("course_decision_id", "INTEGER"),
+            ("course_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("confidence_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("confidence_level", "TEXT NOT NULL DEFAULT 'low'"),
+            ("reason", "TEXT"),
+            ("recommended_action", "TEXT"),
+            ("created_at", "TEXT"),
+            ("resolved_at", "TEXT"),
+        ],
+        "data_collection_priorities": [
+            ("scope_type", "TEXT NOT NULL DEFAULT 'global'"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("priority_rank", "INTEGER NOT NULL DEFAULT 100"),
+            ("target_entity_type", "TEXT NOT NULL DEFAULT 'course'"),
+            ("course_id", "INTEGER"),
+            ("missing_field", "TEXT"),
+            ("priority_reason", "TEXT"),
+            ("expected_impact", "TEXT NOT NULL DEFAULT 'medium'"),
+            ("suggested_action", "TEXT"),
+            ("status", "TEXT NOT NULL DEFAULT 'open'"),
+            ("created_at", "TEXT"),
+            ("completed_at", "TEXT"),
+        ],
+        "post_decision_outcomes": [
+            ("decision_run_id", "INTEGER"),
+            ("course_decision_id", "INTEGER"),
+            ("course_id", "INTEGER"),
+            ("decision_year", "INTEGER"),
+            ("outcome_year", "INTEGER"),
+            ("final_status_applied", "INTEGER"),
+            ("actual_enrollment", "INTEGER"),
+            ("actual_capacity", "INTEGER"),
+            ("actual_fill_rate", "REAL"),
+            ("actual_success_rate", "REAL"),
+            ("actual_average_grade", "REAL"),
+            ("actual_survey_demand", "INTEGER"),
+            ("outcome_label", "TEXT"),
+            ("decision_was_effective", "INTEGER"),
+            ("notes", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "fairness_metric_items": [
+            ("fairness_report_id", "INTEGER"),
+            ("metric_key", "TEXT"),
+            ("metric_value", "REAL"),
+            ("metric_level", "TEXT NOT NULL DEFAULT 'warning'"),
+            ("explanation", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "ml_dataset_snapshots": [
+            ("snapshot_name", "TEXT"),
+            ("scope_json", "TEXT"),
+            ("year", "INTEGER"),
+            ("feature_schema_version", "TEXT"),
+            ("sample_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("feature_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("target_column", "TEXT"),
+            ("coverage_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("average_confidence_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("missing_data_summary_json", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+    }.items():
+        changed["columns_added"] += _ensure_columns(cur, table_name, columns)
+
+    index_ddls = [
+        "CREATE INDEX IF NOT EXISTS ix_data_coverage_scope ON data_coverage_reports (scope_type, faculty_id, department_id, year, semester)",
+        "CREATE INDEX IF NOT EXISTS ix_data_readiness_scope ON data_readiness_assessments (scope_type, faculty_id, department_id, year)",
+        "CREATE INDEX IF NOT EXISTS ix_missing_data_scope ON missing_data_items (year, faculty_id, department_id, severity)",
+        "CREATE INDEX IF NOT EXISTS ix_data_validation_scope ON data_validation_issues (year, severity, is_resolved)",
+        "CREATE INDEX IF NOT EXISTS ix_low_confidence_flags_scope ON low_confidence_decision_flags (year, confidence_level, course_id)",
+        "CREATE INDEX IF NOT EXISTS ix_data_collection_scope ON data_collection_priorities (year, status, priority_rank)",
+        "CREATE INDEX IF NOT EXISTS ix_post_decision_outcomes_scope ON post_decision_outcomes (decision_year, outcome_year, course_id)",
+        "CREATE INDEX IF NOT EXISTS ix_fairness_metric_items_report ON fairness_metric_items (fairness_report_id, metric_key)",
+        "CREATE INDEX IF NOT EXISTS ix_ml_dataset_snapshots_year ON ml_dataset_snapshots (year, feature_schema_version)",
+    ]
+    for ddl in index_ddls:
+        cur.execute(ddl)
+        changed["indexes_created"] += 1
+    if commit:
+        conn.commit()
+    return changed
+
+
 def ensure_reporting_schema(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
     """
     Raporlama icin gereken tum kritik tablolari synchronize eder.
@@ -2733,5 +3389,7 @@ def ensure_reporting_schema(conn: sqlite3.Connection) -> dict[str, dict[str, int
     _log_schema_compat_result(conn, "ahp_governance", result["ahp_governance"])
     result["semester_planning"] = ensure_semester_planning_schema(conn)  # type: ignore[assignment]
     _log_schema_compat_result(conn, "semester_planning", result["semester_planning"])
+    result["data_quality"] = ensure_data_quality_schema(conn)  # type: ignore[assignment]
+    _log_schema_compat_result(conn, "data_quality", result["data_quality"])
     conn.commit()
     return result

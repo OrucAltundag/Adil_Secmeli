@@ -274,77 +274,64 @@ def save_data_coverage_report(
     """
     if coverage_data is None:
         coverage_data = generate_coverage_report_cursor(cur, year, faculty_id, department_id, semester)
-    
+
+    try:
+        from app.db.schema_compat import ensure_data_quality_schema
+
+        ensure_data_quality_schema(cur.connection)
+    except Exception:
+        pass
+
+    total_courses = int(coverage_data.get('total_courses') or 0)
+    courses_with_criteria = int(coverage_data.get('courses_with_criteria') or 0)
+    courses_with_performance = int(coverage_data.get('courses_with_performance') or 0)
+    courses_with_popularity = int(coverage_data.get('courses_with_popularity') or 0)
+    courses_with_survey = int(coverage_data.get('courses_with_survey') or 0)
+    coverage_ratio = float(coverage_data.get('coverage_percentage') or 0.0) / 100.0
+    scope_type = "department" if department_id is not None else ("faculty" if faculty_id is not None else "global")
+
+    def ratio(value: int) -> float:
+        return round(value / total_courses, 4) if total_courses else 0.0
+
     try:
         cur.execute(
             """
             INSERT INTO data_coverage_reports (
-                year, faculty_id, department_id, semester,
+                scope_type, faculty_id, department_id, year, semester,
                 total_courses, courses_with_criteria, courses_with_performance,
-                courses_with_popularity, courses_with_survey,
-                coverage_percentage, report_json, generated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                courses_with_popularity, courses_with_survey, courses_with_score,
+                courses_with_trend_data, criteria_coverage_ratio,
+                performance_coverage_ratio, popularity_coverage_ratio,
+                survey_coverage_ratio, score_coverage_ratio, trend_coverage_ratio,
+                overall_coverage_score, missing_data_summary_json,
+                recommendations_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                int(year),
+                scope_type,
                 int(faculty_id) if faculty_id else None,
                 int(department_id) if department_id else None,
+                int(year),
                 str(semester) if semester else None,
-                coverage_data.get('total_courses', 0),
-                coverage_data.get('courses_with_criteria', 0),
-                coverage_data.get('courses_with_performance', 0),
-                coverage_data.get('courses_with_popularity', 0),
-                coverage_data.get('courses_with_survey', 0),
-                float(coverage_data.get('coverage_percentage', 0.0)),
+                total_courses,
+                courses_with_criteria,
+                courses_with_performance,
+                courses_with_popularity,
+                courses_with_survey,
+                0,
+                0,
+                ratio(courses_with_criteria),
+                ratio(courses_with_performance),
+                ratio(courses_with_popularity),
+                ratio(courses_with_survey),
+                0.0,
+                0.0,
+                round(coverage_ratio, 4),
                 _json_dump(coverage_data),
+                _json_dump([]),
                 _now(),
             ),
         )
         return int(cur.lastrowid)
     except sqlite3.OperationalError:
-        # Table might not exist - create it
-        try:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS data_coverage_reports (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    year INTEGER NOT NULL,
-                    faculty_id INTEGER,
-                    department_id INTEGER,
-                    semester TEXT,
-                    total_courses INTEGER,
-                    courses_with_criteria INTEGER,
-                    courses_with_performance INTEGER,
-                    courses_with_popularity INTEGER,
-                    courses_with_survey INTEGER,
-                    coverage_percentage REAL,
-                    report_json TEXT,
-                    generated_at TEXT
-                )
-            """)
-            cur.execute(
-                """
-                INSERT INTO data_coverage_reports (
-                    year, faculty_id, department_id, semester,
-                    total_courses, courses_with_criteria, courses_with_performance,
-                    courses_with_popularity, courses_with_survey,
-                    coverage_percentage, report_json, generated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(year),
-                    int(faculty_id) if faculty_id else None,
-                    int(department_id) if department_id else None,
-                    str(semester) if semester else None,
-                    coverage_data.get('total_courses', 0),
-                    coverage_data.get('courses_with_criteria', 0),
-                    coverage_data.get('courses_with_performance', 0),
-                    coverage_data.get('courses_with_popularity', 0),
-                    coverage_data.get('courses_with_survey', 0),
-                    float(coverage_data.get('coverage_percentage', 0.0)),
-                    _json_dump(coverage_data),
-                    _now(),
-                ),
-            )
-            return int(cur.lastrowid)
-        except Exception:
-            return 0
+        return 0

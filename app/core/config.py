@@ -62,6 +62,27 @@ class AppConfig:
     api_port: int = 8000
     log_level: str = "INFO"
 
+    # Security Configuration
+    api_auth_token_secret: str = ""
+    api_token_expire_minutes: int = 1440
+    api_key_hashes: str = ""
+    require_rbac: bool = False
+    allow_dangerous_sql: bool = False
+    sql_console_read_only_in_production: bool = True
+    max_upload_size_mb: int = 10
+    max_import_rows: int = 10000
+    allowed_upload_extensions: str = ".xlsx,.csv"
+    allowed_upload_mime_types: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+    rate_limit_enabled: bool = False
+    rate_limit_per_minute: int = 60
+    rate_limit_import_per_minute: int = 5
+    rate_limit_algorithm_run_per_minute: int = 2
+    cors_allowed_origins: str = ""
+    cors_allow_credentials: bool = True
+    backup_before_import: bool = False
+    import_requires_approval: bool = False
+    security_audit_enabled: bool = True
+
     @property
     def db_path(self) -> str:
         return self.sqlite_db_path
@@ -118,6 +139,18 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
     if environment == "production" and "ALLOW_RUNTIME_SCHEMA_MUTATION" not in os.environ:
         allow_runtime_schema_mutation = False
     database_url = str(os.getenv("DATABASE_URL") or cfg.get("db_url") or f"sqlite:///{db_path}")
+
+    # Default production behavior logic
+    is_prod = (environment == "production")
+    api_auth_enabled = _bool(os.getenv("API_AUTH_ENABLED"), _bool(cfg.get("api_auth_enabled"), is_prod))
+    require_rbac = _bool(os.getenv("REQUIRE_RBAC"), _bool(cfg.get("require_rbac"), is_prod))
+    allow_dangerous_sql = _bool(os.getenv("ALLOW_DANGEROUS_SQL"), _bool(cfg.get("allow_dangerous_sql"), False))
+    sql_console_read_only_in_production = _bool(os.getenv("SQL_CONSOLE_READ_ONLY_IN_PRODUCTION"), _bool(cfg.get("sql_console_read_only_in_production"), True))
+    rate_limit_enabled = _bool(os.getenv("RATE_LIMIT_ENABLED"), _bool(cfg.get("rate_limit_enabled"), is_prod))
+    backup_before_import = _bool(os.getenv("BACKUP_BEFORE_IMPORT"), _bool(cfg.get("backup_before_import"), is_prod))
+    import_requires_approval = _bool(os.getenv("IMPORT_REQUIRES_APPROVAL"), _bool(cfg.get("import_requires_approval"), is_prod))
+    security_audit_enabled = _bool(os.getenv("SECURITY_AUDIT_ENABLED"), _bool(cfg.get("security_audit_enabled"), True))
+
     return AppConfig(
         project_name=str(cfg.get("project_name") or os.getenv("PROJECT_NAME") or "Adil Seçmeli"),
         version=str(cfg.get("version") or os.getenv("APP_VERSION") or "1.0.0"),
@@ -131,13 +164,32 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
         enable_schema_compat=enable_schema_compat,
         allow_runtime_schema_mutation=allow_runtime_schema_mutation,
         allow_runtime_schema_mutation_in_production=allow_runtime_schema_mutation_in_production,
-        api_auth_enabled=_bool(os.getenv("API_AUTH_ENABLED"), _bool(cfg.get("api_auth_enabled"), False)),
+        api_auth_enabled=api_auth_enabled,
         enable_ml_decision_influence=_bool(os.getenv("ENABLE_ML_DECISION_INFLUENCE"), _bool(cfg.get("enable_ml_decision_influence"), False)),
         require_high_confidence_for_ml_influence=_bool(os.getenv("REQUIRE_HIGH_CONFIDENCE_FOR_ML_INFLUENCE"), _bool(cfg.get("require_high_confidence_for_ml_influence"), True)),
         allow_experimental_ml_in_decision=_bool(os.getenv("ALLOW_EXPERIMENTAL_ML_IN_DECISION"), _bool(cfg.get("allow_experimental_ml_in_decision"), False)),
         api_host=str(os.getenv("API_HOST") or cfg.get("api_host") or "0.0.0.0"),
         api_port=_int(os.getenv("API_PORT") or cfg.get("api_port"), 8000),
         log_level=str(os.getenv("LOG_LEVEL") or cfg.get("log_level") or "INFO").upper(),
+        api_auth_token_secret=str(os.getenv("API_AUTH_TOKEN_SECRET") or cfg.get("api_auth_token_secret") or ""),
+        api_token_expire_minutes=_int(os.getenv("API_TOKEN_EXPIRE_MINUTES") or cfg.get("api_token_expire_minutes"), 1440),
+        api_key_hashes=str(os.getenv("API_KEY_HASHES") or cfg.get("api_key_hashes") or ""),
+        require_rbac=require_rbac,
+        allow_dangerous_sql=allow_dangerous_sql,
+        sql_console_read_only_in_production=sql_console_read_only_in_production,
+        max_upload_size_mb=_int(os.getenv("MAX_UPLOAD_SIZE_MB") or cfg.get("max_upload_size_mb"), 10),
+        max_import_rows=_int(os.getenv("MAX_IMPORT_ROWS") or cfg.get("max_import_rows"), 10000),
+        allowed_upload_extensions=str(os.getenv("ALLOWED_UPLOAD_EXTENSIONS") or cfg.get("allowed_upload_extensions") or ".xlsx,.csv"),
+        allowed_upload_mime_types=str(os.getenv("ALLOWED_UPLOAD_MIME_TYPES") or cfg.get("allowed_upload_mime_types") or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"),
+        rate_limit_enabled=rate_limit_enabled,
+        rate_limit_per_minute=_int(os.getenv("RATE_LIMIT_PER_MINUTE") or cfg.get("rate_limit_per_minute"), 60),
+        rate_limit_import_per_minute=_int(os.getenv("RATE_LIMIT_IMPORT_PER_MINUTE") or cfg.get("rate_limit_import_per_minute"), 5),
+        rate_limit_algorithm_run_per_minute=_int(os.getenv("RATE_LIMIT_ALGORITHM_RUN_PER_MINUTE") or cfg.get("rate_limit_algorithm_run_per_minute"), 2),
+        cors_allowed_origins=str(os.getenv("CORS_ALLOWED_ORIGINS") or cfg.get("cors_allowed_origins") or ""),
+        cors_allow_credentials=_bool(os.getenv("CORS_ALLOW_CREDENTIALS"), _bool(cfg.get("cors_allow_credentials"), True)),
+        backup_before_import=backup_before_import,
+        import_requires_approval=import_requires_approval,
+        security_audit_enabled=security_audit_enabled,
     )
 
 

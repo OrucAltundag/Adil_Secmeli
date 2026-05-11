@@ -227,6 +227,7 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.data_management_page import DataManagementPage
         from app.ui.tabs.data_quality_page import DataQualityPage
         from app.ui.tabs.system_health_page import SystemHealthPage
+        from app.ui.tabs.security_readiness_page import SecurityReadinessPage
         from app.ui.benchmark import BenchmarkPanel
         from app.ui.style import apply_style
 
@@ -273,60 +274,62 @@ class AdilSecmeliApp(tk.Tk):
         container.pack(fill=tk.BOTH, expand=True)
 
         # ---- BÖLÜM 2.2: Sekmeler (Notebook) ----
+        # ---- BÖLÜM 2.2: Sekmeler (Notebook) ----
         self.nb = ttk.Notebook(container)
         self.nb.pack(fill=tk.BOTH, expand=True)
 
-        # 1. SEKME: Tablo Görüntüle (ViewTab)
-        self.tab_view = ViewTab(self.nb, app=self)
-        self.nb.add(self.tab_view, text="📂 Tablo Görüntüle")
-
-
-        # 2. SEKME: Analiz & Grafik (AnalysisTab)
-        self.tab_analysis = AnalysisTab(self.nb, app=self)
-        self.nb.add(self.tab_analysis, text="📊 Analiz & Grafik")
-
-        
-        # 3. SEKME: Rapor & Yukleme (ToolsTab)
-        self.tab_tools = ToolsTab(self.nb, app=self)
-        self.nb.add(self.tab_tools, text="Rapor & Yukleme")
-
-        # 4. SEKME: Veri Yönetimi
-        self.tab_data_management = DataManagementPage(self.nb, app=self)
-        self.nb.add(self.tab_data_management, text="Veri Yönetimi")
-
-
-        # 🔔 Notebook tab değişim event’i
+        # 🔔 Notebook tab değişim event'i (hemen ayarla)
         self.nb.bind("<<NotebookTabChanged>>", self.on_tab_change)
 
-        # 5. SEKME: Hesaplama & Test (CalcTab)
+        # Ürün akışı sırası: Başlangıç → Veri → Kalite → Kriter/AHP → Karar → Plan → Rapor → Lab
+
+        # 1. SEKME: Sistem Sağlığı (Başlangıç)
+        self.tab_system_health = SystemHealthPage(self.nb, app=self)
+        self.nb.add(self.tab_system_health, text="🏥 Sistem Sağlığı")
+
+        # 2. SEKME: Güvenlik & Üretim Hazırlığı (Başlangıç)
+        self.tab_security_readiness = SecurityReadinessPage(self.nb)
+        self.nb.add(self.tab_security_readiness, text="🔐 Güvenlik & Üretim Hazırlığı")
+
+        # 3. SEKME: Veri Yönetimi (Veri hazırlığı)
+        self.tab_data_management = DataManagementPage(self.nb, app=self)
+        self.nb.add(self.tab_data_management, text="📥 Veri Yönetimi")
+
+        # 4. SEKME: Veri Kalitesi (Veri validasyonu)
+        self.tab_data_quality = DataQualityPage(self.nb, app=self, db_path=self.db_path)
+        self.nb.add(self.tab_data_quality, text="✓ Veri Kalitesi")
+
+        # 5. SEKME: Hesaplama & Test (Kriter hazırlığı)
         self.tab_calc = CalcTab(self.nb, app=self)
         self.nb.add(self.tab_calc, text="🧮 Hesaplama & Test")
 
-        # 6. SEKME: Karar Merkezi
-        self.tab_decision_center = DecisionCenterPage(self.nb, app=self)
-        self.nb.add(self.tab_decision_center, text="Karar Merkezi")
-
-        # 7. SEKME: AHP Ağırlık Yönetimi
+        # 6. SEKME: AHP Ağırlık Yönetimi (Karar ayarları)
         self.tab_ahp_weight = AHPWeightPage(self.nb, app=self)
-        self.nb.add(self.tab_ahp_weight, text="AHP Ağırlık Yönetimi")
+        self.nb.add(self.tab_ahp_weight, text="⚖️ AHP Ağırlık Yönetimi")
 
-        # 8. SEKME: Dönem Planlama
+        # 7. SEKME: Karar Merkezi (Ana karar hattı)
+        self.tab_decision_center = DecisionCenterPage(self.nb, app=self)
+        self.nb.add(self.tab_decision_center, text="🎯 Karar Merkezi")
+
+        # 8. SEKME: Dönem Planlama (Karar uygulaması)
         self.tab_semester_planning = SemesterPlanningPage(self.nb, app=self)
-        self.nb.add(self.tab_semester_planning, text="Dönem Planlama")
+        self.nb.add(self.tab_semester_planning, text="📅 Dönem Planlama")
 
-        # 8.5. SEKME: Veri Kalitesi Kontrolü
-        self.tab_data_quality = DataQualityPage(self.nb, app=self, db_path=self.db_path)
-        self.nb.add(self.tab_data_quality, text="Veri Kalitesi")
+        # 9. SEKME: Rapor & Yukleme (Çıktı üretimi)
+        self.tab_tools = ToolsTab(self.nb, app=self)
+        self.nb.add(self.tab_tools, text="📄 Rapor & Yukleme")
 
-        # 9. SEKME: Benchmark Platformu
+        # 10. SEKME: Analiz & Grafik (Sonrası analiz)
+        self.tab_analysis = AnalysisTab(self.nb, app=self)
+        self.nb.add(self.tab_analysis, text="📊 Analiz & Grafik")
+
+        # 11. SEKME: Benchmark Platformu (Lab/deneysel)
         self.tab_benchmark = BenchmarkPanel(self.nb, app=self)
-        self.nb.add(self.tab_benchmark, text="Benchmark Platformu")
+        self.nb.add(self.tab_benchmark, text="🔬 Benchmark Platformu")
 
-        # 10. SEKME: Sistem Sağlığı
-        self.tab_system_health = SystemHealthPage(self.nb, app=self)
-        self.nb.add(self.tab_system_health, text="Sistem Sağlığı")
-
-
+        # 12. SEKME: Tablo Görüntüle (Admin/debug)
+        self.tab_view = ViewTab(self.nb, app=self)
+        self.nb.add(self.tab_view, text="📂 Tablo Görüntüle")
         # Otomatik Bağlan
         self.auto_connect()
     
@@ -586,6 +589,9 @@ class AdilSecmeliApp(tk.Tk):
             if "Sistem Sağlığı" in current_tab_text:
                 self.tab_system_health.refresh()
 
+            if "Güvenlik" in current_tab_text:
+                self.tab_security_readiness.refresh_data()
+
 
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -622,6 +628,9 @@ class AdilSecmeliApp(tk.Tk):
 
         if "Sistem Sağlığı" in selected_tab:
             self.tab_system_health.refresh()
+
+        if "Güvenlik" in selected_tab:
+            self.tab_security_readiness.refresh_data()
 
 
     def ensure_pool_initialized_once(self):

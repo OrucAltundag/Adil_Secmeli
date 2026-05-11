@@ -14,6 +14,9 @@ from app.core.config import load_app_config
 from app.core.errors import AppError, app_error_from_exception
 from app.core.logging_config import configure_logging
 from app.dashboard import api_routes as benchmark_routes
+from app.api import security_routes
+from app.api.middleware.rate_limit import rate_limit_middleware
+from fastapi.middleware.cors import CORSMiddleware
 
 config = load_app_config()
 configure_logging(config)
@@ -24,8 +27,32 @@ app = FastAPI(
     description="Fakülte bazlı seçmeli ders öneri ve atama sistemi - Üniversite entegrasyonu"
 )
 
+# CORS configuration
+allow_origins = ["*"]
+if config.environment == "production":
+    if config.cors_allowed_origins:
+        allow_origins = [o.strip() for o in config.cors_allowed_origins.split(",") if o.strip()]
+    else:
+        # Warning, shouldn't use * in production
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("SECURITY WARNING: CORS_ALLOWED_ORIGINS is not set in production!")
+        allow_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=config.cors_allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+from starlette.middleware.base import BaseHTTPMiddleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=rate_limit_middleware)
+
 app.include_router(routes.router, prefix="/api/v1", tags=["v1"])
 app.include_router(benchmark_routes.router, prefix="/api/v1/benchmark", tags=["benchmark"])
+app.include_router(security_routes.router, prefix="/api/v1")
 
 
 @app.get("/")

@@ -1883,20 +1883,7 @@ class SchemaCompatLog(Base):
     created_at = Column(DateTime)
 
 
-class SQLConsoleAuditLog(Base):
-    __tablename__ = "sql_console_audit_logs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String)
-    sql_text = Column(Text, nullable=False)
-    statement_type = Column(String)
-    success = Column(Boolean, nullable=False, default=False)
-    error_message = Column(Text)
-    row_count = Column(Integer)
-    executed_at = Column(DateTime)
-
-
-# ---------------------------
 # 38) DATA COVERAGE REPORTS
 # ---------------------------
 class DataCoverageReport(Base):
@@ -2102,3 +2089,148 @@ class MLDatasetSnapshot(Base):
     average_confidence_score = Column(Float, nullable=False, default=0.0)
     missing_data_summary_json = Column(Text)
     created_at = Column(DateTime)
+
+
+# ---------------------------
+# 47) API CLIENTS (Security)
+# ---------------------------
+class ApiClient(Base):
+    __tablename__ = "api_clients"
+
+    id = Column(String, primary_key=True, index=True)
+    client_name = Column(String, nullable=False)
+    api_key_hash = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="api_client")
+    faculty_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=True)
+    department_id = Column(Integer, ForeignKey("bolum.bolum_id"), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime)
+    last_used_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+
+
+# ---------------------------
+# 48) SQL CONSOLE AUDIT LOGS (Security)
+# ---------------------------
+class SqlConsoleAuditLog(Base):
+    __tablename__ = "sql_console_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, nullable=True)
+    client_id = Column(String, nullable=True)
+    role = Column(String, nullable=True)
+    sql_text = Column(Text, nullable=False)
+    statement_type = Column(String, nullable=False)
+    read_only = Column(Boolean, nullable=False, default=True)
+    dangerous = Column(Boolean, nullable=False, default=False)
+    allowed = Column(Boolean, nullable=False, default=False)
+    success = Column(Boolean, nullable=False, default=False)
+    error_message = Column(Text, nullable=True)
+    row_count = Column(Integer, nullable=True)
+    executed_at = Column(DateTime)
+    environment = Column(String)
+    request_id = Column(String, nullable=True)
+
+
+# ---------------------------
+# 49) SECURE IMPORT JOBS (Security)
+# ---------------------------
+class SecureImportJob(Base):
+    __tablename__ = "secure_import_jobs"
+
+    id = Column(String, primary_key=True, index=True)
+    import_type = Column(String, nullable=False)
+    original_filename = Column(String, nullable=False)
+    stored_filename = Column(String, nullable=True)
+    file_hash = Column(String, nullable=False)
+    file_size_bytes = Column(Integer, nullable=False)
+    mime_type = Column(String, nullable=True)
+    uploaded_by = Column(String, nullable=True)
+    uploaded_at = Column(DateTime)
+    faculty_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=True)
+    department_id = Column(Integer, ForeignKey("bolum.bolum_id"), nullable=True)
+    year = Column(Integer, nullable=True)
+    semester = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="uploaded")
+    validation_summary_json = Column(Text, nullable=True)
+    preview_summary_json = Column(Text, nullable=True)
+    row_count = Column(Integer, nullable=True)
+    warning_count = Column(Integer, nullable=True)
+    error_count = Column(Integer, nullable=True)
+    critical_count = Column(Integer, nullable=True)
+    approval_required = Column(Boolean, nullable=False, default=True)
+    approved_by = Column(String, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    rejected_by = Column(String, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    applied_by = Column(String, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    rollback_available = Column(Boolean, nullable=False, default=False)
+    rollback_snapshot_id = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+
+
+class SecureImportJobRow(Base):
+    __tablename__ = "secure_import_job_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    import_job_id = Column(String, ForeignKey("secure_import_jobs.id"), nullable=False)
+    row_number = Column(Integer, nullable=False)
+    raw_data_json = Column(Text, nullable=False)
+    normalized_data_json = Column(Text, nullable=True)
+    matched_course_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=True)
+    row_status = Column(String, nullable=False, default="valid")
+    issues_json = Column(Text, nullable=True)
+    created_at = Column(DateTime)
+
+
+# ---------------------------
+# 50) SECURITY AUDIT LOGS (Security)
+# ---------------------------
+class SecurityAuditLog(Base):
+    __tablename__ = "security_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String, nullable=False)
+    actor_type = Column(String, nullable=False)
+    actor_id = Column(String, nullable=True)
+    role = Column(String, nullable=True)
+    faculty_id = Column(Integer, nullable=True)
+    department_id = Column(Integer, nullable=True)
+    resource_type = Column(String, nullable=True)
+    resource_id = Column(String, nullable=True)
+    action = Column(String, nullable=False)
+    success = Column(Boolean, nullable=False, default=True)
+    severity = Column(String, nullable=False, default="info")
+    message = Column(Text, nullable=False)
+    before_json = Column(Text, nullable=True)
+    after_json = Column(Text, nullable=True)
+    metadata_json = Column(Text, nullable=True)
+    request_id = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime)
+    previous_hash = Column(String, nullable=True)
+    event_hash = Column(String, nullable=True)
+
+
+# ---------------------------
+# 51) DATA SNAPSHOTS (Security / Rollback)
+# ---------------------------
+class DataSnapshot(Base):
+    __tablename__ = "data_snapshots"
+
+    id = Column(String, primary_key=True, index=True)
+    snapshot_type = Column(String, nullable=False)
+    scope_type = Column(String, nullable=False)
+    faculty_id = Column(Integer, ForeignKey("fakulte.fakulte_id"), nullable=True)
+    department_id = Column(Integer, ForeignKey("bolum.bolum_id"), nullable=True)
+    year = Column(Integer, nullable=True)
+    related_import_job_id = Column(String, nullable=True)
+    related_decision_run_id = Column(Integer, nullable=True)
+    snapshot_path = Column(String, nullable=True)
+    snapshot_hash = Column(String, nullable=True)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime)
+    notes = Column(Text, nullable=True)

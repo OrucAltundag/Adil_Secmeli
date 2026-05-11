@@ -270,7 +270,9 @@ class DecisionCenterPage(ttk.Frame):
                 self.tab_semester_planning.refresh()
             self._load_run_related()
         except Exception as exc:
-            messagebox.showerror("Karar Merkezi", f"Veriler yüklenemedi:\n{exc}")
+            if getattr(self, "txt_readiness", None):
+                self.txt_readiness.delete("1.0", tk.END)
+                self.txt_readiness.insert(tk.END, f"Veriler yüklenemedi:\n{exc}")
 
     def _load_filters(self):
         conn = self._conn()

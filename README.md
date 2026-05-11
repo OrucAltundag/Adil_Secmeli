@@ -65,4 +65,24 @@ Not: AHP agirliklari kodda sabit tutulmaz; global/fakulte/bolum/yil bazli AHP pr
 
 Not: Donem dengeleme sistemi baslangicta 4+4 varsayilan politikasiyla calisir; ancak bu kural sabit degildir. Fakulte/bolum/yil bazli donem planlama politikalariyla guz ve bahar icin minimum-maksimum ders hedefleri, ders uygunlugu, ogretim uyesi uygunlugu, kaynak kisitlari, on kosullar, kontenjan ve talep dengesi dikkate alinir.
 
+## Test Altyapisi
+
+Test altyapisi yalnizca kodun calisip calismadigini degil; kararlarin matematiksel dogrulugunu, tekrar uretilebilirligini, uc durum dayanikliligini, aciklanabilirligini ve adalet metriklerini de dogrular. Golden dataset ve deterministiklik testleri, ayni veriyle ayni kararin tekrar uretilebilmesini guvence altina alir.
+
+```bash
+# Tum testler
+python scripts/run_tests.py
+
+# Sadece unit testler
+pytest -m unit -v
+
+# Coverage ile
+pytest --cov=app --cov-report=html
+
+# Hizli (slow haric)
+pytest -m "not slow and not requires_display"
+```
+
+Detayli bilgi: [Test Stratejisi](docs/test_strategy.md)
+
 Not: Projede resmi veri erisim yolu SQLAlchemy model + repository/service katmanidir. Alembic resmi schema migration aracidir. Runtime schema compatibility yalnizca eski SQLite dosyalariyla geriye donuk uyumluluk icin kontrollu bir guvenlik agidir. UI ve API dogrudan veritabanina erismez; ortak servisleri kullanir.

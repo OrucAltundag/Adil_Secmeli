@@ -33,7 +33,7 @@ class DataManagementPage(ttk.Frame):
         self.app = app
         self.selected_import_batch_id: int | None = None
         self._build_ui()
-        self.refresh_imports()
+        self.status_var.set("Import geçmişi için Yenile'ye basın.")
 
     def _db_path(self) -> str | None:
         path = getattr(self.app, "db_path", None)

@@ -24,9 +24,9 @@ CORE_REQUIRED_TABLES = {
 }
 
 CORE_REQUIRED_COLUMNS = {
-    "ders": {"ders_id", "ders_adi"},
+    "ders": {"ders_id", "ad"},
     "ders_kriterleri": {"ders_id", "yil", "donem"},
-    "havuz": {"ders_id", "yil", "durum"},
+    "havuz": {"ders_id", "yil", "statu"},
     "schema_compat_logs": {"action_type", "table_name", "success", "created_at"},
     "sql_console_audit_logs": {"sql_text", "statement_type", "success", "executed_at"},
 }
