@@ -53,11 +53,7 @@ class AlgorithmExplorerPage(ttk.Frame):
         detail = ttk.LabelFrame(middle, text="Algoritma Detayi", padding=8)
         detail.grid(row=1, column=0, sticky="ew", pady=8)
         self.detail_labels = {}
-<<<<<<< HEAD
         for idx, field in enumerate(["Ad", "Grup", "Kullanım Rolü", "Aciklama", "Kullanim Senaryosu", "Avantajlar", "Dezavantajlar"]):
-=======
-        for idx, field in enumerate(["Ad", "Grup", "Aciklama", "Kullanim Senaryosu", "Avantajlar", "Dezavantajlar"]):
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
             ttk.Label(detail, text=field, font=("Segoe UI", 9, "bold")).grid(row=idx, column=0, sticky="nw", pady=2)
             label = ttk.Label(detail, text="-", wraplength=430, foreground=COLORS["muted"])
             label.grid(row=idx, column=1, sticky="w", pady=2)
@@ -111,10 +107,7 @@ class AlgorithmExplorerPage(ttk.Frame):
         detail = mock_data.ALGORITHM_DETAILS.get(name, {})
         self.detail_labels["Ad"].configure(text=name, foreground=algorithm_group_color(item.get("group", "")))
         self.detail_labels["Grup"].configure(text=item.get("group", "-"))
-<<<<<<< HEAD
         self.detail_labels["Kullanım Rolü"].configure(text=item.get("role_label") or item.get("usage_role") or "Sadece benchmark")
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
         self.detail_labels["Aciklama"].configure(text=detail.get("description", "Registry uzerinden gelen algoritma."))
         self.detail_labels["Kullanim Senaryosu"].configure(text=detail.get("use_case", "Benchmark senaryosuna gore kullanilir."))
         self.detail_labels["Avantajlar"].configure(text=detail.get("pros", "-"))

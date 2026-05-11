@@ -130,44 +130,17 @@ class SklearnPredictorBase(IPredictor):
         return out.fillna(0.0)
 
 
-<<<<<<< HEAD
-def ml_algorithm_metadata() -> dict[str, dict[str, str]]:
-    """Benchmark ekranları için ML kullanım rolü metadata'sı."""
-    return {
-        "NaiveBayes": {"algorithm_key": "naive_bayes", "usage_role": "benchmark_only", "label": "Sadece benchmark"},
-        "LogisticRegression": {"algorithm_key": "logistic_regression", "usage_role": "benchmark_only", "label": "Sadece benchmark"},
-        "RandomForest": {"algorithm_key": "random_forest", "usage_role": "advisory_ml", "label": "Destekleyici ML"},
-        "XGBoost": {"algorithm_key": "xgboost", "usage_role": "benchmark_only", "label": "Sadece benchmark"},
-        "XGBoostFallback": {"algorithm_key": "gradient_boosting", "usage_role": "benchmark_only", "label": "Sadece benchmark"},
-    }
-
-
 class NaiveBayesPredictor(SklearnPredictorBase):
-    usage_role = "benchmark_only"
-
-=======
-class NaiveBayesPredictor(SklearnPredictorBase):
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self) -> None:
         super().__init__(name="NaiveBayes", estimator=GaussianNB())
 
 
 class LogisticRegressionPredictor(SklearnPredictorBase):
-<<<<<<< HEAD
-    usage_role = "benchmark_only"
-
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self) -> None:
         super().__init__(name="LogisticRegression", estimator=_build_lr_estimator())
 
 
 class RandomForestPredictor(SklearnPredictorBase):
-<<<<<<< HEAD
-    usage_role = "advisory_ml"
-
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self, n_estimators: int = 300, random_seed: int = 42) -> None:
         super().__init__(
             name="RandomForest",
@@ -184,11 +157,6 @@ class RandomForestPredictor(SklearnPredictorBase):
 class XGBoostLikePredictor(SklearnPredictorBase):
     """Uses XGBoost when available, otherwise GradientBoosting fallback."""
 
-<<<<<<< HEAD
-    usage_role = "benchmark_only"
-
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
     def __init__(self, random_seed: int = 42) -> None:
         estimator: Any
         model_name = "XGBoostFallback"

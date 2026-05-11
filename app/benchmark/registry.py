@@ -25,11 +25,8 @@ class RegistryEntry:
     name: str
     group: str
     factory: Callable[[], IAlgorithm]
-<<<<<<< HEAD
     usage_role: str = "benchmark_only"
     role_label: str = "Sadece benchmark"
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
 
 class AlgorithmRegistry:
@@ -37,7 +34,6 @@ class AlgorithmRegistry:
         self._entries: dict[str, RegistryEntry] = {}
         self._register_defaults()
 
-<<<<<<< HEAD
     def register(
         self,
         name: str,
@@ -48,10 +44,6 @@ class AlgorithmRegistry:
         role_label: str = "Sadece benchmark",
     ) -> None:
         self._entries[name] = RegistryEntry(name=name, group=group, factory=factory, usage_role=usage_role, role_label=role_label)
-=======
-    def register(self, name: str, group: str, factory: Callable[[], IAlgorithm]) -> None:
-        self._entries[name] = RegistryEntry(name=name, group=group, factory=factory)
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
     def create(self, name: str) -> IAlgorithm:
         try:
@@ -64,7 +56,6 @@ class AlgorithmRegistry:
         entries = self._entries.values()
         if group is not None:
             entries = [entry for entry in entries if entry.group == group]
-<<<<<<< HEAD
         return [
             {"name": entry.name, "group": entry.group, "usage_role": entry.usage_role, "role_label": entry.role_label}
             for entry in sorted(entries, key=lambda e: (e.group, e.name))
@@ -85,25 +76,6 @@ class AlgorithmRegistry:
         self.register("LogisticRegression", "ml", lambda: LogisticRegressionPredictor(), usage_role="benchmark_only", role_label="Sadece benchmark")
         self.register("RandomForest", "ml", lambda: RandomForestPredictor(), usage_role="advisory_ml", role_label="Destekleyici ML")
         self.register("XGBoostLike", "ml_advanced", lambda: XGBoostLikePredictor(), usage_role="benchmark_only", role_label="Sadece benchmark")
-=======
-        return [{"name": entry.name, "group": entry.group} for entry in sorted(entries, key=lambda e: (e.group, e.name))]
-
-    def _register_defaults(self) -> None:
-        # MCDM
-        self.register("AHP", "mcdm", lambda: AHPRanker())
-        self.register("TOPSIS", "mcdm", lambda: TOPSISRanker())
-        self.register("VIKOR", "mcdm", lambda: VIKORRanker())
-        self.register("PROMETHEE_II", "mcdm", lambda: PROMETHEERanker())
-
-        # ML baseline/core/advanced
-        self.register("RandomPredictor", "ml_baseline", lambda: RandomPredictor(classes=[]))
-        self.register("MajorityClassPredictor", "ml_baseline", lambda: MajorityClassPredictor())
-        self.register("PopularityRecommender", "ml_baseline", lambda: PopularityRecommender())
-        self.register("NaiveBayes", "ml", lambda: NaiveBayesPredictor())
-        self.register("LogisticRegression", "ml", lambda: LogisticRegressionPredictor())
-        self.register("RandomForest", "ml", lambda: RandomForestPredictor())
-        self.register("XGBoostLike", "ml_advanced", lambda: XGBoostLikePredictor())
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
         # Clustering
         self.register("KMeans", "clustering", lambda: KMeansClusterer())
@@ -116,7 +88,3 @@ class AlgorithmRegistry:
         self.register("GreedyAllocation", "allocation", lambda: GreedyAllocator())
         self.register("FirstComeFirstServed", "allocation", lambda: FCFSAllocator())
         self.register("MinimumRegretAllocation", "allocation", lambda: MinimumRegretAllocator())
-<<<<<<< HEAD
-=======
-
->>>>>>> b9e88394022006b16fd391988c0080a07e411942

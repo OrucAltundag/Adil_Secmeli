@@ -6,19 +6,13 @@ from tkinter import ttk
 from app.ui.benchmark.api_client import BenchmarkApiClient
 from app.ui.benchmark.pages import (
     AlgorithmExplorerPage,
-<<<<<<< HEAD
     AlgorithmGovernancePage,
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
     AllocationFairnessPage,
     ComparisonPage,
     DashboardPage,
     DatasetLabPage,
     DecisionEnginePage,
-<<<<<<< HEAD
     MLReadinessPage,
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
     RunHistoryPage,
 )
 from app.ui.benchmark.widgets import COLORS
@@ -65,11 +59,8 @@ class BenchmarkPanel(ttk.Frame):
             ("comparison", "Algorithm Comparison", ComparisonPage),
             ("dataset_lab", "Dataset Lab", DatasetLabPage),
             ("algorithm_explorer", "Algorithm Explorer", AlgorithmExplorerPage),
-<<<<<<< HEAD
             ("algorithm_governance", "Algoritma Yönetişimi", AlgorithmGovernancePage),
             ("ml_readiness", "ML Güvenilirlik", MLReadinessPage),
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
             ("allocation_fairness", "Allocation Fairness", AllocationFairnessPage),
             ("decision_engine", "Decision Engine", DecisionEnginePage),
             ("run_history", "Run History", RunHistoryPage),

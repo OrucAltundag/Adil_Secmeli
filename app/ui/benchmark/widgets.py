@@ -25,7 +25,6 @@ COLORS = {
 
 
 def run_async(root: tk.Misc, worker: Callable[[], Any], on_success: Callable[[Any], None], on_error: Callable[[Exception], None] | None = None) -> None:
-<<<<<<< HEAD
     def _schedule(callback: Callable[[], None]) -> None:
         try:
             if root.winfo_exists():
@@ -40,15 +39,6 @@ def run_async(root: tk.Misc, worker: Callable[[], Any], on_success: Callable[[An
         except Exception as exc:
             if on_error:
                 _schedule(lambda exc=exc: on_error(exc))
-=======
-    def _target() -> None:
-        try:
-            result = worker()
-            root.after(0, lambda: on_success(result))
-        except Exception as exc:
-            if on_error:
-                root.after(0, lambda: on_error(exc))
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
     threading.Thread(target=_target, daemon=True).start()
 

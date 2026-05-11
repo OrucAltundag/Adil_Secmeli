@@ -14,10 +14,7 @@ from app.services.permission_service import require_action
 
 from app.core.config import load_app_config
 from app.core.settings import load_settings
-<<<<<<< HEAD
 from app.db.session import open_sqlite_connection
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
 from app.schemas.common import ApiResponse
@@ -260,13 +257,9 @@ def _open_connection() -> sqlite3.Connection:
     path = _get_db_path()
     if not os.path.exists(path):
         raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
-<<<<<<< HEAD
-    return open_sqlite_connection(path, row_factory=True)
-=======
     conn = connect_sqlite(path, row_factory=True)
     ensure_reporting_schema(conn)
     return conn
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
 
 def _run_query(query: str, params: tuple = ()) -> tuple[list[str], list[list]]:

@@ -8,7 +8,6 @@ from typing import Any
 
 import pandas as pd
 from app.db.sqlite_connection import connect_sqlite
-<<<<<<< HEAD
 from app.db.schema_compat import ensure_import_governance_schema, ensure_reporting_schema
 from app.services.import_audit_service import (
     create_import_batch,
@@ -20,8 +19,6 @@ from app.services.import_audit_service import (
 from app.services.import_impact_service import recalculate_import_impact
 from app.services.import_lineage_service import record_value_source
 from app.services.import_quality_service import evaluate_import_quality
-=======
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
     reset_year_workflow_for_import,

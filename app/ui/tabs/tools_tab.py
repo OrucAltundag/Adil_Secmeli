@@ -18,11 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-<<<<<<< HEAD
 from app.db.sqlite_connection import is_database_locked_error
-=======
-from app.db.sqlite_connection import connect_sqlite, is_database_locked_error
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 from app.services.criteria_import_service import (
     FACULTY_SCOPE_LABEL,
     import_criteria_excel as run_criteria_import,
@@ -977,17 +973,7 @@ class ToolsTab(ttk.Frame):
 
         try:
             def _backup():
-<<<<<<< HEAD
                 SystemService(db_path=self.db_path).backup_database(target, source_path=self.db_path).unwrap()
-=======
-                source = connect_sqlite(self.db_path)
-                target_conn = connect_sqlite(target)
-                try:
-                    source.backup(target_conn)
-                finally:
-                    target_conn.close()
-                    source.close()
->>>>>>> b9e88394022006b16fd391988c0080a07e411942
 
             self._run_external_db_operation(_backup)
             self.log(f"DB yedeklendi: {target}")

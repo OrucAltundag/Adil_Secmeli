@@ -98,7 +98,7 @@ def _temp_db(rows: int = 24) -> str:
         """
     )
     cur.execute("INSERT INTO okul VALUES (1, 'Okul', 'Merkez')")
-    cur.execute("INSERT INTO fakulte VALUES (1, 'Mühendislik', 1, 'Fakülte', 'Merkez')")
+    cur.execute("INSERT INTO fakulte VALUES (1, 'M├╝hendislik', 1, 'Fak├╝lte', 'Merkez')")
     cur.execute("INSERT INTO bolum VALUES (10, 1, 'Bilgisayar')")
     for idx in range(rows):
         ders_id = 1000 + idx
@@ -107,7 +107,7 @@ def _temp_db(rows: int = 24) -> str:
         total = 40 + (idx % 12)
         passed = max(0, total - (idx % 8))
         status = 1 if idx % 2 == 0 else 0
-        cur.execute("INSERT INTO ders VALUES (?, ?, ?, 1, 10, 'Seçmeli', 'Seçmeli', 3, 5, ?)", (ders_id, f"BLM{idx}", f"Ders {idx}", capacity))
+        cur.execute("INSERT INTO ders VALUES (?, ?, ?, 1, 10, 'Se├ğmeli', 'Se├ğmeli', 3, 5, ?)", (ders_id, f"BLM{idx}", f"Ders {idx}", capacity))
         cur.execute("INSERT INTO havuz (ders_id, fakulte_id, bolum_id, yil, donem, statu, sayac, skor) VALUES (?, 1, 10, 2026, 'Guz', ?, ?, ?)", (str(ders_id), status, idx % 3, 40 + idx))
         cur.execute("INSERT INTO ders_kriterleri VALUES (NULL, ?, 2026, 'Guz', ?, ?, ?, ?, ?, ?, ?)", (ders_id, total, passed, 55 + idx % 40, capacity, enrolled, 20 + idx, 5 + idx))
         cur.execute("INSERT INTO performans VALUES (NULL, ?, 2026, 'Guz', ?, ?)", (ders_id, 55 + idx % 40, passed / total))
@@ -247,7 +247,7 @@ def test_explainability_tree_path_and_low_data_limitation():
     explanation = explain_model_prediction(model, X.iloc[[0]], X.columns.tolist(), "decision_tree", readiness_level="low", sample_count=4)
     assert explanation.decision_path_json
     assert explanation.limitations
-    assert "nihai karar değildir" in explanation.human_readable_text
+    assert "nihai karar de─şildir" in explanation.human_readable_text
 
 
 def test_benchmark_registry_marks_ml_roles():
