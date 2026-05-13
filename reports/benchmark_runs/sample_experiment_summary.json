@@ -2,8 +2,8 @@
   "runs": [
     {
       "scenario": "real_mcdm_recommendation",
-      "run_id": "run_77fdefcf5ddd",
-      "stored_at": "reports\\benchmark_runs\\run_77fdefcf5ddd.json",
+      "run_id": "run_a4e3cfaeb031",
+      "stored_at": "reports\\benchmark_runs\\run_a4e3cfaeb031.json",
       "algorithms": [
         "AHP",
         "TOPSIS",
@@ -13,8 +13,8 @@
     },
     {
       "scenario": "real_ml_prediction",
-      "run_id": "run_912222c91809",
-      "stored_at": "reports\\benchmark_runs\\run_912222c91809.json",
+      "run_id": "run_0603e4194894",
+      "stored_at": "reports\\benchmark_runs\\run_0603e4194894.json",
       "algorithms": [
         "RandomPredictor",
         "MajorityClassPredictor",
@@ -26,8 +26,8 @@
     },
     {
       "scenario": "allocation_fairness",
-      "run_id": "run_81e7e41ad5fc",
-      "stored_at": "reports\\benchmark_runs\\run_81e7e41ad5fc.json",
+      "run_id": "run_63a9a3be990b",
+      "stored_at": "reports\\benchmark_runs\\run_63a9a3be990b.json",
       "algorithms": [
         "GaleShapley",
         "RandomAllocation",
@@ -38,8 +38,8 @@
     },
     {
       "scenario": "clustering_exploration",
-      "run_id": "run_7488a8a74ee7",
-      "stored_at": "reports\\benchmark_runs\\run_7488a8a74ee7.json",
+      "run_id": "run_b58e392f3e6e",
+      "stored_at": "reports\\benchmark_runs\\run_b58e392f3e6e.json",
       "algorithms": [
         "KMeans",
         "HierarchicalClustering",
@@ -49,8 +49,8 @@
   ],
   "recommendation": {
     "algorithm": "XGBoostLike",
-    "confidence": 0.942125,
-    "reason": "Selected from historical benchmark outcomes across 4 runs.",
+    "confidence": 0.95,
+    "reason": "Selected from historical benchmark outcomes across 5 runs.",
     "source": "history",
     "candidates": [
       "real_ml_prediction"

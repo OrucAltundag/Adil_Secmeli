@@ -1,0 +1,4075 @@
+{
+  "year": 2024,
+  "target_year": 2025,
+  "db_path": "data/adil_secmeli.db",
+  "generated_at": "2026-05-12T23:46:21",
+  "runs": [
+    {
+      "donem": "Güz",
+      "result": {
+        "ok": true,
+        "year": 2024,
+        "processed": [
+          {
+            "ok": true,
+            "fakulte_id": 1,
+            "fakulte": "Tıp Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Güz",
+            "departments": [
+              {
+                "bolum_id": 1,
+                "bolum": "Tıp",
+                "mevcut_adet": 8,
+                "dusenler": [
+                  {
+                    "ders_id": 2,
+                    "ders": "Çocuk Hakları ve Aile Eğitimi",
+                    "score": 29.29,
+                    "average_grade": 52.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 22,
+                    "ders": "Plastik Rekonstrüktif ve Estetik Cerrahi",
+                    "score": 34.13,
+                    "average_grade": 66.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 23,
+                    "ders": "Radyasyon Onkolojisi",
+                    "score": 16.25,
+                    "average_grade": 47.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 29,
+                    "ders": "Atatürk İlkeleri ve İnkılap Tarihi",
+                    "score": 36.81,
+                    "average_grade": 65.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 31,
+                    "ders": "Yabancı Dil (İngilizce)",
+                    "score": 11.06,
+                    "average_grade": 41.1,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda",
+                      "Gecme not ortalamasi 45 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 32,
+                    "ders": "Kariyer Planlama",
+                    "score": 32.53,
+                    "average_grade": 43.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda",
+                      "Gecme not ortalamasi 45 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 34,
+                    "ders": "Cerrahi Bilimler Seçmeli",
+                    "score": 47.18,
+                    "kaynak_bolum_id": 1,
+                    "kaynak_bolum": "Tıp",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 35,
+                    "ders": "Dahili Bilimler Seçmeli",
+                    "score": 43.61,
+                    "kaynak_bolum_id": 1,
+                    "kaynak_bolum": "Tıp",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 10,
+            "pool_state_transitions": 10,
+            "year_score_upserted": 10,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 21,
+              "summary": {
+                "course_count": 10,
+                "approval_required_count": 6,
+                "low_data_confidence_count": 0,
+                "sensitive_decision_count": 8,
+                "status_counts": {
+                  "-1": 6,
+                  "1": 1,
+                  "0": 3
+                },
+                "generation_result": {
+                  "fakulte_id": 1,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Güz",
+                  "department_count": 1,
+                  "pool_rows_upserted": 10,
+                  "pool_state_transitions": 10
+                },
+                "fairness_summary": "2024 karar calismasinda 10 ders degerlendirildi. 1 ders mufredatta, 3 ders havuzda, 6 ders dinlenmede/aday, 6 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 0, hassas karar sayisi 8."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Tıp Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 2,
+            "fakulte": "Mühendislik ve Doğa Bilimleri Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Güz",
+            "departments": [
+              {
+                "bolum_id": 2,
+                "bolum": "Bilgisayar Mühendisliği",
+                "mevcut_adet": 46,
+                "dusenler": [
+                  {
+                    "ders_id": 82,
+                    "ders": "Medeniyetler ve Küresel Karşılaşmalar",
+                    "score": 30.17,
+                    "average_grade": 48.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 88,
+                    "ders": "Blokzincir Teknolojisi",
+                    "score": 39.6,
+                    "average_grade": 60.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 98,
+                    "ders": "Ağ Güvenliği",
+                    "score": 31.74,
+                    "average_grade": 59.1,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 100,
+                    "ders": "İnsansız Hava Aracı Teknolojisine Giriş",
+                    "score": 39.56,
+                    "average_grade": 58.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 114,
+                    "ders": "MATLAB GUI Uygulamaları",
+                    "score": 37.6,
+                    "average_grade": 65.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 117,
+                    "ders": "Genetik Algoritma",
+                    "score": 39.73,
+                    "average_grade": 52.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 118,
+                    "ders": "Makine Öğrenmesi ve Örüntü Tanıma",
+                    "score": 37.65,
+                    "average_grade": 69.1,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 128,
+                    "ders": "Büyük Veri",
+                    "score": 33.66,
+                    "average_grade": 68.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 703,
+                    "ders": "E-Ticaret",
+                    "score": 37.33,
+                    "average_grade": 58.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 704,
+                    "ders": "İnsansız Hava Aracı Teknolojisine Giriş",
+                    "score": 39.11,
+                    "average_grade": 52.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 106,
+                    "ders": "Bulut Bilişim Uygulamaları",
+                    "score": 51.76,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 166,
+                    "ders": "iOS Programlama",
+                    "score": 50.0,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 108,
+                    "ders": "Metin Madenciliğine Giriş",
+                    "score": 47.07,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 706,
+                    "ders": "Bulut Bilişim Uygulamaları",
+                    "score": 46.96,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 708,
+                    "ders": "Metin Madenciliğine Giriş",
+                    "score": 46.86,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 95,
+                    "ders": "Post-Modern Dönemde Din ve Gençlik",
+                    "score": 46.67,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 92,
+                    "ders": "Bilimsel Araştırma Teknikleri",
+                    "score": 46.55,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 109,
+                    "ders": "Bilgisayar Grafiği",
+                    "score": 45.91,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 705,
+                    "ders": "Robotiğe Giriş",
+                    "score": 45.83,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 103,
+                    "ders": "İnformasyon Güvenliği ve Kriptoloji",
+                    "score": 45.71,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              },
+              {
+                "bolum_id": 3,
+                "bolum": "Elektrik-Elektronik Mühendisliği",
+                "mevcut_adet": 28,
+                "dusenler": [
+                  {
+                    "ders_id": 119,
+                    "ders": "Görüntü İşleme",
+                    "score": 35.7,
+                    "average_grade": 64.1,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 181,
+                    "ders": "Yenilenebilir Enerji Kaynakları",
+                    "score": 21.7,
+                    "average_grade": 55.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 182,
+                    "ders": "Gömülü Sistemler - I",
+                    "score": 39.33,
+                    "average_grade": 80.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 184,
+                    "ders": "Yapay Zeka ve Uygulamaları",
+                    "score": 31.82,
+                    "average_grade": 54.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 221,
+                    "ders": "Elektrik Enerjisi Dağıtımı",
+                    "score": 37.53,
+                    "average_grade": 61.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 224,
+                    "ders": "Kalite Yönetim Sistemleri",
+                    "score": 28.79,
+                    "average_grade": 68.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 227,
+                    "ders": "Güç Elektroniği Kontrol ve Koruma Sistemleri",
+                    "score": 34.76,
+                    "average_grade": 49.3,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 229,
+                    "ders": "Dalga Yayılımı ve Haberleşme Bağlantıları",
+                    "score": 30.58,
+                    "average_grade": 50.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 236,
+                    "ders": "Bilgisayar Destekli Devre Analizi",
+                    "score": 36.82,
+                    "average_grade": 52.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 242,
+                    "ders": "Mikrodalga Tekniği",
+                    "score": 39.5,
+                    "average_grade": 50.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 243,
+                    "ders": "Doğrusal Olmayan Kontrol",
+                    "score": 39.44,
+                    "average_grade": 50.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 244,
+                    "ders": "Özel Elektrik Makinaları",
+                    "score": 31.23,
+                    "average_grade": 53.1,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 247,
+                    "ders": "Haberleşme Elektroniği",
+                    "score": 36.72,
+                    "average_grade": 62.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 249,
+                    "ders": "Nanoelektronik",
+                    "score": 35.35,
+                    "average_grade": 54.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 250,
+                    "ders": "FPGA İle Gömülü Sistem Tasarımı",
+                    "score": 31.86,
+                    "average_grade": 59.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 238,
+                    "ders": "Aydınlatma Tekniği",
+                    "score": 51.58,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 239,
+                    "ders": "Endüstriyel Otomasyon",
+                    "score": 50.0,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 233,
+                    "ders": "Günlük İngilizce",
+                    "score": 49.64,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 216,
+                    "ders": "İş Hukuku",
+                    "score": 48.0,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 201,
+                    "ders": "Yarı İletken Cihazlar",
+                    "score": 44.52,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 220,
+                    "ders": "Sayısal İşaret İşleme",
+                    "score": 44.26,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 218,
+                    "ders": "Matlab ile Sayısal Analiz",
+                    "score": 44.11,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 217,
+                    "ders": "Otomatik Kontrol Sistemleri II",
+                    "score": 44.08,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 731,
+                    "ders": "Sayısal İşaret İşleme",
+                    "score": 43.81,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 219,
+                    "ders": "Elektrik Enerjisi Üretimi ve Yenilenebilir Enerji",
+                    "score": 43.61,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 234,
+                    "ders": "Mühendislikte Rapor ve Proje Hazırlama",
+                    "score": 43.33,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 180,
+                    "ders": "Endüstriyel Otomasyon",
+                    "score": 41.36,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 276,
+                    "ders": "Bulanık Küme Teorisi",
+                    "score": 76.72,
+                    "kaynak_bolum_id": 4,
+                    "kaynak_bolum": "Endüstri Mühendisliği",
+                    "reasons": [
+                      "Fakulte ortak havuzu adayi (Kaynak: Endüstri Mühendisliği)"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 1
+              },
+              {
+                "bolum_id": 4,
+                "bolum": "Endüstri Mühendisliği",
+                "mevcut_adet": 17,
+                "dusenler": [
+                  {
+                    "ders_id": 268,
+                    "ders": "Maliyet Muhasebesi",
+                    "score": 38.27,
+                    "average_grade": 65.4,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 311,
+                    "ders": "Afet ve Kriz Yönetimi",
+                    "score": 48.48,
+                    "kaynak_bolum_id": 4,
+                    "kaynak_bolum": "Endüstri Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 134,
+            "pool_state_transitions": 134,
+            "year_score_upserted": 134,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 22,
+              "summary": {
+                "course_count": 134,
+                "approval_required_count": 26,
+                "low_data_confidence_count": 2,
+                "sensitive_decision_count": 86,
+                "status_counts": {
+                  "0": 105,
+                  "-1": 26,
+                  "1": 3
+                },
+                "generation_result": {
+                  "fakulte_id": 2,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Güz",
+                  "department_count": 3,
+                  "pool_rows_upserted": 134,
+                  "pool_state_transitions": 134
+                },
+                "fairness_summary": "2024 karar calismasinda 134 ders degerlendirildi. 3 ders mufredatta, 105 ders havuzda, 26 ders dinlenmede/aday, 26 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 2, hassas karar sayisi 86."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Mühendislik ve Doğa Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 3,
+            "fakulte": "Sağlık Bilimleri Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Güz",
+            "departments": [
+              {
+                "bolum_id": 5,
+                "bolum": "Hemşirelik",
+                "mevcut_adet": 28,
+                "dusenler": [
+                  {
+                    "ders_id": 333,
+                    "ders": "Kişilerarası İlişkiler",
+                    "score": 24.48,
+                    "average_grade": 66.4,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 334,
+                    "ders": "Bilim Felsefesi",
+                    "score": 30.93,
+                    "average_grade": 80.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 349,
+                    "ders": "Onkoloji Hemşireliği",
+                    "score": 36.39,
+                    "average_grade": 68.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 351,
+                    "ders": "Diyaliz Hemşireliği",
+                    "score": 28.64,
+                    "average_grade": 59.0,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 360,
+                    "ders": "Sağlık Sosyolojisi ve Antropolojisi",
+                    "score": 32.06,
+                    "average_grade": 59.1,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 362,
+                    "ders": "Enfeksiyon Kontrol Hemşireliği",
+                    "score": 36.45,
+                    "average_grade": 83.0,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 364,
+                    "ders": "Sağlık ve Medya",
+                    "score": 33.82,
+                    "average_grade": 65.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 365,
+                    "ders": "Hasta Eğitimi",
+                    "score": 35.3,
+                    "average_grade": 73.0,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 373,
+                    "ders": "Afet Kültürü ve Yönetimi",
+                    "score": 31.8,
+                    "average_grade": 70.3,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 375,
+                    "ders": "Hemşirelikte Kariyer Yönetimi",
+                    "score": 26.43,
+                    "average_grade": 54.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 376,
+                    "ders": "Yenidoğan Hemşireliği",
+                    "score": 23.1,
+                    "average_grade": 87.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 386,
+                    "ders": "Sağlık Politikaları ve Hemşirelik",
+                    "score": 29.5,
+                    "average_grade": 68.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 387,
+                    "ders": "Etkili Sunum İlkeleri",
+                    "score": 35.26,
+                    "average_grade": 80.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 388,
+                    "ders": "Okul Sağlığı Hemşireliği",
+                    "score": 33.78,
+                    "average_grade": 67.4,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 747,
+                    "ders": "Üniversiteye Uyum",
+                    "score": 32.01,
+                    "average_grade": 75.4,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 752,
+                    "ders": "Doğuma Hazırlık ve Ebeveyn Eğitimi",
+                    "score": 37.16,
+                    "average_grade": 77.3,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 378,
+                    "ders": "Kanıta Dayalı Hemşirelik",
+                    "score": 51.86,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 370,
+                    "ders": "Transplantasyon Hemşireliği",
+                    "score": 50.0,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 366,
+                    "ders": "Hemşirelikte Girişimcilik ve İnovasyon",
+                    "score": 50.0,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 371,
+                    "ders": "Ameliyathane Hemşireliği",
+                    "score": 49.23,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 379,
+                    "ders": "Konsültasyon Liyezon Psikiyatrisi Hemşireliği",
+                    "score": 48.61,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 359,
+                    "ders": "Sosyal Medya ve Hemşirelik",
+                    "score": 48.36,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 368,
+                    "ders": "Palyatif Hemşireliği",
+                    "score": 47.73,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 350,
+                    "ders": "İş Sağlığı ve Güvenliği",
+                    "score": 47.1,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 357,
+                    "ders": "Aile Danışmanlığı",
+                    "score": 46.58,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 377,
+                    "ders": "Adli Hemşirelik",
+                    "score": 46.14,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 353,
+                    "ders": "Tamamlayıcı ve Destekleyici Bakım",
+                    "score": 46.04,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 358,
+                    "ders": "Stres ve Kriz Yönetimi",
+                    "score": 45.56,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 372,
+                    "ders": "Geriatri Hemşireliği",
+                    "score": 45.32,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 367,
+                    "ders": "Yoğun Bakım Hemşireliği",
+                    "score": 45.27,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 380,
+                    "ders": "Hasta ve Çalışan Güvenliği",
+                    "score": 45.26,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 356,
+                    "ders": "Cinsel Sağlık",
+                    "score": 44.95,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              },
+              {
+                "bolum_id": 6,
+                "bolum": "Ebelik",
+                "mevcut_adet": 13,
+                "dusenler": [
+                  {
+                    "ders_id": 335,
+                    "ders": "Üniversiteye Uyum",
+                    "score": 36.07,
+                    "average_grade": 71.4,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 361,
+                    "ders": "Bakım Teknolojileri",
+                    "score": 22.39,
+                    "average_grade": 77.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 374,
+                    "ders": "Doğuma Hazırlık ve Ebeveyn Eğitimi",
+                    "score": 36.94,
+                    "average_grade": 87.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 422,
+                    "ders": "İklim Değişikliği ve Sağlık",
+                    "score": 27.45,
+                    "average_grade": 72.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 423,
+                    "ders": "Tıbbi Terminoloji",
+                    "score": 27.36,
+                    "average_grade": 74.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 430,
+                    "ders": "Kadın Statüsü ve Sorunları",
+                    "score": 25.61,
+                    "average_grade": 64.0,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 436,
+                    "ders": "Ebelikte Kültürel Yaklaşımlar",
+                    "score": 27.84,
+                    "average_grade": 60.0,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 442,
+                    "ders": "Afetlerde Üreme Sağlığı",
+                    "score": 29.76,
+                    "average_grade": 76.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 447,
+                    "ders": "Ebelikte İnovasyon",
+                    "score": 31.99,
+                    "average_grade": 71.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 459,
+                    "ders": "Suda Doğum ve Alternatif Yöntemler",
+                    "score": 28.87,
+                    "average_grade": 79.8,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 425,
+                    "ders": "Sağlık Okuryazarlığı",
+                    "score": 50.8,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 445,
+                    "ders": "İnfertilite ve Ebelik",
+                    "score": 49.19,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 440,
+                    "ders": "Ebelikte Tamamlayıcı Tedaviler",
+                    "score": 47.84,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 762,
+                    "ders": "Ebelikte İnovasyon",
+                    "score": 47.75,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 460,
+                    "ders": "Emzirme Danışmanlığı",
+                    "score": 47.04,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 426,
+                    "ders": "Toplumsal Cinsiyet",
+                    "score": 46.15,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 434,
+                    "ders": "Emzirme ve Danışmanlık",
+                    "score": 45.91,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 433,
+                    "ders": "Ebelikte Bakım Planlama ve Danışmanlık",
+                    "score": 45.66,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 427,
+                    "ders": "Sosyal Sorumluluk Projesi",
+                    "score": 45.63,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 439,
+                    "ders": "Üreme ve Cinsel Sağlık",
+                    "score": 45.0,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              },
+              {
+                "bolum_id": 7,
+                "bolum": "Fizyoterapi ve Rehabilitasyon",
+                "mevcut_adet": 7,
+                "dusenler": [
+                  {
+                    "ders_id": 487,
+                    "ders": "Sporcu Sağlığı ve Rehabilitasyonu",
+                    "score": 38.03,
+                    "average_grade": 65.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 488,
+                    "ders": "Manuel Terapi Teknikleri",
+                    "score": 38.12,
+                    "average_grade": 77.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 539,
+                    "ders": "Yoga ve Pilates",
+                    "score": 25.41,
+                    "average_grade": 58.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 540,
+                    "ders": "Engelli Hakları",
+                    "score": 34.89,
+                    "average_grade": 76.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 541,
+                    "ders": "Onkolojik Rehabilitasyon",
+                    "score": 31.25,
+                    "average_grade": 70.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 529,
+                    "ders": "Sağlık Projeleri ve Gönüllülük",
+                    "score": 46.79,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 489,
+                    "ders": "Hidroterapi ve Balneoterapi",
+                    "score": 45.79,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 546,
+                    "ders": "Kadın ve Erkek Sağlığı",
+                    "score": 45.79,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 530,
+                    "ders": "El Rehabilitasyonu",
+                    "score": 45.76,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 531,
+                    "ders": "İşitme-Konuşma Rehabilitasyonu",
+                    "score": 45.71,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 97,
+            "pool_state_transitions": 97,
+            "year_score_upserted": 97,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 23,
+              "summary": {
+                "course_count": 97,
+                "approval_required_count": 31,
+                "low_data_confidence_count": 1,
+                "sensitive_decision_count": 59,
+                "status_counts": {
+                  "-1": 31,
+                  "0": 65,
+                  "1": 1
+                },
+                "generation_result": {
+                  "fakulte_id": 3,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Güz",
+                  "department_count": 3,
+                  "pool_rows_upserted": 97,
+                  "pool_state_transitions": 97
+                },
+                "fairness_summary": "2024 karar calismasinda 97 ders degerlendirildi. 1 ders mufredatta, 65 ders havuzda, 31 ders dinlenmede/aday, 31 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 1, hassas karar sayisi 59."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Sağlık Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 4,
+            "fakulte": "Güzel Sanatlar Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Güz",
+            "departments": [
+              {
+                "bolum_id": 8,
+                "bolum": "Gastronomi",
+                "mevcut_adet": 4,
+                "dusenler": [
+                  {
+                    "ders_id": 558,
+                    "ders": "Yemek Fotoğrafçılığı",
+                    "score": 7.93,
+                    "average_grade": 58.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 594,
+                    "ders": "Gastronomi ve Kültür",
+                    "score": 26.86,
+                    "average_grade": 79.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 596,
+                    "ders": "Gıda Katkı Maddeleri",
+                    "score": 20.65,
+                    "average_grade": 80.0,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 568,
+                    "ders": "Antik Mutfaklar",
+                    "score": 87.72,
+                    "kaynak_bolum_id": 8,
+                    "kaynak_bolum": "Gastronomi",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 597,
+                    "ders": "Gastronomi ve Sanat",
+                    "score": 45.58,
+                    "kaynak_bolum_id": 8,
+                    "kaynak_bolum": "Gastronomi",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 595,
+                    "ders": "Lezzet ve Tat Oluşumunda Baharatlar",
+                    "score": 44.88,
+                    "kaynak_bolum_id": 8,
+                    "kaynak_bolum": "Gastronomi",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 11,
+            "pool_state_transitions": 11,
+            "year_score_upserted": 11,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 24,
+              "summary": {
+                "course_count": 11,
+                "approval_required_count": 4,
+                "low_data_confidence_count": 0,
+                "sensitive_decision_count": 7,
+                "status_counts": {
+                  "-1": 4,
+                  "0": 6,
+                  "1": 1
+                },
+                "generation_result": {
+                  "fakulte_id": 4,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Güz",
+                  "department_count": 1,
+                  "pool_rows_upserted": 11,
+                  "pool_state_transitions": 11
+                },
+                "fairness_summary": "2024 karar calismasinda 11 ders degerlendirildi. 1 ders mufredatta, 6 ders havuzda, 4 ders dinlenmede/aday, 4 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 0, hassas karar sayisi 7."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Güzel Sanatlar Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 5,
+            "fakulte": "İlahiyat Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Güz",
+            "departments": [
+              {
+                "bolum_id": 9,
+                "bolum": "İlahiyat",
+                "mevcut_adet": 7,
+                "dusenler": [
+                  {
+                    "ders_id": 664,
+                    "ders": "Kur'an-ı Kerim Talimi",
+                    "score": 7.66,
+                    "average_grade": 72.9,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 666,
+                    "ders": "İleri Düzey Sarf",
+                    "score": 12.69,
+                    "average_grade": 73.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 667,
+                    "ders": "İslam Ahlak Esasları",
+                    "score": 22.3,
+                    "average_grade": 67.6,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 671,
+                    "ders": "Hulefa-i Raşidin Siyasi Tarihi",
+                    "score": 51.63,
+                    "kaynak_bolum_id": 9,
+                    "kaynak_bolum": "İlahiyat",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 672,
+                    "ders": "Medeniyetler ve Küresel Karşılaşmalar",
+                    "score": 48.77,
+                    "kaynak_bolum_id": 9,
+                    "kaynak_bolum": "İlahiyat",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 670,
+                    "ders": "İleri Düzey Nahiv",
+                    "score": 48.32,
+                    "kaynak_bolum_id": 9,
+                    "kaynak_bolum": "İlahiyat",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 12,
+            "pool_state_transitions": 12,
+            "year_score_upserted": 12,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 25,
+              "summary": {
+                "course_count": 12,
+                "approval_required_count": 3,
+                "low_data_confidence_count": 0,
+                "sensitive_decision_count": 9,
+                "status_counts": {
+                  "0": 6,
+                  "1": 3,
+                  "-1": 3
+                },
+                "generation_result": {
+                  "fakulte_id": 5,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Güz",
+                  "department_count": 1,
+                  "pool_rows_upserted": 12,
+                  "pool_state_transitions": 12
+                },
+                "fairness_summary": "2024 karar calismasinda 12 ders degerlendirildi. 3 ders mufredatta, 6 ders havuzda, 3 ders dinlenmede/aday, 3 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 0, hassas karar sayisi 9."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "İlahiyat Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          }
+        ],
+        "skipped": [],
+        "errors": [],
+        "messages": [
+          "Tıp Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "Mühendislik ve Doğa Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "Sağlık Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "Güzel Sanatlar Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "İlahiyat Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+        ]
+      }
+    },
+    {
+      "donem": "Bahar",
+      "result": {
+        "ok": true,
+        "year": 2024,
+        "processed": [
+          {
+            "ok": true,
+            "fakulte_id": 1,
+            "fakulte": "Tıp Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Bahar",
+            "departments": [
+              {
+                "bolum_id": 1,
+                "bolum": "Tıp",
+                "mevcut_adet": 2,
+                "dusenler": [
+                  {
+                    "ders_id": 34,
+                    "ders": "Cerrahi Bilimler Seçmeli",
+                    "score": 63.3,
+                    "average_grade": 83.8,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 35,
+                    "ders": "Dahili Bilimler Seçmeli",
+                    "score": 36.7,
+                    "average_grade": 61.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 31,
+                    "ders": "Yabancı Dil (İngilizce)",
+                    "score": 45.69,
+                    "kaynak_bolum_id": 1,
+                    "kaynak_bolum": "Tıp",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 23,
+                    "ders": "Radyasyon Onkolojisi",
+                    "score": 45.22,
+                    "kaynak_bolum_id": 1,
+                    "kaynak_bolum": "Tıp",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 10,
+            "pool_state_transitions": 10,
+            "year_score_upserted": 10,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 26,
+              "summary": {
+                "course_count": 10,
+                "approval_required_count": 1,
+                "low_data_confidence_count": 0,
+                "sensitive_decision_count": 5,
+                "status_counts": {
+                  "0": 9,
+                  "-1": 1
+                },
+                "generation_result": {
+                  "fakulte_id": 1,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Bahar",
+                  "department_count": 1,
+                  "pool_rows_upserted": 10,
+                  "pool_state_transitions": 10
+                },
+                "fairness_summary": "2024 karar calismasinda 10 ders degerlendirildi. 0 ders mufredatta, 9 ders havuzda, 1 ders dinlenmede/aday, 1 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 0, hassas karar sayisi 5."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Tıp Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 2,
+            "fakulte": "Mühendislik ve Doğa Bilimleri Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Bahar",
+            "departments": [
+              {
+                "bolum_id": 2,
+                "bolum": "Bilgisayar Mühendisliği",
+                "mevcut_adet": 22,
+                "dusenler": [
+                  {
+                    "ders_id": 85,
+                    "ders": "Bilişim Hukuku",
+                    "score": 38.38,
+                    "average_grade": 66.7,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 92,
+                    "ders": "Bilimsel Araştırma Teknikleri",
+                    "score": 51.36,
+                    "average_grade": 72.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 95,
+                    "ders": "Post-Modern Dönemde Din ve Gençlik",
+                    "score": 43.37,
+                    "average_grade": 70.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 103,
+                    "ders": "İnformasyon Güvenliği ve Kriptoloji",
+                    "score": 74.93,
+                    "average_grade": 67.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 106,
+                    "ders": "Bulut Bilişim Uygulamaları",
+                    "score": 45.27,
+                    "average_grade": 66.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 107,
+                    "ders": "Oyun Programlama",
+                    "score": 28.55,
+                    "average_grade": 62.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 108,
+                    "ders": "Metin Madenciliğine Giriş",
+                    "score": 78.23,
+                    "average_grade": 67.3,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 109,
+                    "ders": "Bilgisayar Grafiği",
+                    "score": 59.96,
+                    "average_grade": 67.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 705,
+                    "ders": "Robotiğe Giriş",
+                    "score": 43.96,
+                    "average_grade": 70.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 706,
+                    "ders": "Bulut Bilişim Uygulamaları",
+                    "score": 50.51,
+                    "average_grade": 82.5,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 708,
+                    "ders": "Metin Madenciliğine Giriş",
+                    "score": 39.73,
+                    "average_grade": 59.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 100,
+                    "ders": "İnsansız Hava Aracı Teknolojisine Giriş",
+                    "score": 48.8,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 703,
+                    "ders": "E-Ticaret",
+                    "score": 47.79,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 704,
+                    "ders": "İnsansız Hava Aracı Teknolojisine Giriş",
+                    "score": 47.2,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 98,
+                    "ders": "Ağ Güvenliği",
+                    "score": 47.11,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 117,
+                    "ders": "Genetik Algoritma",
+                    "score": 46.91,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 88,
+                    "ders": "Blokzincir Teknolojisi",
+                    "score": 45.93,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 82,
+                    "ders": "Medeniyetler ve Küresel Karşılaşmalar",
+                    "score": 45.45,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 114,
+                    "ders": "MATLAB GUI Uygulamaları",
+                    "score": 44.81,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 128,
+                    "ders": "Büyük Veri",
+                    "score": 44.59,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 118,
+                    "ders": "Makine Öğrenmesi ve Örüntü Tanıma",
+                    "score": 44.17,
+                    "kaynak_bolum_id": 2,
+                    "kaynak_bolum": "Bilgisayar Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 311,
+                    "ders": "Afet ve Kriz Yönetimi",
+                    "score": 60.53,
+                    "kaynak_bolum_id": 4,
+                    "kaynak_bolum": "Endüstri Mühendisliği",
+                    "reasons": [
+                      "Fakulte ortak havuzu adayi (Kaynak: Endüstri Mühendisliği)"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 1
+              },
+              {
+                "bolum_id": 3,
+                "bolum": "Elektrik-Elektronik Mühendisliği",
+                "mevcut_adet": 11,
+                "dusenler": [
+                  {
+                    "ders_id": 180,
+                    "ders": "Endüstriyel Otomasyon",
+                    "score": 33.35,
+                    "average_grade": 69.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 201,
+                    "ders": "Yarı İletken Cihazlar",
+                    "score": 40.4,
+                    "average_grade": 54.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 216,
+                    "ders": "İş Hukuku",
+                    "score": 31.76,
+                    "average_grade": 54.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 217,
+                    "ders": "Otomatik Kontrol Sistemleri II",
+                    "score": 41.23,
+                    "average_grade": 64.5,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 218,
+                    "ders": "Matlab ile Sayısal Analiz",
+                    "score": 48.6,
+                    "average_grade": 68.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 219,
+                    "ders": "Elektrik Enerjisi Üretimi ve Yenilenebilir Enerji",
+                    "score": 45.21,
+                    "average_grade": 50.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 220,
+                    "ders": "Sayısal İşaret İşleme",
+                    "score": 54.54,
+                    "average_grade": 79.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 233,
+                    "ders": "Günlük İngilizce",
+                    "score": 28.33,
+                    "average_grade": 42.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda",
+                      "Gecme not ortalamasi 45 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 234,
+                    "ders": "Mühendislikte Rapor ve Proje Hazırlama",
+                    "score": 28.63,
+                    "average_grade": 57.0,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 238,
+                    "ders": "Aydınlatma Tekniği",
+                    "score": 56.27,
+                    "average_grade": 76.9,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 731,
+                    "ders": "Sayısal İşaret İşleme",
+                    "score": 35.16,
+                    "average_grade": 63.5,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 250,
+                    "ders": "FPGA İle Gömülü Sistem Tasarımı",
+                    "score": 51.86,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 181,
+                    "ders": "Yenilenebilir Enerji Kaynakları",
+                    "score": 49.88,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 236,
+                    "ders": "Bilgisayar Destekli Devre Analizi",
+                    "score": 48.96,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 184,
+                    "ders": "Yapay Zeka ve Uygulamaları",
+                    "score": 48.6,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 119,
+                    "ders": "Görüntü İşleme",
+                    "score": 46.6,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 244,
+                    "ders": "Özel Elektrik Makinaları",
+                    "score": 45.57,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 221,
+                    "ders": "Elektrik Enerjisi Dağıtımı",
+                    "score": 45.23,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 227,
+                    "ders": "Güç Elektroniği Kontrol ve Koruma Sistemleri",
+                    "score": 45.22,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 249,
+                    "ders": "Nanoelektronik",
+                    "score": 44.8,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 229,
+                    "ders": "Dalga Yayılımı ve Haberleşme Bağlantıları",
+                    "score": 44.55,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 182,
+                    "ders": "Gömülü Sistemler - I",
+                    "score": 44.33,
+                    "kaynak_bolum_id": 3,
+                    "kaynak_bolum": "Elektrik-Elektronik Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              },
+              {
+                "bolum_id": 4,
+                "bolum": "Endüstri Mühendisliği",
+                "mevcut_adet": 8,
+                "dusenler": [
+                  {
+                    "ders_id": 311,
+                    "ders": "Afet ve Kriz Yönetimi",
+                    "score": 60.53,
+                    "average_grade": 63.2,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 268,
+                    "ders": "Maliyet Muhasebesi",
+                    "score": 44.54,
+                    "kaynak_bolum_id": 4,
+                    "kaynak_bolum": "Endüstri Mühendisliği",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 134,
+            "pool_state_transitions": 134,
+            "year_score_upserted": 134,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 27,
+              "summary": {
+                "course_count": 134,
+                "approval_required_count": 8,
+                "low_data_confidence_count": 2,
+                "sensitive_decision_count": 62,
+                "status_counts": {
+                  "0": 124,
+                  "-1": 8,
+                  "1": 2
+                },
+                "generation_result": {
+                  "fakulte_id": 2,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Bahar",
+                  "department_count": 3,
+                  "pool_rows_upserted": 134,
+                  "pool_state_transitions": 134
+                },
+                "fairness_summary": "2024 karar calismasinda 134 ders degerlendirildi. 2 ders mufredatta, 124 ders havuzda, 8 ders dinlenmede/aday, 8 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 2, hassas karar sayisi 62."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Mühendislik ve Doğa Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 3,
+            "fakulte": "Sağlık Bilimleri Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Bahar",
+            "departments": [
+              {
+                "bolum_id": 5,
+                "bolum": "Hemşirelik",
+                "mevcut_adet": 20,
+                "dusenler": [
+                  {
+                    "ders_id": 350,
+                    "ders": "İş Sağlığı ve Güvenliği",
+                    "score": 53.84,
+                    "average_grade": 74.2,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 353,
+                    "ders": "Tamamlayıcı ve Destekleyici Bakım",
+                    "score": 52.85,
+                    "average_grade": 77.0,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 356,
+                    "ders": "Cinsel Sağlık",
+                    "score": 68.91,
+                    "average_grade": 58.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 357,
+                    "ders": "Aile Danışmanlığı",
+                    "score": 64.57,
+                    "average_grade": 82.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 358,
+                    "ders": "Stres ve Kriz Yönetimi",
+                    "score": 38.79,
+                    "average_grade": 72.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 359,
+                    "ders": "Sosyal Medya ve Hemşirelik",
+                    "score": 57.72,
+                    "average_grade": 66.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 367,
+                    "ders": "Yoğun Bakım Hemşireliği",
+                    "score": 24.24,
+                    "average_grade": 64.8,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 368,
+                    "ders": "Palyatif Hemşireliği",
+                    "score": 62.31,
+                    "average_grade": 78.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 370,
+                    "ders": "Transplantasyon Hemşireliği",
+                    "score": 62.99,
+                    "average_grade": 71.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 371,
+                    "ders": "Ameliyathane Hemşireliği",
+                    "score": 42.11,
+                    "average_grade": 77.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 372,
+                    "ders": "Geriatri Hemşireliği",
+                    "score": 63.65,
+                    "average_grade": 60.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 377,
+                    "ders": "Adli Hemşirelik",
+                    "score": 53.26,
+                    "average_grade": 65.8,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 378,
+                    "ders": "Kanıta Dayalı Hemşirelik",
+                    "score": 64.94,
+                    "average_grade": 68.0,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 379,
+                    "ders": "Konsültasyon Liyezon Psikiyatrisi Hemşireliği",
+                    "score": 45.88,
+                    "average_grade": 71.9,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 380,
+                    "ders": "Hasta ve Çalışan Güvenliği",
+                    "score": 45.5,
+                    "average_grade": 61.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 334,
+                    "ders": "Bilim Felsefesi",
+                    "score": 51.86,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 375,
+                    "ders": "Hemşirelikte Kariyer Yönetimi",
+                    "score": 51.43,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 747,
+                    "ders": "Üniversiteye Uyum",
+                    "score": 49.82,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 373,
+                    "ders": "Afet Kültürü ve Yönetimi",
+                    "score": 49.05,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 376,
+                    "ders": "Yenidoğan Hemşireliği",
+                    "score": 48.71,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 387,
+                    "ders": "Etkili Sunum İlkeleri",
+                    "score": 47.87,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 365,
+                    "ders": "Hasta Eğitimi",
+                    "score": 47.27,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 362,
+                    "ders": "Enfeksiyon Kontrol Hemşireliği",
+                    "score": 46.42,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 388,
+                    "ders": "Okul Sağlığı Hemşireliği",
+                    "score": 46.27,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 360,
+                    "ders": "Sağlık Sosyolojisi ve Antropolojisi",
+                    "score": 45.77,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 349,
+                    "ders": "Onkoloji Hemşireliği",
+                    "score": 45.47,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 386,
+                    "ders": "Sağlık Politikaları ve Hemşirelik",
+                    "score": 44.59,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 333,
+                    "ders": "Kişilerarası İlişkiler",
+                    "score": 43.4,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 752,
+                    "ders": "Doğuma Hazırlık ve Ebeveyn Eğitimi",
+                    "score": 43.24,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 351,
+                    "ders": "Diyaliz Hemşireliği",
+                    "score": 42.5,
+                    "kaynak_bolum_id": 5,
+                    "kaynak_bolum": "Hemşirelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              },
+              {
+                "bolum_id": 6,
+                "bolum": "Ebelik",
+                "mevcut_adet": 18,
+                "dusenler": [
+                  {
+                    "ders_id": 425,
+                    "ders": "Sağlık Okuryazarlığı",
+                    "score": 69.59,
+                    "average_grade": 87.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 426,
+                    "ders": "Toplumsal Cinsiyet",
+                    "score": 74.03,
+                    "average_grade": 74.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 427,
+                    "ders": "Sosyal Sorumluluk Projesi",
+                    "score": 52.11,
+                    "average_grade": 70.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 432,
+                    "ders": "Perinatal Ruh Sağlığı",
+                    "score": 39.76,
+                    "average_grade": 50.5,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 433,
+                    "ders": "Ebelikte Bakım Planlama ve Danışmanlık",
+                    "score": 39.32,
+                    "average_grade": 83.2,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 434,
+                    "ders": "Emzirme ve Danışmanlık",
+                    "score": 46.48,
+                    "average_grade": 72.6,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 439,
+                    "ders": "Üreme ve Cinsel Sağlık",
+                    "score": 57.64,
+                    "average_grade": 84.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 440,
+                    "ders": "Ebelikte Tamamlayıcı Tedaviler",
+                    "score": 74.18,
+                    "average_grade": 75.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 445,
+                    "ders": "İnfertilite ve Ebelik",
+                    "score": 35.52,
+                    "average_grade": 74.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 460,
+                    "ders": "Emzirme Danışmanlığı",
+                    "score": 67.89,
+                    "average_grade": 89.8,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 762,
+                    "ders": "Ebelikte İnovasyon",
+                    "score": 68.36,
+                    "average_grade": 68.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 423,
+                    "ders": "Tıbbi Terminoloji",
+                    "score": 54.29,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 430,
+                    "ders": "Kadın Statüsü ve Sorunları",
+                    "score": 49.35,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 447,
+                    "ders": "Ebelikte İnovasyon",
+                    "score": 47.88,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 422,
+                    "ders": "İklim Değişikliği ve Sağlık",
+                    "score": 47.59,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 361,
+                    "ders": "Bakım Teknolojileri",
+                    "score": 46.57,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 459,
+                    "ders": "Suda Doğum ve Alternatif Yöntemler",
+                    "score": 46.38,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 436,
+                    "ders": "Ebelikte Kültürel Yaklaşımlar",
+                    "score": 45.79,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 335,
+                    "ders": "Üniversiteye Uyum",
+                    "score": 45.56,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 374,
+                    "ders": "Doğuma Hazırlık ve Ebeveyn Eğitimi",
+                    "score": 45.45,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 442,
+                    "ders": "Afetlerde Üreme Sağlığı",
+                    "score": 41.54,
+                    "kaynak_bolum_id": 6,
+                    "kaynak_bolum": "Ebelik",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 549,
+                    "ders": "Alternatif Tedavi Yöntemleri",
+                    "score": 79.68,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Fakulte ortak havuzu adayi (Kaynak: Fizyoterapi ve Rehabilitasyon)"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 1
+              },
+              {
+                "bolum_id": 7,
+                "bolum": "Fizyoterapi ve Rehabilitasyon",
+                "mevcut_adet": 10,
+                "dusenler": [
+                  {
+                    "ders_id": 489,
+                    "ders": "Hidroterapi ve Balneoterapi",
+                    "score": 52.38,
+                    "average_grade": 73.5,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 529,
+                    "ders": "Sağlık Projeleri ve Gönüllülük",
+                    "score": 48.67,
+                    "average_grade": 65.8,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 530,
+                    "ders": "El Rehabilitasyonu",
+                    "score": 61.07,
+                    "average_grade": 78.5,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 531,
+                    "ders": "İşitme-Konuşma Rehabilitasyonu",
+                    "score": 48.68,
+                    "average_grade": 79.4,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 546,
+                    "ders": "Kadın ve Erkek Sağlığı",
+                    "score": 52.17,
+                    "average_grade": 70.7,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 487,
+                    "ders": "Sporcu Sağlığı ve Rehabilitasyonu",
+                    "score": 48.36,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 540,
+                    "ders": "Engelli Hakları",
+                    "score": 47.69,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 539,
+                    "ders": "Yoga ve Pilates",
+                    "score": 45.75,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 488,
+                    "ders": "Manuel Terapi Teknikleri",
+                    "score": 45.35,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 541,
+                    "ders": "Onkolojik Rehabilitasyon",
+                    "score": 42.89,
+                    "kaynak_bolum_id": 7,
+                    "kaynak_bolum": "Fizyoterapi ve Rehabilitasyon",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 97,
+            "pool_state_transitions": 97,
+            "year_score_upserted": 97,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 28,
+              "summary": {
+                "course_count": 97,
+                "approval_required_count": 5,
+                "low_data_confidence_count": 1,
+                "sensitive_decision_count": 48,
+                "status_counts": {
+                  "0": 88,
+                  "-1": 5,
+                  "1": 4
+                },
+                "generation_result": {
+                  "fakulte_id": 3,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Bahar",
+                  "department_count": 3,
+                  "pool_rows_upserted": 97,
+                  "pool_state_transitions": 97
+                },
+                "fairness_summary": "2024 karar calismasinda 97 ders degerlendirildi. 4 ders mufredatta, 88 ders havuzda, 5 ders dinlenmede/aday, 5 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 1, hassas karar sayisi 48."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Sağlık Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 4,
+            "fakulte": "Güzel Sanatlar Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Bahar",
+            "departments": [
+              {
+                "bolum_id": 8,
+                "bolum": "Gastronomi",
+                "mevcut_adet": 6,
+                "dusenler": [
+                  {
+                    "ders_id": 558,
+                    "ders": "Yemek Fotoğrafçılığı",
+                    "score": 37.83,
+                    "average_grade": 63.2,
+                    "reasons": [
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 595,
+                    "ders": "Lezzet ve Tat Oluşumunda Baharatlar",
+                    "score": 56.59,
+                    "average_grade": 86.0,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 597,
+                    "ders": "Gastronomi ve Sanat",
+                    "score": 38.61,
+                    "average_grade": 67.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 557,
+                    "ders": "Moleküler Gastronomi",
+                    "score": 47.27,
+                    "kaynak_bolum_id": 8,
+                    "kaynak_bolum": "Gastronomi",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 594,
+                    "ders": "Gastronomi ve Kültür",
+                    "score": 44.93,
+                    "kaynak_bolum_id": 8,
+                    "kaynak_bolum": "Gastronomi",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 11,
+            "pool_state_transitions": 11,
+            "year_score_upserted": 11,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 29,
+              "summary": {
+                "course_count": 11,
+                "approval_required_count": 2,
+                "low_data_confidence_count": 0,
+                "sensitive_decision_count": 3,
+                "status_counts": {
+                  "0": 9,
+                  "-1": 2
+                },
+                "generation_result": {
+                  "fakulte_id": 4,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Bahar",
+                  "department_count": 1,
+                  "pool_rows_upserted": 11,
+                  "pool_state_transitions": 11
+                },
+                "fairness_summary": "2024 karar calismasinda 11 ders degerlendirildi. 0 ders mufredatta, 9 ders havuzda, 2 ders dinlenmede/aday, 2 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 0, hassas karar sayisi 3."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "Güzel Sanatlar Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          },
+          {
+            "ok": true,
+            "fakulte_id": 5,
+            "fakulte": "İlahiyat Fakültesi",
+            "year_from": 2024,
+            "year_to": 2025,
+            "donem": "Bahar",
+            "departments": [
+              {
+                "bolum_id": 9,
+                "bolum": "İlahiyat",
+                "mevcut_adet": 5,
+                "dusenler": [
+                  {
+                    "ders_id": 670,
+                    "ders": "İleri Düzey Nahiv",
+                    "score": 70.12,
+                    "average_grade": 69.1,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  },
+                  {
+                    "ders_id": 671,
+                    "ders": "Hulefa-i Raşidin Siyasi Tarihi",
+                    "score": 5.94,
+                    "average_grade": 66.3,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili",
+                      "Kesinlesme puani 40 altinda"
+                    ]
+                  },
+                  {
+                    "ders_id": 672,
+                    "ders": "Medeniyetler ve Küresel Karşılaşmalar",
+                    "score": 69.57,
+                    "average_grade": 77.2,
+                    "reasons": [
+                      "Ayni akademik yilin diger doneminde secili"
+                    ]
+                  }
+                ],
+                "eklenenler": [
+                  {
+                    "ders_id": 666,
+                    "ders": "İleri Düzey Sarf",
+                    "score": 46.12,
+                    "kaynak_bolum_id": 9,
+                    "kaynak_bolum": "İlahiyat",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 667,
+                    "ders": "İslam Ahlak Esasları",
+                    "score": 46.0,
+                    "kaynak_bolum_id": 9,
+                    "kaynak_bolum": "İlahiyat",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  },
+                  {
+                    "ders_id": 664,
+                    "ders": "Kur'an-ı Kerim Talimi",
+                    "score": 45.29,
+                    "kaynak_bolum_id": 9,
+                    "kaynak_bolum": "İlahiyat",
+                    "reasons": [
+                      "Ayni bolum secmeli adayi"
+                    ]
+                  }
+                ],
+                "tasindi_mi": false,
+                "dis_bolum_ders_sayisi": 0
+              }
+            ],
+            "missing_curricula": [],
+            "pool_rows_upserted": 12,
+            "pool_state_transitions": 12,
+            "year_score_upserted": 12,
+            "normalized_curricula": 0,
+            "decision_governance": {
+              "ok": true,
+              "decision_run_id": 30,
+              "summary": {
+                "course_count": 12,
+                "approval_required_count": 1,
+                "low_data_confidence_count": 0,
+                "sensitive_decision_count": 7,
+                "status_counts": {
+                  "0": 9,
+                  "1": 2,
+                  "-1": 1
+                },
+                "generation_result": {
+                  "fakulte_id": 5,
+                  "year_from": 2024,
+                  "year_to": 2025,
+                  "donem": "Bahar",
+                  "department_count": 1,
+                  "pool_rows_upserted": 12,
+                  "pool_state_transitions": 12
+                },
+                "fairness_summary": "2024 karar calismasinda 12 ders degerlendirildi. 2 ders mufredatta, 9 ders havuzda, 1 ders dinlenmede/aday, 1 karar akademik onay gerektiriyor. Dusuk veri guvenli karar sayisi 0, hassas karar sayisi 7."
+              },
+              "ahp_profile": {
+                "id": 1,
+                "name": "Varsayılan Global AHP Profili",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "criteria_keys_json": "[\"basari\", \"trend\", \"populerlik\", \"anket\"]",
+                "pairwise_matrix_json": "[[1.0, 1.4, 1.7499999999999998, 1.7499999999999998], [0.7142857142857143, 1.0, 1.25, 1.25], [0.5714285714285715, 0.8, 1.0, 1.0], [0.5714285714285715, 0.8, 1.0, 1.0]]",
+                "weights_json": "{\"anket\": 0.2, \"basari\": 0.35000000000000003, \"populerlik\": 0.2, \"trend\": 0.25}",
+                "consistency_index": 0.0,
+                "consistency_ratio": 0.0,
+                "is_consistent": true,
+                "source": "default",
+                "created_by": "system",
+                "notes": "Sistem tarafından oluşturulan varsayılan AHP profili.",
+                "is_active": true,
+                "created_at": "2026-05-11T22:06:09",
+                "updated_at": "2026-05-11T22:06:09",
+                "profile_name": "Varsayılan Global AHP Profili",
+                "profile_code": "global-default-ahp",
+                "semester": null,
+                "version": 1,
+                "consistency_warning": null,
+                "status": "active",
+                "approved_by": "system",
+                "approved_at": "2026-05-11T22:06:09",
+                "rejected_by": null,
+                "rejected_at": null,
+                "rejection_reason": null,
+                "parent_profile_id": null,
+                "superseded_by_profile_id": null,
+                "criteria_keys": [
+                  "basari",
+                  "trend",
+                  "populerlik",
+                  "anket"
+                ],
+                "pairwise_matrix": [
+                  [
+                    1.0,
+                    1.4,
+                    1.7499999999999998,
+                    1.7499999999999998
+                  ],
+                  [
+                    0.7142857142857143,
+                    1.0,
+                    1.25,
+                    1.25
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    0.5714285714285715,
+                    0.8,
+                    1.0,
+                    1.0
+                  ]
+                ],
+                "weights": {
+                  "anket": 0.2,
+                  "basari": 0.35000000000000003,
+                  "populerlik": 0.2,
+                  "trend": 0.25
+                },
+                "decision_use_warnings": []
+              },
+              "decision_policy": {
+                "id": 1,
+                "name": "Varsayilan Karar Politikasi",
+                "scope_type": "global",
+                "faculty_id": null,
+                "department_id": null,
+                "year": null,
+                "mode": "static_threshold",
+                "curriculum_keep_threshold": 70.0,
+                "pool_threshold": 50.0,
+                "rest_threshold": 40.0,
+                "cancel_candidate_threshold": 30.0,
+                "min_success_rate": null,
+                "min_survey_count": null,
+                "min_enrollment_rate": null,
+                "new_course_grace_period_years": 2,
+                "low_data_confidence_threshold": 0.5,
+                "sensitivity_margin": 3.0,
+                "top_percent_curriculum": null,
+                "middle_percent_pool": null,
+                "bottom_percent_rest": null,
+                "require_manual_approval_for_cancel": true,
+                "is_active": true,
+                "created_at": "2026-05-12 19:49:54",
+                "updated_at": "2026-05-12 19:49:54",
+                "notes": null
+              }
+            },
+            "message": "İlahiyat Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+          }
+        ],
+        "skipped": [],
+        "errors": [],
+        "messages": [
+          "Tıp Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "Mühendislik ve Doğa Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "Sağlık Bilimleri Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "Güzel Sanatlar Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu.",
+          "İlahiyat Fakültesi fakultesi 2024 yili verileri islendi, 2025 yili mufredati olusturuldu."
+        ]
+      }
+    }
+  ]
+}

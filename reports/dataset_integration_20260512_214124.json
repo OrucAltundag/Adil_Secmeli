@@ -1,0 +1,50 @@
+{
+  "source_dir": "data\\imports\\files_20260512_2124",
+  "db_path": "data\\adil_secmeli.db",
+  "backup_path": "data\\backups\\adil_secmeli_pre_dataset_import_20260512_214122.db",
+  "stats": {
+    "benchmark_csv_copied": 5,
+    "courses_created": 7,
+    "courses_updated": 731,
+    "criteria_rows_created": 1369,
+    "criteria_rows_processed": 1674,
+    "criteria_rows_updated": 305,
+    "curriculum_links_written": 1812,
+    "curriculum_rows_processed": 2214,
+    "curriculum_scopes_updated": 54,
+    "master_rows_processed": 738,
+    "performance_rows_created": 1376,
+    "performance_rows_updated": 298,
+    "pool_rows_created": 6,
+    "pool_rows_updated": 831,
+    "popularity_rows_created": 1376,
+    "popularity_rows_updated": 298,
+    "survey_results_created": 696,
+    "survey_results_updated": 141,
+    "survey_rows_processed": 837
+  },
+  "before": {
+    "fakulte": 5,
+    "bolum": 9,
+    "ders": 557,
+    "mufredat": 13,
+    "mufredat_ders": 52,
+    "havuz": 2329,
+    "ders_kriterleri": 24,
+    "performans": 16,
+    "populerlik": 16,
+    "anket_sonuclari": 0
+  },
+  "after": {
+    "fakulte": 5,
+    "bolum": 9,
+    "ders": 564,
+    "mufredat": 67,
+    "mufredat_ders": 1864,
+    "havuz": 2335,
+    "ders_kriterleri": 1393,
+    "performans": 1392,
+    "populerlik": 1392,
+    "anket_sonuclari": 696
+  }
+}

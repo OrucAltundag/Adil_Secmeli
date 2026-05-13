@@ -558,6 +558,29 @@ def _havuz_has_donem_col(cur):
     return _table_has_column(cur, "havuz", "donem")
 
 
+def _havuz_unique_includes_donem(cur):
+    """Return True only when havuz uniqueness is term-scoped.
+
+    Some legacy DBs have a ``donem`` column but still enforce uniqueness on
+    (ders_id, fakulte_id, yil). In that shape, WHERE clauses scoped by donem can
+    miss the existing row and the following INSERT fails.
+    """
+    try:
+        indexes = cur.execute("PRAGMA index_list(havuz)").fetchall()
+        has_term_scoped_unique = False
+        for idx in indexes:
+            if not idx or not int(idx[2] or 0):
+                continue
+            columns = {str(row[2]) for row in cur.execute(f"PRAGMA index_info({idx[1]})").fetchall()}
+            if {"ders_id", "fakulte_id", "yil"}.issubset(columns) and "donem" not in columns:
+                return False
+            if {"ders_id", "fakulte_id", "yil", "donem"}.issubset(columns):
+                has_term_scoped_unique = True
+        return has_term_scoped_unique
+    except Exception:
+        return False
+
+
 def _fetch_other_term_curriculum_map(cur, fakulte_id, akademik_yil, current_term):
     """
     Next-year generation sirasinda, diger donemde zaten secili dersleri bolum bazli getirir.
@@ -1280,6 +1303,7 @@ def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, 
     akademik_yil = int(akademik_yil)
     term_key = _normalize_term_key(donem)
     havuz_has_donem = _havuz_has_donem_col(cur)
+    havuz_term_scoped = havuz_has_donem and _havuz_unique_includes_donem(cur)
     active_curriculum_ids = _get_curriculum_course_ids(
         cur=cur,
         fakulte_id=fakulte_id,
@@ -1302,7 +1326,7 @@ def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, 
           )
     """.format(elective_predicate=elective_predicate)
     clear_params = [fakulte_id, akademik_yil]
-    if havuz_has_donem:
+    if havuz_term_scoped:
         clear_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
         clear_params.append(term_key)
     cur.execute(clear_sql, tuple(clear_params))
@@ -1323,7 +1347,7 @@ def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, 
             WHERE ders_id = ? AND fakulte_id = ? AND yil = ?
         """
         update_params = [bolum_id, ders_adi, ders_adi, score_val, str(ders_id), fakulte_id, akademik_yil]
-        if havuz_has_donem:
+        if havuz_term_scoped:
             update_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             update_params.append(term_key)
         cur.execute(update_sql, tuple(update_params))
@@ -1368,6 +1392,7 @@ def ensure_pool_visibility_for_curriculum(cur, fakulte_id, akademik_yil, donem="
     akademik_yil = int(akademik_yil)
     term_key = _normalize_term_key(donem)
     havuz_has_donem = _havuz_has_donem_col(cur)
+    havuz_term_scoped = havuz_has_donem and _havuz_unique_includes_donem(cur)
     curriculum_ids = sorted(
         filter_elective_course_ids(
             cur,
@@ -1396,7 +1421,7 @@ def ensure_pool_visibility_for_curriculum(cur, fakulte_id, akademik_yil, donem="
               AND CAST(ders_id AS INTEGER) IN ({placeholders})
         """
         update_params = [fakulte_id, akademik_yil, *chunk]
-        if havuz_has_donem:
+        if havuz_term_scoped:
             update_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             update_params.append(term_key)
         cur.execute(update_sql, tuple(update_params))
@@ -1413,7 +1438,7 @@ def ensure_pool_visibility_for_curriculum(cur, fakulte_id, akademik_yil, donem="
                       AND CAST(h.ders_id AS INTEGER) = d.ders_id
         """
         missing_params = [*chunk, fakulte_id, akademik_yil]
-        if havuz_has_donem:
+        if havuz_term_scoped:
             missing_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?"
             missing_params.append(term_key)
         missing_sql += "\n              )"
@@ -1515,6 +1540,7 @@ def generate_next_year_curricula(
         except Exception as policy_exc:
             logger.warning("Karar politikasi cozumlenemedi, legacy esikler kullaniliyor: %s", policy_exc)
         havuz_has_donem = _havuz_has_donem_col(cur)
+        havuz_term_scoped = havuz_has_donem and _havuz_unique_includes_donem(cur)
         normalized_rows = _normalize_mufredat_faculty_ids(cur)
 
         cur.execute("SELECT ad FROM fakulte WHERE fakulte_id = ?", (fakulte_id,))
@@ -1621,7 +1647,7 @@ def generate_next_year_curricula(
             WHERE yil = ? AND fakulte_id = ?
         """
         prev_havuz_params = [akademik_yil, fakulte_id]
-        if havuz_has_donem:
+        if havuz_term_scoped:
             prev_havuz_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             prev_havuz_params.append(term_key)
         cur.execute(prev_havuz_sql, tuple(prev_havuz_params))
@@ -2066,7 +2092,7 @@ def generate_next_year_curricula(
               )
         """.format(elective_predicate=elective_predicate)
         cleanup_params = [fakulte_id, sonraki_yil]
-        if havuz_has_donem:
+        if havuz_term_scoped:
             cleanup_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             cleanup_params.append(term_key)
         cur.execute(cleanup_sql, tuple(cleanup_params))
@@ -2201,7 +2227,7 @@ def generate_next_year_curricula(
                 fakulte_id,
                 sonraki_yil,
             ]
-            if havuz_has_donem:
+            if havuz_term_scoped:
                 update_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
                 update_params.append(term_key)
             cur.execute(update_sql, tuple(update_params))
