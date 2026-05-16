@@ -54,17 +54,6 @@ from app.core.state import AppState
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-import pandas as pd
-
-
-# ---------- Grafik kütüphaneleri (Tkinter uyumlu) ----------
-import matplotlib
-matplotlib.use("Agg" if HEADLESS else "TkAgg")
-try:
-    import seaborn as sns
-except Exception:
-    sns = None
-
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
 from app.services.calculation import run_automatic_scoring
 from app.services.course_type import build_elective_predicate_from_columns
@@ -364,7 +353,10 @@ class AdilSecmeliApp(tk.Tk):
                         print("[AUTO] PostgreSQL modu etkin; legacy SQLite otomatik skor yolu atlandi.")
                     else:
                         print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
-                        auto_summary = run_automatic_scoring(db_path)
+                        if isinstance(db_path, str):
+                            auto_summary = run_automatic_scoring(db_path)
+                        else:
+                            auto_summary = run_automatic_scoring()
                         if isinstance(auto_summary, dict):
                             gen = auto_summary.get("generation") or {}
                             generated = gen.get("generated", []) or []

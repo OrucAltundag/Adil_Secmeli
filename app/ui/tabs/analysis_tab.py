@@ -6,14 +6,9 @@
 # Grafikler: En yuksek basari oranlari (barplot) + En populer dersler (pie chart)
 # Seaborn + Matplotlib ile gorsellestirilir, Tkinter FigureCanvasTkAgg ile gosterilir.
 # =============================================================================
+import importlib.util
 import tkinter as tk
 from tkinter import ttk
-
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
-# seaborn kullanmak istersen açık kalsın:
-import seaborn as sns
 
 
 class AnalysisTab(ttk.Frame):
@@ -40,6 +35,21 @@ class AnalysisTab(ttk.Frame):
         # önce temizle
         for w in self.winfo_children():
             w.destroy()
+
+        missing = self._check_analysis_dependencies()
+        if missing:
+            ttk.Label(
+                self,
+                text=(
+                    "📦 Analiz bağımlılıkları yüklü değil:\n"
+                    f"{', '.join(missing)}\n\n"
+                    "Analiz sekmesini kullanmak için:\n"
+                    "`pip install -r requirements.txt`"
+                ),
+                font=("Segoe UI", 11),
+                justify="center"
+            ).pack(expand=True, pady=50)
+            return
 
         # veri var mı?
         if not self._has_table("performans"):
@@ -86,6 +96,7 @@ class AnalysisTab(ttk.Frame):
         charts_frame = ttk.Frame(self)
         charts_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
+        Figure, FigureCanvasTkAgg = self._get_matplotlib_components()
         fig = Figure(figsize=(10, 5), dpi=100)
 
         ax1 = fig.add_subplot(121)
@@ -99,6 +110,20 @@ class AnalysisTab(ttk.Frame):
         self.canvas = FigureCanvasTkAgg(fig, master=charts_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _check_analysis_dependencies(self):
+        missing = []
+        for package in ("pandas", "matplotlib", "seaborn"):
+            if importlib.util.find_spec(package) is None:
+                missing.append(package)
+        return missing
+
+    def _get_matplotlib_components(self):
+        import matplotlib
+        matplotlib.use("TkAgg", force=True)
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        return Figure, FigureCanvasTkAgg
 
     # ----------------------------
     # Internals

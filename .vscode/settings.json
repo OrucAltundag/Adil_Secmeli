@@ -1,16 +1,7 @@
 {
-  // VS Code'un src altındaki modülleri tanıması için
-  "python.analysis.extraPaths": [
-    "${workspaceFolder}/src/core",
-    "${workspaceFolder}/src/ui",
-    "${workspaceFolder}/src/etl"
-  ],
-
-  // Proje bagimliliklari env icine kuruldu; yorumlayiciyi buna sabitle
   "python.defaultInterpreterPath": "${workspaceFolder}/env/Scripts/python.exe",
-  "cursorpyright.analysis.extraPaths": [
-    "${workspaceFolder}/src/core",
-    "${workspaceFolder}/src/ui",
-    "${workspaceFolder}/src/etl"
-  ]
+  "python.analysis.extraPaths": [
+    "."
+  ],
+  "python.analysis.typeCheckingMode": "basic"
 }
