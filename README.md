@@ -55,6 +55,7 @@ uvicorn app.api.main:app --host 0.0.0.0 --port 8000
 - [Semester Planning Governance](docs/semester_planning_governance.md)
 - [Architecture](docs/architecture.md)
 - [Database Schema Policy](docs/database_schema_policy.md)
+- [PostgreSQL Migration Runbook](docs/POSTGRESQL_MIGRATION.md)
 - [Developer Guidelines](docs/developer_guidelines.md)
 - [Migration Strategy](docs/MIGRATION_STRATEGY.md)
 - [Runbook](docs/RUNBOOK_PRODUCTION.md)

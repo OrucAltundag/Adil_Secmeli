@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Course-type compatibility helpers.
 
@@ -51,14 +51,37 @@ def is_required_value(value: str | None) -> bool:
     return any(keyword in normalized for keyword in REQUIRED_KEYWORDS)
 
 
-def get_existing_type_columns(cur: sqlite3.Cursor, table_name: str = "ders") -> list[str]:
-    cur.execute(f"PRAGMA table_info({table_name})")
-    cols = {str(row[1]) for row in cur.fetchall()}
+def get_existing_type_columns(cur, table_name: str = "ders") -> list[str]:
+    """Tablodaki kolon isimlerini alır (PostgreSQL ve SQLite uyumlu)."""
+    try:
+        # PostgreSQL information_schema sorgusu
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table_name,),
+        )
+        cols = {str(row[0]) for row in cur.fetchall()}
+    except Exception:
+        try:
+            # SQLite PRAGMA yolu
+            cur.execute(f"PRAGMA table_info({table_name})")
+            cols = {str(row[1]) for row in cur.fetchall()}
+        except Exception:
+            cols = set()
+    return [col for col in COURSE_TYPE_COLUMNS if col in cols]
+
+
+def get_existing_type_columns_from_names(column_names: Iterable[str]) -> list[str]:
+    cols = {str(col) for col in column_names}
     return [col for col in COURSE_TYPE_COLUMNS if col in cols]
 
 
 def build_course_type_expr(cur: sqlite3.Cursor, alias: str = "d") -> str:
     cols = get_existing_type_columns(cur)
+    return build_course_type_expr_from_columns(cols, alias=alias)
+
+
+def build_course_type_expr_from_columns(column_names: Iterable[str], alias: str = "d") -> str:
+    cols = get_existing_type_columns_from_names(column_names)
     if not cols:
         return "''"
 
@@ -78,7 +101,11 @@ def _build_normalized_sql_text_expr(expr: str) -> str:
 
 
 def build_elective_predicate(cur: sqlite3.Cursor, alias: str = "d") -> str:
-    type_expr = build_course_type_expr(cur=cur, alias=alias)
+    return build_elective_predicate_from_columns(get_existing_type_columns(cur), alias=alias)
+
+
+def build_elective_predicate_from_columns(column_names: Iterable[str], alias: str = "d") -> str:
+    type_expr = build_course_type_expr_from_columns(column_names, alias=alias)
     if type_expr == "''":
         # Type column is unavailable; strict rule: nothing is accepted as elective.
         return "0=1"
@@ -92,7 +119,11 @@ def build_elective_predicate(cur: sqlite3.Cursor, alias: str = "d") -> str:
 
 
 def build_required_predicate(cur: sqlite3.Cursor, alias: str = "d") -> str:
-    type_expr = build_course_type_expr(cur=cur, alias=alias)
+    return build_required_predicate_from_columns(get_existing_type_columns(cur), alias=alias)
+
+
+def build_required_predicate_from_columns(column_names: Iterable[str], alias: str = "d") -> str:
+    type_expr = build_course_type_expr_from_columns(column_names, alias=alias)
     if type_expr == "''":
         return "0=1"
     normalized_expr = _build_normalized_sql_text_expr(type_expr)
@@ -107,7 +138,7 @@ def build_required_predicate(cur: sqlite3.Cursor, alias: str = "d") -> str:
     )
 
 
-def filter_elective_course_ids(cur: sqlite3.Cursor, course_ids: Iterable[int]) -> set[int]:
+def filter_elective_course_ids(cur, course_ids: Iterable[int]) -> set[int]:
     normalized_ids = sorted({int(course_id) for course_id in course_ids if course_id is not None})
     if not normalized_ids:
         return set()
@@ -116,11 +147,17 @@ def filter_elective_course_ids(cur: sqlite3.Cursor, course_ids: Iterable[int]) -
     if elective_predicate == "0=1":
         return set()
 
+    # Detect placeholder style: psycopg2 uses %s, sqlite3 uses ?
+    try:
+        placeholder = "%s" if hasattr(cur, 'description') and hasattr(cur.connection, 'info') else "?"
+    except Exception:
+        placeholder = "?"
+
     out: set[int] = set()
     chunk_size = 900
     for idx in range(0, len(normalized_ids), chunk_size):
         chunk = normalized_ids[idx : idx + chunk_size]
-        placeholders = ",".join("?" for _ in chunk)
+        placeholders = ",".join(placeholder for _ in chunk)
         cur.execute(
             f"""
             SELECT d.ders_id

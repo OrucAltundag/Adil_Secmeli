@@ -2,63 +2,79 @@
 """
 Thread-safe veritabani oturum yardimcisi.
 
-Her thread kendi baglantisini acar; ana thread'den worker'a conn nesnesi
-tasinmaz. Bu sayede sqlite3.ProgrammingError (SQLite objects created in a
-thread can only be used in that same thread) hatasi onlenir.
+SQLAlchemy session context manager saglar. PostgreSQL ve SQLite destekler.
 
 Kullanim:
-    with db_session(db_path) as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT ...")
+    with db_session() as session:
+        result = session.execute(text("SELECT ..."))
+
+Legacy (raw cursor) kullanim:
+    conn = get_raw_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT ...")
+    conn.close()
 """
 
-import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Generator, Optional
 
-from app.db.sqlite_connection import connect_sqlite
+from sqlalchemy.orm import Session
 
-DEFAULT_DB_PATH = "data/adil_secmeli.db"
-
-
-def resolve_db_path(db_path: Optional[str]) -> str:
-    """
-    db_path None veya bos ise varsayilan yol doner.
-    Relative path ise absolut hale getirir.
-    """
-    path = db_path or DEFAULT_DB_PATH
-    if not os.path.isabs(path):
-        base = os.getcwd()
-        path = os.path.normpath(os.path.join(base, path))
-    return path
+from app.db.database import get_engine, get_session
 
 
 @contextmanager
-def db_session(db_path: Optional[str] = None) -> Generator[sqlite3.Connection, None, None]:
+def db_session(db_path: Optional[str] = None) -> Generator[Session, None, None]:
     """
     Thread-safe veritabani oturumu.
 
-    Her cagrıda yeni bir baglanti acar; is bittiginde kapatir.
-    Worker thread icinde guvenle kullanilir.
+    Her cagrida yeni bir session acar; is bittiginde kapatir.
 
     Ornek:
-        with db_session(db_path) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM ders")
+        with db_session() as session:
+            result = session.execute(text("SELECT * FROM ders"))
     """
-    path = resolve_db_path(db_path)
-    conn = connect_sqlite(path, row_factory=True)
+    session = get_session()
     try:
-        yield conn
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
-        conn.close()
+        session.close()
 
 
-def get_conn(db_path: Optional[str] = None) -> sqlite3.Connection:
+def get_raw_connection(db_path: Optional[str] = None):
     """
-    Yeni bir baglanti dondurur. Cagiran kod close() ile kapatmakla yukumludur.
-    Context manager kullanmak daha guvenlidir: db_session(db_path)
+    Raw DBAPI connection döndürür.
+
+    PostgreSQL: psycopg2 connection + RealDictCursor
+    SQLite:     sqlite3.Connection + Row factory
+
+    Çağıran kod close() yapmakla yükümlüdür.
     """
-    path = resolve_db_path(db_path)
-    return connect_sqlite(path, row_factory=True)
+    engine = get_engine()
+    conn = engine.raw_connection()
+
+    if engine.dialect.name == "sqlite":
+        conn.row_factory = sqlite3.Row
+    else:
+        # psycopg2: cursor'larda dict-style erişim sağla
+        try:
+            import psycopg2.extras
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+        except ImportError:
+            pass
+
+    return conn
+
+
+def get_conn(db_path: Optional[str] = None):
+    """
+    Legacy uyumluluk: Raw DBAPI connection döndürür.
+    Çağıran kod close() yapmakla yükümlüdür.
+    Context manager kullanmak daha güvenlidir: db_session()
+    """
+    return get_raw_connection(db_path)

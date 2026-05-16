@@ -1,89 +1,109 @@
 # -*- coding: utf-8 -*-
-"""Tkinter ve FastAPI için merkezi DB session/connection yönetimi."""
+"""Tkinter ve FastAPI için merkezi DB session/connection yönetimi.
+
+PostgreSQL ve SQLite destekler. SQLAlchemy session tabanlı erişim sağlar.
+"""
 
 from __future__ import annotations
 
 import contextlib
-import os
-import sqlite3
 from typing import Iterator
 
-try:
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-except Exception:  # pragma: no cover - SQLAlchemy kurulu degilse sqlite yolu calisir
-    create_engine = None
-    sessionmaker = None
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.config import AppConfig, load_app_config
-from app.db.schema_compat import ensure_reporting_schema
-from app.db.sqlite_connection import connect_sqlite
+from app.db.backend import is_sqlite_url
+from app.db.database import get_engine, get_session as _get_session, Base
 
 
-_engine_cache: dict[str, object] = {}
-_session_factory_cache: dict[str, object] = {}
+def open_sqlite_connection(db_path: str | None = None, *, row_factory: bool = True):
+    """Legacy uyumluluk: Raw DBAPI connection döndürür.
 
-
-def get_engine(config: AppConfig | None = None):
-    cfg = config or load_app_config()
-    if create_engine is None:
-        raise RuntimeError("SQLAlchemy mevcut değil.")
-    url = cfg.database_url
-    if url not in _engine_cache:
-        _engine_cache[url] = create_engine(
-            url,
-            connect_args={"check_same_thread": False} if url.startswith("sqlite") else {},
-            future=True,
-        )
-    return _engine_cache[url]
-
-
-def get_session_factory(config: AppConfig | None = None):
-    cfg = config or load_app_config()
-    if sessionmaker is None:
-        raise RuntimeError("SQLAlchemy mevcut değil.")
-    url = cfg.database_url
-    if url not in _session_factory_cache:
-        _session_factory_cache[url] = sessionmaker(bind=get_engine(cfg), autoflush=False, autocommit=False, future=True)
-    return _session_factory_cache[url]
-
-
-def open_sqlite_connection(db_path: str | None = None, *, row_factory: bool = True) -> sqlite3.Connection:
-    cfg = load_app_config()
-    path = os.path.abspath(db_path or cfg.sqlite_db_path)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Veritabanı bulunamadı: {path}")
-    conn = connect_sqlite(path, row_factory=row_factory)
-    ensure_reporting_schema(conn)
-    return conn
+    PostgreSQL backend'inde db_path yoksayılır.
+    Çağıran kod close() yapmakla yükümlüdür.
+    """
+    engine = get_engine()
+    return engine.raw_connection()
 
 
 @contextlib.contextmanager
-def db_session(db_path: str | None = None) -> Iterator[sqlite3.Connection]:
-    """Kısa ömürlü sqlite transaction context manager."""
-    conn = open_sqlite_connection(db_path)
+def db_session(db_path: str | None = None) -> Iterator[Session]:
+    """Kısa ömürlü SQLAlchemy transaction context manager."""
+    session = _get_session()
     try:
-        yield conn
-        conn.commit()
+        yield session
+        session.commit()
     except Exception:
-        conn.rollback()
+        session.rollback()
         raise
     finally:
-        conn.close()
+        session.close()
 
 
-def get_db() -> Iterator[sqlite3.Connection]:
-    """FastAPI dependency uyumlu sqlite connection üretir."""
-    with db_session() as conn:
-        yield conn
+def get_db() -> Iterator[Session]:
+    """FastAPI dependency uyumlu session üretir."""
+    with db_session() as session:
+        yield session
 
 
 def init_database(db_path: str | None = None) -> dict[str, object]:
-    with db_session(db_path) as conn:
-        result = ensure_reporting_schema(conn)
-        return {"ok": True, "schema": result, "db_path": db_path or load_app_config().sqlite_db_path}
+    """Veritabanı şemasını oluşturur/günceller."""
+    cfg = load_app_config()
+    engine = get_engine()
+
+    # ORM modellerinden tabloları oluştur
+    Base.metadata.create_all(bind=engine)
+
+    # Schema uyumluluğu — sadece SQLite için eski schema_compat çalıştır
+    schema_result = {}
+    if is_sqlite_url(cfg.database_url):
+        try:
+            from app.db.schema_compat import ensure_reporting_schema
+            conn = engine.raw_connection()
+            try:
+                schema_result = ensure_reporting_schema(conn)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            schema_result = {"error": str(exc)}
+
+    return {
+        "ok": True,
+        "schema": schema_result,
+        "database_url": cfg.database_url,
+        "database_backend": cfg.db_backend,
+    }
 
 
 def close_database() -> None:
-    _engine_cache.clear()
-    _session_factory_cache.clear()
+    """Engine'i temizler."""
+    from app.db.database import dispose_session
+    dispose_session()
+
+
+def get_alembic_head(config_path: str = "alembic.ini") -> str | None:
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        script = ScriptDirectory.from_config(Config(config_path))
+        return script.get_current_head()
+    except Exception:
+        return None
+
+
+def stamp_database_head(engine_obj: object, config_path: str = "alembic.ini") -> str | None:
+    head = get_alembic_head(config_path=config_path)
+    if not head:
+        return None
+    with engine_obj.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)"
+        )
+        conn.exec_driver_sql("DELETE FROM alembic_version")
+        conn.exec_driver_sql(
+            "INSERT INTO alembic_version (version_num) VALUES (%s)", (head,)
+        )
+    return head

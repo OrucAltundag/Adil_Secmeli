@@ -247,7 +247,7 @@ def test_explainability_tree_path_and_low_data_limitation():
     explanation = explain_model_prediction(model, X.iloc[[0]], X.columns.tolist(), "decision_tree", readiness_level="low", sample_count=4)
     assert explanation.decision_path_json
     assert explanation.limitations
-    assert "nihai karar de─şildir" in explanation.human_readable_text
+    assert "nihai karar değildir" in explanation.human_readable_text
 
 
 def test_benchmark_registry_marks_ml_roles():

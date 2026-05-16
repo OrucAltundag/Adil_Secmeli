@@ -3,7 +3,7 @@
 # app/db/database.py — SQLAlchemy Oturum Yonetimi
 # =============================================================================
 # ScopedSession ile thread-safe veritabani erisimi saglar.
-# config.json'dan DB yolunu okur; yol degisirse engine otomatik yenilenir.
+# PostgreSQL ve SQLite destekler.
 # ORM modelleri (models.py) icin Base tanimini icerir.
 #
 # Kullanim:
@@ -12,91 +12,106 @@
 #   ...
 #   session.close()
 # =============================================================================
-import os
 import threading
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
-from app.core.settings import load_settings
-from app.db.sqlite_connection import connect_sqlite
-from app.db.schema_compat import ensure_reporting_schema
 
 _lock = threading.Lock()
 _current_url: str = ""
 
-
-def _load_db_url():
-    settings = load_settings(config_path="config.json")
-    return settings.db_url
-
-
-DATABASE_URL = _load_db_url()
-_current_url = DATABASE_URL
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-    pool_pre_ping=True,
-    pool_recycle=3600,
-)
-
-SessionFactory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
-SessionLocal = scoped_session(SessionFactory)
 Base = declarative_base()
 
+# Engine ve session nesneleri lazy olarak oluşturulur
+engine = None
+SessionFactory = None
+SessionLocal = None
 
-def _refresh_engine_if_needed():
-    """config.json degistiyse engine'i yeniden olusturur."""
-    global engine, SessionFactory, SessionLocal, DATABASE_URL, _current_url
 
-    new_url = _load_db_url()
-    if new_url == _current_url:
+def _load_db_url():
+    from app.core.config import load_app_config
+    return load_app_config(config_path="config.json").database_url
+
+
+def _build_engine(url: str):
+    """Verilen URL'ye uygun SQLAlchemy engine oluşturur."""
+    connect_args = {}
+    kwargs = {
+        "pool_pre_ping": True,
+        "pool_recycle": 3600,
+    }
+    if url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+    else:
+        # PostgreSQL pool ayarları
+        kwargs["pool_size"] = 10
+        kwargs["max_overflow"] = 20
+
+    return create_engine(url, connect_args=connect_args, **kwargs)
+
+
+def _fallback_sqlite_url() -> str:
+    from app.core.config import load_app_config
+
+    cfg = load_app_config(config_path="config.json")
+    return f"sqlite:///{cfg.sqlite_db_path}"
+
+
+def _ensure_engine():
+    """Engine oluştur veya URL değiştiyse yenile."""
+    global engine, SessionFactory, SessionLocal, _current_url
+
+    url = _load_db_url()
+    if engine is not None and url == _current_url:
         return
 
     with _lock:
-        if new_url == _current_url:
+        if engine is not None and url == _current_url:
             return
-        try:
-            SessionLocal.remove()
-            engine.dispose()
-        except Exception:
-            pass
+        # Eski engine varsa kapat
+        if engine is not None:
+            try:
+                if SessionLocal is not None:
+                    SessionLocal.remove()
+                engine.dispose()
+            except Exception:
+                pass
 
-        DATABASE_URL = new_url
-        _current_url = new_url
-        engine = create_engine(
-            new_url,
-            connect_args={"check_same_thread": False} if new_url.startswith("sqlite") else {},
-            pool_pre_ping=True,
-            pool_recycle=3600,
+        _current_url = url
+        try:
+            engine = _build_engine(url)
+        except Exception:
+            if not url.startswith("sqlite"):
+                fallback_url = _fallback_sqlite_url()
+                _current_url = fallback_url
+                engine = _build_engine(fallback_url)
+            else:
+                raise
+        SessionFactory = sessionmaker(
+            bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
         )
-        SessionFactory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
         SessionLocal = scoped_session(SessionFactory)
 
 
+def get_engine():
+    """Aktif engine'i döndürür."""
+    _ensure_engine()
+    return engine
+
+
 def get_session():
-    _refresh_engine_if_needed()
+    """Thread-safe session döndürür."""
+    _ensure_engine()
     return SessionLocal()
 
 
 def dispose_session():
-    SessionLocal.remove()
+    """Mevcut thread'in session'ını temizler."""
+    if SessionLocal is not None:
+        SessionLocal.remove()
 
 
-def ensure_runtime_sqlite_schema(sqlite_path: str) -> dict:
-    """
-    Uygulama acilisinda kritik sqlite sema uyumlulugunu garanti eder.
-    """
-    if not sqlite_path or not os.path.exists(sqlite_path):
-        return {"ok": False, "reason": "db_not_found"}
-    try:
-        import sqlite3
-
-        conn = connect_sqlite(sqlite_path)
-        try:
-            result = ensure_reporting_schema(conn)
-            return {"ok": True, "result": result}
-        finally:
-            conn.close()
-    except Exception as exc:
-        return {"ok": False, "reason": str(exc)}
+def create_all_tables():
+    """ORM modellerinden tüm tabloları oluşturur (PostgreSQL migration için)."""
+    _ensure_engine()
+    Base.metadata.create_all(bind=engine)

@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# app/db/sqlite_db.py — UI Tarafli SQLite Veritabani Erisimi
+# app/db/sqlite_db.py — UI Tarafli Veritabani Erisimi
 # =============================================================================
-# Tkinter UI katmani tarafindan kullanilan hafif sqlite3 wrapper.
-# SQLAlchemy yerine dogrudan sqlite3 kullanir (basit sorgular icin).
+# Tkinter UI katmani tarafindan kullanilan hafif DB wrapper.
+# SQLAlchemy engine uzerinden calisir (PostgreSQL ve SQLite destekler).
 # connect(), tables(), head(), read_df(), run_sql() metodlari sunar.
 # =============================================================================
 from __future__ import annotations
 
-import os
-import sqlite3
 from typing import Any, Optional, Sequence
 
 import pandas as pd
-from app.db.sqlite_connection import connect_sqlite
-from app.db.schema_compat import ensure_reporting_schema
+from sqlalchemy import text, inspect
+
+from app.db.database import get_engine, get_session
 
 
 class Database:
     """
-    UI tarafı için sqlite3 tabanlı küçük DB wrapper.
-    - connect()
+    UI tarafı için SQLAlchemy tabanlı küçük DB wrapper.
+    - connect()      (artık sadece engine'i hazırlar)
     - tables()
     - head()
     - read_df()
@@ -30,94 +29,111 @@ class Database:
     """
 
     def __init__(self, db_path: Optional[str] = None):
-        self.conn: Optional[sqlite3.Connection] = None
+        self._engine = None
+        self._connected = False
         if db_path:
             self.connect(db_path)
 
-    def connect(self, db_path: str) -> None:
-        if not os.path.exists(db_path):
-            raise FileNotFoundError(f"Veritabanı bulunamadı: {db_path}")
-        self.conn = connect_sqlite(db_path, row_factory=True)
-        ensure_reporting_schema(self.conn)
-        self._migrate_ders_kriterleri_anket()
+    def connect(self, db_path: str | None = None) -> None:
+        """Veritabanı engine'ini hazırlar. PostgreSQL'de db_path yoksayılır."""
+        self._engine = get_engine()
+        self._connected = True
 
-    def _migrate_ders_kriterleri_anket(self) -> None:
-        """ders_kriterleri tablosuna anket ve import metadata sütunları ekler (yoksa)."""
-        if not self.conn:
-            return
-        cur = self.conn.cursor()
-        try:
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ders_kriterleri'")
-            if not cur.fetchone():
-                return
-            cur.execute("PRAGMA table_info(ders_kriterleri)")
-            cols = {row[1] for row in cur.fetchall()}
-            columns = [
-                ("anket_katilimci", "INTEGER DEFAULT 0"),
-                ("anket_dersi_secen", "INTEGER DEFAULT 0"),
-                ("anket_veri_kaynagi", "TEXT DEFAULT 'manual'"),
-                ("anket_manual_locked", "INTEGER NOT NULL DEFAULT 0"),
-                ("anket_import_id", "INTEGER"),
-                ("anket_imported_at", "TEXT"),
-            ]
-            for col, ddl in columns:
-                if col not in cols:
-                    cur.execute(f"ALTER TABLE ders_kriterleri ADD COLUMN {col} {ddl}")
-            self.conn.commit()
-        except Exception as e:
-            if self.conn:
-                self.conn.rollback()
-            print(f"[DB Migration] ders_kriterleri anket: {e}")
+    @property
+    def conn(self):
+        """Legacy uyumluluk: raw DBAPI connection döndürür.
+        Dikkat: Çağıran kod close() yapmakla yükümlüdür.
+        """
+        self.ensure()
+        return self._engine.raw_connection()
 
     def ensure(self) -> None:
-        if not self.conn:
+        if not self._connected or self._engine is None:
+            # Otomatik bağlan
+            try:
+                self.connect()
+            except Exception:
+                pass
+        if self._engine is None:
             raise RuntimeError("Veritabanı bağlantısı yok.")
 
     def tables(self) -> list[str]:
         self.ensure()
-        cur = self.conn.cursor()
-        cur.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
-            "ORDER BY name;"
-        )
-        return [r[0] for r in cur.fetchall()]
+        insp = inspect(self._engine)
+        all_tables = insp.get_table_names()
+        return sorted([t for t in all_tables if not t.startswith("sqlite_")])
 
-    def head(self, table: str, limit: int = 1000) -> tuple[list[str], list[sqlite3.Row]]:
+    def get_columns(self, table: str) -> set[str]:
+        """Tablonun kolon isimlerini döndürür."""
         self.ensure()
-        cur = self.conn.cursor()
-        cur.execute(f"SELECT * FROM {table} LIMIT {int(limit)};")
-        rows = cur.fetchall()
-        cols = [d[0] for d in cur.description]
+        insp = inspect(self._engine)
+        if not insp.has_table(table):
+            return set()
+        return {col["name"] for col in insp.get_columns(table)}
+
+    def head(self, table: str, limit: int = 1000) -> tuple[list[str], list[Any]]:
+        self.ensure()
+        with self._engine.connect() as conn:
+            result = conn.execute(text(f'SELECT * FROM "{table}" LIMIT :lim'), {"lim": int(limit)})
+            cols = list(result.keys())
+            rows = [tuple(row) for row in result.fetchall()]
         return cols, rows
 
     def read_df(self, query: str, params=None):
         self.ensure()
-        if params is None:
-            return pd.read_sql_query(query, self.conn)
-        return pd.read_sql_query(query, self.conn, params=params)
+        with self._engine.connect() as conn:
+            if params is None:
+                return pd.read_sql_query(text(query), conn)
+            return pd.read_sql_query(text(query), conn, params=params)
 
     def run_sql(
         self,
         query: str,
-        params: Optional[Sequence[Any]] = None
+        params: Optional[Sequence[Any]] = None,
     ) -> tuple[list[str], list[Any]]:
         """
         SELECT => (cols, rows)
         Diğer => commit ve ([], [])
         """
         self.ensure()
-        cur = self.conn.cursor()
-        if params:
-            cur.execute(query, params)
-        else:
-            cur.execute(query)
+        # Parametreleri ? yerine :param formatına dönüştür
+        processed_query, processed_params = self._adapt_params(query, params)
 
-        if query.strip().lower().startswith("select"):
-            rows = cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            return cols, rows
+        with self._engine.connect() as conn:
+            if processed_params:
+                result = conn.execute(text(processed_query), processed_params)
+            else:
+                result = conn.execute(text(processed_query))
 
-        self.conn.commit()
-        return [], []
+            if query.strip().lower().startswith("select"):
+                cols = list(result.keys())
+                rows = [tuple(row) for row in result.fetchall()]
+                return cols, rows
 
+            conn.commit()
+            return [], []
+
+    @staticmethod
+    def _adapt_params(
+        query: str, params: Optional[Sequence[Any]]
+    ) -> tuple[str, dict[str, Any] | None]:
+        """SQLite ? parametrelerini SQLAlchemy :param formatına dönüştürür."""
+        if params is None:
+            return query, None
+
+        # ? placeholder'ları :p0, :p1, :p2 ... ile değiştir
+        param_dict = {}
+        counter = [0]
+
+        def replacer(match):
+            idx = counter[0]
+            counter[0] += 1
+            key = f"p{idx}"
+            if idx < len(params):
+                param_dict[key] = params[idx]
+            return f":{key}"
+
+        import re
+        # Sadece string dışındaki ? işaretlerini değiştir
+        new_query = re.sub(r"\?", replacer, query)
+        return new_query, param_dict if param_dict else None

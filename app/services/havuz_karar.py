@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
+from app.services.db import get_raw_connection
 
 # ---------------------------------------------------------------------------
 # Sabitler
@@ -286,8 +287,7 @@ def onar_2022_ground_truth(vt_yolu: str = "data/adil_secmeli.db"):
     Bu fonksiyon 2022'yi "Ground Truth" olarak kurar ve sonraki yıl
     hesaplamalarının doğru çalışması için şarttır.
     """
-    baglanti = sqlite3.connect(vt_yolu)
-    baglanti.row_factory = sqlite3.Row
+    baglanti = get_raw_connection(vt_yolu)
     imlec = baglanti.cursor()
 
     try:
@@ -354,8 +354,7 @@ def muhendislik_mufredat_durumunu_esitle(
     print("\n[ONARIM] 2022 Ground Truth onariliyor...")
     onar_2022_ground_truth(vt_yolu)
 
-    baglanti = sqlite3.connect(vt_yolu)
-    baglanti.row_factory = sqlite3.Row
+    baglanti = get_raw_connection(vt_yolu)
     imlec = baglanti.cursor()
 
     print(f"\n[ESLEME] Mufredat -> Havuz zincirleme esleme ({baslangic_yili} GT -> {bitis_yili})")

@@ -123,6 +123,41 @@ class Ders(Base):
 
 
 # ---------------------------
+# 5.1) DERS_KRITERLERI
+# ---------------------------
+class DersKriterleri(Base):
+    __tablename__ = "ders_kriterleri"
+    __table_args__ = (
+        UniqueConstraint("ders_id", "yil", "donem", name="uq_ders_kriterleri_scope"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ders_id = Column(Integer, ForeignKey("ders.ders_id"), nullable=False)
+    yil = Column(Integer, nullable=False)
+    donem = Column(String, nullable=False, default="Güz")
+    toplam_ogrenci = Column(Integer, default=0)
+    gecen_ogrenci = Column(Integer, default=0)
+    basari_ortalamasi = Column(Float, default=0.0)
+    kontenjan = Column(Integer, default=0)
+    kayitli_ogrenci = Column(Integer, default=0)
+    anket_katilimci = Column(Integer, default=0)
+    anket_dersi_secen = Column(Integer, default=0)
+    anket_veri_kaynagi = Column(String, default="manual")
+    anket_manual_locked = Column(Integer, nullable=False, default=0)
+    anket_import_id = Column(Integer)
+    anket_imported_at = Column(String)
+    criteria_import_id = Column(Integer)
+    criteria_veri_kaynagi = Column(String, default="manual")
+    criteria_manual_override = Column(Integer, nullable=False, default=0)
+    criteria_updated_at = Column(String)
+    source_import_batch_id = Column(Integer)
+    is_active = Column(Integer, nullable=False, default=1)
+    superseded_by_import_batch_id = Column(Integer)
+
+    ders = relationship("Ders")
+
+
+# ---------------------------
 # 6) HAVUZ
 # ---------------------------
 class Havuz(Base):

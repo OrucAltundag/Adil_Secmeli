@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from app.services.db import get_raw_connection
 from dataclasses import dataclass
 from typing import Any
 
@@ -258,7 +259,7 @@ def _persist_department_curricula(
         cur.execute("DELETE FROM mufredat_ders WHERE mufredat_id = ?", (int(mufredat_id),))
         for ders_id in assignments.get(term, []):
             cur.execute(
-                "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
+                "INSERT INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
                 (int(mufredat_id), int(ders_id)),
             )
 
@@ -434,7 +435,7 @@ def rebuild_school_curricula_dual_semester(
         if item.get("fakulte_id") is not None and item.get("year_to") is not None
     }
 
-    conn = sqlite3.connect(db_path)
+    conn = get_raw_connection(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     try:

@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from app.services.db import get_raw_connection
 import traceback
 from datetime import datetime, timezone
 from typing import Any
@@ -78,7 +79,7 @@ def _fetch_governance_flags(cur: sqlite3.Cursor, course_id: int) -> dict[str, An
             (int(course_id),),
         )
         row = cur.fetchone()
-    except sqlite3.OperationalError:
+    except Exception:
         row = None
     if not row:
         return {
@@ -113,7 +114,7 @@ def _first_seen_year(cur: sqlite3.Cursor, course_id: int) -> int | None:
             value = cur.fetchone()[0]
             if value is not None:
                 years.append(int(value))
-        except sqlite3.OperationalError:
+        except Exception:
             continue
     return min(years) if years else None
 
@@ -135,7 +136,7 @@ def _old_status(cur: sqlite3.Cursor, course_id: int, year: int, faculty_id: int 
         )
         row = cur.fetchone()
         return int(row[0]) if row and row[0] is not None else None
-    except sqlite3.OperationalError:
+    except Exception:
         return None
 
 
@@ -547,7 +548,7 @@ def record_failed_decision_run(
     error_message: str,
     department_id: int | None = None,
 ) -> dict[str, Any]:
-    conn = sqlite3.connect(db_path)
+    conn = get_raw_connection(db_path)
     conn.row_factory = sqlite3.Row
     try:
         ensure_ahp_governance_schema(conn, commit=False)

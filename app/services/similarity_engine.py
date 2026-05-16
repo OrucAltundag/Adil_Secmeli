@@ -7,6 +7,7 @@
 # =============================================================================
 
 import sqlite3
+from app.services.db import get_raw_connection
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -101,7 +102,7 @@ class SimilarityEngine:
         for r in results:
             cur.execute(
                 """
-                INSERT OR REPLACE INTO ders_iliski
+                INSERT INTO ders_iliski
                 (kaynak_ders_id, hedef_ders_id, skor)
                 VALUES (?, ?, ?)
                 """,

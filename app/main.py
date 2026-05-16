@@ -48,14 +48,9 @@ def _default_api_port() -> int:
 DEFAULT_API_HOST = os.environ.get("ADIL_SECMELI_API_HOST", load_app_config().api_host)
 DEFAULT_API_PORT = _default_api_port()
 
-# ---------- Proje kökünü Python path'e ekle ----------
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
 # ---------- Veritabanı ve temel bileşenler ----------
 from app.db.sqlite_db import Database
 from app.core.state import AppState
-import sqlite3
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -72,7 +67,7 @@ except Exception:
 
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
 from app.services.calculation import run_automatic_scoring
-from app.services.course_type import build_elective_predicate
+from app.services.course_type import build_elective_predicate_from_columns
 from app.services.yearly_workflow import is_yearly_workflow_enabled
 
 
@@ -239,7 +234,8 @@ class AdilSecmeliApp(tk.Tk):
         self.db_path = self.config_data.get("db_path")
         if self.db_path:
             self.db_path = os.path.abspath(self.db_path)
-        self.db = Database(self.db_path) if self.db_path and os.path.exists(self.db_path) else Database()
+        self.db_url = self.app_config.database_url
+        self.db = Database(self.db_url if self.db_url else self.db_path)
         self.current_table = None
 
         self.state = AppState(db_path=self.db_path)
@@ -273,7 +269,6 @@ class AdilSecmeliApp(tk.Tk):
         container = ttk.Frame(self)
         container.pack(fill=tk.BOTH, expand=True)
 
-        # ---- BÖLÜM 2.2: Sekmeler (Notebook) ----
         # ---- BÖLÜM 2.2: Sekmeler (Notebook) ----
         self.nb = ttk.Notebook(container)
         self.nb.pack(fill=tk.BOTH, expand=True)
@@ -349,14 +344,12 @@ class AdilSecmeliApp(tk.Tk):
                     calistirilmaz. Bu islem sadece kullanici tetigiyle (ilgili butonlardan)
                     calistirilir.
         """
-        db_path = self.config_data.get("db_path")
-
-        if db_path:
-            db_path = os.path.abspath(db_path)
+        db_path = self.db_path
+        db_url = self.db_url
 
         try:
             # 1) Veritabani baglantisi
-            self.db.connect(db_path)
+            self.db.connect(db_url or db_path)
             self.tab_view.fill_tables()
 
             # 2) Havuz seed (bossa)
@@ -367,21 +360,24 @@ class AdilSecmeliApp(tk.Tk):
                 print("[AUTO] ENABLE_YEARLY_CRITERIA_WORKFLOW=true -> otomatik algoritma tetigi kapali.")
             else:
                 try:
-                    print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
-                    auto_summary = run_automatic_scoring(db_path)
-                    if isinstance(auto_summary, dict):
-                        gen = auto_summary.get("generation") or {}
-                        generated = gen.get("generated", []) or []
-                        skipped = gen.get("skipped", []) or []
-                        errors = gen.get("errors", []) or []
-                        print(
-                            f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
-                            f"atlanan: {len(skipped)} | hata: {len(errors)}"
-                        )
-                        for err in errors[:5]:
-                            print(f"[AUTO][HATA] {err}")
-                        for sk in skipped[:5]:
-                            print(f"[AUTO][ATLANAN] {sk}")
+                    if self.app_config.db_backend != "sqlite":
+                        print("[AUTO] PostgreSQL modu etkin; legacy SQLite otomatik skor yolu atlandi.")
+                    else:
+                        print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
+                        auto_summary = run_automatic_scoring(db_path)
+                        if isinstance(auto_summary, dict):
+                            gen = auto_summary.get("generation") or {}
+                            generated = gen.get("generated", []) or []
+                            skipped = gen.get("skipped", []) or []
+                            errors = gen.get("errors", []) or []
+                            print(
+                                f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
+                                f"atlanan: {len(skipped)} | hata: {len(errors)}"
+                            )
+                            for err in errors[:5]:
+                                print(f"[AUTO][HATA] {err}")
+                            for sk in skipped[:5]:
+                                print(f"[AUTO][ATLANAN] {sk}")
                 except Exception as e:
                     print(f"[AUTO] Otomatik uretim hatasi: {e}")
 
@@ -406,7 +402,7 @@ class AdilSecmeliApp(tk.Tk):
         except FileNotFoundError:
             messagebox.showwarning(
                 "Veritabani Bulunamadi",
-                f"Varsayilan veritabani yok:\\n{db_path}\\n\\nLutfen dosya seciniz."
+                    f"Varsayilan veritabani yok:\n{db_path}\n\nLutfen config ayarlarini kontrol ediniz."
             )
             self.cmd_open_db()
 
@@ -419,6 +415,12 @@ class AdilSecmeliApp(tk.Tk):
 
     def cmd_open_db(self):
         """Kullanicidan yeni veritabani dosyasi secmesini ister ve baglantıyı yeniler."""
+        if self.app_config.db_backend != "sqlite":
+            messagebox.showinfo(
+                "Veritabanı",
+                "PostgreSQL modu etkin. Dosya seçimi yerine DATABASE_URL kullanılacak.",
+            )
+            return
         path = filedialog.askopenfilename(
             title="SQLite Veritabanı Seç",
             filetypes=[("SQLite", "*.db *.sqlite *.sqlite3"), ("Tümü", "*.*")]
@@ -427,13 +429,12 @@ class AdilSecmeliApp(tk.Tk):
             return
         try:
             self.db.connect(path)
-            self.db_path = path
+            self.db_path = os.path.abspath(path)
             self.state.set("db_path", path)
-               # tek yerden güncelle
 
             try:
                 with open("config.json", "w", encoding="utf-8") as f:
-                    json.dump({"db_path": path}, f, ensure_ascii=False, indent=2)
+                    json.dump({"db_path": path, "db_url": f"sqlite:///{os.path.abspath(path)}"}, f, ensure_ascii=False, indent=2)
             except Exception:
                 pass
 
@@ -467,7 +468,7 @@ class AdilSecmeliApp(tk.Tk):
     def fill_pool_table_for_years(self):
         """
         Havuz tablosunu mevcut mufredat yillari icin doldurur.
-        Sadece kayit yoksa INSERT yapar (INSERT OR IGNORE).
+        Sadece kayit yoksa INSERT yapar (ON CONFLICT DO NOTHING).
         skor alanini NULL birakir; yil bazli TOPSIS hesaplaninca doldurulur.
         """
         _, year_rows = self.db.run_sql(
@@ -479,19 +480,16 @@ class AdilSecmeliApp(tk.Tk):
 
         dersler = []
         try:
-            conn = getattr(self.db, "conn", None)
-            if conn is not None:
-                cur = conn.cursor()
-                elective_predicate = build_elective_predicate(cur=cur, alias="d")
-                if elective_predicate != "0=1":
-                    cur.execute(
-                        f"""
-                        SELECT d.ders_id, d.fakulte_id, d.bolum_id, d.ad
-                        FROM ders d
-                        WHERE {elective_predicate}
-                        """
-                    )
-                    dersler = cur.fetchall()
+            columns = self.db.get_columns("ders")
+            elective_predicate = build_elective_predicate_from_columns(columns, alias="d")
+            if elective_predicate != "0=1":
+                _, dersler = self.db.run_sql(
+                    f"""
+                    SELECT d.ders_id, d.fakulte_id, d.bolum_id, d.ad
+                    FROM ders d
+                    WHERE {elective_predicate}
+                    """
+                )
         except Exception:
             dersler = []
 
@@ -499,19 +497,17 @@ class AdilSecmeliApp(tk.Tk):
             return
 
         insert_q = """
-            INSERT OR IGNORE INTO havuz (ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi)
+            INSERT INTO havuz (ders_id, yil, fakulte_id, bolum_id, statu, sayac, skor, ders_adi)
             VALUES (?, ?, ?, ?, 0, 0, NULL, ?)
+            ON CONFLICT DO NOTHING
         """
 
-        cur = self.db.conn.cursor()
         for ders_id, fakulte_id, bolum_id, ders_adi in dersler:
             for yil in years:
-                cur.execute(
+                self.db.run_sql(
                     insert_q,
                     (str(ders_id), yil, fakulte_id, bolum_id, str(ders_adi or "")),
                 )
-
-        self.db.conn.commit()
         print(f"[Pool] {len(dersler)} ders x {len(years)} yil = havuz seed tamamlandi.")
 
 
@@ -527,7 +523,10 @@ class AdilSecmeliApp(tk.Tk):
         win.geometry("900x600")
         txt = tk.Text(win, height=10)
         txt.pack(fill=tk.BOTH, expand=False, padx=8, pady=8)
-        txt.insert(tk.END, f"SELECT name FROM sqlite_master WHERE type='table';")
+        if self.app_config.db_backend == "sqlite":
+            txt.insert(tk.END, "SELECT name FROM sqlite_master WHERE type='table';")
+        else:
+            txt.insert(tk.END, "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema();")
 
         frame = ttk.Frame(win)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -548,10 +547,10 @@ class AdilSecmeliApp(tk.Tk):
                         tree.heading(c, text=c)
                         tree.column(c, width=150, anchor="center")
                     for r in rows:
-                        if isinstance(r, sqlite3.Row):
-                            tree.insert("", tk.END, values=[r[c] for c in cols])
+                        if hasattr(r, "_mapping"):
+                            tree.insert("", tk.END, values=[r._mapping.get(c) for c in cols])
                         else:
-                            tree.insert("", tk.END, values=r)
+                            tree.insert("", tk.END, values=list(r))
                 else:
                     messagebox.showinfo("Tamam", "Sorgu başarıyla çalıştı.")
             except Exception as e:

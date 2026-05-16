@@ -12,6 +12,7 @@ from app.core.config import AppConfig, load_app_config
 from app.core.database_policy import database_policy_summary
 from app.core.permissions import UserContext, can
 from app.core.result import ServiceResult
+from app.db.backend import is_sqlite_connection, is_sqlite_url
 from app.db.schema_compat import ensure_reporting_schema
 from app.db.session import db_session
 from app.repositories.system_repository import SystemRepository
@@ -35,13 +36,26 @@ class SystemService:
     def health(self) -> ServiceResult:
         if self.conn is not None:
             return ServiceResult.ok(self._health_with_conn(self.conn))
+        if not is_sqlite_url(self.config.database_url):
+            return ServiceResult.ok(self._postgresql_health())
         with db_session(self.db_path or self.config.sqlite_db_path) as conn:
             return ServiceResult.ok(self._health_with_conn(conn))
 
     def _health_with_conn(self, conn: sqlite3.Connection) -> dict[str, Any]:
-        schema = ensure_reporting_schema(conn)
-        repo = SystemRepository(conn)
-        info = repo.database_info(self.db_path or self.config.sqlite_db_path)
+        if is_sqlite_connection(conn):
+            schema = ensure_reporting_schema(conn)
+            repo = SystemRepository(conn)
+            info = repo.database_info(self.db_path or self.config.sqlite_db_path)
+        else:
+            schema = {"postgresql": {"runtime_schema_compat": "disabled"}}
+            schema_health_probe = check_schema_health(conn=conn, db_path=self.db_path or self.config.sqlite_db_path, config=self.config)
+            info = {
+                "db_path": None,
+                "database_url": self.config.database_url,
+                "exists": True,
+                "table_count": int((schema_health_probe.get("required_tables") or {}).get("existing_count") or 0),
+                "connection_ok": True,
+            }
         schema_health = check_schema_health(conn=conn, db_path=self.db_path or self.config.sqlite_db_path, config=self.config)
         return {
             "app_version": self.config.version,
@@ -57,6 +71,13 @@ class SystemService:
                 (schema_health.get("schema_compat") or {}).get("runtime_mutation_allowed")
             ),
         }
+
+    def _postgresql_health(self) -> dict[str, Any]:
+        from app.db.session import get_engine
+
+        with get_engine(self.config).connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+            return self._health_with_conn(conn)
 
     def view_model(self, user_context: UserContext | None = None) -> SystemHealthViewModel:
         data = self.health().unwrap()

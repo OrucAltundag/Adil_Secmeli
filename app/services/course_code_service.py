@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 import os
 import re
 import sqlite3
+from app.services.db import get_raw_connection
 from typing import Any
 
 from app.db.schema_compat import ensure_ders_code_schema
@@ -118,7 +119,7 @@ def preview_missing_course_codes(db_path: str) -> dict[str, Any]:
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Veritabani bulunamadi: {db_path}")
 
-    conn = sqlite3.connect(db_path)
+    conn = get_raw_connection(db_path)
     try:
         rows = _fetch_missing_course_code_rows(conn)
         return {
@@ -134,7 +135,7 @@ def apply_missing_course_codes(db_path: str) -> dict[str, Any]:
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Veritabani bulunamadi: {db_path}")
 
-    conn = sqlite3.connect(db_path)
+    conn = get_raw_connection(db_path)
     try:
         rows = _fetch_missing_course_code_rows(conn)
         cur = conn.cursor()

@@ -1,31 +1,28 @@
 # -*- coding: utf-8 -*-
-"""SQLite connection helpers shared by UI, services, and API code."""
+"""SQLite/PostgreSQL connection helpers shared by UI, services, and API code.
+
+Bu modül geriye uyumluluk için korunmuştur. Yeni kod SQLAlchemy session
+kullanmalıdır (app.db.database veya app.db.session modülleri aracılığıyla).
+"""
 from __future__ import annotations
 
-import sqlite3
+from sqlalchemy import text
+from app.db.database import get_engine
 
 
-DEFAULT_SQLITE_TIMEOUT_SECONDS = 30.0
-DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 30_000
-
-
-def connect_sqlite(db_path: str, *, row_factory: bool = False) -> sqlite3.Connection:
+def connect_sqlite(db_path: str = "", *, row_factory: bool = False):
     """
-    Open a SQLite connection that waits for short-lived UI/service locks.
+    Legacy uyumluluk: Raw DBAPI connection döndürür.
 
-    The desktop app frequently keeps one connection open while import/template
-    helpers open another. A busy timeout avoids immediate "database is locked"
-    failures when the first connection is finishing a write or schema guard.
+    PostgreSQL backend'inde db_path yoksayılır ve engine'den
+    raw connection alınır. Çağıran kod close() yapmakla yükümlüdür.
     """
-    conn = sqlite3.connect(db_path, timeout=DEFAULT_SQLITE_TIMEOUT_SECONDS)
-    if row_factory:
-        conn.row_factory = sqlite3.Row
-    try:
-        conn.execute(f"PRAGMA busy_timeout = {DEFAULT_SQLITE_BUSY_TIMEOUT_MS}")
-    except sqlite3.DatabaseError:
-        pass
+    engine = get_engine()
+    conn = engine.raw_connection()
     return conn
 
 
 def is_database_locked_error(exc: BaseException) -> bool:
-    return isinstance(exc, sqlite3.OperationalError) and "database is locked" in str(exc).lower()
+    """Veritabanı kilitli hatası mı kontrol eder."""
+    err_msg = str(exc).lower()
+    return "database is locked" in err_msg or "lock" in err_msg

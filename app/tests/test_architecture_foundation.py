@@ -13,7 +13,7 @@ from app.core.config import load_app_config
 from app.core.errors import BusinessRuleAppError, ValidationAppError
 from app.core.permissions import UserContext, can
 from app.core.result import ServiceResult
-from app.db.session import db_session, init_database
+from app.db.session import db_session, init_database, open_sqlite_connection
 from app.repositories.course_repository import CourseRepository
 from app.services.course_service import CourseService
 from app.services.import_validation_service import validate_import_request
@@ -81,6 +81,15 @@ def test_config_defaults_and_production_sql_console(monkeypatch, tmp_path):
     cfg = load_app_config()
     assert cfg.app_mode == "auto"
     assert cfg.enable_sql_console is False
+
+
+def test_postgresql_config_blocks_legacy_sqlite_default(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/adil_test")
+    cfg = load_app_config()
+    assert cfg.db_backend == "postgresql"
+    with pytest.raises(RuntimeError):
+        open_sqlite_connection()
 
 
 def test_service_result_and_app_error_formats():

@@ -14,6 +14,7 @@ from app.services.permission_service import require_action
 
 from app.core.config import load_app_config
 from app.core.settings import load_settings
+from app.db.backend import is_sqlite_url
 from app.db.session import open_sqlite_connection
 from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
@@ -250,6 +251,15 @@ def _donem_key(value: str | None) -> str:
 
 def _get_db_path() -> str:
     settings = load_settings(config_path="config.json")
+    if not is_sqlite_url(settings.db_url):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Bu endpoint henuz sqlite3 tabanli eski veri erisim yolunu kullaniyor. "
+                "PostgreSQL aktifken eski SQLite dosyasina yazmak veri tutarsizligi "
+                "olusturabilecegi icin islem durduruldu."
+            ),
+        )
     return settings.db_path
 
 

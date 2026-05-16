@@ -419,7 +419,7 @@ def yukle_gercek_2022_mufredati(conn, excel_path):
             if d_id:
                 # MÃ¼fredata ekle (BurasÄ± serbest)
                 cursor.execute(
-                    "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
+                    "INSERT INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     (muf_id, d_id)
                 )
 
@@ -707,7 +707,7 @@ def _has_full_criteria(cur, ders_id, yil, donem):
                 """,
                 (ders_id, yil),
             )
-        except sqlite3.OperationalError:
+        except Exception:
             cur.execute(
                 """
                 SELECT NULL as kontenjan, doluluk_orani
@@ -765,7 +765,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
             (int(ders_id), int(yil), str(donem), str(donem)),
         )
         dk = cur.fetchone()
-    except sqlite3.OperationalError:
+    except Exception:
         try:
             cur.execute(
                 """
@@ -812,7 +812,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
             """,
             (int(ders_id), int(yil)),
         )
-    except sqlite3.OperationalError:
+    except Exception:
         cur.execute(
             """
             SELECT ortalama_not, basari_orani
@@ -836,7 +836,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
             """,
             (int(ders_id), int(yil)),
         )
-    except sqlite3.OperationalError:
+    except Exception:
         cur.execute(
             """
             SELECT doluluk_orani
@@ -1277,16 +1277,16 @@ def _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem="G"):
 
     try:
         return _fetch_via_bolum(True)
-    except sqlite3.OperationalError:
+    except Exception:
         try:
             return _fetch_via_bolum(False)
-        except sqlite3.OperationalError:
+        except Exception:
             try:
                 return _fetch_via_mufredat_fakulte(True)
-            except sqlite3.OperationalError:
+            except Exception:
                 try:
                     return _fetch_via_mufredat_fakulte(False)
-                except sqlite3.OperationalError:
+                except Exception:
                     logger.debug(
                         "_get_curriculum_course_ids: mufredat sorgusu basarisiz fakulte_id=%s yil=%s",
                         fakulte_id,
@@ -1519,7 +1519,7 @@ def generate_next_year_curricula(
         if not os.path.exists(db_path):
             return {"ok": False, "error": f"DB bulunamadi: {db_path}"}
 
-        conn = sqlite3.connect(db_path)
+        conn = get_raw_connection(db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         ensure_pool_state_governance_schema(conn, commit=False)
@@ -2015,7 +2015,7 @@ def generate_next_year_curricula(
 
             for d_id in dersler:
                 cur.execute(
-                    "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
+                    "INSERT INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     (hedef_muf_id, int(d_id)),
                 )
 
@@ -2398,7 +2398,7 @@ def run_all_algorithms_for_year(
             "messages": [f"Veritabani bulunamadi: {db_path}"],
         }
 
-    conn = sqlite3.connect(db_path)
+    conn = get_raw_connection(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     ensure_yearly_workflow_schema(conn)
@@ -2412,7 +2412,7 @@ def run_all_algorithms_for_year(
     conn.close()
 
     for fakulte_id_iter, fakulte_adi in faculties:
-        status_conn = sqlite3.connect(db_path)
+        status_conn = get_raw_connection(db_path)
         status_conn.row_factory = sqlite3.Row
         try:
             ensure_yearly_workflow_schema(status_conn)
@@ -2493,7 +2493,7 @@ def run_all_algorithms_for_year(
             donem=donem,
         )
 
-        status_conn = sqlite3.connect(db_path)
+        status_conn = get_raw_connection(db_path)
         status_conn.row_factory = sqlite3.Row
         try:
             if result.get("ok"):
@@ -2571,7 +2571,7 @@ def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G")
         summary["errors"].append({"error": f"DB bulunamadi: {db_path}"})
         return summary
 
-    conn = sqlite3.connect(db_path)
+    conn = get_raw_connection(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     _normalize_mufredat_faculty_ids(cur)
@@ -2629,7 +2629,7 @@ def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G")
         return None, "Sonraki yil zaten mevcut"
 
     for fakulte_id, fakulte_adi in faculties:
-        conn = sqlite3.connect(db_path)
+        conn = get_raw_connection(db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         _normalize_mufredat_faculty_ids(cur)
@@ -2701,7 +2701,7 @@ def reset_future_curricula(db_path="data/adil_secmeli.db", base_year=2022):
 
     conn = None
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_raw_connection(db_path)
         cur = conn.cursor()
         result["normalized_curricula"] = _normalize_mufredat_faculty_ids(cur)
 
@@ -2764,7 +2764,7 @@ def _write_curriculum_generation_log(db_path, overall):
     conn = None
     try:
         from datetime import datetime, timezone
-        conn = sqlite3.connect(db_path)
+        conn = get_raw_connection(db_path)
         cur = conn.cursor()
         _ensure_curriculum_log_table(cur)
         generated = overall.get("generated", []) or []

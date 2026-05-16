@@ -1,3 +1,7 @@
 {
-  "db_path": "C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db"
+  "db_path": "C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db",
+  "db_url": "postgresql+psycopg2://postgres:postgres@localhost:5432/adil_secmeli",
+  "environment": "development",
+  "enable_schema_compat": true,
+  "allow_runtime_schema_mutation": true
 }

@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from app.services.db import get_raw_connection
 from contextlib import contextmanager
 from typing import Any, Iterator
 
+import sqlalchemy as sa
+
 from app.core.config import AppConfig, load_app_config
 from app.core.database_policy import runtime_schema_mutation_allowed
+from app.db.backend import is_sqlite_connection, is_sqlite_url
 
 
 CORE_REQUIRED_TABLES = {
@@ -33,25 +37,42 @@ CORE_REQUIRED_COLUMNS = {
 
 
 @contextmanager
-def _managed_connection(conn: sqlite3.Connection | None, db_path: str | None) -> Iterator[sqlite3.Connection]:
+def _managed_connection(
+    conn: sqlite3.Connection | Any | None,
+    db_path: str | None,
+    config: AppConfig | None = None,
+) -> Iterator[Any]:
     if conn is not None:
         yield conn
         return
-    path = db_path or load_app_config().sqlite_db_path
-    connection = sqlite3.connect(path)
+    cfg = config or load_app_config()
+    if not is_sqlite_url(cfg.database_url):
+        from app.db.session import get_engine
+
+        with get_engine().connect() as connection:
+            yield connection
+        return
+    path = db_path or cfg.sqlite_db_path
+    sqlite_conn = sqlite3.connect(path)
     try:
-        yield connection
+        yield sqlite_conn
     finally:
-        connection.close()
+        sqlite_conn.close()
 
 
-def _table_names(conn: sqlite3.Connection) -> set[str]:
+def _table_names(conn: Any) -> set[str]:
+    if not is_sqlite_connection(conn):
+        return set(sa.inspect(conn).get_table_names())
     cur = conn.cursor()
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
     return {str(row[0]) for row in cur.fetchall()}
 
 
-def _column_names(conn: sqlite3.Connection, table_name: str) -> set[str]:
+def _column_names(conn: Any, table_name: str) -> set[str]:
+    if not is_sqlite_connection(conn):
+        if table_name not in _table_names(conn):
+            return set()
+        return {str(col["name"]) for col in sa.inspect(conn).get_columns(table_name)}
     cur = conn.cursor()
     cur.execute(f"PRAGMA table_info({table_name})")
     return {str(row[1]) for row in cur.fetchall()}
@@ -77,14 +98,18 @@ def check_required_columns(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"ok": not missing, "missing_columns": missing}
 
 
-def check_alembic_version(conn: sqlite3.Connection) -> dict[str, Any]:
+def check_alembic_version(conn: Any) -> dict[str, Any]:
     tables = _table_names(conn)
     if "alembic_version" not in tables:
         return {"ok": False, "version": None, "message": "alembic_version tablosu bulunamadı."}
-    cur = conn.cursor()
-    cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
-    row = cur.fetchone()
-    version = str(row[0]) if row and row[0] else None
+    if is_sqlite_connection(conn):
+        cur = conn.cursor()
+        cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
+        row = cur.fetchone()
+        version = str(row[0]) if row and row[0] else None
+    else:
+        row = conn.execute(sa.text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
+        version = str(row[0]) if row and row[0] else None
     return {"ok": bool(version), "version": version}
 
 
@@ -94,15 +119,16 @@ def check_schema_compat_status(conn: sqlite3.Connection, config: AppConfig | Non
     logs_available = "schema_compat_logs" in tables
     latest_logs: list[dict[str, Any]] = []
     if logs_available:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT action_type, table_name, column_name, index_name, success, message, created_at
-            FROM schema_compat_logs
-            ORDER BY id DESC
-            LIMIT 10
-            """
-        )
+        query = """
+        SELECT action_type, table_name, column_name, index_name, success, message, created_at
+        FROM schema_compat_logs
+        ORDER BY id DESC
+        LIMIT 10
+        """
+        if is_sqlite_connection(conn):
+            rows = conn.cursor().execute(query).fetchall()
+        else:
+            rows = conn.execute(sa.text(query)).fetchall()
         latest_logs = [
             {
                 "action_type": row[0],
@@ -113,7 +139,7 @@ def check_schema_compat_status(conn: sqlite3.Connection, config: AppConfig | Non
                 "message": row[5],
                 "created_at": row[6],
             }
-            for row in cur.fetchall()
+            for row in rows
         ]
     return {
         "enabled": cfg.enable_schema_compat,
@@ -141,7 +167,7 @@ def check_schema_health(
 ) -> dict[str, Any]:
     cfg = config or load_app_config()
     path = db_path or cfg.sqlite_db_path
-    with _managed_connection(conn, path) as active_conn:
+    with _managed_connection(conn, path, cfg) as active_conn:
         tables = check_required_tables(active_conn)
         columns = check_required_columns(active_conn)
         alembic = check_alembic_version(active_conn)
@@ -156,7 +182,9 @@ def check_schema_health(
         warnings.append("Production ortamında runtime schema mutation açık görünüyor.")
     return {
         "db_path": os.path.abspath(path),
-        "db_exists": os.path.exists(path),
+        "db_exists": os.path.exists(path) if is_sqlite_url(cfg.database_url) else True,
+        "database_url": cfg.database_url,
+        "database_backend": cfg.db_backend,
         "schema_ok": bool(tables["ok"] and columns["ok"]),
         "required_tables": tables,
         "required_columns": columns,

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.db.backend import database_backend, is_sqlite_url
+
 try:
     from dotenv import load_dotenv
 except Exception:  # pragma: no cover - opsiyonel bagimlilik
@@ -58,6 +60,7 @@ class AppConfig:
     enable_ml_decision_influence: bool = False
     require_high_confidence_for_ml_influence: bool = True
     allow_experimental_ml_in_decision: bool = False
+    enable_yearly_criteria_workflow: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"
@@ -87,10 +90,15 @@ class AppConfig:
     def db_path(self) -> str:
         return self.sqlite_db_path
 
+    @property
+    def db_backend(self) -> str:
+        return database_backend(self.database_url)
+
     def as_legacy_dict(self) -> dict[str, Any]:
         return {
             "db_path": self.sqlite_db_path,
             "db_url": self.database_url,
+            "db_backend": self.db_backend,
             "api_host": self.api_host,
             "api_port": self.api_port,
             "log_level": self.log_level,
@@ -103,6 +111,7 @@ class AppConfig:
             "enable_ml_decision_influence": self.enable_ml_decision_influence,
             "require_high_confidence_for_ml_influence": self.require_high_confidence_for_ml_influence,
             "allow_experimental_ml_in_decision": self.allow_experimental_ml_in_decision,
+            "enable_yearly_criteria_workflow": self.enable_yearly_criteria_workflow,
         }
 
 
@@ -113,9 +122,9 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
     cfg = _load_json(config_path)
     base_dir = Path(__file__).resolve().parents[2]
     default_db = Path(cfg.get("db_path") or base_dir / "data" / "adil_secmeli.db")
-    db_path = Path(os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH") or default_db)
-    if not db_path.is_absolute():
-        db_path = Path.cwd() / db_path
+    sqlite_db_path = Path(os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH") or default_db)
+    if not sqlite_db_path.is_absolute():
+        sqlite_db_path = Path.cwd() / sqlite_db_path
     environment = str(os.getenv("ENVIRONMENT") or cfg.get("environment") or "development").lower()
     debug = _bool(os.getenv("DEBUG"), _bool(cfg.get("debug"), environment == "development"))
     developer_tools = _bool(
@@ -138,7 +147,13 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
     )
     if environment == "production" and "ALLOW_RUNTIME_SCHEMA_MUTATION" not in os.environ:
         allow_runtime_schema_mutation = False
-    database_url = str(os.getenv("DATABASE_URL") or cfg.get("db_url") or f"sqlite:///{db_path}")
+    raw_database_url = str(os.getenv("DATABASE_URL") or cfg.get("db_url") or "").strip()
+    if raw_database_url:
+        database_url = raw_database_url
+    else:
+        database_url = f"sqlite:///{sqlite_db_path}"
+    if not is_sqlite_url(database_url) and not raw_database_url:
+        database_url = "postgresql+psycopg2://postgres:postgres@localhost:5432/adil_secmeli"
 
     # Default production behavior logic
     is_prod = (environment == "production")
@@ -156,7 +171,7 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
         version=str(cfg.get("version") or os.getenv("APP_VERSION") or "1.0.0"),
         app_mode=str(os.getenv("APP_MODE") or cfg.get("app_mode") or "auto"),
         environment=environment,
-        sqlite_db_path=str(db_path),
+        sqlite_db_path=str(sqlite_db_path),
         database_url=database_url,
         debug=debug,
         enable_sql_console=enable_sql_console,
@@ -168,6 +183,10 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
         enable_ml_decision_influence=_bool(os.getenv("ENABLE_ML_DECISION_INFLUENCE"), _bool(cfg.get("enable_ml_decision_influence"), False)),
         require_high_confidence_for_ml_influence=_bool(os.getenv("REQUIRE_HIGH_CONFIDENCE_FOR_ML_INFLUENCE"), _bool(cfg.get("require_high_confidence_for_ml_influence"), True)),
         allow_experimental_ml_in_decision=_bool(os.getenv("ALLOW_EXPERIMENTAL_ML_IN_DECISION"), _bool(cfg.get("allow_experimental_ml_in_decision"), False)),
+        enable_yearly_criteria_workflow=_bool(
+            os.getenv("ENABLE_YEARLY_CRITERIA_WORKFLOW"),
+            _bool(cfg.get("enable_yearly_criteria_workflow"), True),
+        ),
         api_host=str(os.getenv("API_HOST") or cfg.get("api_host") or "0.0.0.0"),
         api_port=_int(os.getenv("API_PORT") or cfg.get("api_port"), 8000),
         log_level=str(os.getenv("LOG_LEVEL") or cfg.get("log_level") or "INFO").upper(),
