@@ -3,5 +3,8 @@
   "db_url": "sqlite:///C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db",
   "environment": "development",
   "enable_schema_compat": true,
-  "allow_runtime_schema_mutation": true
+  "allow_runtime_schema_mutation": true,
+  "charts": {
+    "bins": 15
+  }
 }

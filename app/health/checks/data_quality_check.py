@@ -1,176 +1,239 @@
 # -*- coding: utf-8 -*-
-"""Veri kalitesi sağlık kontrolleri."""
+"""Veri kalitesi kontrolleri (eksik, tekrar, aralık, yetim, profil, aykırı)."""
 
 from __future__ import annotations
 
-from app.health.checks.base_check import BaseHealthCheck
-from app.health.models import HealthContext, HealthSeverity, HealthStatus
-from app.repositories.sqlite_repository import SQLiteRepository, quote_identifier
+import statistics
+
+from app.health.checks.base_check import BaseHealthCheck, HealthContext
+from app.health.models import HealthCheckResult, HealthSeverity
 
 
-def _existing_tables(repo: SQLiteRepository, candidates: tuple[str, ...]) -> list[str]:
-    names = set(repo.table_names())
-    return [table for table in candidates if table in names]
-
-
-class MissingValueCheck(BaseHealthCheck):
-    name = "Eksik değer kontrolü"
+class _DataQualityCheck(BaseHealthCheck):
     category = "Veri Kalitesi"
-    severity = HealthSeverity.MEDIUM.value
-    source = "app.health.checks.data_quality_check.MissingValueCheck"
-
-    def run(self, context: HealthContext):
-        repo = SQLiteRepository(context.db_path)
-        candidates = _existing_tables(repo, ("ders", "fakulte", "bolum", "havuz", "ahp_weight_profiles"))
-        findings: list[dict[str, object]] = []
-        for table in candidates:
-            columns = [column["name"] for column in repo.columns(table)]
-            critical = [column for column in columns if column.lower() in {"ad", "name", "ders_id", "fakulte_id", "bolum_id"}]
-            for column in critical:
-                q_table = quote_identifier(table)
-                q_col = quote_identifier(column)
-                count = repo.execute_scalar(
-                    f"SELECT COUNT(*) FROM {q_table} WHERE {q_col} IS NULL OR TRIM(CAST({q_col} AS TEXT)) = ''"
-                )
-                if int(count or 0) > 0:
-                    findings.append({"table": table, "column": column, "missing_count": int(count)})
-        if findings:
-            return self.result(
-                HealthStatus.WARNING,
-                "Kritik alanlarda eksik değerler bulundu.",
-                severity=HealthSeverity.MEDIUM,
-                detail=f"Eksik alan bulgusu: {len(findings)}",
-                suggestion="Eksik ders/fakülte/bölüm kayıtlarını tamamlayın.",
-                metadata={"findings": findings},
-            )
-        return self.result(HealthStatus.OK, "Kritik alanlarda eksik değer bulunmadı.", metadata={"checked_tables": candidates})
+    score_bucket = "data_quality"
 
 
-class DuplicateRecordCheck(BaseHealthCheck):
-    name = "Tekrarlı kayıt kontrolü"
-    category = "Veri Kalitesi"
-    severity = HealthSeverity.MEDIUM.value
-    source = "app.health.checks.data_quality_check.DuplicateRecordCheck"
+class MissingValueCheck(_DataQualityCheck):
+    name = "Eksik / boş değer kontrolü"
+    default_severity = HealthSeverity.MEDIUM
 
-    def run(self, context: HealthContext):
-        repo = SQLiteRepository(context.db_path)
-        duplicate_rules = {
-            "ders": ("ad",),
-            "fakulte": ("ad",),
-            "bolum": ("fakulte_id", "ad"),
-            "instructors": ("name",),
-        }
-        findings: list[dict[str, object]] = []
-        tables = set(repo.table_names())
-        for table, columns in duplicate_rules.items():
-            if table not in tables:
-                continue
-            current_columns = {column["name"] for column in repo.columns(table)}
-            if not set(columns).issubset(current_columns):
-                continue
-            group_expr = ", ".join(quote_identifier(column) for column in columns)
-            rows = repo.execute_rows(
-                f"""
-                SELECT {group_expr}, COUNT(*) AS tekrar
-                FROM {quote_identifier(table)}
-                GROUP BY {group_expr}
-                HAVING COUNT(*) > 1
-                LIMIT 20
-                """
-            )
-            for row in rows:
-                findings.append({"table": table, "columns": columns, "count": int(row["tekrar"])})
-        if findings:
-            return self.result(
-                HealthStatus.WARNING,
-                "Olası tekrarlı kayıtlar bulundu.",
-                severity=HealthSeverity.MEDIUM,
-                detail=f"Tekrar kuralı bulgusu: {len(findings)}",
-                suggestion="Tekrarlı ders, bölüm veya öğretim üyesi kayıtlarını birleştirin.",
-                metadata={"findings": findings},
-            )
-        return self.result(HealthStatus.OK, "Belirlenen kurallara göre tekrarlı kayıt bulunmadı.")
-
-
-class RangeValidationCheck(BaseHealthCheck):
-    name = "Aralık doğrulama kontrolü"
-    category = "Veri Kalitesi"
-    severity = HealthSeverity.MEDIUM.value
-    source = "app.health.checks.data_quality_check.RangeValidationCheck"
-
-    def run(self, context: HealthContext):
-        repo = SQLiteRepository(context.db_path)
-        numeric_markers = ("puan", "score", "skor", "oran", "ratio", "weight", "agirlik", "ağırlık", "kredi", "capacity")
-        findings: list[dict[str, object]] = []
-        for table in repo.table_names()[:60]:
-            for column in repo.columns(table):
-                name = column["name"]
-                lower = name.lower()
-                if not any(marker in lower for marker in numeric_markers):
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        rules = context.health_config.critical_not_null
+        problems: list[str] = []
+        total_missing = 0
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for table, columns in rules.items():
+                if table not in tables:
                     continue
-                q_table = quote_identifier(table)
-                q_col = quote_identifier(name)
-                row = repo.execute_rows(f"SELECT MIN({q_col}) AS min_value, MAX({q_col}) AS max_value FROM {q_table}")[0]
-                min_value = row["min_value"]
-                max_value = row["max_value"]
-                if min_value is not None and float(min_value) < 0:
-                    findings.append({"table": table, "column": name, "issue": "negative", "min": float(min_value)})
-                if any(marker in lower for marker in ("oran", "ratio", "weight", "agirlik", "ağırlık")):
-                    if max_value is not None and float(max_value) > 1.0001:
-                        findings.append({"table": table, "column": name, "issue": "ratio_over_one", "max": float(max_value)})
-        if findings:
-            return self.result(
-                HealthStatus.WARNING,
-                "Sayısal alanlarda mantıksal aralık dışı değerler bulundu.",
-                severity=HealthSeverity.MEDIUM,
-                detail=f"Aralık bulgusu: {len(findings)}",
-                suggestion="Negatif kredi/puan veya 1 üstü oran/ağırlık alanlarını gözden geçirin.",
-                metadata={"findings": findings[:100]},
+                have = set(repo.column_names(table))
+                for col in columns:
+                    if col not in have:
+                        continue
+                    nulls = repo.null_count(table, col)
+                    if nulls:
+                        total_missing += nulls
+                        problems.append(f"- {table}.{col}: {nulls} boş kayıt")
+        if not problems:
+            return self.ok(
+                "Kritik alanlarda eksik değer bulunmadı.",
+                detail="Tanımlı zorunlu kolonlar dolu.",
             )
-        return self.result(HealthStatus.OK, "Sayısal alanlarda temel aralık ihlali bulunmadı.")
-
-
-class DataProfilingCheck(BaseHealthCheck):
-    name = "Veri profili kontrolü"
-    category = "Veri Kalitesi"
-    severity = HealthSeverity.LOW.value
-    source = "app.health.checks.data_quality_check.DataProfilingCheck"
-
-    def run(self, context: HealthContext):
-        repo = SQLiteRepository(context.db_path)
-        profile = repo.profile_tables(limit=50)
-        empty_tables = [item["table"] for item in profile if int(item["row_count"]) == 0]
-        status = HealthStatus.INFO if empty_tables else HealthStatus.OK
-        return self.result(
-            status,
-            "Tablo bazlı temel veri profili çıkarıldı.",
-            detail=f"Profil çıkarılan tablo: {len(profile)}, boş tablo: {len(empty_tables)}",
-            suggestion="Boş tablolar beklenmiyorsa import veya migration adımlarını kontrol edin.",
-            metadata={"profile": profile, "empty_tables": empty_tables[:50]},
+        sev = self.critical if total_missing > 100 else self.warning
+        return sev(
+            "Bazı zorunlu alanlarda eksik veri var.",
+            detail="\n".join(problems),
+            suggestion="Eksik zorunlu alanları tamamlayın veya kaydı düzeltin.",
+            metadata={"total_missing": total_missing},
         )
 
 
-class OrphanRecordCheck(BaseHealthCheck):
+class DuplicateRecordCheck(_DataQualityCheck):
+    name = "Tekrarlı kayıt kontrolü"
+    default_severity = HealthSeverity.MEDIUM
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        rules = context.health_config.duplicate_keys
+        problems: list[str] = []
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for table, keys in rules.items():
+                if table not in tables:
+                    continue
+                have = set(repo.column_names(table))
+                if not set(keys).issubset(have):
+                    continue
+                dups = repo.duplicate_groups(table, keys)
+                if dups:
+                    problems.append(
+                        f"- {table} ({', '.join(keys)}): {dups} tekrarlı grup"
+                    )
+        if not problems:
+            return self.ok(
+                "Aynı anahtarda tekrarlı kayıt bulunmadı.",
+                detail="Ders/dönem/yıl bazlı tekrarlar kontrol edildi.",
+            )
+        return self.warning(
+            "Tekrarlı kayıtlar tespit edildi.",
+            detail="\n".join(problems),
+            suggestion="Tekrarlı kayıtları birleştirin veya benzersiz kısıt ekleyin.",
+            metadata={"groups": problems},
+        )
+
+
+class RangeValidationCheck(_DataQualityCheck):
+    name = "Değer aralığı kontrolü"
+    default_severity = HealthSeverity.MEDIUM
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        rules = context.health_config.non_negative_columns
+        problems: list[str] = []
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for table, columns in rules.items():
+                if table not in tables:
+                    continue
+                have = set(repo.column_names(table))
+                for col in columns:
+                    if col not in have:
+                        continue
+                    neg = repo.negative_count(table, col)
+                    if neg:
+                        problems.append(f"- {table}.{col}: {neg} negatif değer")
+        if not problems:
+            return self.ok(
+                "Sayısal alanlarda mantıksız negatif değer yok.",
+                detail="Kredi/kontenjan/öğrenci sayıları negatif değil.",
+            )
+        return self.warning(
+            "Bazı sayısal alanlarda negatif değer var.",
+            detail="\n".join(problems),
+            suggestion="Negatif kredi/kontenjan/oran değerlerini düzeltin.",
+            metadata={"problems": problems},
+        )
+
+
+class OrphanRecordCheck(_DataQualityCheck):
     name = "Yetim kayıt kontrolü"
-    category = "Veri Kalitesi"
-    source = "app.health.checks.data_quality_check.OrphanRecordCheck"
+    default_severity = HealthSeverity.MEDIUM
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.INFO,
-            "Yetim kayıt kontrolü foreign key ve keşif tabanlı kontrollerle aşamalı genişletilecek.",
-            suggestion="İş kuralları netleşince tablo ilişki haritasını health_config.py içine ekleyin.",
+    # (çocuk_tablo, çocuk_kolon) -> (ebeveyn_tablo, ebeveyn_kolon)
+    RELATIONS = [
+        ("havuz", "ders_id", "ders", "ders_id"),
+        ("ders_kriterleri", "ders_id", "ders", "ders_id"),
+        ("ders", "bolum_id", "bolum", "bolum_id"),
+    ]
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        problems: list[str] = []
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for child, ckey, parent, pkey in self.RELATIONS:
+                if child not in tables or parent not in tables:
+                    continue
+                if ckey not in set(repo.column_names(child)):
+                    continue
+                if pkey not in set(repo.column_names(parent)):
+                    continue
+                orphans = repo.scalar(
+                    f"SELECT COUNT(*) FROM {child} c "
+                    f"WHERE c.{ckey} IS NOT NULL AND NOT EXISTS "
+                    f"(SELECT 1 FROM {parent} p WHERE p.{pkey} = c.{ckey})"
+                )
+                if orphans:
+                    problems.append(
+                        f"- {child}.{ckey} -> {parent}.{pkey}: {orphans} yetim kayıt"
+                    )
+        if not problems:
+            return self.ok(
+                "Kimlik ilişkilerinde yetim kayıt bulunmadı.",
+                detail="ders/havuz/ders_kriterleri ilişkileri tutarlı.",
+            )
+        return self.warning(
+            "İlişkilerde yetim kayıtlar var.",
+            detail="\n".join(problems),
+            suggestion="Eşleşmeyen kayıtları temizleyin veya eksik ana kaydı ekleyin.",
+            metadata={"problems": problems},
         )
 
 
-class OutlierDetectionCheck(BaseHealthCheck):
-    name = "Aykırı değer kontrolü"
-    category = "Veri Kalitesi"
-    source = "app.health.checks.data_quality_check.OutlierDetectionCheck"
+class DataProfilingCheck(_DataQualityCheck):
+    name = "Veri profili özeti"
+    default_severity = HealthSeverity.LOW
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.INFO,
-            "Aykırı değer tespiti için hafif modda veri profili kullanılıyor.",
-            suggestion="Büyük veri setlerinde IQR/Z-Score kontrolünü ayrı zamanlanmış göreve taşıyın.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        lines: list[str] = []
+        empty_tables: list[str] = []
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for table in context.health_config.profiling_tables:
+                if table not in tables:
+                    continue
+                count = repo.row_count(table)
+                cols = repo.column_names(table)
+                lines.append(f"- {table}: {count} kayıt, {len(cols)} kolon")
+                if count == 0:
+                    empty_tables.append(table)
+        if not lines:
+            return self.info(
+                "Profil çıkarılacak tablo bulunamadı.",
+                detail="health_config.profiling_tables ile eşleşen tablo yok.",
+            )
+        detail = "Tablo profili:\n" + "\n".join(lines)
+        if empty_tables:
+            return self.warning(
+                f"Bazı çekirdek tablolar boş ({len(empty_tables)}).",
+                detail=detail + "\nBoş tablolar: " + ", ".join(empty_tables),
+                suggestion="Boş çekirdek tablolar için veri import edin.",
+                metadata={"empty_tables": empty_tables},
+            )
+        return self.ok(
+            "Veri profili çıkarıldı.",
+            detail=detail,
+            suggestion="Bilgilendirme amaçlıdır.",
+        )
+
+
+class OutlierDetectionCheck(_DataQualityCheck):
+    name = "Aykırı değer (IQR) kontrolü"
+    default_severity = HealthSeverity.LOW
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        findings: list[str] = []
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for table, columns in context.health_config.outlier_targets.items():
+                if table not in tables:
+                    continue
+                have = set(repo.column_names(table))
+                for col in columns:
+                    if col not in have:
+                        continue
+                    values = repo.numeric_values(table, col)
+                    if len(values) < 8:
+                        continue
+                    values_sorted = sorted(values)
+                    q1 = statistics.quantiles(values_sorted, n=4)[0]
+                    q3 = statistics.quantiles(values_sorted, n=4)[2]
+                    iqr = q3 - q1
+                    if iqr <= 0:
+                        continue
+                    low, high = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                    outliers = [v for v in values if v < low or v > high]
+                    if outliers:
+                        findings.append(
+                            f"- {table}.{col}: {len(outliers)} aykırı "
+                            f"(aralık {low:.1f}–{high:.1f})"
+                        )
+        if not findings:
+            return self.ok(
+                "Belirgin aykırı değer tespit edilmedi.",
+                detail="IQR yöntemiyle sayısal kolonlar tarandı.",
+            )
+        return self.warning(
+            "Sayısal kolonlarda aykırı değerler var.",
+            detail="\n".join(findings),
+            suggestion="Aykırı değerleri inceleyin; veri girişi hatası olabilir.",
+            metadata={"findings": findings},
         )

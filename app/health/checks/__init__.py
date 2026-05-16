@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-"""Sağlık kontrol sınıfları."""
+"""Sağlık kontrol sınıfları paketi."""

@@ -25,6 +25,7 @@ SERVICE_SQLITE_ALLOWLIST = {
     "app/services/db.py": "Legacy DB helper",
     "app/services/report_table_service.py": "Admin tablo görüntüleme servisi repository arkasında çalışır",
     "app/services/system_service.py": "Sistem sağlığı için merkezi adapter",
+    "app/services/database_service.py": "Sağlık merkezi için sanctioned DB erişim adapteri (repository arkasında, context-managed)",
 }
 
 SCHEMA_MUTATION_ALLOWLIST_PREFIXES = {

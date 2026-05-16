@@ -60,6 +60,63 @@ def root():
     return {"message": "Adil Seçmeli API", "docs": "/docs"}
 
 
+def _health_allowed_full() -> bool:
+    """Ağır/teknik health yalnızca developer/admin (production değil) için."""
+
+    return bool(config.enable_developer_tools and config.environment != "production")
+
+
+def _public_health_payload(report) -> dict:
+    """Production'da hassas teknik detay/yol döndürmeyen özet."""
+
+    return {
+        "overall_status": report.overall_status,
+        "score": round(float(report.score), 1),
+        "total_checks": report.total_checks,
+        "ok_count": report.ok_count,
+        "warning_count": report.warning_count,
+        "critical_count": report.critical_count,
+        "failed_count": report.failed_count,
+        "generated_at": report.generated_at,
+    }
+
+
+@app.get("/health", tags=["health"])
+def health():
+    """Hafif sağlık özeti (public-safe). Teknik detay döndürmez."""
+
+    from app.services.health_service import run_quick_health_check
+
+    report = run_quick_health_check(config=config)
+    return _public_health_payload(report)
+
+
+@app.get("/health/full", tags=["health"])
+def health_full(request: Request):
+    """Tam sağlık raporu — yalnızca developer/admin (production dışı)."""
+
+    if not _health_allowed_full():
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "message": "Tam sağlık raporu yalnızca geliştirici modunda erişilebilir.",
+            },
+        )
+    from app.services.health_service import run_full_health_check
+
+    return run_full_health_check(config=config).to_dict()
+
+
+@app.get("/health/algorithms", tags=["health"])
+def health_algorithms():
+    """Algoritma/kontrol kataloğu (ACTIVE/PLANNED/NOT_APPLICABLE)."""
+
+    from app.services.health_service import list_algorithm_catalog
+
+    return {"algorithms": list_algorithm_catalog()}
+
+
 @app.exception_handler(AppError)
 async def app_error_handler(_request: Request, exc: AppError):
     return JSONResponse(status_code=exc.status_code, content=exc.to_api_response())

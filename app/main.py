@@ -139,6 +139,34 @@ def run_schema_check() -> int:
         return 1
 
 
+def run_health(mode: str) -> int:
+    """CLI sağlık modları: health-check / -full / -repair / -audit."""
+
+    try:
+        from app.health.health_formatter import (
+            format_algorithm_catalog,
+            format_report,
+        )
+        from app.services.health_service import HealthService
+
+        service = HealthService(config=load_app_config())
+        runner = {
+            "quick": service.run_quick_health_check,
+            "full": service.run_full_health_check,
+            "repair": service.run_auto_repair,
+            "audit": service.run_audit_health_check,
+        }[mode]
+        report = runner()
+        print(format_report(report, developer=True))
+        if mode == "full":
+            print(format_algorithm_catalog())
+        # Çıkış kodu: KRİTİK ise 1, aksi halde 0 (CI entegrasyonu için).
+        return 1 if report.overall_status in ("RİSKLİ", "KRİTİK") else 0
+    except Exception as exc:  # noqa: BLE001
+        print(f"[HEALTH:{mode}] Hata: {exc}")
+        return 1
+
+
 def run_benchmark_mode() -> int:
     print("[BENCHMARK] Benchmark paneli GUI icinde aciliyor.")
     return run_gui()
@@ -150,9 +178,24 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=("auto", "gui", "api", "benchmark", "migrate", "schema-check"),
+        choices=(
+            "auto",
+            "gui",
+            "api",
+            "benchmark",
+            "migrate",
+            "schema-check",
+            "health-check",
+            "health-check-full",
+            "health-repair",
+            "health-audit",
+        ),
         default="auto",
-        help="auto: headless ise API, degilse GUI; gui/api/benchmark/migrate/schema-check modlarini zorla",
+        help=(
+            "auto: headless ise API, degilse GUI; "
+            "gui/api/benchmark/migrate/schema-check ve "
+            "health-check/health-check-full/health-repair/health-audit modlarini zorla"
+        ),
     )
     parser.add_argument(
         "--host",
@@ -182,6 +225,18 @@ def main(argv=None) -> int:
 
     if args.mode == "schema-check":
         return run_schema_check()
+
+    if args.mode == "health-check":
+        return run_health("quick")
+
+    if args.mode == "health-check-full":
+        return run_health("full")
+
+    if args.mode == "health-repair":
+        return run_health("repair")
+
+    if args.mode == "health-audit":
+        return run_health("audit")
 
     if HEADLESS:
         print(build_headless_message(args.host, args.port))

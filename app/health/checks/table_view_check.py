@@ -3,62 +3,84 @@
 
 from __future__ import annotations
 
-from app.health.checks.base_check import BaseHealthCheck
-from app.health.models import HealthContext, HealthSeverity, HealthStatus
-from app.repositories.sqlite_repository import SQLiteRepository, quote_identifier
+from app.health.checks.base_check import BaseHealthCheck, HealthContext
+from app.health.models import HealthCheckResult, HealthSeverity
 
 
-class TableListLoadCheck(BaseHealthCheck):
+class _TableViewCheck(BaseHealthCheck):
+    category = "Tablo Görüntüleme"
+    score_bucket = "reporting_analytics"
+
+
+class TableListLoadCheck(_TableViewCheck):
     name = "Tablo listesi yükleme kontrolü"
-    category = "Tablo Görüntüleme"
-    severity = HealthSeverity.MEDIUM.value
-    source = "app.health.checks.table_view_check.TableListLoadCheck"
+    quick = True
+    default_severity = HealthSeverity.MEDIUM
 
-    def run(self, context: HealthContext):
-        tables = SQLiteRepository(context.db_path).table_names()
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        with context.repository() as repo:
+            tables = repo.table_names()
         if not tables:
-            return self.result(
-                HealthStatus.CRITICAL,
-                "Tablo listesi yüklenemedi veya boş.",
-                severity=HealthSeverity.CRITICAL,
-                suggestion="DB dosyasını ve schema migration adımlarını kontrol edin.",
+            return self.warning(
+                "Hiç tablo listelenemedi.",
+                detail="sqlite_master kullanıcı tablosu döndürmedi.",
+                suggestion="Veritabanı bağlantısını ve şemayı kontrol edin.",
             )
-        return self.result(
-            HealthStatus.OK,
-            "Tablo listesi güvenli şekilde yüklenebiliyor.",
-            detail=f"Tablo sayısı: {len(tables)}",
-            metadata={"table_count": len(tables), "sample_tables": tables[:20]},
+        return self.ok(
+            f"Tablolar listelenebiliyor ({len(tables)} tablo).",
+            detail="İlk tablolar: " + ", ".join(tables[:8]),
+            metadata={"table_count": len(tables)},
         )
 
 
-class TablePreviewCheck(BaseHealthCheck):
+class TablePreviewCheck(_TableViewCheck):
     name = "Tablo önizleme kontrolü"
-    category = "Tablo Görüntüleme"
-    source = "app.health.checks.table_view_check.TablePreviewCheck"
+    default_severity = HealthSeverity.LOW
 
-    def run(self, context: HealthContext):
-        repo = SQLiteRepository(context.db_path)
-        tables = repo.table_names()
-        if not tables:
-            return self.result(HealthStatus.SKIPPED, "Önizleme için tablo bulunamadı.")
-        table = tables[0]
-        rows = repo.execute_rows(f"SELECT * FROM {quote_identifier(table)} LIMIT 10")
-        return self.result(
-            HealthStatus.OK,
-            "Tablo önizleme sorgusu LIMIT ile çalışıyor.",
-            detail=f"Örnek tablo: {table}, satır: {len(rows)}",
-            metadata={"table": table, "preview_count": len(rows)},
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        limit = context.health_config.table_preview_limit
+        with context.repository() as repo:
+            tables = repo.table_names()
+            target = next((t for t in ("ders", "havuz") if t in tables), None)
+            if target is None and tables:
+                target = tables[0]
+            if not target:
+                return self.info(
+                    "Önizlenecek tablo yok.",
+                    detail="Veritabanında kullanıcı tablosu bulunamadı.",
+                    suggestion="Şema migrasyonunu çalıştırın.",
+                )
+            cols, rows = repo.preview(target, limit=limit)
+        return self.ok(
+            f"'{target}' tablosu güvenle önizlenebiliyor.",
+            detail=f"İlk {len(rows)} kayıt (LIMIT {limit}), {len(cols)} kolon.",
+            metadata={"table": target, "previewed_rows": len(rows)},
         )
 
 
-class LargeTableSafetyCheck(BaseHealthCheck):
-    name = "Büyük tablo güvenliği kontrolü"
-    category = "Tablo Görüntüleme"
-    source = "app.health.checks.table_view_check.LargeTableSafetyCheck"
+class LargeTableSafetyCheck(_TableViewCheck):
+    name = "Büyük tablo güvenliği (LIMIT) kontrolü"
+    default_severity = HealthSeverity.LOW
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.INFO,
-            "Tablo önizleme kontrolleri LIMIT kullanımıyla güvenli çalışıyor.",
-            suggestion="UI tablo görüntüleme servislerinde varsayılan LIMIT değerini koruyun.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        limit = context.health_config.large_table_row_limit
+        big: list[str] = []
+        with context.repository() as repo:
+            for table in repo.table_names():
+                try:
+                    count = repo.row_count(table)
+                except Exception:  # noqa: BLE001
+                    continue
+                if count > limit:
+                    big.append(f"- {table}: {count} kayıt")
+        if not big:
+            return self.ok(
+                "Büyük tablo bulunmadı; LIMIT kullanımı güvenli.",
+                detail=f"Eşik: {limit} kayıt",
+            )
+        return self.info(
+            f"Büyük tablolar var ({len(big)}); önizlemede LIMIT şart.",
+            detail="\n".join(big[:15]),
+            suggestion="Tablo görüntülemede daima LIMIT/sayfalama kullanın.",
+            metadata={"large_tables": len(big)},
         )

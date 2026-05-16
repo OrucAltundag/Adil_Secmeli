@@ -3,117 +3,177 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
-from app.health.checks.base_check import BaseHealthCheck
-from app.health.models import HealthContext, HealthSeverity, HealthStatus
+from app.core.permissions import can
+from app.health.checks.base_check import BaseHealthCheck, HealthContext
+from app.health.models import HealthCheckResult, HealthSeverity
 
 
-class SQLConsolePermissionCheck(BaseHealthCheck):
+class _SecurityCheck(BaseHealthCheck):
+    category = "Güvenlik"
+    score_bucket = "security"
+
+
+class SQLConsolePermissionCheck(_SecurityCheck):
     name = "SQL Console yetki kontrolü"
-    category = "Güvenlik"
-    severity = HealthSeverity.CRITICAL.value
-    source = "app.health.checks.security_check.SQLConsolePermissionCheck"
     quick = True
+    default_severity = HealthSeverity.CRITICAL
 
-    def run(self, context: HealthContext):
-        enabled = bool(getattr(context.config, "enable_sql_console", False))
-        developer_tools = bool(getattr(context.config, "enable_developer_tools", False))
-        environment = str(getattr(context.config, "environment", "")).lower()
-        if enabled and environment == "production":
-            return self.result(
-                HealthStatus.CRITICAL,
-                "SQL Console production ortamda açık görünüyor.",
-                severity=HealthSeverity.CRITICAL,
-                suggestion="Production ortamda SQL Console'u kapatın.",
-                metadata={"enable_sql_console": enabled, "environment": environment},
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        cfg = context.app_config
+        enabled = cfg.enable_sql_console
+        allowed = can(
+            context.user_context, "use_sql_console", config=cfg
+        )
+        is_prod = cfg.environment == "production"
+        if not enabled:
+            return self.ok(
+                "SQL Console kapalı.",
+                detail="enable_sql_console = False",
             )
-        if enabled and not developer_tools:
-            return self.result(
-                HealthStatus.CRITICAL,
-                "SQL Console geliştirici araçları kapalıyken açık.",
-                severity=HealthSeverity.CRITICAL,
-                suggestion="SQL Console'u sadece geliştirici/yönetici modunda açın.",
-                metadata={"enable_sql_console": enabled, "enable_developer_tools": developer_tools},
+        if is_prod and enabled:
+            return self.critical(
+                "SQL Console production ortamında açık.",
+                detail=f"environment={cfg.environment}, enabled={enabled}",
+                suggestion="Production'da SQL Console'u kapatın.",
+                metadata={"enabled": enabled, "environment": cfg.environment},
             )
-        status = HealthStatus.INFO if enabled else HealthStatus.OK
-        return self.result(
-            status,
-            "SQL Console yetki ayarları güvenli aralıkta.",
-            detail=f"enabled={enabled}, developer_tools={developer_tools}, environment={environment}",
-            metadata={"enable_sql_console": enabled, "enable_developer_tools": developer_tools, "environment": environment},
+        if enabled and not allowed:
+            return self.warning(
+                "SQL Console açık ancak mevcut kullanıcı yetkili değil.",
+                detail="Yetki politikası erişimi engelliyor (beklenen davranış).",
+                suggestion="Yalnızca geliştirici/yönetici erişimi olmalı.",
+            )
+        return self.ok(
+            "SQL Console yalnızca yetkili (developer/admin) modda açık.",
+            detail=f"enabled={enabled}, allowed={allowed}, env={cfg.environment}",
         )
 
 
-class DeveloperModeCheck(BaseHealthCheck):
-    name = "Developer mode kontrolü"
-    category = "Güvenlik"
-    severity = HealthSeverity.HIGH.value
-    source = "app.health.checks.security_check.DeveloperModeCheck"
+class UnsafeSQLPatternCheck(_SecurityCheck):
+    name = "Riskli SQL deseni koruması kontrolü"
+    default_severity = HealthSeverity.HIGH
+
+    DANGEROUS = ("DROP ", "DELETE ", "ALTER ", "TRUNCATE", "UPDATE ")
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        try:
+            from app.services import sql_console_service
+
+            source = ""
+            module_file = getattr(sql_console_service, "__file__", None)
+            if module_file:
+                with open(module_file, "r", encoding="utf-8", errors="ignore") as fh:
+                    source = fh.read().upper()
+        except Exception as exc:  # noqa: BLE001
+            return self.info(
+                "SQL Console servisi incelenemedi.",
+                detail=f"{type(exc).__name__}: {exc}",
+                suggestion="sql_console_service modülünü kontrol edin.",
+            )
+        guards = [kw for kw in ("DROP", "DELETE", "ALTER", "READ_ONLY", "READONLY") if kw in source]
+        if not guards:
+            return self.warning(
+                "Riskli SQL komutları için koruma görünmüyor.",
+                detail="sql_console_service içinde DROP/DELETE/ALTER denetimi tespit edilemedi.",
+                suggestion="Kullanıcı sorgularında riskli komutları filtreleyin.",
+            )
+        return self.ok(
+            "Riskli SQL desenleri için koruma mantığı mevcut.",
+            detail="Tespit edilen koruma anahtarları: " + ", ".join(sorted(set(guards))),
+        )
+
+
+class PathTraversalCheck(_SecurityCheck):
+    name = "Path traversal koruması kontrolü"
+    default_severity = HealthSeverity.MEDIUM
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        try:
+            from app.services import file_upload_security_service
+
+            module_file = getattr(file_upload_security_service, "__file__", "")
+            text = ""
+            if module_file:
+                with open(module_file, "r", encoding="utf-8", errors="ignore") as fh:
+                    text = fh.read()
+        except Exception as exc:  # noqa: BLE001
+            return self.info(
+                "Dosya güvenlik servisi incelenemedi.",
+                detail=f"{type(exc).__name__}: {exc}",
+                suggestion="file_upload_security_service modülünü kontrol edin.",
+            )
+        markers = ("..", "basename", "abspath", "realpath", "normpath", "traversal")
+        found = [m for m in markers if m in text]
+        if not found:
+            return self.warning(
+                "Path traversal koruması açıkça görünmüyor.",
+                detail="Dosya güvenlik servisinde yol normalizasyonu işareti yok.",
+                suggestion="Dosya yollarını normalize edip taban dizine kısıtlayın.",
+            )
+        return self.ok(
+            "Dosya yolu doğrulama/normalizasyon mantığı mevcut.",
+            detail="Tespit edilen işaretler: " + ", ".join(found),
+        )
+
+
+class SensitiveLogCheck(_SecurityCheck):
+    name = "Loglarda hassas veri kontrolü"
+    default_severity = HealthSeverity.HIGH
+
+    PATTERNS = re.compile(
+        r"(password\s*[=:]\s*\S+|token\s*[=:]\s*\S+|secret\s*[=:]\s*\S+|api[_-]?key\s*[=:]\s*\S+)",
+        re.IGNORECASE,
+    )
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        logs_dir = context.health_config.logs_path()
+        if not logs_dir.exists():
+            return self.info(
+                "Log klasörü bulunamadı.",
+                detail=str(logs_dir),
+                suggestion="Loglama yapılandırmasını kontrol edin.",
+            )
+        hits: list[str] = []
+        for log_file in logs_dir.glob("*.log"):
+            try:
+                with open(log_file, "r", encoding="utf-8", errors="ignore") as fh:
+                    for idx, line in enumerate(fh, 1):
+                        if self.PATTERNS.search(line):
+                            hits.append(f"{log_file.name}:{idx}")
+                            if len(hits) >= 10:
+                                break
+            except Exception:  # noqa: BLE001
+                continue
+        if hits:
+            return self.warning(
+                "Loglarda hassas veri kalıbı tespit edildi.",
+                detail="Şüpheli satırlar:\n- " + "\n- ".join(hits),
+                suggestion="Loglardan şifre/token/anahtar bilgilerini maskeleyin.",
+                metadata={"hits": len(hits)},
+            )
+        return self.ok(
+            "Loglarda belirgin hassas veri kalıbı yok.",
+            detail="password/token/secret/api_key kalıbı bulunamadı.",
+        )
+
+
+class DeveloperModeCheck(_SecurityCheck):
+    name = "Geliştirici modu kontrolü"
     quick = True
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        enabled = bool(getattr(context.config, "enable_developer_tools", False))
-        environment = str(getattr(context.config, "environment", "")).lower()
-        if enabled and environment == "production":
-            return self.result(
-                HealthStatus.CRITICAL,
-                "Developer tools production ortamda açık.",
-                severity=HealthSeverity.CRITICAL,
-                suggestion="Production ortamda developer tools kapatılmalı.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        cfg = context.app_config
+        if cfg.environment == "production" and cfg.enable_developer_tools:
+            return self.critical(
+                "Geliştirici modu production ortamında açık.",
+                detail=f"environment={cfg.environment}, enable_developer_tools=True",
+                suggestion="Production'da ENABLE_DEVELOPER_TOOLS=false yapın.",
             )
-        status = HealthStatus.INFO if enabled else HealthStatus.OK
-        return self.result(
-            status,
-            "Developer mode ayarı ortamla uyumlu.",
-            detail=f"developer_tools={enabled}, environment={environment}",
-        )
-
-
-class UnsafeSQLPatternCheck(BaseHealthCheck):
-    name = "Riskli SQL pattern kontrolü"
-    category = "Güvenlik"
-    source = "app.health.checks.security_check.UnsafeSQLPatternCheck"
-
-    def run(self, context: HealthContext):
-        sql_console_path = context.root_path / "app" / "services" / "sql_console_service.py"
-        exists = sql_console_path.exists()
-        return self.result(
-            HealthStatus.INFO if exists else HealthStatus.WARNING,
-            "Riskli SQL pattern kontrolü için SQL Console servisi değerlendirildi.",
-            detail=str(sql_console_path),
-            suggestion="DROP/DELETE/ALTER gibi komutlar için merkezi izin kontrolünü koruyun.",
-        )
-
-
-class PathTraversalCheck(BaseHealthCheck):
-    name = "Path traversal kontrolü"
-    category = "Güvenlik"
-    source = "app.health.checks.security_check.PathTraversalCheck"
-
-    def run(self, context: HealthContext):
-        security_file = context.root_path / "app" / "services" / "file_upload_security_service.py"
-        status = HealthStatus.OK if security_file.exists() else HealthStatus.INFO
-        return self.result(status, "Dosya yolu güvenliği servis varlığı değerlendirildi.", detail=str(security_file))
-
-
-class SensitiveLogCheck(BaseHealthCheck):
-    name = "Hassas log kontrolü"
-    category = "Güvenlik"
-    source = "app.health.checks.security_check.SensitiveLogCheck"
-
-    def run(self, context: HealthContext):
-        patterns = ("password", "token", "api_key", "secret")
-        findings: list[str] = []
-        for log_file in (context.root_path / "logs").glob("*.log") if (context.root_path / "logs").exists() else []:
-            text = Path(log_file).read_text(encoding="utf-8", errors="ignore")[-10000:]
-            if any(pattern in text.lower() for pattern in patterns):
-                findings.append(str(log_file))
-        status = HealthStatus.WARNING if findings else HealthStatus.OK
-        return self.result(
-            status,
-            "Loglarda temel hassas veri pattern taraması yapıldı.",
-            detail=f"Bulgu dosyası: {len(findings)}",
-            suggestion="Loglarda token/secret/kişisel veri yazılmadığını düzenli kontrol edin.",
-            metadata={"findings": findings},
+        return self.ok(
+            "Geliştirici modu ortamla uyumlu.",
+            detail=f"environment={cfg.environment}, "
+            f"developer_tools={cfg.enable_developer_tools}",
         )

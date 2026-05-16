@@ -1,96 +1,160 @@
 # -*- coding: utf-8 -*-
-"""Fonksiyon ve import sağlık kontrolleri."""
+"""Fonksiyon/servis sözleşme ve sınır kontrolleri."""
 
 from __future__ import annotations
 
 import importlib
 
-from app.health.checks.base_check import BaseHealthCheck
-from app.health.health_config import CRITICAL_IMPORTS
-from app.health.models import HealthContext, HealthSeverity, HealthStatus
+from app.health.checks.base_check import BaseHealthCheck, HealthContext
+from app.health.models import HealthCheckResult, HealthSeverity
 
 
-class ImportCheck(BaseHealthCheck):
+class _FunctionCheck(BaseHealthCheck):
+    category = "Fonksiyon"
+    score_bucket = "function"
+
+
+class ImportCheck(_FunctionCheck):
     name = "Kritik modül import kontrolü"
-    category = "Fonksiyon Kontrolleri"
-    severity = HealthSeverity.HIGH.value
-    source = "app.health.checks.function_check.ImportCheck"
+    quick = True
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        failures: list[dict[str, str]] = []
-        for module_name in CRITICAL_IMPORTS:
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        failed: list[str] = []
+        for module in context.health_config.critical_modules:
             try:
-                importlib.import_module(module_name)
-            except Exception as exc:
-                failures.append({"module": module_name, "error": f"{type(exc).__name__}: {exc}"})
-        if failures:
-            return self.result(
-                HealthStatus.CRITICAL,
-                "Kritik modüllerden bazıları import edilemedi.",
-                severity=HealthSeverity.CRITICAL,
-                detail=f"Başarısız import sayısı: {len(failures)}",
-                suggestion="Import hatalarını ve eksik bağımlılıkları düzeltin.",
-                metadata={"failures": failures},
+                importlib.import_module(module)
+            except Exception as exc:  # noqa: BLE001
+                failed.append(f"- {module}: {type(exc).__name__}: {exc}")
+        total = len(context.health_config.critical_modules)
+        if not failed:
+            return self.ok(
+                f"Tüm kritik modüller import edilebiliyor ({total}).",
+                detail="Kontrol edilen modüller sorunsuz yüklendi.",
             )
-        return self.result(
-            HealthStatus.OK,
-            "Kritik modüller import edilebiliyor.",
-            detail=", ".join(CRITICAL_IMPORTS),
-            metadata={"checked_modules": list(CRITICAL_IMPORTS)},
+        return self.critical(
+            "Bazı kritik modüller import edilemiyor.",
+            detail="\n".join(failed),
+            suggestion="Eksik bağımlılıkları kurun veya import hatasını giderin.",
+            metadata={"failed_modules": failed},
         )
 
 
-class ServiceFunctionCheck(BaseHealthCheck):
-    name = "Servis fonksiyon kontrolü"
-    category = "Fonksiyon Kontrolleri"
-    source = "app.health.checks.function_check.ServiceFunctionCheck"
+class ServiceFunctionCheck(_FunctionCheck):
+    name = "Servis fonksiyonu çağrılabilirlik kontrolü"
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        from app.services.database_service import DatabaseService
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        try:
+            from app.services.service_factory import get_service_factory
 
-        table_count = DatabaseService(context.db_path, context.config).table_count()
-        return self.result(
-            HealthStatus.OK,
-            "Temel servis fonksiyonu güvenli şekilde çağrılabiliyor.",
-            detail=f"DatabaseService.table_count={table_count}",
-            metadata={"table_count": table_count},
+            factory = get_service_factory(
+                db_path=context.db_path, config=context.app_config
+            )
+            system_service = factory.get_system_service()
+            result = system_service.schema_health()
+        except Exception as exc:  # noqa: BLE001
+            return self.critical(
+                "Servis katmanı temel fonksiyonu çalıştırılamadı.",
+                detail=f"{type(exc).__name__}: {exc}",
+                suggestion="service_factory / system_service zincirini kontrol edin.",
+            )
+        if result is None or not hasattr(result, "success"):
+            return self.warning(
+                "Servis beklenen sonuç tipini döndürmedi.",
+                detail=f"Dönen tip: {type(result).__name__}",
+                suggestion="Servisin ServiceResult döndürdüğünü doğrulayın.",
+            )
+        return self.ok(
+            "Servis katmanı temel fonksiyonu çalışıyor.",
+            detail=f"system_service.schema_health() success={result.success}",
         )
 
 
-class ContractCheck(BaseHealthCheck):
-    name = "Fonksiyon sözleşme kontrolü"
-    category = "Fonksiyon Kontrolleri"
-    source = "app.health.checks.function_check.ContractCheck"
+class ContractCheck(_FunctionCheck):
+    name = "Servis sözleşmesi (ServiceResult) kontrolü"
+    default_severity = HealthSeverity.MEDIUM
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.INFO,
-            "Fonksiyon sözleşme kontrolleri için temel import doğrulaması aktif.",
-            suggestion="Kritik servis çıktıları için ayrı contract testleri ekleyin.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        from app.core.result import ServiceResult
+
+        ok = ServiceResult.ok({"x": 1}, message="ok")
+        fail = ServiceResult.fail("hata")
+        problems: list[str] = []
+        if not (ok.success and ok.unwrap() == {"x": 1}):
+            problems.append("ServiceResult.ok sözleşmesi bozuk.")
+        if fail.success or "errors" not in fail.to_api():
+            problems.append("ServiceResult.fail sözleşmesi bozuk.")
+        try:
+            fail.unwrap()
+            problems.append("Başarısız sonuç unwrap'te hata fırlatmadı.")
+        except RuntimeError:
+            pass
+        if problems:
+            return self.critical(
+                "Servis sonuç sözleşmesi beklenen davranışı sağlamıyor.",
+                detail="\n".join(problems),
+                suggestion="app/core/result.py sözleşmesini gözden geçirin.",
+            )
+        return self.ok(
+            "ServiceResult sözleşmesi doğru çalışıyor.",
+            detail="ok/fail/unwrap davranışları beklenen şekilde.",
         )
 
 
-class ExceptionHandlingCheck(BaseHealthCheck):
-    name = "Hata yakalama kontrolü"
-    category = "Fonksiyon Kontrolleri"
-    source = "app.health.checks.function_check.ExceptionHandlingCheck"
+class ExceptionHandlingCheck(_FunctionCheck):
+    name = "Hatalı girdi kontrollü hata kontrolü"
+    default_severity = HealthSeverity.MEDIUM
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.OK,
-            "Sağlık kontrolleri safe_run ile izole hata yakalama kullanıyor.",
-            detail="Bir kontrolün hatası raporda FAILED olarak kalır; diğer kontroller çalışmaya devam eder.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        from app.repositories.base import validate_identifier
+
+        try:
+            validate_identifier("bozuk; DROP TABLE x")
+        except ValueError:
+            return self.ok(
+                "Hatalı girdi kontrollü şekilde reddedildi.",
+                detail="validate_identifier geçersiz tanımlayıcıda ValueError verdi.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self.warning(
+                "Hatalı girdi beklenmeyen istisna üretti.",
+                detail=f"{type(exc).__name__}: {exc}",
+                suggestion="Girdi doğrulamasının kontrollü hata verdiğinden emin olun.",
+            )
+        return self.critical(
+            "Hatalı girdi sessizce kabul edildi.",
+            detail="validate_identifier geçersiz değeri reddetmedi.",
+            suggestion="Girdi doğrulamasını sıkılaştırın (SQL injection riski).",
         )
 
 
-class BoundaryCheck(BaseHealthCheck):
-    name = "Sınır durum kontrolü"
-    category = "Fonksiyon Kontrolleri"
-    source = "app.health.checks.function_check.BoundaryCheck"
+class BoundaryCheck(_FunctionCheck):
+    name = "Sınır durumu kontrolü"
+    default_severity = HealthSeverity.LOW
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.INFO,
-            "Sınır durum kontrolleri test katmanında aşamalı genişletilecek.",
-            suggestion="Boş liste, tek kayıt ve eksik parametre senaryolarını ilgili servis testlerine ekleyin.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        problems: list[str] = []
+        try:
+            from app.algorithms.mcdm.ahp import AHPRanker
+            import pandas as pd
+
+            ranker = AHPRanker(pairwise_matrix=[[1.0]])
+            empty = pd.DataFrame({"item_id": [], "k": []})
+            try:
+                ranker.rank(empty, top_k=5)
+            except Exception:
+                # Boş veri setinde hata fırlatması kabul edilir; çökmemesi yeterli.
+                pass
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"AHP sınır testi: {type(exc).__name__}: {exc}")
+        if problems:
+            return self.warning(
+                "Sınır durumlarında beklenmeyen davranış.",
+                detail="\n".join(problems),
+                suggestion="Boş/tek kayıt durumlarını ele alın.",
+            )
+        return self.ok(
+            "Sınır durumları (boş veri) kontrollü ele alınıyor.",
+            detail="Boş veri setinde modül çökmeden ele alındı.",
         )

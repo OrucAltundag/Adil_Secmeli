@@ -1,136 +1,180 @@
 # -*- coding: utf-8 -*-
-"""SQLite veritabanı sağlık kontrolleri."""
+"""Veritabanı sağlık kontrolleri (bağlantı, bütünlük, FK, tablo, yazma)."""
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
+import time
 
-from app.health.checks.base_check import BaseHealthCheck
-from app.health.health_config import EXPECTED_MIN_TABLE_COUNT
-from app.health.models import HealthContext, HealthSeverity, HealthStatus
-from app.repositories.sqlite_repository import SQLiteRepository
+from app.health.checks.base_check import BaseHealthCheck, HealthContext
+from app.health.models import HealthCheckResult, HealthSeverity
 
 
-class SQLiteConnectionCheck(BaseHealthCheck):
+class _DatabaseCheck(BaseHealthCheck):
+    category = "Veritabanı"
+    score_bucket = "database"
+
+    def _skip_if_not_sqlite(self, context: HealthContext) -> HealthCheckResult | None:
+        if not context.database.is_sqlite():
+            return self.skipped(
+                "SQLite dışı backend; bu kontrol atlandı.",
+                detail=f"database_url={context.app_config.database_url}",
+                suggestion="PostgreSQL kullanılıyorsa ilgili DBA araçlarını kullanın.",
+            )
+        return None
+
+
+class SQLiteConnectionCheck(_DatabaseCheck):
     name = "SQLite bağlantı kontrolü"
-    category = "Veritabanı Sağlığı"
-    severity = HealthSeverity.CRITICAL.value
-    source = "app.health.checks.database_check.SQLiteConnectionCheck"
     quick = True
+    default_severity = HealthSeverity.CRITICAL
 
-    def run(self, context: HealthContext):
-        db_path = Path(context.db_path)
-        if not db_path.exists():
-            return self.result(
-                HealthStatus.CRITICAL,
-                "Veritabanı dosyası bulunamadı.",
-                severity=HealthSeverity.CRITICAL,
-                detail=str(db_path),
-                suggestion="DB dosyasının varlığını ve config.json içindeki db_path değerini kontrol edin.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        skip = self._skip_if_not_sqlite(context)
+        if skip:
+            return skip
+        db_path = context.db_path or ""
+        if not os.path.exists(db_path):
+            return self.critical(
+                "Veritabanına bağlanılamadı.",
+                detail=f"Veritabanı dosyası bulunamadı: {db_path}",
+                suggestion="DB dosyasının varlığını ve config.json yolunu kontrol edin.",
+                metadata={"db_path": db_path},
             )
-        repo = SQLiteRepository(str(db_path))
-        value = repo.execute_scalar("SELECT 1")
-        if value == 1:
-            return self.result(
-                HealthStatus.OK,
-                "Veritabanı bağlantısı başarılı.",
-                detail=str(db_path),
-                metadata={"db_path": str(db_path)},
+        start = time.perf_counter()
+        with context.repository() as repo:
+            ok = repo.scalar("SELECT 1") == 1
+        elapsed = (time.perf_counter() - start) * 1000.0
+        if not ok:
+            return self.critical(
+                "Veritabanı bağlantısı doğrulanamadı.",
+                detail="SELECT 1 beklenen sonucu döndürmedi.",
+                suggestion="Veritabanı dosyasının bozuk olmadığını kontrol edin.",
             )
-        return self.result(
-            HealthStatus.CRITICAL,
-            "Veritabanına bağlanıldı ancak test sorgusu beklenen sonucu dönmedi.",
-            severity=HealthSeverity.CRITICAL,
-            detail=f"SELECT 1 sonucu: {value}",
-            suggestion="SQLite dosyasını ve bağlantı adapterını kontrol edin.",
+        return self.ok(
+            "Veritabanı bağlantısı başarılı.",
+            detail=f"{db_path}\nBağlantı + ping süresi: {elapsed:.1f} ms",
+            metadata={"db_path": db_path, "connect_ms": round(elapsed, 1)},
         )
 
 
-class SQLiteIntegrityCheck(BaseHealthCheck):
+class SQLiteIntegrityCheck(_DatabaseCheck):
     name = "SQLite bütünlük kontrolü"
-    category = "Veritabanı Sağlığı"
-    severity = HealthSeverity.CRITICAL.value
-    source = "app.health.checks.database_check.SQLiteIntegrityCheck"
+    default_severity = HealthSeverity.CRITICAL
 
-    def run(self, context: HealthContext):
-        rows = SQLiteRepository(context.db_path).integrity_check()
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        skip = self._skip_if_not_sqlite(context)
+        if skip:
+            return skip
+        with context.repository() as repo:
+            rows = repo.integrity_check()
         if rows == ["ok"]:
-            return self.result(HealthStatus.OK, "Veritabanı bütünlük kontrolü başarılı.", detail="PRAGMA integrity_check: ok")
-        return self.result(
-            HealthStatus.CRITICAL,
+            return self.ok(
+                "Veritabanı bütünlük kontrolü başarılı.",
+                detail="PRAGMA integrity_check sonucu: ok",
+            )
+        detail = "PRAGMA integrity_check sonucu:\n" + "\n".join(rows[:20])
+        return self.critical(
             "Veritabanı bütünlük kontrolü başarısız.",
-            severity=HealthSeverity.CRITICAL,
-            detail="; ".join(rows[:20]),
-            suggestion="Veritabanı yedeği alınmalı ve bozuk tablo/kayıt incelenmeli.",
-            metadata={"integrity_rows": rows},
+            detail=detail,
+            suggestion="Veritabanı yedeği alınmalı ve bozuk tablo incelenmelidir.",
+            metadata={"issues": rows[:20]},
         )
 
 
-class SQLiteForeignKeyCheck(BaseHealthCheck):
-    name = "SQLite foreign key kontrolü"
-    category = "Veritabanı Sağlığı"
-    severity = HealthSeverity.HIGH.value
-    source = "app.health.checks.database_check.SQLiteForeignKeyCheck"
+class SQLiteForeignKeyCheck(_DatabaseCheck):
+    name = "SQLite yabancı anahtar kontrolü"
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        issues = SQLiteRepository(context.db_path).foreign_key_check()
-        if not issues:
-            return self.result(HealthStatus.OK, "Foreign key kontrolünde ihlal bulunmadı.", detail="PRAGMA foreign_key_check boş döndü.")
-        status = HealthStatus.CRITICAL if len(issues) > 20 else HealthStatus.WARNING
-        return self.result(
-            status,
-            "Foreign key ilişki ihlalleri bulundu.",
-            severity=HealthSeverity.HIGH,
-            detail=f"İhlal sayısı: {len(issues)}",
-            suggestion="İlgili tablo ve kayıtları inceleyip yetim kayıtları düzeltin.",
-            metadata={"issues": issues[:50]},
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        skip = self._skip_if_not_sqlite(context)
+        if skip:
+            return skip
+        with context.repository() as repo:
+            violations = repo.foreign_key_check()
+        if not violations:
+            return self.ok(
+                "Yabancı anahtar tutarlılığı sağlanıyor.",
+                detail="PRAGMA foreign_key_check ihlal bulmadı.",
+            )
+        sample = "\n".join(
+            f"- tablo={v[0]} rowid={v[1]} hedef={v[2]}" for v in violations[:15]
+        )
+        status = self.critical if len(violations) > 50 else self.warning
+        return status(
+            "Yabancı anahtar tutarsızlıkları bulundu.",
+            detail=f"Toplam ihlal: {len(violations)}\n{sample}",
+            suggestion="Yetim/eşleşmeyen kayıtları ilgili tablolarda düzeltin.",
+            metadata={"violation_count": len(violations)},
         )
 
 
-class SQLiteTableCountCheck(BaseHealthCheck):
+class SQLiteTableCountCheck(_DatabaseCheck):
     name = "SQLite tablo sayısı kontrolü"
-    category = "Veritabanı Sağlığı"
-    severity = HealthSeverity.HIGH.value
-    source = "app.health.checks.database_check.SQLiteTableCountCheck"
     quick = True
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        count = SQLiteRepository(context.db_path).table_count()
-        if count <= 0:
-            return self.result(
-                HealthStatus.CRITICAL,
-                "Veritabanında tablo bulunamadı.",
-                severity=HealthSeverity.CRITICAL,
-                suggestion="Schema/migration adımlarını çalıştırın.",
-                metadata={"table_count": count},
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        skip = self._skip_if_not_sqlite(context)
+        if skip:
+            return skip
+        with context.repository() as repo:
+            count = repo.table_count()
+        minimum = context.health_config.min_table_count
+        if count == 0:
+            return self.critical(
+                "Veritabanında hiç tablo yok.",
+                detail="sqlite_master içinde kullanıcı tablosu bulunamadı.",
+                suggestion="Şema migrasyonunu çalıştırın (python -m app.main --mode migrate).",
+                metadata={"table_count": 0},
             )
-        if count < EXPECTED_MIN_TABLE_COUNT:
-            return self.result(
-                HealthStatus.WARNING,
-                "Tablo sayısı beklenen minimum değerin altında.",
-                severity=HealthSeverity.MEDIUM,
-                detail=f"Tablo sayısı: {count}, beklenen minimum: {EXPECTED_MIN_TABLE_COUNT}",
-                suggestion="Eksik migration veya yanlış DB dosyası kullanımı olasılığını kontrol edin.",
-                metadata={"table_count": count},
+        if count < minimum:
+            return self.warning(
+                f"Tablo sayısı beklenenden az ({count} < {minimum}).",
+                detail=f"Mevcut tablo sayısı: {count}",
+                suggestion="Migrasyon/şema uyumluluğunun tamamlandığını doğrulayın.",
+                metadata={"table_count": count, "min": minimum},
             )
-        return self.result(
-            HealthStatus.OK,
-            "Veritabanı tablo sayısı beklenen aralıkta.",
-            detail=f"Tablo sayısı: {count}",
+        return self.ok(
+            f"Tablo sayısı yeterli ({count}).",
+            detail=f"Mevcut tablo sayısı: {count} (min {minimum})",
             metadata={"table_count": count},
         )
 
 
-class SQLiteWritePermissionCheck(BaseHealthCheck):
-    name = "SQLite yazma yetkisi kontrolü"
-    category = "Veritabanı Sağlığı"
-    severity = HealthSeverity.HIGH.value
-    source = "app.health.checks.database_check.SQLiteWritePermissionCheck"
+class SQLiteWritePermissionCheck(_DatabaseCheck):
+    name = "SQLite yazma izni kontrolü"
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        SQLiteRepository(context.db_path).write_permission_check()
-        return self.result(
-            HealthStatus.OK,
-            "Veritabanı yazma yetkisi güvenli transaction testiyle doğrulandı.",
-            detail="Geçici tablo rollback ile temizlendi; gerçek veri değişmedi.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        skip = self._skip_if_not_sqlite(context)
+        if skip:
+            return skip
+        # Gerçek veriyi bozmamak için TEMP tablo kullanılır; commit edilmez.
+        with context.database.connection() as conn:
+            try:
+                conn.execute(
+                    "CREATE TEMP TABLE _health_write_probe (id INTEGER PRIMARY KEY, v TEXT)"
+                )
+                conn.execute("INSERT INTO _health_write_probe (v) VALUES ('probe')")
+                value = conn.execute(
+                    "SELECT v FROM _health_write_probe LIMIT 1"
+                ).fetchone()[0]
+                conn.execute("DROP TABLE _health_write_probe")
+                conn.rollback()
+            except Exception as exc:  # noqa: BLE001
+                return self.warning(
+                    "Veritabanına yazma izni doğrulanamadı.",
+                    detail=f"{type(exc).__name__}: {exc}",
+                    suggestion="DB dosyası ve klasörü için yazma izni olduğundan emin olun.",
+                )
+        if value != "probe":
+            return self.warning(
+                "Yazma testi beklenen değeri döndürmedi.",
+                detail=f"Beklenen 'probe', dönen '{value}'.",
+                suggestion="Veritabanı dosyasını ve diski kontrol edin.",
+            )
+        return self.ok(
+            "Veritabanı yazılabilir (TEMP tablo testi, rollback edildi).",
+            detail="Gerçek veri değiştirilmedi; geçici tablo kullanıldı.",
         )

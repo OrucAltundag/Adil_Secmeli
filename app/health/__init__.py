@@ -1,13 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Uygulama sağlık kontrol altyapısı."""
+"""Uygulama sağlık merkezi (health center) altyapısı.
 
-from app.health.models import HealthCheckResult, HealthReport, HealthSeverity, HealthStatus
-from app.health.health_runner import HealthRunner
+Bu paket; veritabanı, şema, veri kalitesi, AHP/karar, raporlama, analiz,
+güvenlik, performans, mimari, log, yedekleme ve UI sağlık kontrollerini
+izole, geriye dönük uyumlu ve uygulamayı çökertmeyecek şekilde çalıştırır.
+
+Kamuya açık giriş noktaları için ``app.services.health_service`` kullanın.
+"""
+
+from __future__ import annotations
+
+from app.health.models import (
+    HealthCheckResult,
+    HealthReport,
+    HealthSeverity,
+    HealthStatus,
+)
 
 __all__ = [
     "HealthCheckResult",
     "HealthReport",
-    "HealthRunner",
     "HealthSeverity",
     "HealthStatus",
 ]

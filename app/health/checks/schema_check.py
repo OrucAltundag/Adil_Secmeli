@@ -1,101 +1,159 @@
 # -*- coding: utf-8 -*-
-"""Veritabanı şema uyumluluğu kontrolleri."""
+"""Şema sağlık kontrolleri (tablo/kolon/uyumluluk/tip)."""
 
 from __future__ import annotations
 
-from app.health.checks.base_check import BaseHealthCheck
-from app.health.health_config import EXPECTED_TABLES
-from app.health.models import HealthContext, HealthSeverity, HealthStatus
-from app.repositories.sqlite_repository import SQLiteRepository
+from app.health.checks.base_check import BaseHealthCheck, HealthContext
+from app.health.models import HealthCheckResult, HealthSeverity
 
 
-class SchemaValidationCheck(BaseHealthCheck):
-    name = "Schema doğrulama kontrolü"
-    category = "Şema Uyumluluğu"
-    severity = HealthSeverity.HIGH.value
-    source = "app.health.checks.schema_check.SchemaValidationCheck"
+class _SchemaCheck(BaseHealthCheck):
+    category = "Şema"
+    score_bucket = "schema"
+
+
+class SchemaValidationCheck(_SchemaCheck):
+    name = "Beklenen tablolar kontrolü"
     quick = True
+    default_severity = HealthSeverity.HIGH
 
-    def run(self, context: HealthContext):
-        repo = SQLiteRepository(context.db_path)
-        existing = set(repo.table_names())
-        if not EXPECTED_TABLES:
-            return self.result(
-                HealthStatus.INFO,
-                "Beklenen tablo yapılandırması henüz tanımlanmamış.",
-                suggestion="health_config.py içinde beklenen tablo ve kolonları netleştirin.",
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        expected = set(context.health_config.expected_tables)
+        if not expected:
+            return self.info(
+                "Beklenen tablo yapılandırması tanımlı değil.",
+                detail="health_config.expected_tables boş.",
+                suggestion="health_config.py içinde beklenen tabloları tanımlayın.",
             )
-
-        missing_tables = [table for table in EXPECTED_TABLES if table not in existing]
-        missing_columns: dict[str, list[str]] = {}
-        for table, config in EXPECTED_TABLES.items():
-            if table not in existing:
-                continue
-            current_columns = {column["name"] for column in repo.columns(table)}
-            required = set(config.get("required_columns") or ())
-            missing = sorted(required - current_columns)
-            if missing:
-                missing_columns[table] = missing
-
-        if missing_tables or missing_columns:
-            status = HealthStatus.CRITICAL if missing_tables else HealthStatus.WARNING
-            detail_lines = []
-            if missing_tables:
-                detail_lines.append("Eksik tablolar: " + ", ".join(missing_tables))
-            for table, columns in missing_columns.items():
-                detail_lines.append(f"{table}: eksik kolonlar {', '.join(columns)}")
-            return self.result(
-                status,
-                "Beklenen şema ile mevcut veritabanı arasında uyumsuzluk var.",
-                severity=HealthSeverity.HIGH,
-                detail="\n".join(detail_lines),
-                suggestion="Migration/schema compatibility adımlarını çalıştırın veya health_config.py beklenenlerini güncelleyin.",
-                metadata={"missing_tables": missing_tables, "missing_columns": missing_columns},
+        with context.repository() as repo:
+            existing = set(repo.table_names())
+        missing = sorted(expected - existing)
+        if not missing:
+            return self.ok(
+                "Tüm beklenen tablolar mevcut.",
+                detail=f"Kontrol edilen tablo: {len(expected)}",
+                metadata={"expected": sorted(expected)},
             )
-        return self.result(
-            HealthStatus.OK,
-            "Temel beklenen tablolar ve kolonlar mevcut.",
-            detail=f"Kontrol edilen tablo sayısı: {len(EXPECTED_TABLES)}",
-            metadata={"checked_tables": list(EXPECTED_TABLES)},
+        return self.critical(
+            "Beklenen bazı tablolar eksik.",
+            detail="Eksik tablolar:\n- " + "\n- ".join(missing),
+            suggestion="Şema migrasyonunu çalıştırın veya şemayı güncelleyin.",
+            metadata={"missing_tables": missing},
         )
 
 
-class ExpectedTablesCheck(SchemaValidationCheck):
-    name = "Beklenen tablo kontrolü"
+class ExpectedColumnsCheck(_SchemaCheck):
+    name = "Beklenen kolonlar kontrolü"
+    default_severity = HealthSeverity.HIGH
 
-
-class ExpectedColumnsCheck(SchemaValidationCheck):
-    name = "Beklenen kolon kontrolü"
-
-
-class SchemaCompatibilityCheck(BaseHealthCheck):
-    name = "Schema compatibility durumu"
-    category = "Şema Uyumluluğu"
-    source = "app.health.checks.schema_check.SchemaCompatibilityCheck"
-    quick = True
-
-    def run(self, context: HealthContext):
-        enabled = bool(getattr(context.config, "enable_schema_compat", False))
-        mutation = bool(getattr(context.config, "allow_runtime_schema_mutation", False))
-        status = HealthStatus.OK if enabled else HealthStatus.INFO
-        return self.result(
-            status,
-            "Schema compatibility ayarları okundu.",
-            detail=f"enable_schema_compat={enabled}, allow_runtime_schema_mutation={mutation}",
-            suggestion="Production ortamda runtime schema mutation kapalı olmalıdır.",
-            metadata={"enable_schema_compat": enabled, "allow_runtime_schema_mutation": mutation},
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        expected = context.health_config.expected_columns
+        if not expected:
+            return self.info(
+                "Beklenen kolon yapılandırması tanımlı değil.",
+                detail="health_config.expected_columns boş.",
+                suggestion="health_config.py içinde beklenen kolonları tanımlayın.",
+            )
+        missing: dict[str, list[str]] = {}
+        with context.repository() as repo:
+            existing_tables = set(repo.table_names())
+            for table, cols in expected.items():
+                if table not in existing_tables:
+                    missing[table] = sorted(cols)
+                    continue
+                have = set(repo.column_names(table))
+                absent = sorted(set(cols) - have)
+                if absent:
+                    missing[table] = absent
+        if not missing:
+            return self.ok(
+                "Tüm beklenen kolonlar mevcut.",
+                detail=f"Kontrol edilen tablo: {len(expected)}",
+            )
+        detail = "\n".join(f"- {t}: {', '.join(c)}" for t, c in missing.items())
+        return self.warning(
+            "Bazı tablolarda beklenen kolonlar eksik.",
+            detail="Eksik kolonlar:\n" + detail,
+            suggestion="İlgili tabloların şemasını güncelleyin.",
+            metadata={"missing_columns": missing},
         )
 
 
-class ColumnTypeCheck(BaseHealthCheck):
+class SchemaCompatibilityCheck(_SchemaCheck):
+    name = "Şema uyumluluğu / migrasyon kontrolü"
+    default_severity = HealthSeverity.MEDIUM
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        try:
+            from app.services.schema_health_service import check_schema_health
+
+            health = check_schema_health(
+                db_path=context.db_path, config=context.app_config
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self.warning(
+                "Şema uyumluluk bilgisi okunamadı.",
+                detail=f"{type(exc).__name__}: {exc}",
+                suggestion="schema_health_service modülünü kontrol edin.",
+            )
+        alembic = (health.get("alembic") or {})
+        version = alembic.get("version")
+        warnings = health.get("warnings") or []
+        if not health.get("schema_ok", False):
+            return self.warning(
+                "Şema uyumluluğunda eksikler var.",
+                detail="Uyarılar:\n- " + "\n- ".join(warnings or ["Detay yok"]),
+                suggestion="Eksik tablo/kolonları tamamlayın, migrasyonu çalıştırın.",
+                metadata={"alembic_version": version},
+            )
+        if not version:
+            return self.info(
+                "Alembic migrasyon sürümü bulunamadı.",
+                detail="alembic_version tablosu yok veya boş.",
+                suggestion="Migrasyonları çalıştırıp head sürümünü damgalayın.",
+            )
+        return self.ok(
+            "Şema uyumlu ve migrasyon sürümü mevcut.",
+            detail=f"Alembic version: {version}",
+            metadata={"alembic_version": version},
+        )
+
+
+class ColumnTypeCheck(_SchemaCheck):
     name = "Kritik kolon tip kontrolü"
-    category = "Şema Uyumluluğu"
-    source = "app.health.checks.schema_check.ColumnTypeCheck"
+    default_severity = HealthSeverity.LOW
 
-    def run(self, context: HealthContext):
-        return self.result(
-            HealthStatus.INFO,
-            "Kritik kolon tipleri için otomatik keşif modu kullanılıyor.",
-            detail="Kesin tip sözleşmeleri health_config.py içinde genişletilebilir.",
-            suggestion="Sabit schema sözleşmesi oluştukça kolon tip beklenenlerini ekleyin.",
+    # Beklenen tip aileleri (SQLite tip yakınlığı toleranslı).
+    EXPECTED = {
+        "ders": {"ders_id": ("INT", "TEXT", "VARCHAR")},
+        "havuz": {"yil": ("INT",), "ders_id": ("INT", "TEXT", "VARCHAR")},
+        "ders_kriterleri": {"yil": ("INT",), "ders_id": ("INT", "TEXT", "VARCHAR")},
+    }
+
+    def run(self, context: HealthContext) -> HealthCheckResult:
+        mismatches: list[str] = []
+        with context.repository() as repo:
+            tables = set(repo.table_names())
+            for table, cols in self.EXPECTED.items():
+                if table not in tables:
+                    continue
+                info = {c["name"]: str(c["type"]).upper() for c in repo.column_info(table)}
+                for col, families in cols.items():
+                    actual = info.get(col)
+                    if actual is None:
+                        continue
+                    if not any(fam in actual for fam in families):
+                        mismatches.append(
+                            f"{table}.{col}: beklenen {families}, mevcut '{actual or 'TANIMSIZ'}'"
+                        )
+        if not mismatches:
+            return self.ok(
+                "Kritik kolon tipleri beklenen ailelerde.",
+                detail="Tip uyumsuzluğu bulunmadı.",
+            )
+        return self.info(
+            "Bazı kolon tipleri beklenenden farklı (SQLite esnek tipli).",
+            detail="\n".join(mismatches),
+            suggestion="SQLite tip yakınlığı esnektir; gerekiyorsa şemayı netleştirin.",
+            metadata={"mismatches": mismatches},
         )
