@@ -27,6 +27,19 @@ LEGACY_DB_ACCESS_ALLOWLIST = {
 }
 
 
+def _unwrap_sqlite_connection(conn: Any) -> Any:
+    if is_sqlite_connection(conn):
+        return conn
+    for attr in ("driver_connection", "dbapi_connection", "connection"):
+        try:
+            candidate = getattr(conn, attr, None)
+        except Exception:
+            candidate = None
+        if is_sqlite_connection(candidate):
+            return candidate
+    return conn
+
+
 class SystemService:
     def __init__(self, conn: sqlite3.Connection | None = None, db_path: str | None = None, config: AppConfig | None = None):
         self.conn = conn
@@ -42,6 +55,7 @@ class SystemService:
             return ServiceResult.ok(self._health_with_conn(conn))
 
     def _health_with_conn(self, conn: sqlite3.Connection) -> dict[str, Any]:
+        conn = _unwrap_sqlite_connection(conn)
         if is_sqlite_connection(conn):
             schema = ensure_reporting_schema(conn)
             repo = SystemRepository(conn)
@@ -73,9 +87,9 @@ class SystemService:
         }
 
     def _postgresql_health(self) -> dict[str, Any]:
-        from app.db.session import get_engine
+        from app.db.database import get_engine
 
-        with get_engine(self.config).connect() as conn:
+        with get_engine().connect() as conn:
             conn.exec_driver_sql("SELECT 1")
             return self._health_with_conn(conn)
 

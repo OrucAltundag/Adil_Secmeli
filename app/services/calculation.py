@@ -22,6 +22,7 @@ from app.services.course_type import (
     filter_elective_course_ids,
     get_existing_type_columns,
 )
+from app.services.db import get_raw_connection
 from app.services.data_confidence_service import calculate_course_data_confidence
 from app.services.pool_state_machine_service import (
     evaluate_course_state_transition,

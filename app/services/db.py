@@ -15,35 +15,25 @@ Legacy (raw cursor) kullanim:
     conn.close()
 """
 
-import sqlite3
 from contextlib import contextmanager
 from typing import Generator, Optional
 
-from sqlalchemy.orm import Session
-
-from app.db.database import get_engine, get_session
+from app.db.session import db_session as legacy_db_session, open_sqlite_connection
 
 
 @contextmanager
-def db_session(db_path: Optional[str] = None) -> Generator[Session, None, None]:
+def db_session(db_path: Optional[str] = None) -> Generator[object, None, None]:
     """
-    Thread-safe veritabani oturumu.
+    Thread-safe legacy SQLite oturumu.
 
-    Her cagrida yeni bir session acar; is bittiginde kapatir.
+    Her cagrida yeni bir sqlite3 connection acar; is bittiginde kapatir.
 
     Ornek:
-        with db_session() as session:
-            result = session.execute(text("SELECT * FROM ders"))
+        with db_session() as conn:
+            cur = conn.cursor()
     """
-    session = get_session()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+    with legacy_db_session(db_path) as conn:
+        yield conn
 
 
 def get_raw_connection(db_path: Optional[str] = None):
@@ -55,20 +45,7 @@ def get_raw_connection(db_path: Optional[str] = None):
 
     Çağıran kod close() yapmakla yükümlüdür.
     """
-    engine = get_engine()
-    conn = engine.raw_connection()
-
-    if engine.dialect.name == "sqlite":
-        conn.row_factory = sqlite3.Row
-    else:
-        # psycopg2: cursor'larda dict-style erişim sağla
-        try:
-            import psycopg2.extras
-            conn.cursor_factory = psycopg2.extras.RealDictCursor
-        except ImportError:
-            pass
-
-    return conn
+    return open_sqlite_connection(db_path, row_factory=True)
 
 
 def get_conn(db_path: Optional[str] = None):

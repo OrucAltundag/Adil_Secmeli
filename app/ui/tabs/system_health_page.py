@@ -23,9 +23,8 @@ class SystemHealthPage(ttk.Frame):
     def _service(self):
         if self._system_service is not None:
             return self._system_service
-        conn = getattr(getattr(self.app, "db", None), "conn", None)
         db_path = getattr(self.app, "db_path", None)
-        return get_service_factory(conn=conn, db_path=db_path, config=self.config).get_system_service()
+        return get_service_factory(db_path=db_path, config=self.config).get_system_service()
 
     def _build_ui(self):
         top = ttk.Frame(self, padding=8)

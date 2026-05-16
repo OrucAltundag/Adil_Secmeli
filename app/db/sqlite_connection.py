@@ -6,20 +6,18 @@ kullanmalıdır (app.db.database veya app.db.session modülleri aracılığıyla
 """
 from __future__ import annotations
 
-from sqlalchemy import text
-from app.db.database import get_engine
+from app.db.session import open_sqlite_connection
 
 
 def connect_sqlite(db_path: str = "", *, row_factory: bool = False):
     """
     Legacy uyumluluk: Raw DBAPI connection döndürür.
 
-    PostgreSQL backend'inde db_path yoksayılır ve engine'den
-    raw connection alınır. Çağıran kod close() yapmakla yükümlüdür.
+    Açık bir db_path verilirse o SQLite dosyasına bağlanır; verilmezse aktif
+    SQLite config yolunu kullanır. PostgreSQL aktifken db_path yoksa fail-fast
+    davranır. Çağıran kod close() yapmakla yükümlüdür.
     """
-    engine = get_engine()
-    conn = engine.raw_connection()
-    return conn
+    return open_sqlite_connection(db_path or None, row_factory=row_factory)
 
 
 def is_database_locked_error(exc: BaseException) -> bool:

@@ -36,6 +36,20 @@ CORE_REQUIRED_COLUMNS = {
 }
 
 
+def _unwrap_sqlite_connection(conn: Any) -> Any:
+    """SQLAlchemy raw connection proxy nesnelerinden gerçek sqlite bağlantısını al."""
+    if is_sqlite_connection(conn):
+        return conn
+    for attr in ("driver_connection", "dbapi_connection", "connection"):
+        try:
+            candidate = getattr(conn, attr, None)
+        except Exception:
+            candidate = None
+        if is_sqlite_connection(candidate):
+            return candidate
+    return conn
+
+
 @contextmanager
 def _managed_connection(
     conn: sqlite3.Connection | Any | None,
@@ -43,11 +57,11 @@ def _managed_connection(
     config: AppConfig | None = None,
 ) -> Iterator[Any]:
     if conn is not None:
-        yield conn
+        yield _unwrap_sqlite_connection(conn)
         return
     cfg = config or load_app_config()
     if not is_sqlite_url(cfg.database_url):
-        from app.db.session import get_engine
+        from app.db.database import get_engine
 
         with get_engine().connect() as connection:
             yield connection

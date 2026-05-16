@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .DS_Store
 venv/
+env/
+.vs/
 node_modules/
 .pytest_cache/
 logs/
