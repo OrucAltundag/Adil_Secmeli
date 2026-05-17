@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from app.core.config import resolve_sqlite_db_path
 from app.services.db import get_raw_connection
 from dataclasses import dataclass
 from typing import Any
@@ -392,7 +393,7 @@ def _sync_havuz_dual_semester_state(
 
 
 def rebuild_school_curricula_dual_semester(
-    db_path: str = "data/adil_secmeli.db",
+    db_path: str | None = None,
     base_year: int = 2022,
     max_rounds: int = 8,
     block_size: int = 4,
@@ -411,8 +412,10 @@ def rebuild_school_curricula_dual_semester(
         reset_future_curricula,
     )
 
-    if not os.path.exists(db_path):
-        return {"ok": False, "error": f"DB bulunamadi: {db_path}"}
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
+        return {"ok": False, "error": f"DB bulunamadi: {resolved_db_path}"}
+    db_path = str(resolved_db_path)
 
     reset = reset_future_curricula(db_path=db_path, base_year=int(base_year))
     if not reset.get("ok"):

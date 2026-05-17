@@ -13,7 +13,6 @@ from app.schemas.auth import UserContext
 from app.services.permission_service import require_action
 
 from app.core.config import load_app_config
-from app.core.settings import load_settings
 from app.db.backend import is_sqlite_url
 from app.db.session import open_sqlite_connection
 from app.db.sqlite_connection import connect_sqlite
@@ -250,8 +249,8 @@ def _donem_key(value: str | None) -> str:
 
 
 def _get_db_path() -> str:
-    settings = load_settings(config_path="config.json")
-    if not is_sqlite_url(settings.db_url):
+    settings = load_app_config()
+    if not is_sqlite_url(settings.database_url):
         raise HTTPException(
             status_code=503,
             detail=(
@@ -266,7 +265,7 @@ def _get_db_path() -> str:
 def _open_connection() -> sqlite3.Connection:
     path = _get_db_path()
     if not os.path.exists(path):
-        raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
+        raise HTTPException(status_code=503, detail=f"Veritabani bulunamadi: {path}")
     conn = connect_sqlite(path, row_factory=True)
     ensure_reporting_schema(conn)
     return conn
@@ -926,7 +925,7 @@ async def mufredat_yukle(file: UploadFile = File(...), hedef_yil: int = Form(...
 
     db_path = _get_db_path()
     if not os.path.exists(db_path):
-        raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
+        raise HTTPException(status_code=503, detail=f"Veritabani bulunamadi: {db_path}")
 
     import tempfile
 
@@ -963,7 +962,7 @@ async def anket_yukle(
 
     db_path = _get_db_path()
     if not os.path.exists(db_path):
-        raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
+        raise HTTPException(status_code=503, detail=f"Veritabani bulunamadi: {db_path}")
 
     import tempfile
 

@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.core.config import resolve_sqlite_db_path
 from app.datasets.entities import DatasetBundle
 
 
@@ -43,7 +44,7 @@ class RealDatasetLoader:
         )
 
     def from_sqlite(self, db_path: str | os.PathLike[str]) -> DatasetBundle:
-        db_file = Path(db_path)
+        db_file = resolve_sqlite_db_path(db_path)
         if not db_file.exists():
             raise FileNotFoundError(f"SQLite DB not found: {db_file}")
 

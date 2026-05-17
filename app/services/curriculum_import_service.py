@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any
 
 import pandas as pd
+from app.core.config import resolve_sqlite_db_path
 from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_import_governance_schema, ensure_reporting_schema
 from app.services.import_audit_service import (
@@ -454,7 +455,8 @@ def import_curriculum_excel(
     auto_activate: bool = True,
     uploaded_by: str | None = None,
 ) -> dict[str, Any]:
-    if not os.path.exists(db_path):
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
         return ImportResult(False, "Veritabani bulunamadi.", target_year=target_year).as_dict()
     if not os.path.exists(excel_path):
         return ImportResult(False, "Excel dosyasi bulunamadi.", target_year=target_year).as_dict()
@@ -464,7 +466,7 @@ def import_curriculum_excel(
     except Exception as exc:
         try:
             mark_batch_failed_by_path(
-                db_path,
+                str(resolved_db_path),
                 excel_path,
                 "curriculum",
                 str(exc),
@@ -477,7 +479,7 @@ def import_curriculum_excel(
     if not parsed_rows:
         return ImportResult(False, "Excel icinde aktarilabilir satir yok.", target_year=target_year, warnings=warnings).as_dict()
 
-    conn = connect_sqlite(db_path, row_factory=True)
+    conn = connect_sqlite(str(resolved_db_path), row_factory=True)
     cur = conn.cursor()
 
     errors: list[str] = []

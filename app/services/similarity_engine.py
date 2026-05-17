@@ -7,6 +7,7 @@
 # =============================================================================
 
 import sqlite3
+from app.core.config import resolve_sqlite_db_path
 from app.services.db import get_raw_connection
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -23,7 +24,7 @@ class SimilarityEngine:
     """sqlite3 tabanli ders benzerlik hesaplama motoru."""
 
     def __init__(self, db_path: str):
-        self.db_path = db_path
+        self.db_path = str(resolve_sqlite_db_path(db_path))
 
     def _get_connection(self):
         return sqlite3.connect(self.db_path)

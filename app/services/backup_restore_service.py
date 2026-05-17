@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.db.models import DataSnapshot
-from app.core.config import AppConfig
+from app.core.config import AppConfig, resolve_sqlite_db_path
 
 class BackupRestoreService:
     def __init__(self, db: Session, config: AppConfig):
@@ -20,21 +20,21 @@ class BackupRestoreService:
                            related_import_job_id: str = None, related_decision_run_id: int = None, 
                            created_by: str = "system") -> DataSnapshot:
         
-        db_path = self.config.sqlite_db_path
-        if not os.path.exists(db_path):
-            raise Exception(f"Database file not found at {db_path}")
+        db_path = resolve_sqlite_db_path(self.config.sqlite_db_path)
+        if not db_path.exists():
+            raise FileNotFoundError(f"Database file not found at {db_path}")
 
         snapshot_id = f"snap_{uuid.uuid4().hex}"
         
         # Ensure backups directory exists
-        base_dir = os.path.dirname(db_path)
+        base_dir = os.path.dirname(str(db_path))
         backup_dir = os.path.join(base_dir, "backups")
         os.makedirs(backup_dir, exist_ok=True)
 
         backup_path = os.path.join(backup_dir, f"{snapshot_id}.db")
 
         # Copy file
-        shutil.copy2(db_path, backup_path)
+        shutil.copy2(str(db_path), backup_path)
 
         # Hash
         hash_sha256 = hashlib.sha256()
@@ -90,7 +90,8 @@ class BackupRestoreService:
         # This is a conceptual implementation for SQLite. In reality you'd need to close the DB connection,
         # copy the file, and restart or reconnect.
         
-        db_path = self.config.sqlite_db_path
-        shutil.copy2(backup_path, db_path)
+        db_path = resolve_sqlite_db_path(self.config.sqlite_db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(backup_path, str(db_path))
 
         return True

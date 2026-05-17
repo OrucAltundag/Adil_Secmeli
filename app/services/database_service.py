@@ -13,7 +13,7 @@ import time
 from contextlib import contextmanager
 from typing import Iterator
 
-from app.core.config import AppConfig, load_app_config
+from app.core.config import AppConfig, load_app_config, resolve_sqlite_db_path
 from app.db.backend import is_sqlite_url
 from app.db.session import open_sqlite_connection
 from app.repositories.sqlite_repository import SqliteRepository
@@ -24,7 +24,7 @@ class DatabaseService:
 
     def __init__(self, db_path: str | None = None, config: AppConfig | None = None):
         self.config = config or load_app_config()
-        self.db_path = db_path or self.config.sqlite_db_path
+        self.db_path = str(resolve_sqlite_db_path(db_path or self.config.sqlite_db_path))
 
     def is_sqlite(self) -> bool:
         """Aktif backend SQLite mi?"""

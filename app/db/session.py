@@ -15,17 +15,14 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.config import AppConfig, load_app_config
+from app.core.config import AppConfig, load_app_config, resolve_sqlite_db_path
 from app.db.backend import SQLITE_BACKEND, is_sqlite_url, require_sqlite_url
 from app.db.database import get_engine, get_session as _get_session, Base
 
 
 def _resolve_sqlite_path(db_path: str | None = None, config: AppConfig | None = None) -> str:
     cfg = config or load_app_config()
-    path = Path(db_path or cfg.sqlite_db_path)
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    return str(path)
+    return str(resolve_sqlite_db_path(db_path or cfg.sqlite_db_path))
 
 
 def _sqlite_url_for_path(db_path: str) -> str:

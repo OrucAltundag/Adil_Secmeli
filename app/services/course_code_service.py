@@ -4,10 +4,11 @@ from dataclasses import asdict, dataclass
 import os
 import re
 import sqlite3
-from app.services.db import get_raw_connection
 from typing import Any
 
+from app.core.config import resolve_sqlite_db_path
 from app.db.schema_compat import ensure_ders_code_schema
+from app.services.db import get_raw_connection
 
 
 _TR_ASCII_MAP: tuple[tuple[str, str], ...] = (
@@ -116,10 +117,11 @@ def _fetch_missing_course_code_rows(conn: sqlite3.Connection) -> list[MissingCou
 
 
 def preview_missing_course_codes(db_path: str) -> dict[str, Any]:
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"Veritabani bulunamadi: {db_path}")
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
+        raise FileNotFoundError(f"Veritabani bulunamadi: {resolved_db_path}")
 
-    conn = get_raw_connection(db_path)
+    conn = get_raw_connection(str(resolved_db_path))
     try:
         rows = _fetch_missing_course_code_rows(conn)
         return {
@@ -132,10 +134,11 @@ def preview_missing_course_codes(db_path: str) -> dict[str, Any]:
 
 
 def apply_missing_course_codes(db_path: str) -> dict[str, Any]:
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"Veritabani bulunamadi: {db_path}")
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
+        raise FileNotFoundError(f"Veritabani bulunamadi: {resolved_db_path}")
 
-    conn = get_raw_connection(db_path)
+    conn = get_raw_connection(str(resolved_db_path))
     try:
         rows = _fetch_missing_course_code_rows(conn)
         cur = conn.cursor()

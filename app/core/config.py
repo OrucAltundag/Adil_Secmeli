@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.db.backend import database_backend, is_sqlite_url
+from sqlalchemy.engine.url import make_url
 
 try:
     from dotenv import load_dotenv
@@ -33,13 +34,53 @@ def _int(value: Any, default: int) -> int:
 
 
 def _load_json(path: str = "config.json") -> dict[str, Any]:
-    if not os.path.exists(path):
+    config_path = resolve_config_path(path)
+    if not config_path.exists():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(config_path, "r", encoding="utf-8") as handle:
             return json.load(handle) or {}
     except Exception:
         return {}
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def resolve_project_path(path: str | os.PathLike[str] | None, *, base_dir: Path | None = None) -> Path:
+    if path is None:
+        return (base_dir or PROJECT_ROOT).resolve()
+    resolved = Path(path)
+    if resolved.is_absolute():
+        return resolved
+    return ((base_dir or PROJECT_ROOT) / resolved).resolve()
+
+
+def resolve_config_path(config_path: str | os.PathLike[str] = "config.json") -> Path:
+    return resolve_project_path(config_path, base_dir=PROJECT_ROOT)
+
+
+def resolve_sqlite_db_path(
+    db_path: str | os.PathLike[str] | None = None,
+    *,
+    base_dir: Path | None = None,
+) -> Path:
+    candidate = db_path or Path("data") / "adil_secmeli.db"
+    return resolve_project_path(candidate, base_dir=base_dir or PROJECT_ROOT)
+
+
+def normalize_sqlite_database_url(database_url: str, *, base_dir: Path | None = None) -> str:
+    try:
+        parsed = make_url(database_url)
+        db_path = parsed.database
+        if not db_path:
+            return database_url
+        resolved_path = Path(db_path)
+        if not resolved_path.is_absolute():
+            resolved_path = resolve_sqlite_db_path(resolved_path, base_dir=base_dir)
+        return f"sqlite:///{resolved_path.as_posix()}"
+    except Exception:
+        return database_url
 
 
 @dataclass(frozen=True)
@@ -119,12 +160,11 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
     """config.json + environment değerlerini tek yerde birleştirir."""
     if load_dotenv is not None:
         load_dotenv(override=False)
-    cfg = _load_json(config_path)
-    base_dir = Path(__file__).resolve().parents[2]
-    default_db = Path(cfg.get("db_path") or base_dir / "data" / "adil_secmeli.db")
-    sqlite_db_path = Path(os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH") or default_db)
-    if not sqlite_db_path.is_absolute():
-        sqlite_db_path = Path.cwd() / sqlite_db_path
+    config_file = resolve_config_path(config_path)
+    cfg = _load_json(str(config_file))
+    base_dir = config_file.parent
+    default_db = resolve_sqlite_db_path(cfg.get("db_path"), base_dir=base_dir)
+    sqlite_db_path = resolve_sqlite_db_path(os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH") or default_db, base_dir=base_dir)
     environment = str(os.getenv("ENVIRONMENT") or cfg.get("environment") or "development").lower()
     debug = _bool(os.getenv("DEBUG"), _bool(cfg.get("debug"), environment == "development"))
     developer_tools = _bool(
@@ -149,7 +189,7 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
         allow_runtime_schema_mutation = False
     raw_database_url = str(os.getenv("DATABASE_URL") or cfg.get("db_url") or "").strip()
     if raw_database_url:
-        database_url = raw_database_url
+        database_url = normalize_sqlite_database_url(raw_database_url, base_dir=base_dir) if is_sqlite_url(raw_database_url) else raw_database_url
     else:
         database_url = f"sqlite:///{sqlite_db_path}"
     if not is_sqlite_url(database_url) and not raw_database_url:

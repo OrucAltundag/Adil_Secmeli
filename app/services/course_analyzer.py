@@ -24,6 +24,7 @@ import sqlite3
 import logging
 from typing import Any, Optional
 
+from app.core.config import resolve_sqlite_db_path
 from app.services.db import db_session
 from app.services.havuz_karar import (
     calculate_next_status,
@@ -855,7 +856,7 @@ def analyze_single_course(
     year : int
         Analiz yılı (2022-2025).
     db_path : str, optional
-        Veritabani dosya yolu. None ise data/adil_secmeli.db kullanilir.
+        Veritabani dosya yolu. None ise merkezi config/ortam degiskenleri kullanilir.
 
     Dönüş
     ------
@@ -865,9 +866,10 @@ def analyze_single_course(
     """
     t_total = time.perf_counter()
 
-    path = db_path or "data/adil_secmeli.db"
-    if not path or not os.path.exists(path):
+    path = resolve_sqlite_db_path(db_path)
+    if not path.exists():
         return {"error": "Veritabani bulunamadi veya yol gecersiz."}
+    path = str(path)
 
     result: dict[str, Any] = {
         "course_id": course_id,

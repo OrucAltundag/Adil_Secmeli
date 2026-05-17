@@ -15,6 +15,7 @@ import random
 import os
 import traceback
 import logging
+from app.core.config import resolve_sqlite_db_path
 from app.db.schema_compat import ensure_pool_state_governance_schema
 from app.services.havuz_karar import calculate_next_status
 from app.services.course_type import (
@@ -467,7 +468,7 @@ def yukle_gercek_2022_mufredati(conn, excel_path):
 # =========================================================
 # 3. ANA OTOMASYON (GÃœVENLÄ° MOD)
 # =========================================================
-def run_automatic_scoring(db_path="data/adil_secmeli.db"):
+def run_automatic_scoring(db_path=None):
     """
     Acilis veya manuel tetikleme: base_year sonrasi mufredati sifirlar,
     kriterleri hazir fakulte/yillar icin zincirleme sonraki yil uretir,
@@ -1487,7 +1488,7 @@ def ensure_pool_visibility_for_curriculum(cur, fakulte_id, akademik_yil, donem="
 
 
 def generate_next_year_curricula(
-    db_path="data/adil_secmeli.db",
+    db_path=None,
     fakulte_id=None,
     akademik_yil=None,
     donem="G",
@@ -1514,13 +1515,14 @@ def generate_next_year_curricula(
     sonraki_yil = akademik_yil + 1
     donem = str(donem or "G")
     term_key = _normalize_term_key(donem)
+    resolved_db_path = resolve_sqlite_db_path(db_path)
 
     conn = None
     try:
-        if not os.path.exists(db_path):
-            return {"ok": False, "error": f"DB bulunamadi: {db_path}"}
+        if not resolved_db_path.exists():
+            return {"ok": False, "error": f"DB bulunamadi: {resolved_db_path}"}
 
-        conn = get_raw_connection(db_path)
+        conn = get_raw_connection(str(resolved_db_path))
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         ensure_pool_state_governance_schema(conn, commit=False)
@@ -2356,7 +2358,7 @@ def generate_next_year_curricula(
 
 def run_all_algorithms_for_year(
     yil: int,
-    db_path: str = "data/adil_secmeli.db",
+    db_path: str | None = None,
     donem: str = "G",
     fakulte_id: int | None = None,
 ) -> dict:
@@ -2388,17 +2390,19 @@ def run_all_algorithms_for_year(
         "errors": [],
         "messages": [],
     }
+    resolved_db_path = resolve_sqlite_db_path(db_path)
 
-    if not os.path.exists(db_path):
+    if not resolved_db_path.exists():
         return {
             "ok": False,
             "year": yil,
             "processed": [],
             "skipped": [],
-            "errors": [{"error": f"DB bulunamadi: {db_path}"}],
-            "messages": [f"Veritabani bulunamadi: {db_path}"],
+            "errors": [{"error": f"DB bulunamadi: {resolved_db_path}"}],
+            "messages": [f"Veritabani bulunamadi: {resolved_db_path}"],
         }
 
+    db_path = str(resolved_db_path)
     conn = get_raw_connection(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -2557,7 +2561,7 @@ def run_all_algorithms_for_year(
     return summary
 
 
-def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G"):
+def auto_generate_next_year_curricula(db_path=None, donem="G"):
     """
     Tum fakulteler icin otomatik sonraki yil mufredat uretimini tetikler. Her fakultenin en son mufredatli yilini bulur ve bir sonraki yili uretir.
     """
@@ -2567,11 +2571,13 @@ def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G")
         "skipped": [],
         "errors": [],
     }
-    if not os.path.exists(db_path):
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
         summary["ok"] = False
-        summary["errors"].append({"error": f"DB bulunamadi: {db_path}"})
+        summary["errors"].append({"error": f"DB bulunamadi: {resolved_db_path}"})
         return summary
 
+    db_path = str(resolved_db_path)
     conn = get_raw_connection(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -2681,7 +2687,7 @@ def auto_generate_next_year_curricula(db_path="data/adil_secmeli.db", donem="G")
     return summary
 
 
-def reset_future_curricula(db_path="data/adil_secmeli.db", base_year=2022):
+def reset_future_curricula(db_path=None, base_year=2022):
     """
     Sadece base_year ve onceki yillari birakir.
     base_year sonrasi mufredat + havuz verilerini temizler.
@@ -2695,11 +2701,13 @@ def reset_future_curricula(db_path="data/adil_secmeli.db", base_year=2022):
         "normalized_curricula": 0,
     }
 
-    if not os.path.exists(db_path):
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
         result["ok"] = False
-        result["error"] = f"DB bulunamadi: {db_path}"
+        result["error"] = f"DB bulunamadi: {resolved_db_path}"
         return result
 
+    db_path = str(resolved_db_path)
     conn = None
     try:
         conn = get_raw_connection(db_path)
@@ -2760,12 +2768,13 @@ def _write_curriculum_generation_log(db_path, overall):
     Pipeline sonucu ozetini kalici log tablosuna yazar.
     overall: generate_curricula_until_stable donus degeri (generated, skipped, errors, rounds).
     """
-    if not db_path or not os.path.exists(db_path):
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
         return
     conn = None
     try:
         from datetime import datetime, timezone
-        conn = get_raw_connection(db_path)
+        conn = get_raw_connection(str(resolved_db_path))
         cur = conn.cursor()
         _ensure_curriculum_log_table(cur)
         generated = overall.get("generated", []) or []
@@ -2800,7 +2809,7 @@ def _write_curriculum_generation_log(db_path, overall):
             conn.close()
 
 
-def generate_curricula_until_stable(db_path="data/adil_secmeli.db", donem="G", max_rounds=8):
+def generate_curricula_until_stable(db_path=None, donem="G", max_rounds=8):
     """
     Otomatik uretimi birden fazla tur calistirir.
     Ayni (fakulte, yil_from, yil_to) ciftleri tekrar etmeye basladiginda durur.
@@ -2880,7 +2889,7 @@ def generate_curricula_until_stable(db_path="data/adil_secmeli.db", donem="G", m
     return overall
 
 
-def rebuild_school_curricula(db_path="data/adil_secmeli.db", base_year=2022, donem="G", max_rounds=8):
+def rebuild_school_curricula(db_path=None, base_year=2022, donem="G", max_rounds=8):
     """
     1) base_year sonrasi mufredatlari sifirlar
     2) kriterleri hazir olan yillari zincirleme otomatik yeniden uretir
@@ -2902,7 +2911,7 @@ def rebuild_school_curricula(db_path="data/adil_secmeli.db", base_year=2022, don
 
 
 def rebuild_school_curricula_dual_semester(
-    db_path="data/adil_secmeli.db",
+    db_path=None,
     base_year=2022,
     max_rounds=8,
     block_size=4,

@@ -30,7 +30,7 @@ SessionLocal = None
 
 def _load_db_url():
     from app.core.config import load_app_config
-    return load_app_config(config_path="config.json").database_url
+    return load_app_config().database_url
 
 
 def _build_engine(url: str):
@@ -53,7 +53,7 @@ def _build_engine(url: str):
 def _fallback_sqlite_url() -> str:
     from app.core.config import load_app_config
 
-    cfg = load_app_config(config_path="config.json")
+    cfg = load_app_config()
     return f"sqlite:///{cfg.sqlite_db_path}"
 
 

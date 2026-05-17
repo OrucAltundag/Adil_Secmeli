@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 from openpyxl.styles import Font
 
+from app.core.config import resolve_sqlite_db_path
 from app.db.sqlite_connection import connect_sqlite, is_database_locked_error
 from app.db.schema_compat import ensure_reporting_schema, ensure_survey_import_schema
 from app.services.course_matcher import (
@@ -434,10 +435,11 @@ def load_survey_template_context(
     faculty_id: int,
     year: int,
 ) -> dict[str, Any]:
-    if not os.path.exists(db_path):
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
         raise FileNotFoundError("Veritabani bulunamadi.")
 
-    conn = connect_sqlite(db_path)
+    conn = connect_sqlite(str(resolved_db_path))
     try:
         try:
             ensure_reporting_schema(conn)
@@ -774,7 +776,8 @@ def import_survey_excel(
     auto_activate: bool = True,
     uploaded_by: str | None = None,
 ) -> dict[str, Any]:
-    if not os.path.exists(db_path):
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
         return {"ok": False, "message": "Veritabani bulunamadi.", "errors": ["Veritabani bulunamadi."]}
     if not os.path.exists(excel_path):
         return {"ok": False, "message": "Anket dosyasi bulunamadi.", "errors": ["Anket dosyasi bulunamadi."]}
@@ -784,7 +787,7 @@ def import_survey_excel(
     except Exception as exc:
         try:
             mark_batch_failed_by_path(
-                db_path,
+                str(resolved_db_path),
                 excel_path,
                 "survey",
                 str(exc),
@@ -796,7 +799,7 @@ def import_survey_excel(
             pass
         return {"ok": False, "message": f"Anket dosyasi okunamadi: {exc}", "errors": [str(exc)]}
 
-    conn = connect_sqlite(db_path, row_factory=True)
+    conn = connect_sqlite(str(resolved_db_path), row_factory=True)
     try:
         ensure_reporting_schema(conn)
         ensure_survey_import_schema(conn)
