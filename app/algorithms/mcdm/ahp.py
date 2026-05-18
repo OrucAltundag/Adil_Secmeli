@@ -35,15 +35,34 @@ class AHPFitState:
 class AHPRanker(IRanker):
     def __init__(self, pairwise_matrix: np.ndarray | list[list[float]] | None = None) -> None:
         super().__init__(name="AHP", task_type="ranking")
-        self.pairwise_matrix = np.array(pairwise_matrix, dtype=float) if pairwise_matrix is not None else None
+        if pairwise_matrix is not None:
+            self.pairwise_matrix = np.array(pairwise_matrix, dtype=float)
+            self._validate_pairwise_matrix()
+        else:
+            self.pairwise_matrix = None
         self.state: AHPFitState | None = None
+
+    def _validate_pairwise_matrix(self) -> None:
+        """Validate pairwise comparison matrix."""
+        if self.pairwise_matrix is None:
+            return
+        m = self.pairwise_matrix
+        if m.ndim != 2 or m.shape[0] != m.shape[1]:
+            raise ValueError("Pairwise matrix must be square")
+        if np.any(np.isnan(m)) or np.any(np.isinf(m)):
+            raise ValueError("Pairwise matrix contains NaN or infinity values")
+        if np.any(m <= 0):
+            raise ValueError("Pairwise matrix values must be positive")
 
     def fit(self, X: pd.DataFrame, y: None = None) -> "AHPRanker":
         if self.pairwise_matrix is None:
             columns = [c for c in X.columns if c != "item_id"]
             n = len(columns)
             self.pairwise_matrix = np.ones((n, n), dtype=float)
+        
         matrix = self.pairwise_matrix
+        self._validate_pairwise_matrix()
+        
         eigenvalues, eigenvectors = np.linalg.eig(matrix)
         idx = int(np.argmax(eigenvalues.real))
         principal = np.real_if_close(eigenvectors[:, idx]).astype(float)
@@ -70,7 +89,7 @@ class AHPRanker(IRanker):
         df = X.copy()
         criteria_cols = [c for c in df.columns if c != "item_id"]
         if len(criteria_cols) != len(self.state.weights):
-            raise ValueError("Criteria count mismatch between pairwise matrix and input data")
+            raise ValueError(f"Criteria count mismatch: expected {len(self.state.weights)} but got {len(criteria_cols)}")
         for col in criteria_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
