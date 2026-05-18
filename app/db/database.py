@@ -14,7 +14,7 @@
 # =============================================================================
 import threading
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 
 _lock = threading.Lock()
@@ -80,13 +80,29 @@ def _ensure_engine():
         _current_url = url
         try:
             engine = _build_engine(url)
-        except Exception:
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception as e:
             if not url.startswith("sqlite"):
+                # PostgreSQL başarısız olursa SQLite fallback yap
                 fallback_url = _fallback_sqlite_url()
                 _current_url = fallback_url
-                engine = _build_engine(fallback_url)
+                try:
+                    engine = _build_engine(fallback_url)
+                    with engine.connect() as conn:
+                        conn.execute(text("SELECT 1"))
+                except Exception as fallback_error:
+                    raise RuntimeError(
+                        f"Ana veritabanı '{url}' bağlanılamadı ve SQLite fallback "
+                        f"'{fallback_url}' da başarısız: {fallback_error}"
+                    )
             else:
-                raise
+                # SQLite URL'si önceden belirtildi ama bağlantı başarısız
+                raise RuntimeError(
+                    f"SQLite veritabanı bağlantısı başarısız. Dosya yolu: {url}\n"
+                    f"Hata: {e}"
+                )
         SessionFactory = sessionmaker(
             bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
         )

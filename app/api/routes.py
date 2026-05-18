@@ -250,8 +250,9 @@ def _donem_key(value: str | None) -> str:
 
 
 def _get_db_path() -> str:
-    settings = load_settings(config_path="config.json")
-    if not is_sqlite_url(settings.db_url):
+    from app.core.config import load_app_config
+    cfg = load_app_config(config_path="config.json")
+    if not is_sqlite_url(cfg.database_url):
         raise HTTPException(
             status_code=503,
             detail=(
@@ -260,16 +261,25 @@ def _get_db_path() -> str:
                 "olusturabilecegi icin islem durduruldu."
             ),
         )
-    return settings.db_path
+    return cfg.sqlite_db_path
 
 
 def _open_connection() -> sqlite3.Connection:
     path = _get_db_path()
     if not os.path.exists(path):
-        raise HTTPException(status_code=503, detail="Veritabani bulunamadi")
-    conn = connect_sqlite(path, row_factory=True)
-    ensure_reporting_schema(conn)
-    return conn
+        raise HTTPException(
+            status_code=503,
+            detail=f"Veritabani bulunamadi: {path}"
+        )
+    try:
+        conn = connect_sqlite(path, row_factory=True)
+        ensure_reporting_schema(conn)
+        return conn
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Veritabani baglantisi kurulamadi: {str(e)}"
+        )
 
 
 def _run_query(query: str, params: tuple = ()) -> tuple[list[str], list[list]]:

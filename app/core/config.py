@@ -121,10 +121,17 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
         load_dotenv(override=False)
     cfg = _load_json(config_path)
     base_dir = Path(__file__).resolve().parents[2]
-    default_db = Path(cfg.get("db_path") or base_dir / "data" / "adil_secmeli.db")
-    sqlite_db_path = Path(os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH") or default_db)
+    # Use environment variable first, then config, then default
+    db_path_env = os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH")
+    if db_path_env:
+        sqlite_db_path = Path(db_path_env)
+    elif cfg.get("db_path"):
+        sqlite_db_path = Path(cfg.get("db_path"))
+    else:
+        sqlite_db_path = base_dir / "data" / "adil_secmeli.db"
+    
     if not sqlite_db_path.is_absolute():
-        sqlite_db_path = Path.cwd() / sqlite_db_path
+        sqlite_db_path = base_dir / sqlite_db_path
     environment = str(os.getenv("ENVIRONMENT") or cfg.get("environment") or "development").lower()
     debug = _bool(os.getenv("DEBUG"), _bool(cfg.get("debug"), environment == "development"))
     developer_tools = _bool(
