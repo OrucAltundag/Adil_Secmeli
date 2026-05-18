@@ -18,6 +18,41 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _fac_dept_clause(faculty_id: Optional[int], department_id: Optional[int], alias: str = "d") -> str:
+    """ders tablosu (alias) icin fakulte/bolum WHERE eki."""
+    parts = []
+    if faculty_id:
+        parts.append(f"AND {alias}.fakulte_id = {int(faculty_id)}")
+    if department_id:
+        parts.append(f"AND {alias}.bolum_id = {int(department_id)}")
+    return " ".join(parts)
+
+
+def _count_distinct_courses(
+    cur: sqlite3.Cursor,
+    table: str,
+    faculty_id: Optional[int],
+    department_id: Optional[int],
+    extra_where: str = "",
+) -> int:
+    """
+    Verilen tabloda, ders tablosuna JOIN ile fakulte/bolum filtreli
+    distinct ders_id sayisi. Tablo yoksa 0 doner.
+    """
+    fac_dept = _fac_dept_clause(faculty_id, department_id, alias="d")
+    sql = (
+        f"SELECT COUNT(DISTINCT t.ders_id) "
+        f"FROM {table} t "
+        f"JOIN ders d ON d.ders_id = t.ders_id "
+        f"WHERE 1=1 {extra_where} {fac_dept}"
+    )
+    try:
+        cur.execute(sql)
+        return int(cur.fetchone()[0] or 0)
+    except sqlite3.OperationalError:
+        return 0
+
+
 def _json_dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
@@ -64,49 +99,52 @@ def assess_data_readiness_cursor(
                 'validation_score': 100.0,  # No issues means good score
             }
 
-        # Criteria coverage (ders_kriterleri tablosu)
-        try:
-            cur.execute("SELECT COUNT(DISTINCT ders_id) FROM ders_kriterleri")
-            criteria_count = int(cur.fetchone()[0] or 0)
-        except sqlite3.OperationalError:
-            criteria_count = 0
+        # Criteria coverage — yil + fakulte/bolum filtreli
+        criteria_count = _count_distinct_courses(
+            cur, "ders_kriterleri", faculty_id, department_id,
+            extra_where=f"AND t.yil = {int(year)}",
+        )
 
-        # Performance coverage
-        try:
-            cur.execute(f"""
-                SELECT COUNT(DISTINCT ders_id) FROM performans
-                WHERE akademik_yil = {int(year)} AND basari_orani IS NOT NULL
-            """)
-            perf_count = int(cur.fetchone()[0] or 0)
-        except sqlite3.OperationalError:
-            perf_count = 0
+        # Performance coverage — yil + fakulte/bolum filtreli
+        perf_count = _count_distinct_courses(
+            cur, "performans", faculty_id, department_id,
+            extra_where=f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL",
+        )
 
-        # Popularity coverage
-        try:
-            cur.execute(f"""
-                SELECT COUNT(DISTINCT ders_id) FROM populerlik
-                WHERE akademik_yil = {int(year)} AND doluluk_orani IS NOT NULL
-            """)
-            pop_count = int(cur.fetchone()[0] or 0)
-        except sqlite3.OperationalError:
-            pop_count = 0
+        # Popularity coverage — yil + fakulte/bolum filtreli (tutarli: doluluk_orani)
+        pop_count = _count_distinct_courses(
+            cur, "populerlik", faculty_id, department_id,
+            extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL",
+        )
 
-        # Survey coverage
-        try:
-            cur.execute("SELECT COUNT(DISTINCT ders_id) FROM anket_sonuclari WHERE oy_sayisi > 0")
-            survey_count = int(cur.fetchone()[0] or 0)
-        except sqlite3.OperationalError:
-            survey_count = 0
+        # Survey coverage — anket_sonuclari'nda yil yok; fakulte/bolum filtreli
+        survey_count = _count_distinct_courses(
+            cur, "anket_sonuclari", faculty_id, department_id,
+            extra_where="AND t.oy_sayisi > 0",
+        )
 
-        # Validation issues
+        # Validation issues — once dolu olan criteria_validation_issues, sonra fallback
+        blocking_issues = 0
         try:
-            cur.execute("""
-                SELECT COUNT(*) FROM data_validation_issues
-                WHERE severity = 'critical' AND is_resolved = 0
-            """)
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM criteria_validation_issues
+                WHERE severity = 'critical' AND year = ?
+                """,
+                (int(year),),
+            )
             blocking_issues = int(cur.fetchone()[0] or 0)
         except sqlite3.OperationalError:
-            blocking_issues = 0
+            try:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) FROM data_validation_issues
+                    WHERE severity = 'critical' AND is_resolved = 0
+                    """
+                )
+                blocking_issues = int(cur.fetchone()[0] or 0)
+            except sqlite3.OperationalError:
+                blocking_issues = 0
 
         # Calculate ratios
         criteria_score = (criteria_count / total_courses * 100) if total_courses > 0 else 0
@@ -199,36 +237,24 @@ def generate_coverage_report_cursor(
                 'coverage_percentage': 0.0,
             }
 
-        # Count courses with each data type
-        try:
-            cur.execute("SELECT COUNT(DISTINCT ders_id) FROM ders_kriterleri")
-            with_criteria = int(cur.fetchone()[0] or 0)
-        except Exception:
-            with_criteria = 0
-
-        try:
-            cur.execute(f"""
-                SELECT COUNT(DISTINCT ders_id) FROM performans
-                WHERE akademik_yil = {int(year)} AND basari_orani IS NOT NULL
-            """)
-            with_perf = int(cur.fetchone()[0] or 0)
-        except Exception:
-            with_perf = 0
-
-        try:
-            cur.execute(f"""
-                SELECT COUNT(DISTINCT ders_id) FROM populerlik
-                WHERE akademik_yil = {int(year)} AND kontenjan IS NOT NULL
-            """)
-            with_pop = int(cur.fetchone()[0] or 0)
-        except Exception:
-            with_pop = 0
-
-        try:
-            cur.execute("SELECT COUNT(DISTINCT ders_id) FROM anket_sonuclari")
-            with_survey = int(cur.fetchone()[0] or 0)
-        except Exception:
-            with_survey = 0
+        # Count courses with each data type — hepsi yil + fakulte/bolum filtreli
+        # (readiness ile birebir tutarli olmasi icin ayni filtreler)
+        with_criteria = _count_distinct_courses(
+            cur, "ders_kriterleri", faculty_id, department_id,
+            extra_where=f"AND t.yil = {int(year)}",
+        )
+        with_perf = _count_distinct_courses(
+            cur, "performans", faculty_id, department_id,
+            extra_where=f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL",
+        )
+        with_pop = _count_distinct_courses(
+            cur, "populerlik", faculty_id, department_id,
+            extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL",
+        )
+        with_survey = _count_distinct_courses(
+            cur, "anket_sonuclari", faculty_id, department_id,
+            extra_where="AND t.oy_sayisi > 0",
+        )
 
         # Coverage percentage: weighted average
         coverage = (

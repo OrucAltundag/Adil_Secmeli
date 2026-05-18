@@ -54,6 +54,32 @@ class DataQualityPage(ttk.Frame):
         self._build_missing_data_tab()
         self._build_validation_issues_tab()
 
+    def _tab_info(self, parent, baslik, ne_ise_yarar, veri_kaynagi, dogruluk, renk="#1565C0"):
+        """Her sekmenin üstüne; amaç, veri kaynağı ve doğruluk açıklayan bilgi kutusu."""
+        box = tk.Frame(parent, bg=renk)
+        box.pack(fill=tk.X, pady=(0, 6))
+        inner = tk.Frame(box, bg="#F4F8FE")
+        inner.pack(fill=tk.X, padx=2, pady=2)
+        tk.Label(
+            inner, text=baslik, bg="#F4F8FE", fg=renk,
+            font=("Segoe UI", 10, "bold"), anchor=tk.W,
+        ).pack(fill=tk.X, padx=10, pady=(5, 2))
+        tk.Label(
+            inner, text="Ne işe yarar:  " + ne_ise_yarar,
+            bg="#F4F8FE", fg="#2A2A2A", font=("Segoe UI", 8),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1150,
+        ).pack(fill=tk.X, padx=10, pady=1)
+        tk.Label(
+            inner, text="Veri kaynağı:  " + veri_kaynagi,
+            bg="#FFF6DF", fg="#6B4E00", font=("Segoe UI", 8, "bold"),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1150,
+        ).pack(fill=tk.X, padx=10, pady=2, ipady=2)
+        tk.Label(
+            inner, text="Doğruluk / nasıl ölçülür:  " + dogruluk,
+            bg="#F4F8FE", fg="#1B5E20", font=("Segoe UI", 8),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1150,
+        ).pack(fill=tk.X, padx=10, pady=(1, 5))
+
     def _build_summary_tab(self):
         """Veri Özeti sekmesi"""
         frame = ttk.Frame(self.notebook)
@@ -61,6 +87,17 @@ class DataQualityPage(ttk.Frame):
 
         content = ttk.Frame(frame, padding=12)
         content.pack(fill=tk.BOTH, expand=True)
+        self._tab_info(
+            content,
+            "Veri Özeti — Genel Durum Panosu",
+            "Seçili yıl ve fakülte için verinin ne kadar tam olduğunu tek bakışta gösterir: "
+            "toplam ders, kaç dersin kriter/performans/popülerlik/anket verisi var ve genel "
+            "kapsama yüzdesi. Karar almadan önce ilk bakılacak sekmedir.",
+            "ders, ders_kriterleri, performans, populerlik, anket_sonuclari tabloları. "
+            "Bu veriler 'Veri Yönetimi' sekmesinden Excel içe aktarılarak doldurulur.",
+            "Kapsama %, ağırlıklı ortalamadır: kriter %40 + performans %25 + popülerlik %20 + "
+            "anket %15. Sayımlar seçili yıl ve fakülteye göre filtrelenir (distinct ders_id).",
+        )
 
         # Stat grid
         stats_frame = ttk.LabelFrame(content, text="İstatistikler", padding=8)
@@ -96,6 +133,17 @@ class DataQualityPage(ttk.Frame):
 
         content = ttk.Frame(frame, padding=12)
         content.pack(fill=tk.BOTH, expand=True)
+        self._tab_info(
+            content,
+            "Kapsama Raporu — Veri Tipi Bazında Doluluk",
+            "Her veri tipinin (kriter, performans, popülerlik, anket) ders bazında ne oranda "
+            "dolu olduğunu çubuk grafiklerle gösterir ve hangi tipte kaç ders eksik olduğunu listeler.",
+            "ders_kriterleri (yıl filtreli), performans/populerlik (akademik_yil + değer dolu), "
+            "anket_sonuclari (oy_sayisi>0). Hepsi seçili fakülteye göre ders JOIN'i ile filtrelenir.",
+            "Oran = (o veriye sahip distinct ders) / (filtrelenen toplam ders) × 100. "
+            "Eksikse 'Veri Yönetimi'nden ilgili Excel'i içe aktarın.",
+            renk="#00838F",
+        )
 
         # Progress bars
         metrics = [
@@ -123,6 +171,18 @@ class DataQualityPage(ttk.Frame):
 
         content = ttk.Frame(frame, padding=12)
         content.pack(fill=tk.BOTH, expand=True)
+        self._tab_info(
+            content,
+            "Veri Olgunluğu — Karar Alınabilir mi?",
+            "Tüm veri tiplerini ve doğrulama kalitesini tek bir 0-100 skora indirger ve "
+            "'karar alınabilir' seviyesine ulaşıp ulaşmadığınızı söyler. Bileşen skorları "
+            "hangi alana yüklenmeniz gerektiğini gösterir.",
+            "assess_data_readiness servisi: ders_kriterleri/performans/populerlik/anket + "
+            "criteria_validation_issues (kritik sorun sayısı).",
+            "Skor = kriter %40 + performans %15 + popülerlik %15 + anket %15 + doğrulama %15. "
+            "Her kritik doğrulama sorunu doğrulama skorundan 25 puan düşürür. ≥85 = karar hazır.",
+            renk="#6A1B9A",
+        )
 
         # Readiness gauge
         gauge_frame = ttk.LabelFrame(content, text="Hazırlık Seviyesi", padding=8)
@@ -145,6 +205,18 @@ class DataQualityPage(ttk.Frame):
 
         content = ttk.Frame(frame, padding=12)
         content.pack(fill=tk.BOTH, expand=True)
+        self._tab_info(
+            content,
+            "Eksik Veri Matrisi — Hangi Dersin Nesi Eksik?",
+            "En az bir veri tipi eksik olan dersleri tek tek listeler. Her hücre ✓ (var) "
+            "veya ✗ (eksik) gösterir; böylece tam olarak hangi ders için hangi Excel'i "
+            "içe aktarmanız gerektiğini görürsünüz.",
+            "ders tablosu (seçili fakülte) + her veri tablosunda o dersin/yılın kaydı var mı "
+            "kontrolü (EXISTS sorgusu).",
+            "✗ = o ders+yıl için ilgili tabloda kayıt yok veya değer NULL. Tam dersler "
+            "listede gösterilmez (sadece eksiği olanlar).",
+            renk="#C62828",
+        )
 
         # Treeview
         cols = ("Ders", "Kriter", "Performans", "Populerlik", "Anket", "Trend")
@@ -169,6 +241,18 @@ class DataQualityPage(ttk.Frame):
 
         content = ttk.Frame(frame, padding=12)
         content.pack(fill=tk.BOTH, expand=True)
+        self._tab_info(
+            content,
+            "Doğrulama Sorunları — Hatalı / Şüpheli Veri Girişleri",
+            "İçe aktarılan veride tespit edilen tutarsızlıkları listeler: aralık dışı değer, "
+            "negatif sayı, %100'ü aşan oran, eksik zorunlu alan vb. Kritik sorunlar karar "
+            "almayı engeller; bunlar düzeltilmeden algoritma güvenilir çalışmaz.",
+            "criteria_validation_issues tablosu (içe aktarma sırasında doğrulama motoru üretir). "
+            "Boşsa data_validation_issues'a düşülür.",
+            "Şiddet: 'critical' = bloklar, 'warning' = uyarı. Yanlış değeri 'Veri Yönetimi'nde "
+            "düzeltip yeniden içe aktarın; sorun otomatik kaybolur.",
+            renk="#E65100",
+        )
 
         # Issue list
         cols = ("ID", "Tür", "Şiddet", "Mesaj", "İçin Gerekli", "Durum")
@@ -260,6 +344,8 @@ class DataQualityPage(ttk.Frame):
                 self._update_summary(readiness, coverage)
                 self._update_coverage(coverage)
                 self._update_readiness(readiness)
+                self._update_missing_data(cur, year, faculty_id)
+                self._update_validation_issues(cur, year, faculty_id)
 
             finally:
                 conn.close()
@@ -429,6 +515,118 @@ Tavsiyeler:
   Yüksek veri kalitesi ile güvenli kararlar alabilirsiniz.
 """,
             )
+
+    def _update_missing_data(self, cur, year: int, faculty_id):
+        """Eksik Veri Matrisi sekmesini doldur (sadece eksiği olan dersler)."""
+        for item in self.missing_tree.get_children():
+            self.missing_tree.delete(item)
+
+        fac = f"AND d.fakulte_id = {int(faculty_id)}" if faculty_id else ""
+        try:
+            cur.execute(
+                f"""
+                SELECT d.ders_id, COALESCE(d.kod,''), COALESCE(d.ad,''),
+                  EXISTS(SELECT 1 FROM ders_kriterleri k
+                         WHERE k.ders_id=d.ders_id AND k.yil=?) ,
+                  EXISTS(SELECT 1 FROM performans p
+                         WHERE p.ders_id=d.ders_id AND p.akademik_yil=?
+                               AND p.basari_orani IS NOT NULL),
+                  EXISTS(SELECT 1 FROM populerlik o
+                         WHERE o.ders_id=d.ders_id AND o.akademik_yil=?
+                               AND o.doluluk_orani IS NOT NULL),
+                  EXISTS(SELECT 1 FROM anket_sonuclari a
+                         WHERE a.ders_id=d.ders_id AND a.oy_sayisi>0),
+                  (SELECT COUNT(DISTINCT akademik_yil) FROM performans p2
+                         WHERE p2.ders_id=d.ders_id) >= 2
+                FROM ders d
+                WHERE 1=1 {fac}
+                ORDER BY d.kod, d.ad
+                """,
+                (int(year), int(year), int(year)),
+            )
+            rows = cur.fetchall()
+        except Exception as exc:
+            self.missing_tree.insert("", tk.END, text="HATA", values=(str(exc), "", "", "", ""))
+            return
+
+        mark = lambda v: "✓" if v else "✗"
+        eksik_sayisi = 0
+        for r in rows:
+            crit, perf, pop, srv, trend = bool(r[3]), bool(r[4]), bool(r[5]), bool(r[6]), bool(r[7])
+            if crit and perf and pop and srv and trend:
+                continue  # tam dersleri gizle
+            eksik_sayisi += 1
+            label = f"{r[1]} {r[2]}".strip() or f"#{r[0]}"
+            iid = self.missing_tree.insert(
+                "", tk.END, text=label,
+                values=(mark(crit), mark(perf), mark(pop), mark(srv), mark(trend)),
+            )
+            if not crit:
+                self.missing_tree.item(iid, tags=("eksik",))
+        self.missing_tree.tag_configure("eksik", background="#FFEBEE")
+        if eksik_sayisi == 0:
+            self.missing_tree.insert(
+                "", tk.END, text="(Tüm dersler tam)",
+                values=("✓", "✓", "✓", "✓", "✓"),
+            )
+
+    def _update_validation_issues(self, cur, year: int, faculty_id):
+        """Doğrulama Sorunları sekmesini doldur (criteria_validation_issues)."""
+        for item in self.issues_tree.get_children():
+            self.issues_tree.delete(item)
+
+        fac = f"AND faculty_id = {int(faculty_id)}" if faculty_id else ""
+        rows = []
+        try:
+            cur.execute(
+                f"""
+                SELECT id, COALESCE(issue_type,''), COALESCE(severity,''),
+                       COALESCE(message,''), COALESCE(criterion_key,''),
+                       COALESCE(created_at,'')
+                FROM criteria_validation_issues
+                WHERE year = ? {fac}
+                ORDER BY CASE severity WHEN 'critical' THEN 0
+                         WHEN 'warning' THEN 1 ELSE 2 END, id
+                LIMIT 1000
+                """,
+                (int(year),),
+            )
+            rows = cur.fetchall()
+        except Exception:
+            try:
+                cur.execute(
+                    """
+                    SELECT id, COALESCE(issue_type,''), COALESCE(severity,''),
+                           COALESCE(message,''), COALESCE(field_name,''),
+                           COALESCE(created_at,'')
+                    FROM data_validation_issues
+                    WHERE is_resolved = 0
+                    ORDER BY id LIMIT 1000
+                    """
+                )
+                rows = cur.fetchall()
+            except Exception as exc:
+                self.issues_tree.insert("", tk.END, text="HATA", values=("", "", str(exc), "", ""))
+                return
+
+        if not rows:
+            self.issues_tree.insert(
+                "", tk.END, text="—",
+                values=("", "TEMIZ", f"{year} yılı için doğrulama sorunu yok.", "", ""),
+            )
+            return
+
+        for r in rows:
+            iid = self.issues_tree.insert(
+                "", tk.END, text=str(r[0]),
+                values=(r[1], r[2], r[3], r[4], r[5]),
+            )
+            if str(r[2]).lower() == "critical":
+                self.issues_tree.item(iid, tags=("critical",))
+            elif str(r[2]).lower() == "warning":
+                self.issues_tree.item(iid, tags=("warning",))
+        self.issues_tree.tag_configure("critical", background="#FFCDD2")
+        self.issues_tree.tag_configure("warning", background="#FFF3CD")
 
     def _refresh(self):
         """Sayfayı yenile"""
