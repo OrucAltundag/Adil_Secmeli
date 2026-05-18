@@ -205,12 +205,12 @@ class AHPWeightPage(ttk.Frame):
         tree_frame = ttk.Frame(left)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        columns = ("name", "scope", "year", "version", "cr", "status", "active")
+        columns = ("profil", "scope", "year", "version", "cr", "status", "active")
         self.profile_tree = ttk.Treeview(
             tree_frame, columns=columns, show="headings", height=16
         )
         headings = {
-            "name": "Profil Adi",
+            "profil": "Profil Adi",
             "scope": "Kapsam",
             "year": "Yil",
             "version": "Versiyon",
@@ -219,12 +219,12 @@ class AHPWeightPage(ttk.Frame):
             "active": "Aktif",
         }
         widths = {
-            "name": 160, "scope": 110, "year": 48,
-            "version": 72, "cr": 56, "status": 116, "active": 48,
+            "profil": 180, "scope": 100, "year": 44,
+            "version": 68, "cr": 52, "status": 120, "active": 44,
         }
         for col, text in headings.items():
             self.profile_tree.heading(col, text=text)
-            self.profile_tree.column(col, width=widths[col], anchor=tk.W)
+            self.profile_tree.column(col, width=widths[col], minwidth=40, anchor=tk.W)
 
         for status, color in DURUM_RENK.items():
             self.profile_tree.tag_configure(status, background=color)
@@ -262,10 +262,22 @@ class AHPWeightPage(ttk.Frame):
         ttk.Separator(right, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
         ttk.Label(right, text="Kriter Agirliklari", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W)
         self.weight_canvas_tab1 = tk.Canvas(
-            right, height=180, bg="white",
+            right, height=120, bg="white",
             highlightthickness=1, highlightbackground="#BDBDBD",
         )
         self.weight_canvas_tab1.pack(fill=tk.X, pady=(4, 0))
+
+        ttk.Separator(right, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(8, 4))
+        ttk.Label(right, text="Ikili Karsilastirma Matrisi", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W)
+        self.detail_matrix_text = tk.Text(
+            right, height=8, wrap=tk.NONE,
+            font=("Consolas", 8), state=tk.DISABLED,
+            bg="#F8F9FA", relief=tk.FLAT,
+        )
+        mat_sb_x = ttk.Scrollbar(right, orient=tk.HORIZONTAL, command=self.detail_matrix_text.xview)
+        self.detail_matrix_text.configure(xscrollcommand=mat_sb_x.set)
+        self.detail_matrix_text.pack(fill=tk.X, pady=(2, 0))
+        mat_sb_x.pack(fill=tk.X)
 
         # Aksiyon butonlari --- 2 sira
         action_frame = ttk.Frame(frame, padding=(0, 6, 0, 0))
@@ -494,14 +506,25 @@ class AHPWeightPage(ttk.Frame):
                     active_profile = profile
                 cr = profile.get("consistency_ratio")
                 cr_text = "" if cr is None else f"{float(cr):.3f}"
+                # profile_name veya name alanından al; ikisi de bos ise "(isimsiz)"
+                pname = (
+                    profile.get("profile_name")
+                    or profile.get("name")
+                    or "(isimsiz)"
+                )
+                # Bytes gelirse guvvenli str'e cevir
+                if isinstance(pname, bytes):
+                    pname = pname.decode("utf-8", errors="replace")
+                pname = str(pname).strip() or "(isimsiz)"
+
                 item = self.profile_tree.insert(
                     "",
                     tk.END,
                     values=(
-                        profile.get("profile_name"),
+                        pname,
                         self._scope_text(profile),
                         profile.get("year") or "",
-                        profile.get("version"),
+                        profile.get("version") or "1",
                         cr_text,
                         DURUM_ETIKET.get(status, status),
                         "Evet" if is_active else "",
@@ -749,46 +772,107 @@ class AHPWeightPage(ttk.Frame):
 
     # ─── Profil Secim Olayi ──────────────────────────────────────────────────
     def _on_profile_select(self):
-        profile = self._selected_profile()
-        if not profile:
+        try:
+            profile = self._selected_profile()
+            if not profile:
+                return
+
+            name = (
+                profile.get("profile_name")
+                or profile.get("name")
+                or "(isimsiz)"
+            )
+            if isinstance(name, bytes):
+                name = name.decode("utf-8", errors="replace")
+            name = str(name).strip() or "(isimsiz)"
+
+            status = profile.get("status", "draft")
+            cr = profile.get("consistency_ratio")
+            notes = profile.get("notes") or ""
+
+            self.detail_name.config(text=name)
+
+            status_fg = {
+                "active": "#2E7D32",
+                "approved": "#1565C0",
+                "rejected": "#C62828",
+                "pending_approval": "#E65100",
+                "archived": "#757575",
+            }.get(status, "#333333")
+            self.detail_status.config(
+                text=DURUM_ETIKET.get(status, status), foreground=status_fg
+            )
+
+            if cr is not None:
+                cr_f = float(cr)
+                cr_color = "#2E7D32" if cr_f <= 0.10 else "#C62828"
+                self.detail_cr.config(
+                    text=f"CR: {cr_f:.4f}  {'Tutarli' if cr_f <= 0.10 else 'Tutarsiz'}",
+                    foreground=cr_color,
+                )
+            else:
+                self.detail_cr.config(text="CR: Hesaplanmamis", foreground="#9E9E9E")
+
+            self.detail_notes.config(state=tk.NORMAL)
+            self.detail_notes.delete("1.0", tk.END)
+            self.detail_notes.insert(tk.END, notes)
+            self.detail_notes.config(state=tk.DISABLED)
+
+            # Agirlik cubukları
+            weights = profile.get("weights") or {}
+            keys = (
+                profile.get("criteria_keys")
+                or list(weights.keys())
+                or self._criterion_keys
+            )
+            self._draw_weight_bars(self.weight_canvas_tab1, keys, weights)
+
+            # Matris gorunumu
+            self._show_detail_matrix(profile, keys)
+
+        except Exception as exc:
+            # Sessiz cokme yerine detay panelinde goster
+            try:
+                self.detail_name.config(text=f"Hata: {exc}")
+            except Exception:
+                pass
+
+    def _show_detail_matrix(self, profile: dict, keys: list):
+        """Detay panelindeki salt-okunur matris widget'ini gunceller."""
+        matrix = profile.get("pairwise_matrix") or []
+        self.detail_matrix_text.config(state=tk.NORMAL)
+        self.detail_matrix_text.delete("1.0", tk.END)
+
+        if not matrix or not keys:
+            self.detail_matrix_text.insert(tk.END, "(matris verisi yok)")
+            self.detail_matrix_text.config(state=tk.DISABLED)
             return
 
-        name = profile.get("profile_name", "---")
-        status = profile.get("status", "draft")
-        cr = profile.get("consistency_ratio")
-        notes = profile.get("notes") or ""
+        n = len(keys)
+        col_w = 7  # her hucre genisligi
 
-        self.detail_name.config(text=name)
+        # Baslik satiri
+        header = " " * 12
+        for k in keys:
+            lbl = KRITER_ETIKET.get(k, k)[:col_w]
+            header += f"{lbl:>{col_w}} "
+        self.detail_matrix_text.insert(tk.END, header + "\n")
+        self.detail_matrix_text.insert(tk.END, "-" * len(header) + "\n")
 
-        status_fg = {
-            "active": "#2E7D32",
-            "approved": "#1565C0",
-            "rejected": "#C62828",
-            "pending_approval": "#E65100",
-            "archived": "#757575",
-        }.get(status, "#333333")
-        self.detail_status.config(
-            text=DURUM_ETIKET.get(status, status), foreground=status_fg
-        )
+        # Deger satirlari
+        for i, ki in enumerate(keys):
+            row_lbl = KRITER_ETIKET.get(ki, ki)[:11]
+            line = f"{row_lbl:<11} |"
+            for j in range(min(n, len(matrix[i]) if i < len(matrix) else 0)):
+                try:
+                    v = float(matrix[i][j])
+                    cell = self._fmt(v)[:col_w]
+                    line += f" {cell:>{col_w}}"
+                except Exception:
+                    line += f" {'?':>{col_w}}"
+            self.detail_matrix_text.insert(tk.END, line + "\n")
 
-        if cr is not None:
-            cr_f = float(cr)
-            cr_color = "#2E7D32" if cr_f <= 0.10 else "#C62828"
-            self.detail_cr.config(
-                text=f"CR: {cr_f:.4f}  {'Tutarli' if cr_f <= 0.10 else 'Tutarsiz'}",
-                foreground=cr_color,
-            )
-        else:
-            self.detail_cr.config(text="CR: Hesaplanmamis", foreground="#9E9E9E")
-
-        self.detail_notes.config(state=tk.NORMAL)
-        self.detail_notes.delete("1.0", tk.END)
-        self.detail_notes.insert(tk.END, notes)
-        self.detail_notes.config(state=tk.DISABLED)
-
-        weights = profile.get("weights") or {}
-        keys = profile.get("criteria_keys") or list(weights.keys()) or self._criterion_keys
-        self._draw_weight_bars(self.weight_canvas_tab1, keys, weights)
+        self.detail_matrix_text.config(state=tk.DISABLED)
 
     def _edit_selected_in_tab2(self):
         """Secili profil matrisini Tab 2'ye yukleyip o sekmeyi acar."""
