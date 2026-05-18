@@ -19,6 +19,7 @@ from app.db.session import open_sqlite_connection
 from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
 from app.schemas.common import ApiResponse
+from app.api.error_responses import ApiException, ErrorCode, create_error_response
 from app.schemas.criteria import (
     CompletionValidateRequest,
     CompletionTaskCreateRequest,
