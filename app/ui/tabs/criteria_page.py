@@ -1242,8 +1242,24 @@ class CriteriaPage:
             pass
 
     def save_data(self):
+        # UI Form Validation
         if not self.selected_course_id:
             messagebox.showwarning("Uyarı", "Lütfen önce listeden işlem yapılacak dersi seçiniz.")
+            return
+
+        if not self.cb_yil.get():
+            messagebox.showerror("Eksik Alan", "Lütfen akademik yıl seçiniz.")
+            self.cb_yil.focus()
+            return
+
+        if not self.cb_donem.get():
+            messagebox.showerror("Eksik Alan", "Lütfen dönem seçiniz.")
+            self.cb_donem.focus()
+            return
+
+        if not self._selected_faculty_id():
+            messagebox.showerror("Eksik Alan", "Lütfen fakülte seçiniz.")
+            self.cb_fakulte.focus()
             return
 
         yil = int(self.cb_yil.get())

@@ -22,6 +22,7 @@ from app.ui.tabs.pool_tab import PoolTab
 from app.ui.tabs.relations_tab import RelationsTab
 from app.ui.tabs.criteria_page import CriteriaPage
 from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
+from app.ui.utils.validation import validate_combobox_selection, show_validation_error
 from app.services.yearly_workflow import (
     is_faculty_criteria_complete,
     get_missing_criteria,
@@ -173,6 +174,17 @@ class CalcTab(ttk.Frame):
     def _on_algo_faculty_change(self, event=None):
         """Fakülte değişince yıl listesini o fakülteye göre güncelle."""
         self._refresh_algo_year_options()
+        self._update_button_state()
+
+    def _update_button_state(self):
+        """Update Next Year button state based on form validity."""
+        fakulte_selected = bool(self.cb_algo_fakulte and self.cb_algo_fakulte.get())
+        year_selected = bool(self.cb_algo_year and self.cb_algo_year.get())
+        
+        if fakulte_selected and year_selected:
+            self._btn_next_year.config(state="normal", bg="#16a34a")
+        else:
+            self._btn_next_year.config(state="disabled", bg="#6b7280")
 
     def _refresh_algo_year_options(self):
         """
@@ -204,6 +216,8 @@ class CalcTab(ttk.Frame):
         else:
             self.cb_algo_year["values"] = []
             self.cb_algo_year.set("")
+        
+        self._update_button_state()
 
     def _algo_scope(self) -> tuple[int, str, int]:
         """Algoritma paneli: (fakulte_id, fakulte_ad, akademik_yil)."""
@@ -273,6 +287,7 @@ class CalcTab(ttk.Frame):
         self.cb_algo_fakulte = ttk.Combobox(next_year_bar, state="readonly", width=28)
         self.cb_algo_fakulte.pack(side=tk.LEFT, padx=(0, 8))
         self.cb_algo_fakulte.bind("<<ComboboxSelected>>", self._on_algo_faculty_change)
+        self.cb_algo_fakulte.bind("<<ComboboxSelected>>", lambda e: self._update_button_state())
 
         tk.Label(
             next_year_bar,
@@ -283,10 +298,14 @@ class CalcTab(ttk.Frame):
         ).pack(side=tk.LEFT, padx=(8, 4))
         self.cb_algo_year = ttk.Combobox(next_year_bar, state="readonly", width=8)
         self.cb_algo_year.pack(side=tk.LEFT, padx=(0, 8))
+        self.cb_algo_year.bind("<<ComboboxSelected>>", lambda e: self._update_button_state())
         
         # Fakülte ve yıl combobox'larını doldur
         self._refresh_algo_faculty_options()
         self._refresh_algo_year_options()
+        
+        # İlk durumda button disabled olsun
+        self._btn_next_year.config(state="disabled", bg="#6b7280")
 
         # "Tumunu Calistir" butonu KALDIRILDI - islevi "Sonraki Yil Mufredat Uret"
         # butonuna tasindi. Tek buton hem kriter tamlık kontrolu yapar hem de
@@ -453,6 +472,23 @@ class CalcTab(ttk.Frame):
         """
         if algo_id not in self.ui_refs:
             return
+
+        # FORM VALIDATION: UI tarafı validasyon
+        # Kullanıcı seçimi yoksa backend'e gitmemesi için
+        if algo_id in ("mock", "ahp", "topsis", "trend", "lr", "rf", "dt", "next_year"):
+            if not validate_combobox_selection(
+                self.cb_algo_fakulte,
+                "Fakülte",
+                error_title="Eksik Seçim"
+            ):
+                return
+            
+            if not validate_combobox_selection(
+                self.cb_algo_year,
+                "Akademik Yıl",
+                error_title="Eksik Seçim"
+            ):
+                return
 
         widgets = self.ui_refs[algo_id]
         if algo_id == "next_year":
