@@ -72,7 +72,7 @@ def main():
         for del_id in del_ids:
             for tbl, col in FK_TABLES:
                 try:
-                    cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,))
+                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,))
                     if not cur.fetchone():
                         continue
                     cur.execute(f"PRAGMA table_info({tbl})")

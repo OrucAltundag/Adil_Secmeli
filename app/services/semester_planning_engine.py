@@ -12,13 +12,18 @@ from app.db.schema_compat import ensure_semester_planning_schema
 from app.services.course_semester_availability_service import (
     display_semester,
     get_course_availability,
-    normalize_semester,
     validate_course_semester,
 )
 from app.services.course_type import build_elective_predicate
 from app.services.instructor_planning_service import check_instructor_feasibility
-from app.services.prerequisite_planning_service import check_prerequisite_order, get_prerequisites
-from app.services.resource_planning_service import check_resource_feasibility, get_course_resource_requirements
+from app.services.prerequisite_planning_service import (
+    check_prerequisite_order,
+    get_prerequisites,
+)
+from app.services.resource_planning_service import (
+    check_resource_feasibility,
+    get_course_resource_requirements,
+)
 from app.services.semester_balance_metrics_service import (
     calculate_plan_score,
     calculate_semester_balance_metrics,
@@ -27,7 +32,10 @@ from app.services.semester_balance_metrics_service import (
     generate_balance_warnings,
 )
 from app.services.semester_planning_policy_service import resolve_policy
-from app.services.semester_workload_service import adjust_targets_by_required_load, get_required_course_load
+from app.services.semester_workload_service import (
+    adjust_targets_by_required_load,
+    get_required_course_load,
+)
 from app.services.time_conflict_planning_service import generate_conflict_warnings
 
 

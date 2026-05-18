@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
-import uuid
 import json
+import uuid
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session
-from fastapi import UploadFile, HTTPException
 
-from app.db.models import SecureImportJob
+from fastapi import HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
 from app.core.config import AppConfig
+from app.db.models import SecureImportJob
 from app.schemas.auth import UserContext
 from app.services.file_upload_security_service import FileUploadSecurityService
 from app.services.security_audit_service import SecurityAuditService
+
 
 class SecureImportService:
     def __init__(self, db: Session, config: AppConfig, upload_security: FileUploadSecurityService, audit_service: SecurityAuditService):
@@ -22,7 +24,7 @@ class SecureImportService:
         file_hash, size_bytes = await self.upload_security.validate_upload(file)
 
         job_id = f"import_{uuid.uuid4().hex}"
-        
+
         job = SecureImportJob(
             id=job_id,
             import_type=import_type,
@@ -65,14 +67,14 @@ class SecureImportService:
         job.warning_count = sum(1 for r in rows if r.get('status') == 'warning')
         job.error_count = sum(1 for r in rows if r.get('status') == 'error')
         job.critical_count = sum(1 for r in rows if r.get('status') == 'critical')
-        
+
         job.preview_summary_json = json.dumps(summary_data)
-        
+
         if job.critical_count > 0:
             job.status = "validation_failed"
         else:
             job.status = "pending_approval" if job.approval_required else "validated"
-            
+
         self.db.commit()
         self.db.refresh(job)
         return job
@@ -81,7 +83,7 @@ class SecureImportService:
         job = self.db.query(SecureImportJob).filter(SecureImportJob.id == job_id).first()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-            
+
         if job.status != "pending_approval":
             raise HTTPException(status_code=400, detail=f"Cannot approve job in {job.status} state")
 
@@ -107,7 +109,7 @@ class SecureImportService:
         job = self.db.query(SecureImportJob).filter(SecureImportJob.id == job_id).first()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-            
+
         job.status = "applied"
         job.applied_by = user.username
         job.applied_at = datetime.now(timezone.utc)

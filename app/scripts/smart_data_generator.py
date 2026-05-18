@@ -18,14 +18,14 @@ def tablolari_yenile():
     """Performans, Popülerlik ve Skor tablolarını sıfırlar ve 4 kriterli yeni şemayı uygular."""
     conn = baglanti_kur()
     cursor = conn.cursor()
-    
+
     print("🧹 Tablolar temizleniyor ve 4 kriterli şema güncelleniyor...")
-    
+
     # Eski tabloları uçur
     tablolar = ["performans", "populerlik", "skor"]
     for t in tablolar:
         cursor.execute(f"DROP TABLE IF EXISTS {t}")
-    
+
     # 1. PERFORMANS TABLOSU
     cursor.execute("""
         CREATE TABLE performans (
@@ -72,7 +72,7 @@ def tablolari_yenile():
             FOREIGN KEY(ders_id) REFERENCES ders(ders_id)
         )
     """)
-    
+
     conn.commit()
     conn.close()
     print("✅ Tabloların yapısı (4 Kriter) güncellendi.")
@@ -88,7 +88,7 @@ def veri_uret_ve_hesapla():
     # Eskiden 'SELECT * FROM ders' yapıyorduk, hepsini alıyordu.
     # Şimdi sadece müfredat tablosunda kaydı olan Mühendislik derslerini çekiyoruz.
     query = """
-        SELECT DISTINCT d.ders_id, d.ad 
+        SELECT DISTINCT d.ders_id, d.ad
         FROM mufredat m
         JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
         JOIN ders d ON md.ders_id = d.ders_id
@@ -99,7 +99,7 @@ def veri_uret_ve_hesapla():
     """
     cursor.execute(query)
     dersler = cursor.fetchall()
-    
+
     if not dersler:
         print("⚠️ HATA: 2022 yılına ait Mühendislik dersi bulunamadı!")
         print("   Lütfen önce CSV verilerini 'import_real_data.py' ile yüklediğinden emin ol.")
@@ -119,9 +119,9 @@ def veri_uret_ve_hesapla():
             ortalama_not = random.uniform(30, 49.9)
         else:
             ortalama_not = random.uniform(50, 95)
-        
+
         basari_orani = ortalama_not / 100.0
-        perf_puan = ortalama_not 
+        perf_puan = ortalama_not
 
         cursor.execute("""
             INSERT INTO performans (ders_id, akademik_yil, ortalama_not, basari_orani, ham_puan)
@@ -132,11 +132,13 @@ def veri_uret_ve_hesapla():
         kontenjan = random.choice([30, 40, 50, 60])
         talep = int(kontenjan * random.uniform(0.2, 1.5))
         doluluk = talep / kontenjan
-        if doluluk > 1.0: doluluk = 1.0
-        
+        if doluluk > 1.0:
+            doluluk = 1.0
+
         ilgi = talep / FAKULTE_OGRENCI_SAYISI
         pop_puan = (doluluk * 70) + (ilgi * 10 * 30)
-        if pop_puan > 100: pop_puan = 100
+        if pop_puan > 100:
+            pop_puan = 100
 
         cursor.execute("""
             INSERT INTO populerlik (ders_id, akademik_yil, talep_sayisi, kontenjan, fakulte_mevcudu, doluluk_orani, ilgi_orani, ham_puan)
@@ -151,7 +153,7 @@ def veri_uret_ve_hesapla():
         else:
             # Basit Ağırlıklı Ortalama (Main.py'deki AHP öncesi veri doldurma)
             final_skor = (perf_puan * 0.5) + (pop_puan * 0.3) + (SABIT_TREND_PUANI * 0.1) + (SABIT_ANKET_PUANI * 0.1)
-        
+
         cursor.execute("""
             INSERT INTO skor (ders_id, akademik_yil, skor_top, b_norm, p_norm, t_norm, a_norm)
             VALUES (?, 2022, ?, ?, ?, ?, ?)

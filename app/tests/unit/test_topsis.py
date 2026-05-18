@@ -9,7 +9,6 @@ import pytest
 
 from app.algorithms.mcdm.topsis import TOPSISRanker
 
-
 pytestmark = pytest.mark.unit
 
 

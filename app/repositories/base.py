@@ -7,7 +7,6 @@ import re
 import sqlite3
 from typing import Any
 
-
 SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 

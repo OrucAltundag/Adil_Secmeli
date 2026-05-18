@@ -17,7 +17,10 @@ from app.services.decision_policy_service import (
     ensure_default_decision_policy,
     resolve_decision_policy,
 )
-from app.services.decision_run_service import _apply_governance, record_decision_run_for_faculty_year
+from app.services.decision_run_service import (
+    _apply_governance,
+    record_decision_run_for_faculty_year,
+)
 from app.services.explanation_engine import build_decision_explanation
 from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL
 from app.services.trend_analysis_service import analyze_trend_values

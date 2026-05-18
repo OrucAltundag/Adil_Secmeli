@@ -10,12 +10,12 @@ passes an explicit flag.
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
@@ -24,7 +24,6 @@ from app.core.config import load_app_config
 from app.db.backend import is_postgresql_url
 from app.db.models import Base
 from app.db.session import stamp_database_head
-
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 BATCH_SIZE = 500

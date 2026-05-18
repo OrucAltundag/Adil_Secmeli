@@ -14,8 +14,14 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.db.models import (
-    MissingDataItem, DataValidationIssue, LowConfidenceDecisionFlag,
-    CourseDecision, Ders, Performans, Populerlik, AnketSonuclari, Skor
+    AnketSonuclari,
+    DataValidationIssue,
+    Ders,
+    LowConfidenceDecisionFlag,
+    MissingDataItem,
+    Performans,
+    Populerlik,
+    Skor,
 )
 
 
@@ -31,7 +37,7 @@ def detect_missing_data_for_course(
 ) -> list[MissingDataItem]:
     """
     Bir ders için eksik veriyi tespit et.
-    
+
     Kontrol edilen veriler:
     - success_rate (Performans)
     - capacity (Populerlik)
@@ -45,23 +51,23 @@ def detect_missing_data_for_course(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         course = session.query(Ders).filter(Ders.ders_id == course_id).first()
         if not course:
             return []
-        
+
         missing_items = []
         faculty_id = course.fakulte_id
         department_id = course.bolum_id
-        
+
         # Check Performans
         perf = session.query(Performans).filter(
             Performans.ders_id == course_id,
             Performans.akademik_yil == year,
             Performans.donem == semester
         ).first()
-        
+
         if not perf or perf.basari_orani is None:
             item = MissingDataItem(
                 course_id=course_id,
@@ -77,14 +83,14 @@ def detect_missing_data_for_course(
                 detected_at=_now(),
             )
             missing_items.append(item)
-        
+
         # Check Populerlik / Capacity
         pop = session.query(Populerlik).filter(
             Populerlik.ders_id == course_id,
             Populerlik.akademik_yil == year,
             Populerlik.donem == semester
         ).first()
-        
+
         if not pop or pop.kontenjan is None:
             item = MissingDataItem(
                 course_id=course_id,
@@ -100,7 +106,7 @@ def detect_missing_data_for_course(
                 detected_at=_now(),
             )
             missing_items.append(item)
-        
+
         if not pop or pop.talep_sayisi is None:
             item = MissingDataItem(
                 course_id=course_id,
@@ -116,12 +122,12 @@ def detect_missing_data_for_course(
                 detected_at=_now(),
             )
             missing_items.append(item)
-        
+
         # Check Survey
         survey = session.query(AnketSonuclari).filter(
             AnketSonuclari.ders_id == course_id
         ).first()
-        
+
         if not survey or survey.oy_sayisi is None or survey.oy_sayisi == 0:
             item = MissingDataItem(
                 course_id=course_id,
@@ -137,14 +143,14 @@ def detect_missing_data_for_course(
                 detected_at=_now(),
             )
             missing_items.append(item)
-        
+
         # Check Score
         score = session.query(Skor).filter(
             Skor.ders_id == course_id,
             Skor.akademik_yil == year,
             Skor.donem == semester
         ).first()
-        
+
         if not score or score.skor_top is None:
             item = MissingDataItem(
                 course_id=course_id,
@@ -160,12 +166,12 @@ def detect_missing_data_for_course(
                 detected_at=_now(),
             )
             missing_items.append(item)
-        
+
         # Check Trend (en az 2 yıl data)
         years_of_data = session.query(Performans.akademik_yil).filter(
             Performans.ders_id == course_id
         ).distinct().count()
-        
+
         if years_of_data < 2:
             item = MissingDataItem(
                 course_id=course_id,
@@ -181,12 +187,12 @@ def detect_missing_data_for_course(
                 detected_at=_now(),
             )
             missing_items.append(item)
-        
+
         # Save all items
         for item in missing_items:
             session.add(item)
         session.commit()
-        
+
         return missing_items
     finally:
         if close_session:
@@ -211,7 +217,7 @@ def record_low_confidence_decision(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         flag = LowConfidenceDecisionFlag(
             decision_run_id=decision_run_id,
@@ -255,7 +261,7 @@ def record_validation_issue(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         issue = DataValidationIssue(
             source_type=source_type,
@@ -288,7 +294,7 @@ def get_missing_data_matrix(
 ) -> list[dict]:
     """
     Eksik veri matrisini döndür.
-    
+
     Returns:
         [
             {
@@ -307,19 +313,19 @@ def get_missing_data_matrix(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         # Get all missing items for year/faculty
         q = session.query(MissingDataItem).filter(
             MissingDataItem.year == year,
             MissingDataItem.resolved_at.is_(None)
         )
-        
+
         if faculty_id:
             q = q.filter(MissingDataItem.faculty_id == faculty_id)
-        
+
         items = q.all()
-        
+
         # Group by course
         by_course = {}
         for item in items:
@@ -338,7 +344,7 @@ def get_missing_data_matrix(
                 by_course[course_id]['warning'] += 1
             else:
                 by_course[course_id]['info'] += 1
-        
+
         # Build matrix
         matrix = []
         for course_id, data in by_course.items():
@@ -346,7 +352,7 @@ def get_missing_data_matrix(
             if course:
                 total_missing = len(data['missing_fields'])
                 quality = "good" if total_missing == 0 else "medium" if total_missing <= 2 else "poor"
-                
+
                 matrix.append({
                     'course_code': course.kod or "",
                     'course_name': course.ad,
@@ -358,7 +364,7 @@ def get_missing_data_matrix(
                     'total_missing': total_missing,
                     'data_quality': quality,
                 })
-        
+
         return sorted(matrix, key=lambda x: x['total_missing'], reverse=True)
     finally:
         if close_session:

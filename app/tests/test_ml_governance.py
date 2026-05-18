@@ -8,8 +8,14 @@ from sklearn.tree import DecisionTreeClassifier
 from app.api import routes
 from app.benchmark.registry import AlgorithmRegistry
 from app.db.schema_compat import ensure_ml_governance_schema
-from app.services.ml_algorithm_registry_service import get_algorithm_config, seed_default_algorithm_registry
-from app.services.ml_confidence_service import combine_confidence_signals, confidence_from_sample_size
+from app.services.ml_algorithm_registry_service import (
+    get_algorithm_config,
+    seed_default_algorithm_registry,
+)
+from app.services.ml_confidence_service import (
+    combine_confidence_signals,
+    confidence_from_sample_size,
+)
 from app.services.ml_evaluation_service import detect_overfitting, run_cross_validation
 from app.services.ml_explainability_service import explain_model_prediction
 from app.services.ml_feature_pipeline import build_course_feature_dataset

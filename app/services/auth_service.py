@@ -1,15 +1,21 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timezone
 import logging
-from fastapi import Request, HTTPException, status, Depends
-from sqlalchemy.orm import Session
-from typing import Optional, Tuple
+from datetime import datetime, timezone
+from typing import Optional
 
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
+
+from app.core.config import AppConfig, load_app_config
+from app.core.security import (
+    generate_api_key,
+    generate_client_id,
+    hash_api_key,
+    verify_api_key,
+)
 from app.db.database import get_session
 from app.db.models import ApiClient
-from app.core.config import load_app_config, AppConfig
-from app.core.security import generate_api_key, hash_api_key, verify_api_key, generate_client_id
-from app.schemas.auth import UserContext, ApiClientCreate, ApiClientCreatedResponse
+from app.schemas.auth import ApiClientCreate, ApiClientCreatedResponse, UserContext
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +86,12 @@ class AuthService:
 
     def get_current_user_context(self, request: Request) -> UserContext:
         is_prod = self.config.environment == "production"
-        
+
         if not self.config.api_auth_enabled:
             # If disabled in production, log a strong warning, but still allow if the config says so
             if is_prod:
                 logger.warning("SECURITY WARNING: API_AUTH_ENABLED is false in production environment!")
-            
+
             return UserContext(
                 user_id="demo_user",
                 username="Demo Admin",

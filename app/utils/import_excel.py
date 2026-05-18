@@ -8,14 +8,15 @@ Excel'den veri aktarım modülü.
 import logging
 import os
 import sys
+
 import pandas as pd
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, parent_dir)
 
-from app.db.database import SessionLocal, get_session, dispose_session
-from app.db.models import Fakulte, Bolum, Ders, Performans, Populerlik
+from app.db.database import dispose_session, get_session
+from app.db.models import Bolum, Ders, Fakulte, Performans, Populerlik
 
 LOG_DIR = os.path.join(parent_dir, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -190,7 +191,7 @@ def import_data(file_path, clear_existing=False):
                 db.flush()
                 bolum_map[bol_key] = (yeni.bolum_id, bol_ad)
                 counters["bolum"] += 1
-            b_id = bolum_map[bol_key][0]
+            bolum_map[bol_key][0]
 
             # Ders upsert (kod ile kontrol)
             mevcut = db.query(Ders).filter(Ders.kod == ders_kod).first()
@@ -248,7 +249,7 @@ def import_data(file_path, clear_existing=False):
                 db.add(perf)
 
             # Popülerlik
-            pop_puan = safe_float(row.get("PopülerlikPuanı"), 0.0)
+            safe_float(row.get("PopülerlikPuanı"), 0.0)
             doluluk = min(1.0, katilimci / 50.0) if katilimci else 0.0
             pop = db.query(Populerlik).filter(
                 Populerlik.ders_id == ders_id,

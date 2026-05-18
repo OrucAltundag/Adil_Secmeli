@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
 import math
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -20,7 +20,12 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, train_test_split
+from sklearn.model_selection import (
+    KFold,
+    StratifiedKFold,
+    cross_val_score,
+    train_test_split,
+)
 
 
 @dataclass

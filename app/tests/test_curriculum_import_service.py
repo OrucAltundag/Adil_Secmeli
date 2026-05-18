@@ -106,4 +106,3 @@ def test_import_curriculum_excel_rejects_cross_semester_duplicate():
                 os.unlink(p)
             except OSError:
                 pass
-

@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
+
 from app.db.models import Ders
 
 # Türkçe stop-words (gereksiz kelimeleri filtrele)
@@ -35,18 +36,18 @@ class SimilarityEngine:
         # 1. Tüm dersleri ve içeriklerini çek
         # (Gerçek hayatta sadece aynı fakülteyi çekmek performansı artırır)
         dersler = self.db.query(Ders.ders_id, Ders.ad, Ders.bilgi).all()
-        
+
         if not dersler:
             return [], None
 
         # DataFrame'e çevir
         df = pd.DataFrame(dersler, columns=['id', 'ad', 'icerik'])
-        
+
         # Hedef dersi bul
         target_course = df[df['id'] == target_course_id]
         if target_course.empty:
             return [], None
-            
+
         target_index = target_course.index[0]
 
         # 2. NLP İşlemi: Stop-words temizleme + TF-IDF
@@ -58,7 +59,7 @@ class SimilarityEngine:
 
         df['icerik'] = df['icerik'].apply(_remove_stopwords)
         tfidf = TfidfVectorizer(max_features=500, stop_words=list(TURKCE_STOP_WORDS))
-        
+
         tfidf_matrix = tfidf.fit_transform(df['icerik'])
 
         # 3. Benzerlik Hesapla (Cosine Similarity)
@@ -67,7 +68,7 @@ class SimilarityEngine:
 
         # 4. Sonuçları Sırala
         similarity_scores = list(enumerate(cosine_sim[0]))
-        
+
         # Puana göre tersten sırala (En yüksek puan en başa)
         # Kendisini (1.0 puan) listeden çıkarmak için [1:] yapıyoruz
         sorted_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)[1:top_n+1]
@@ -79,13 +80,13 @@ class SimilarityEngine:
 
         for i, score in sorted_scores:
             related_course_name = df.iloc[i]['ad']
-            
+
             # Sonuç listesi için
             results.append({
                 "ders": related_course_name,
                 "skor": score
             })
-            
+
             # Grafik çizimi için (Ağaç yapısı)
             # Sadece anlamlı ilişkileri çiz (Örn: %10 üzeri benzerlik)
             if score > 0.1:

@@ -10,7 +10,6 @@ from typing import Any
 
 from app.db.schema_compat import ensure_semester_planning_schema
 
-
 BOOL_FIELDS = {
     "allow_unbalanced_distribution",
     "same_course_repeat_requires_approval",

@@ -12,4 +12,3 @@ from app.services.reporting_service import (  # noqa: F401
     status_label,
     term_key,
 )
-

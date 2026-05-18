@@ -43,7 +43,13 @@ class TestUIModuleImport:
 
     def test_import_services(self):
         """Temel servisler import edilebilmeli."""
+        from app.services.data_confidence_service import (  # noqa: F401
+            calculate_data_confidence,
+        )
+        from app.services.explanation_engine import (  # noqa: F401
+            build_decision_explanation,
+        )
         from app.services.havuz_karar import calculate_next_status  # noqa: F401
-        from app.services.trend_analysis_service import analyze_trend_values  # noqa: F401
-        from app.services.data_confidence_service import calculate_data_confidence  # noqa: F401
-        from app.services.explanation_engine import build_decision_explanation  # noqa: F401
+        from app.services.trend_analysis_service import (  # noqa: F401
+            analyze_trend_values,
+        )

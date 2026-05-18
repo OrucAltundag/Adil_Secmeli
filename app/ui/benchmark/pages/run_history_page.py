@@ -4,7 +4,13 @@ import tkinter as tk
 from tkinter import ttk
 
 from app.ui.benchmark import mock_data
-from app.ui.benchmark.widgets import DataTable, ErrorBanner, JsonPreviewWidget, SectionHeader, run_async
+from app.ui.benchmark.widgets import (
+    DataTable,
+    ErrorBanner,
+    JsonPreviewWidget,
+    SectionHeader,
+    run_async,
+)
 
 
 class RunHistoryPage(ttk.Frame):

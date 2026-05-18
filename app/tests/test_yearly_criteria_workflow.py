@@ -11,7 +11,10 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api import routes
 from app.services.ai_engine import HavuzAIEngine
-from app.services.calculation import generate_next_year_curricula, run_all_algorithms_for_year
+from app.services.calculation import (
+    generate_next_year_curricula,
+    run_all_algorithms_for_year,
+)
 from app.services.curriculum_import_service import import_curriculum_excel
 from app.services.yearly_workflow import (
     get_faculty_year_status,

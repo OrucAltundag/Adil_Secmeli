@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timezone
 import hashlib
 import json
-from sqlalchemy.orm import Session
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from app.db.models import SecurityAuditLog
+from sqlalchemy.orm import Session
+
 from app.core.config import AppConfig
+from app.db.models import SecurityAuditLog
+
 
 class SecurityAuditService:
     def __init__(self, db: Session, config: AppConfig):
@@ -84,7 +86,7 @@ class SecurityAuditService:
         for log in logs:
             if log.previous_hash != expected_previous_hash:
                 invalid_entries.append(log.id)
-            
+
             # verify self hash
             payload = f"{log.event_type}|{log.actor_id}|{log.action}|{log.success}|{log.created_at.isoformat()}|{log.previous_hash or ''}"
             computed_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()

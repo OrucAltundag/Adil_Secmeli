@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import math
 import sqlite3
+from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
 from app.services.algorithm_governance_service import (

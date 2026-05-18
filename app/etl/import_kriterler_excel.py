@@ -13,6 +13,7 @@
 import os
 import re
 import sqlite3
+
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -210,7 +211,7 @@ def run_import(excel_path: str, db_path: str = None):
                 """, (ders_id, yil, donem_norm, kayit, kont, doluluk_orani))
 
                 result["eklenen"] += 1
-            except Exception as e:
+            except Exception:
                 result["hata"] += 1
 
         conn.commit()

@@ -10,7 +10,6 @@ from typing import Any
 
 from app.db.schema_compat import ensure_criteria_completion_governance_schema
 
-
 MISSING_STRINGS = {"", "-", "yok", "n/a", "na", "none", "null"}
 
 

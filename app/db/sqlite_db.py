@@ -11,9 +11,9 @@ from __future__ import annotations
 from typing import Any, Optional, Sequence
 
 import pandas as pd
-from sqlalchemy import text, inspect
+from sqlalchemy import inspect, text
 
-from app.db.database import get_engine, get_session
+from app.db.database import get_engine
 
 
 class Database:
@@ -134,6 +134,7 @@ class Database:
             return f":{key}"
 
         import re
+
         # Sadece string dışındaki ? işaretlerini değiştir
         new_query = re.sub(r"\?", replacer, query)
         return new_query, param_dict if param_dict else None

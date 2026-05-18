@@ -145,8 +145,19 @@ class AHPWeightPage(ttk.Frame):
     def _conn(self):
         conn = getattr(getattr(self.app, "db", None), "conn", None)
         if conn is None:
-            raise RuntimeError("Veritabani baglantisi yok.")
+            raise RuntimeError(self._friendly_backend_error())
         return conn
+
+    @staticmethod
+    def _friendly_backend_error() -> str:
+        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
+
+    def _format_error(self, exc: Exception) -> str:
+        text = str(exc)
+        markers = ("Veritabani", "Veritaban", "database", "sqlite", "connection", "baglanti")
+        if any(marker.lower() in text.lower() for marker in markers):
+            return self._friendly_backend_error()
+        return text
 
     # ─── Ana UI ──────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -513,7 +524,7 @@ class AHPWeightPage(ttk.Frame):
 
             self._rebuild_matrix_grid()
         except Exception as exc:
-            messagebox.showerror("AHP Agirlik Yonetimi", str(exc))
+            messagebox.showerror("AHP Agirlik Yonetimi", self._format_error(exc))
 
     # ─── Matris Grid ─────────────────────────────────────────────────────────
     def _rebuild_matrix_grid(self, matrix: list[list] | None = None):
@@ -673,7 +684,7 @@ class AHPWeightPage(ttk.Frame):
 
             self._draw_weight_bars(self.weight_canvas_tab2, keys, weights)
         except Exception as exc:
-            messagebox.showerror("AHP Hesaplama", str(exc))
+            messagebox.showerror("AHP Hesaplama", self._format_error(exc))
 
     def _draw_cr_bar(self, cr: float):
         self.cr_bar.update_idletasks()
@@ -840,7 +851,7 @@ class AHPWeightPage(ttk.Frame):
             self.refresh()
             messagebox.showinfo("AHP", "Matris profile kaydedildi.")
         except Exception as exc:
-            messagebox.showerror("AHP", str(exc))
+            messagebox.showerror("AHP", self._format_error(exc))
 
     # ─── Etki & Analiz ───────────────────────────────────────────────────────
     def load_impact(self):
@@ -913,7 +924,7 @@ class AHPWeightPage(ttk.Frame):
             self.impact_text.config(state=tk.DISABLED)
 
         except Exception as exc:
-            messagebox.showerror("AHP Etki", str(exc))
+            messagebox.showerror("AHP Etki", self._format_error(exc))
 
     # ─── Profil CRUD ─────────────────────────────────────────────────────────
     def create_default_profile(self):
@@ -930,7 +941,7 @@ class AHPWeightPage(ttk.Frame):
             self.refresh()
             messagebox.showinfo("AHP", f"Profil olusturuldu: #{profile['id']}")
         except Exception as exc:
-            messagebox.showerror("AHP", str(exc))
+            messagebox.showerror("AHP", self._format_error(exc))
 
     def validate_selected(self):
         self._profile_action(
@@ -986,7 +997,7 @@ class AHPWeightPage(ttk.Frame):
             self.refresh()
             messagebox.showinfo("AHP", message)
         except Exception as exc:
-            messagebox.showerror("AHP", str(exc))
+            messagebox.showerror("AHP", self._format_error(exc))
 
     def _selected_profile(self):
         selected = self.profile_tree.selection()
@@ -1028,7 +1039,7 @@ class AHPWeightPage(ttk.Frame):
             self.clipboard_append(json_str)
             messagebox.showinfo("AHP", "Matris JSON olarak panoya kopyalandi.")
         except Exception as exc:
-            messagebox.showerror("AHP", str(exc))
+            messagebox.showerror("AHP", self._format_error(exc))
 
     @staticmethod
     def _fmt(v: float) -> str:

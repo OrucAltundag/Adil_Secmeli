@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import AgglomerativeClustering, DBSCAN, KMeans
+from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 
 from app.algorithms.base import AlgorithmOutput, IClusterer
 
@@ -97,4 +97,3 @@ class DBSCANClusterer(_ClustererBase):
             estimator=DBSCAN(eps=eps, min_samples=min_samples),
             parameters={"eps": eps, "min_samples": min_samples},
         )
-

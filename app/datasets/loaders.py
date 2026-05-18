@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -178,4 +177,3 @@ def sanitize_dataset(bundle: DatasetBundle) -> DatasetBundle:
         synthetic=dict(bundle.synthetic),
         metadata=dict(bundle.metadata),
     )
-

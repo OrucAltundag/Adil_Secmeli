@@ -145,4 +145,3 @@ def export_ahp_sensitivity_report(conn: sqlite3.Connection, run_id: int, format:
 
 def _row_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
-

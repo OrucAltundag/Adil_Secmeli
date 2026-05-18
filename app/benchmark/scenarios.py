@@ -70,4 +70,3 @@ DEFAULT_SCENARIOS: dict[str, BenchmarkScenario] = {
         algorithm_names=["KMeans", "HierarchicalClustering", "DBSCAN"],
     ),
 }
-

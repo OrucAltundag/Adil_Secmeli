@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 import re
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from typing import Dict, Any, List
+from typing import Any, Dict
 
-from app.db.models import SqlConsoleAuditLog
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.core.config import AppConfig
+from app.db.models import SqlConsoleAuditLog
 from app.schemas.auth import UserContext
 from app.services.security_audit_service import SecurityAuditService
 
@@ -25,12 +26,12 @@ class SqlConsoleService:
     def is_sql_console_enabled(self, user: UserContext) -> bool:
         if not self.config.enable_sql_console:
             return False
-        
+
         is_prod = self.config.environment == "production"
         if is_prod:
             # Absolute hard block in production
             return False
-            
+
         # Roles allowed to use SQL Console
         return user.role in ["admin", "developer"]
 
@@ -51,16 +52,16 @@ class SqlConsoleService:
 
         dangerous = self.is_dangerous_sql(sql_text)
         read_only = self.is_read_only_sql(sql_text)
-        
+
         # Determine if allowed
         allowed = True
         error_msg = None
-        
+
         if dangerous:
             if not self.config.allow_dangerous_sql and not skip_dangerous_check:
                 allowed = False
                 error_msg = "Dangerous SQL detected and blocked by policy."
-            
+
         if self.config.sql_console_read_only_in_production and self.config.environment == "production" and not read_only:
             allowed = False
             error_msg = "SQL console is read-only in production."
@@ -71,22 +72,22 @@ class SqlConsoleService:
 
         try:
             result = self.db.execute(text(sql_text))
-            
+
             if read_only or result.returns_rows:
                 rows = result.fetchall()
                 data = [dict(row._mapping) for row in rows]
                 row_count = len(data)
                 self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=True, allowed=True, row_count=row_count)
-                
+
                 # Commit any side effects (like PRAGMA that might return rows)
-                self.db.commit() 
+                self.db.commit()
                 return {"success": True, "data": data, "row_count": row_count}
             else:
                 row_count = result.rowcount
                 self.db.commit()
                 self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=True, allowed=True, row_count=row_count)
                 return {"success": True, "data": [], "row_count": row_count, "message": "Query executed successfully."}
-                
+
         except Exception as e:
             self.db.rollback()
             self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=False, allowed=True, error_msg=str(e))

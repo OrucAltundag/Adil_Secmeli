@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
 import sqlite3
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import pandas as pd

@@ -6,26 +6,47 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from app.services.db import get_raw_connection
 import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-from app.db.schema_compat import ensure_ahp_governance_schema, ensure_decision_governance_schema
+from app.db.schema_compat import (
+    ensure_ahp_governance_schema,
+    ensure_decision_governance_schema,
+)
 from app.services.ahp_profile_service import DEFAULT_CRITERIA_KEYS, resolve_ahp_profile
-from app.services.data_confidence_service import calculate_course_data_confidence, save_data_confidence
+from app.services.data_confidence_service import (
+    calculate_course_data_confidence,
+    save_data_confidence,
+)
 from app.services.data_quality_integration_service import (
     assess_data_readiness_cursor,
     generate_coverage_report_cursor,
     save_data_coverage_report,
 )
+from app.services.db import get_raw_connection
 from app.services.decision_policy_service import classify_score, resolve_decision_policy
-from app.services.explanation_engine import build_decision_explanation, save_decision_explanation
-from app.services.fairness_report_service import generate_fairness_report, save_fairness_report
+from app.services.explanation_engine import (
+    build_decision_explanation,
+    save_decision_explanation,
+)
+from app.services.fairness_report_service import (
+    generate_fairness_report,
+    save_fairness_report,
+)
 from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL
-from app.services.sensitivity_analysis_service import analyze_decision_sensitivity, save_sensitivity_result
-from app.services.topsis_explainability_service import calculate_topsis_breakdowns, save_score_breakdown
-from app.services.trend_analysis_service import analyze_course_trend, save_trend_analysis
+from app.services.sensitivity_analysis_service import (
+    analyze_decision_sensitivity,
+    save_sensitivity_result,
+)
+from app.services.topsis_explainability_service import (
+    calculate_topsis_breakdowns,
+    save_score_breakdown,
+)
+from app.services.trend_analysis_service import (
+    analyze_course_trend,
+    save_trend_analysis,
+)
 
 ALGORITHM_VERSION = "ahp-topsis-trend-governance-v1"
 

@@ -15,13 +15,27 @@ from app.services.algorithm_governance_service import (
     seed_default_algorithm_registry,
     validate_algorithm_for_task,
 )
-from app.services.baseline_benchmark_service import MajorityClassPredictor, RuleBasedBaseline, compare_with_baseline
+from app.services.baseline_benchmark_service import (
+    MajorityClassPredictor,
+    RuleBasedBaseline,
+    compare_with_baseline,
+)
 from app.services.benchmark_metric_router import calculate_metrics
 from app.services.clustering_evaluation_service import evaluate_clustering
-from app.services.data_leakage_detector import detect_duplicate_entity_leakage, generate_leakage_report
+from app.services.data_leakage_detector import (
+    detect_duplicate_entity_leakage,
+    generate_leakage_report,
+)
 from app.services.governed_benchmark_service import execute_governed_benchmark_run
-from app.services.model_diagnostics_service import detect_class_imbalance, detect_high_variance_across_folds, detect_overfitting
-from app.services.statistical_comparison_service import bootstrap_confidence_interval, compare_two_models
+from app.services.model_diagnostics_service import (
+    detect_class_imbalance,
+    detect_high_variance_across_folds,
+    detect_overfitting,
+)
+from app.services.statistical_comparison_service import (
+    bootstrap_confidence_interval,
+    compare_two_models,
+)
 from app.services.validation_strategy_service import choose_validation_strategy
 
 
@@ -159,7 +173,10 @@ def test_governed_benchmark_run_persists_results(conn):
 
 def test_api_smoke(monkeypatch, tmp_path):
     from app.api import routes
-    from app.schemas.algorithm_governance import DataGuardCheckRequest, GovernedBenchmarkRunRequest
+    from app.schemas.algorithm_governance import (
+        DataGuardCheckRequest,
+        GovernedBenchmarkRunRequest,
+    )
 
     db_path = tmp_path / "api.sqlite"
     conn = sqlite3.connect(db_path)

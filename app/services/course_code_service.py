@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-import os
 import re
 import sqlite3
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from app.core.config import resolve_sqlite_db_path
 from app.db.schema_compat import ensure_ders_code_schema
 from app.services.db import get_raw_connection
-
 
 _TR_ASCII_MAP: tuple[tuple[str, str], ...] = (
     ("\u00c7", "C"),

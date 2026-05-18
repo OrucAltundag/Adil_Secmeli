@@ -7,11 +7,12 @@
 # =============================================================================
 
 import sqlite3
-from app.core.config import resolve_sqlite_db_path
-from app.services.db import get_raw_connection
+
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+from app.core.config import resolve_sqlite_db_path
 
 TURKCE_STOP_WORDS = [
     "ve", "veya", "ile", "için", "bir", "bu", "şu", "o", "da", "de", "ta", "te",
@@ -85,7 +86,7 @@ class SimilarityEngine:
             })
 
         return results
-    
+
     def compute_and_save(self, target_ders_id: int, top_n: int = 10):
         """Benzerlikleri hesaplayip ders_iliski tablosuna kaydeder."""
         results = self.get_similar_courses(target_ders_id, top_n)
@@ -112,4 +113,3 @@ class SimilarityEngine:
 
         conn.commit()
         conn.close()
-

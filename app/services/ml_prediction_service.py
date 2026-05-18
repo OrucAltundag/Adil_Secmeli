@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import sqlite3
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -17,10 +17,24 @@ from sklearn.tree import DecisionTreeClassifier
 from app.db.schema_compat import ensure_ml_governance_schema
 from app.services.ml_algorithm_registry_service import get_algorithm_config
 from app.services.ml_confidence_service import estimate_prediction_confidence
-from app.services.ml_evaluation_service import evaluate_classification_model, evaluate_regression_model
-from app.services.ml_explainability_service import explain_model_prediction, save_prediction_explanation
-from app.services.ml_feature_pipeline import build_course_feature_dataset, extract_features_for_course
-from app.services.ml_model_registry_service import create_model_run, mark_failed, mark_skipped, mark_trained
+from app.services.ml_evaluation_service import (
+    evaluate_classification_model,
+    evaluate_regression_model,
+)
+from app.services.ml_explainability_service import (
+    explain_model_prediction,
+    save_prediction_explanation,
+)
+from app.services.ml_feature_pipeline import (
+    build_course_feature_dataset,
+    extract_features_for_course,
+)
+from app.services.ml_model_registry_service import (
+    create_model_run,
+    mark_failed,
+    mark_skipped,
+    mark_trained,
+)
 from app.services.ml_readiness_service import check_model_readiness
 
 

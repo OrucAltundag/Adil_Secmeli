@@ -13,7 +13,6 @@ sessizce açma.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from app.health.checks.base_check import HealthContext
 from app.health.health_config import HealthConfig, default_health_config

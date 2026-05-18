@@ -2,8 +2,8 @@
 # Havuz tablosunu tüm yıllar için döngüsel/kümülatif doldurur.
 # Bir önceki yılın statu, sayac, skor verisi bir sonraki yılın kaydını oluşturur.
 
-import sqlite3
 import os
+import sqlite3
 import sys
 
 # Proje kökünden import için (app/scripts -> proje kökü)
@@ -11,7 +11,7 @@ _script_dir = os.path.dirname(os.path.abspath(__file__))
 _root = os.path.dirname(os.path.dirname(_script_dir))
 if _root not in sys.path:
     sys.path.insert(0, _root)
-from app.services.havuz_karar import calculate_next_status
+from app.services.havuz_karar import calculate_next_status  # noqa: E402
 
 
 def get_db_path():

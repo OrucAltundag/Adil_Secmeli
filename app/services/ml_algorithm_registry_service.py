@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from datetime import datetime
 import sqlite3
+from dataclasses import asdict, dataclass
+from datetime import datetime
 
 from app.db.schema_compat import ensure_ml_governance_schema
-
 
 PRODUCTION_DECISION = "production_decision"
 ADVISORY_ML = "advisory_ml"

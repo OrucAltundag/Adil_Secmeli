@@ -8,7 +8,6 @@ from typing import Any
 
 from sqlalchemy.engine.url import make_url
 
-
 SQLITE_BACKEND = "sqlite"
 POSTGRESQL_BACKEND = "postgresql"
 

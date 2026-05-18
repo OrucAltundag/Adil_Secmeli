@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import json
 import os
 import sqlite3
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
 from openpyxl.styles import Font
 
 from app.core.config import resolve_sqlite_db_path
-from app.db.sqlite_connection import connect_sqlite, is_database_locked_error
 from app.db.schema_compat import ensure_criteria_import_schema, ensure_reporting_schema
+from app.db.sqlite_connection import connect_sqlite, is_database_locked_error
 from app.services.course_matcher import (
     CourseCandidate,
     load_faculty_course_candidates,
@@ -35,7 +35,6 @@ from app.services.import_impact_service import recalculate_import_impact
 from app.services.import_lineage_service import record_value_source
 from app.services.import_quality_service import evaluate_import_quality
 from app.services.yearly_workflow import mark_criteria_status
-
 
 CRITERIA_TEMPLATE_VERSION = "criteria-import-v1"
 CRITERIA_TEMPLATE_SHEET_NAME = "Kriter Veri Giris Sablonu"

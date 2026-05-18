@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-from typing import Optional, List
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
+
 
 class UserContext(BaseModel):
     user_id: Optional[str] = None

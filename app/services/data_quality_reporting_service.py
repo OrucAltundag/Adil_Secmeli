@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.db.models import (
-    DataCoverageReport, DataReadinessAssessment, MissingDataItem,
-    DataValidationIssue, LowConfidenceDecisionFlag, DataCollectionPriority,
-    Ders
+    DataCollectionPriority,
+    DataValidationIssue,
+    Ders,
+    LowConfidenceDecisionFlag,
+    MissingDataItem,
 )
 from app.services.data_coverage_service import calculate_coverage_ratios
 from app.services.data_readiness_service import calculate_readiness_score
@@ -44,12 +46,12 @@ def generate_data_quality_dashboard(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         # Get all metrics
         coverage = calculate_coverage_ratios(session, year, faculty_id)
         readiness = calculate_readiness_score(session, year, faculty_id)
-        
+
         # Count issues
         q = session.query(DataValidationIssue).filter(
             DataValidationIssue.year == year,
@@ -57,10 +59,10 @@ def generate_data_quality_dashboard(
         )
         if faculty_id:
             q = q.filter(DataValidationIssue.faculty_id == faculty_id)
-        
+
         validation_issues = q.count()
         critical_issues = q.filter(DataValidationIssue.severity == "critical").count()
-        
+
         # Count missing data
         q = session.query(MissingDataItem).filter(
             MissingDataItem.year == year,
@@ -68,19 +70,19 @@ def generate_data_quality_dashboard(
         )
         if faculty_id:
             q = q.filter(MissingDataItem.faculty_id == faculty_id)
-        
+
         missing_data_count = q.count()
         critical_missing = q.filter(MissingDataItem.severity == "critical").count()
-        
+
         # Count low confidence decisions
         q = session.query(LowConfidenceDecisionFlag).filter(
             LowConfidenceDecisionFlag.year == year
         )
         if faculty_id:
             q = q.filter(LowConfidenceDecisionFlag.confidence_level.in_(["low", "medium"]))
-        
+
         low_confidence_decisions = q.count()
-        
+
         # Count collection priorities
         q = session.query(DataCollectionPriority).filter(
             DataCollectionPriority.year == year,
@@ -88,10 +90,10 @@ def generate_data_quality_dashboard(
         )
         if faculty_id:
             q = q.filter(DataCollectionPriority.faculty_id == faculty_id)
-        
+
         collection_priorities = q.count()
         high_impact = q.filter(DataCollectionPriority.expected_impact == "high").count()
-        
+
         return {
             'year': year,
             'faculty_id': faculty_id,
@@ -132,25 +134,25 @@ def generate_missing_data_report(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         q = session.query(MissingDataItem).filter(
             MissingDataItem.year == year,
             MissingDataItem.resolved_at.is_(None)
         )
-        
+
         if faculty_id:
             q = q.filter(MissingDataItem.faculty_id == faculty_id)
-        
+
         items = q.all()
-        
+
         # Group by field
         by_field = {}
         for item in items:
             field = item.missing_field
             if field not in by_field:
                 by_field[field] = {'critical': 0, 'warning': 0, 'info': 0, 'total': 0}
-            
+
             by_field[field]['total'] += 1
             if item.severity == 'critical':
                 by_field[field]['critical'] += 1
@@ -158,7 +160,7 @@ def generate_missing_data_report(
                 by_field[field]['warning'] += 1
             else:
                 by_field[field]['info'] += 1
-        
+
         return {
             'year': year,
             'total_missing_items': len(items),
@@ -194,35 +196,35 @@ def generate_validation_issues_report(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         q = session.query(DataValidationIssue).filter(
             DataValidationIssue.year == year,
             DataValidationIssue.is_resolved.is_(False)
         )
-        
+
         if faculty_id:
             q = q.filter(DataValidationIssue.faculty_id == faculty_id)
-        
+
         issues = q.all()
-        
+
         # Group by type and source
         by_type = {}
         by_source = {}
-        
+
         for issue in issues:
             # By type
             t = issue.issue_type
             if t not in by_type:
                 by_type[t] = 0
             by_type[t] += 1
-            
+
             # By source
             s = issue.source_type
             if s not in by_source:
                 by_source[s] = 0
             by_source[s] += 1
-        
+
         return {
             'year': year,
             'total_issues': len(issues),
@@ -262,25 +264,25 @@ def generate_readiness_report(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         readiness = calculate_readiness_score(session, year, faculty_id)
-        
+
         # Generate recommendations
         recommendations = []
         if readiness['readiness_level'] in ['not_ready', 'low']:
             recommendations.append("⚠️ Veri olgunluğu düşük. Kararlar ön değerlendirme olarak kullanılmalıdır.")
-            
+
             if readiness['criteria_score'] < 40:
                 recommendations.append("📊 Kriter verisi toplanmalı (hedef: %40+)")
             if readiness['performance_score'] < 40:
                 recommendations.append("📈 Performans verisi toplanmalı (hedef: %40+)")
             if readiness['survey_score'] < 40:
                 recommendations.append("📋 Anket verisi toplanmalı (hedef: %40+)")
-        
+
         if readiness['blocking_issues'] > 0:
             recommendations.append(f"🚫 {readiness['blocking_issues']} kritik validation issue çözülmeli.")
-        
+
         return {
             'year': year,
             'readiness_score': readiness['readiness_score'],

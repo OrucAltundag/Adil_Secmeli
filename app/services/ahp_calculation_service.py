@@ -3,10 +3,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import math
+from dataclasses import asdict, dataclass, field
 from typing import Any
-
 
 RI_BY_N = {
     1: 0.0,

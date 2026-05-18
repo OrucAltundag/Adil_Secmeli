@@ -7,7 +7,6 @@ import pytest
 
 from app.services.fairness_report_service import generate_fairness_report
 
-
 pytestmark = pytest.mark.unit
 
 

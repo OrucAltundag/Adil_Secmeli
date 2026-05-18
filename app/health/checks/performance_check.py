@@ -58,7 +58,7 @@ class QueryPerformanceCheck(_PerfCheck):
         th = context.health_config.thresholds
         timings: dict[str, float] = {}
         with context.repository() as repo:
-            existing = set(repo.table_names())
+            set(repo.table_names())
             for label, sql in context.health_config.performance_queries.items():
                 start = time.perf_counter()
                 try:

@@ -21,18 +21,24 @@ import pandas as pd
 from app.db.sqlite_connection import is_database_locked_error
 from app.services.criteria_import_service import (
     FACULTY_SCOPE_LABEL,
+)
+from app.services.criteria_import_service import (
     import_criteria_excel as run_criteria_import,
+)
+from app.services.criteria_import_service import (
     normalize_department_scope_name,
     write_criteria_template_excel,
 )
-from app.services.curriculum_import_service import import_curriculum_excel as run_curriculum_import
+from app.services.curriculum_import_service import (
+    import_curriculum_excel as run_curriculum_import,
+)
 from app.services.havuz_karar import mufredat_durumunu_esitle
 from app.services.reporting_service import build_report_snapshot, ensure_report_scores
-from app.services.system_service import SystemService
+from app.services.survey_import_service import import_survey_excel as run_survey_import
 from app.services.survey_import_service import (
-    import_survey_excel as run_survey_import,
     write_survey_template_excel,
 )
+from app.services.system_service import SystemService
 
 
 class ToolsTab(ttk.Frame):

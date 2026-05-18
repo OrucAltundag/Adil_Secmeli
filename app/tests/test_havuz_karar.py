@@ -3,23 +3,19 @@
 # Calistir: python -m pytest app/tests/test_havuz_karar.py -v
 #        veya: python app/tests/test_havuz_karar.py
 
-import sys
 import os
 import sqlite3
+import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.services.havuz_karar import (
-    calculate_next_status,
-    STATU_MUFREDATTA,
-    STATU_HAVUZDA,
-    STATU_DINLENMEDE,
-    STATU_IPTAL,
     MAKS_DUSME_SAYACI,
+    STATU_IPTAL,
+    calculate_next_status,
     onar_2022_ground_truth,
 )
-
 
 # ===========================================================================
 # Temel senaryolar (S1–S7)

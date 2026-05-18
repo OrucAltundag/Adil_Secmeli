@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """Golden dataset regression testi — kod degisiklikleri kararlari bozmasin."""
 from __future__ import annotations
-import pytest
-import numpy as np
+
 import pandas as pd
+import pytest
+
 from app.algorithms.mcdm.topsis import TOPSISRanker
 from app.services.trend_analysis_service import analyze_trend_values
 from app.tests.fixtures.test_db_builders import (
-    GOLDEN_COURSES, GOLDEN_CRITERIA, GOLDEN_PERFORMANCE, GOLDEN_EXPECTED_DECISIONS,
+    GOLDEN_CRITERIA,
+    GOLDEN_EXPECTED_DECISIONS,
+    GOLDEN_PERFORMANCE,
 )
 
 pytestmark = pytest.mark.regression

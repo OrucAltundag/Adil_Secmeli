@@ -11,24 +11,21 @@ Bu modul:
 
 from __future__ import annotations
 
-import os
 import sqlite3
-from app.core.config import resolve_sqlite_db_path
-from app.services.db import get_raw_connection
 from dataclasses import dataclass
 from typing import Any
 
+from app.core.config import resolve_sqlite_db_path
+from app.services.course_type import build_elective_predicate
+from app.services.db import get_raw_connection
 from app.services.havuz_karar import (
     DONEM_BAHAR,
     DONEM_GUZ,
     calculate_next_status_semester,
-    enforce_cross_semester_constraints,
     normalize_semester,
 )
-from app.services.course_type import build_elective_predicate
 from app.services.semester_planning_engine import generate_semester_plan
 from app.services.semester_planning_policy_service import resolve_policy
-
 
 SEMESTER_ORDER = [DONEM_GUZ, DONEM_BAHAR]
 
@@ -523,4 +520,3 @@ def rebuild_school_curricula_dual_semester(
         }
     finally:
         conn.close()
-

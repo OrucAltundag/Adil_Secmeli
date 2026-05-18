@@ -9,7 +9,6 @@ from typing import Any
 
 from app.db.schema_compat import ensure_pool_state_governance_schema
 
-
 BOOL_FIELDS = {
     "require_approval_for_cancel",
     "require_approval_for_reactivation",

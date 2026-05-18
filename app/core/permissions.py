@@ -8,7 +8,6 @@ from typing import Any
 
 from app.core.config import AppConfig, load_app_config
 
-
 ROLES = {
     "admin",
     "developer",

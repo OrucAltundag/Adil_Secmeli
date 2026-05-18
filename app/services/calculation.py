@@ -7,35 +7,39 @@
 # Ä°lgili: criteria_page (kriter giriÅŸi), havuz_karar (statÃ¼ gÃ¼ncelleme)
 # =============================================================================
 
-import sqlite3
-import pandas as pd
-import math
-import numpy as np
-import random
-import os
-import traceback
 import logging
+import math
+import os
+import random
+import sqlite3
+import traceback
+
+import numpy as np
+import pandas as pd
+
 from app.core.config import resolve_sqlite_db_path
 from app.db.schema_compat import ensure_pool_state_governance_schema
-from app.services.havuz_karar import calculate_next_status
 from app.services.course_type import (
     build_elective_predicate,
     filter_elective_course_ids,
     get_existing_type_columns,
 )
-from app.services.db import get_raw_connection
 from app.services.data_confidence_service import calculate_course_data_confidence
+from app.services.db import get_raw_connection
+from app.services.havuz_karar import calculate_next_status
 from app.services.pool_state_machine_service import (
     evaluate_course_state_transition,
     get_governance_flags,
     save_state_transition,
 )
-from app.services.pool_state_policy_service import resolve_policy as resolve_pool_state_policy
+from app.services.pool_state_policy_service import (
+    resolve_policy as resolve_pool_state_policy,
+)
 from app.services.trend_analysis_service import analyze_course_trend
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
-    get_missing_criteria,
     get_faculty_year_status,
+    get_missing_criteria,
     is_faculty_criteria_complete,
     mark_algorithm_run,
     record_cross_department_usage,
@@ -431,7 +435,7 @@ def yukle_gercek_2022_mufredati(conn, excel_path):
                     "UPDATE havuz SET statu = 1, sayac = 0 WHERE ders_id = ? AND fakulte_id = ? AND yil = 2022",
                     (d_id, bolum_fakulte_id)
                 )
-                
+
                 # Ä°pucu: EÄŸer havuzda bu ders yoksa, yukarÄ±daki komut hiÃ§bir ÅŸey yapmaz (hata vermez).
                 # Bu tam olarak istediÄŸimiz ÅŸey.
 
@@ -1114,7 +1118,10 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     motor = KararMotoru()
     ahp_profile = None
     try:
-        from app.services.ahp_profile_service import DEFAULT_CRITERIA_KEYS, resolve_ahp_profile
+        from app.services.ahp_profile_service import (
+            DEFAULT_CRITERIA_KEYS,
+            resolve_ahp_profile,
+        )
         from app.services.criteria_definition_service import criteria_direction_map
 
         ahp_profile = resolve_ahp_profile(
@@ -2374,7 +2381,7 @@ def run_all_algorithms_for_year(
     - Eksik fakulteler raporlanir, hesaplanmaz.
     - Basarili fakulteler icin (yil -> yil+1) mufredat uretilir.
     - Workflow durum tablolarinda algoritma calisti bilgisi islenir.
-    
+
     Parametreler:
     - yil: Kaynak yıl (bu yıldan sonraki yıla müfredat üretilir)
     - db_path: Veritabanı dosyası yolu
@@ -2407,7 +2414,7 @@ def run_all_algorithms_for_year(
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     ensure_yearly_workflow_schema(conn)
-    
+
     # fakulte_id belirtildiyse sadece o fakülteyi işle, yoksa hepsini al
     if fakulte_id is not None:
         cur.execute("SELECT fakulte_id, ad FROM fakulte WHERE fakulte_id = ?", (int(fakulte_id),))
@@ -2524,7 +2531,9 @@ def run_all_algorithms_for_year(
                 )
                 err_msg = result.get("error", "Bilinmeyen hata")
                 try:
-                    from app.services.decision_run_service import record_failed_decision_run
+                    from app.services.decision_run_service import (
+                        record_failed_decision_run,
+                    )
 
                     record_failed_decision_run(
                         db_path=db_path,
@@ -2922,7 +2931,9 @@ def rebuild_school_curricula_dual_semester(
     Ayrik Guz/Bahar pipeline'larini calistirir, ardindan 4+4 blok
     dengesini ve cross-semester kurallarini uygular.
     """
-    from app.services.dual_semester import rebuild_school_curricula_dual_semester as _impl
+    from app.services.dual_semester import (
+        rebuild_school_curricula_dual_semester as _impl,
+    )
 
     return _impl(
         db_path=db_path,
@@ -2934,4 +2945,3 @@ def rebuild_school_curricula_dual_semester(
 
 if __name__ == "__main__":
     run_automatic_scoring()
-

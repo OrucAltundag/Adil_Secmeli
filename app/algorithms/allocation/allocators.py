@@ -266,4 +266,3 @@ class GaleShapleyAllocator(BaseAllocator):
             assignments,
             explanation="Gale-Shapley many-to-one stable matching using student GPA as course-side priority.",
         )
-

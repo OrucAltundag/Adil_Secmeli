@@ -68,18 +68,18 @@ from app.health.checks.database_check import (
     SQLiteTableCountCheck,
     SQLiteWritePermissionCheck,
 )
-from app.health.checks.decision_check import (
-    DecisionInputCheck,
-    DecisionResultConsistencyCheck,
-    RankingGenerationCheck,
-    ScoreNormalizationCheck,
-)
 from app.health.checks.decision_center_check import (
     DecisionExplanationCheck,
     DecisionRunTraceabilityCheck,
     FairnessReportCheck,
     LowConfidenceGuardCheck,
     SensitivityResultCheck,
+)
+from app.health.checks.decision_check import (
+    DecisionInputCheck,
+    DecisionResultConsistencyCheck,
+    RankingGenerationCheck,
+    ScoreNormalizationCheck,
 )
 from app.health.checks.dependency_check import (
     ImportableCriticalPackagesCheck,

@@ -9,6 +9,7 @@ app.core.config.load_app_config() kullanmalıdır.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from app.core.config import load_app_config as _load_app_config
 
 

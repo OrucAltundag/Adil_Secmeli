@@ -14,8 +14,8 @@
 # =============================================================================
 import threading
 
-from sqlalchemy import create_engine, inspect
-from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
 _lock = threading.Lock()
 _current_url: str = ""

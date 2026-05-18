@@ -121,8 +121,8 @@ class AnalysisTab(ttk.Frame):
     def _get_matplotlib_components(self):
         import matplotlib
         matplotlib.use("TkAgg", force=True)
-        from matplotlib.figure import Figure
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        from matplotlib.figure import Figure
         return Figure, FigureCanvasTkAgg
 
     # ----------------------------
@@ -197,9 +197,9 @@ class AnalysisTab(ttk.Frame):
 
         try:
             query_top = """
-                SELECT d.ad, p.basari_orani 
-                FROM performans p 
-                JOIN ders d ON p.ders_id = d.ders_id 
+                SELECT d.ad, p.basari_orani
+                FROM performans p
+                JOIN ders d ON p.ders_id = d.ders_id
                 ORDER BY p.basari_orani DESC LIMIT 5;
             """
             df_top = self.db.read_df(query_top)
@@ -240,9 +240,9 @@ class AnalysisTab(ttk.Frame):
 
         try:
             query_pop = """
-                SELECT d.ad, p.talep_sayisi 
-                FROM populerlik p 
-                JOIN ders d ON p.ders_id = d.ders_id 
+                SELECT d.ad, p.talep_sayisi
+                FROM populerlik p
+                JOIN ders d ON p.ders_id = d.ders_id
                 ORDER BY p.talep_sayisi DESC LIMIT 7;
             """
             df_pop = self.db.read_df(query_pop)

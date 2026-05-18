@@ -12,7 +12,6 @@ from __future__ import annotations
 import sqlite3
 from typing import Iterable
 
-
 COURSE_TYPE_COLUMNS: tuple[str, ...] = ("DersTipi", "ders_tipi", "tip", "tur")
 ELECTIVE_KEYWORDS: tuple[str, ...] = ("secmeli", "elective")
 REQUIRED_KEYWORDS: tuple[str, ...] = ("zorunlu", "mandatory", "required", "core", "mecburi")

@@ -20,7 +20,6 @@ from typing import Any
 
 import pandas as pd
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE = PROJECT_ROOT / "data" / "imports" / "files_20260512_2124"
 DEFAULT_DB = PROJECT_ROOT / "data" / "adil_secmeli.db"

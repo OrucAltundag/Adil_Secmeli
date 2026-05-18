@@ -6,8 +6,8 @@
 # oluşturur ve günceller.
 # =============================================================================
 
-import sqlite3
 import os
+import sqlite3
 
 DB_PATH = "data/adil_secmeli.db"
 
@@ -35,13 +35,13 @@ def havuzu_doldur():
 
     # 3. Seçmeli Dersleri Çek
     print("🔍 Seçmeli dersler aranıyor...")
-    
+
     # HATA ÇÖZÜMÜ: Kolon adı 'tip' yerine 'DersTipi' yapıldı.
     # Her ihtimale karşı try-except ile kontrol ediyoruz.
     try:
         cursor.execute("""
-            SELECT ders_id, ad 
-            FROM ders 
+            SELECT ders_id, ad
+            FROM ders
             WHERE fakulte_id = 2 AND (DersTipi = 'Seçmeli' OR DersTipi = 'Secmeli')
         """)
         dersler = cursor.fetchall()
@@ -76,9 +76,9 @@ def havuzu_doldur():
 
     conn.commit()
     conn.close()
-    
+
     print("-" * 40)
-    print(f"✅ İŞLEM TAMAMLANDI!")
+    print("✅ İŞLEM TAMAMLANDI!")
     print(f"Toplam {kayit_sayisi} satır havuza eklendi.")
     print("-" * 40)
     print("👉 Şimdi uygulamayı açıp 'Pool' sekmesinden her yılı kontrol edebilirsin.")

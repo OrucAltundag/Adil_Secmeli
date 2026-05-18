@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """E2E karar pipeline testi — import → skor → karar → rapor."""
 from __future__ import annotations
-import pytest
+
 import pandas as pd
+import pytest
+
 from app.algorithms.mcdm.topsis import TOPSISRanker
-from app.algorithms.mcdm.ahp import AHPRanker
-from app.services.trend_analysis_service import analyze_trend_values
 from app.services.data_confidence_service import calculate_data_confidence
 from app.services.explanation_engine import build_decision_explanation
-from app.services.havuz_karar import calculate_next_status, STATU_MUFREDATTA, STATU_HAVUZDA
+from app.services.trend_analysis_service import analyze_trend_values
 from app.tests.fixtures.test_db_builders import (
-    GOLDEN_COURSES, GOLDEN_CRITERIA, GOLDEN_PERFORMANCE,
+    GOLDEN_COURSES,
+    GOLDEN_CRITERIA,
+    GOLDEN_PERFORMANCE,
 )
 
 pytestmark = pytest.mark.e2e

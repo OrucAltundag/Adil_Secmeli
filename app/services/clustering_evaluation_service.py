@@ -45,8 +45,12 @@ def evaluate_clustering(X: Any, labels: Iterable[Any], algorithm_key: str, *, db
 
     sil = db = ch = None
     try:
-        from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
         import numpy as np
+        from sklearn.metrics import (
+            calinski_harabasz_score,
+            davies_bouldin_score,
+            silhouette_score,
+        )
 
         X_arr = np.asarray(X)
         if len(label_list) == len(X_arr) and cluster_count > 1 and cluster_count < len(label_list):
@@ -106,8 +110,8 @@ def recommend_dbscan_eps(X: Any, min_samples: int = 5) -> dict[str, Any]:
 
 def generate_k_distance_data(X: Any, min_samples: int = 5) -> dict[str, Any]:
     try:
-        from sklearn.neighbors import NearestNeighbors
         import numpy as np
+        from sklearn.neighbors import NearestNeighbors
 
         X_arr = np.asarray(X)
         if len(X_arr) < min_samples:

@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 
 def classification_metrics(
@@ -48,4 +54,3 @@ def top_k_accuracy(
             hits += 1
         total += 1
     return float(hits / max(total, 1))
-

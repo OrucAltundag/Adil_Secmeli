@@ -14,20 +14,19 @@
 #   - Tamam ise algoritmalari calistirir ve sonraki yil mufredatini uretir
 # =============================================================================
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 
 import pandas as pd
 
+from app.services.yearly_workflow import (
+    get_missing_criteria,
+    get_years_eligible_for_algorithm,
+    is_faculty_criteria_complete,
+)
+from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
+from app.ui.tabs.criteria_page import CriteriaPage
 from app.ui.tabs.pool_tab import PoolTab
 from app.ui.tabs.relations_tab import RelationsTab
-from app.ui.tabs.criteria_page import CriteriaPage
-from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
-from app.services.yearly_workflow import (
-    is_faculty_criteria_complete,
-    get_missing_criteria,
-    get_faculty_year_status,
-    get_years_eligible_for_algorithm,
-)
 
 # Kullanici mesaji (tam metin — spesifikasyon)
 _MSG_CRITERIA_BLOCK = (
@@ -59,6 +58,7 @@ class CalcTab(ttk.Frame):
         self.cb_algo_year = None
         self.cb_algo_fakulte = None  # Fakülte combobox'ı
         self._fakulte_map = {}  # ad -> id eşlemesi
+        self._algo_buttons = {}
 
 
         # ---- Nested Notebook ----
@@ -149,6 +149,7 @@ class CalcTab(ttk.Frame):
         try:
             self._refresh_algo_faculty_options()
             self._refresh_algo_year_options()
+            self._sync_algo_controls()
         except Exception:
             pass
 
@@ -173,6 +174,7 @@ class CalcTab(ttk.Frame):
     def _on_algo_faculty_change(self, event=None):
         """Fakülte değişince yıl listesini o fakülteye göre güncelle."""
         self._refresh_algo_year_options()
+        self._sync_algo_controls()
 
     def _refresh_algo_year_options(self):
         """
@@ -204,6 +206,24 @@ class CalcTab(ttk.Frame):
         else:
             self.cb_algo_year["values"] = []
             self.cb_algo_year.set("")
+        self._sync_algo_controls()
+
+    def _algo_scope_ready(self) -> bool:
+        if not self.cb_algo_fakulte or not self.cb_algo_year:
+            return False
+        return bool((self.cb_algo_fakulte.get() or "").strip()) and bool((self.cb_algo_year.get() or "").strip())
+
+    def _sync_algo_controls(self):
+        ready = self._algo_scope_ready()
+        next_state = tk.NORMAL if ready else tk.DISABLED
+        if getattr(self, "_btn_next_year", None) is not None:
+            self._btn_next_year.config(state=next_state)
+        for button in self._algo_buttons.values():
+            button.config(state=next_state)
+
+    @staticmethod
+    def _friendly_ui_error() -> str:
+        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
 
     def _algo_scope(self) -> tuple[int, str, int]:
         """Algoritma paneli: (fakulte_id, fakulte_ad, akademik_yil)."""
@@ -228,7 +248,7 @@ class CalcTab(ttk.Frame):
         - Sol: Her algoritma icin calistir/goster butonlari
         - Sag: Log/sonuc alani
         - Alt: Ders analiz laboratuvari
-        
+
         NOT: "Tumunu Calistir" butonu kaldirildi - islevi "Sonraki Yil Mufredat Uret"
         butonuna tasindi. Bu buton artik fakulte bazli kriter tamlık kontrolu yapar.
         """
@@ -283,7 +303,8 @@ class CalcTab(ttk.Frame):
         ).pack(side=tk.LEFT, padx=(8, 4))
         self.cb_algo_year = ttk.Combobox(next_year_bar, state="readonly", width=8)
         self.cb_algo_year.pack(side=tk.LEFT, padx=(0, 8))
-        
+        self.cb_algo_year.bind("<<ComboboxSelected>>", lambda _e: self._sync_algo_controls())
+
         # Fakülte ve yıl combobox'larını doldur
         self._refresh_algo_faculty_options()
         self._refresh_algo_year_options()
@@ -386,6 +407,7 @@ class CalcTab(ttk.Frame):
                 command=lambda i=algo_id: self.run_single_step(i),
             )
             btn_run.grid(row=row_idx, column=0, padx=4, pady=3, sticky="ew")
+            self._algo_buttons[algo_id] = btn_run
 
             lbl_status = tk.Label(
                 grid_frame, text="Bekliyor...", bg="#cbd5e1",
@@ -407,6 +429,7 @@ class CalcTab(ttk.Frame):
         grid_frame.columnconfigure(0, weight=1)
         grid_frame.columnconfigure(1, weight=1)
         grid_frame.columnconfigure(2, weight=1)
+        self._sync_algo_controls()
 
     # run_all_algorithms metodu KALDIRILDI - islevi run_single_step("next_year") icine tasindi
     # Eski kod: Algoritma kontrol merkezi: secili yil icin toplu hesaplama calistir
@@ -445,13 +468,20 @@ class CalcTab(ttk.Frame):
     def run_single_step(self, algo_id: str):
         """
         Tek bir algoritma adimini calistirir. Sonucu results_cache'e kaydeder ve UI status etiketini gunceller.
-        
+
         "next_year" icin ozel davranis:
         - Secili fakulte icin kriter tamlık kontrolu yapar
         - Eksik kriter varsa hata mesaji gosterir ve islemi durdurur
         - Tamam ise tum algoritmalari calistirip sonraki yil mufredatini uretir
         """
         if algo_id not in self.ui_refs:
+            return
+        if not self._algo_scope_ready():
+            messagebox.showwarning(
+                "Eksik Seçim",
+                "Algoritma çalıştırmak için önce fakülte ve yıl seçiniz.",
+            )
+            self._sync_algo_controls()
             return
 
         widgets = self.ui_refs[algo_id]
@@ -649,8 +679,9 @@ class CalcTab(ttk.Frame):
 
             # 5) Sonraki yil mufredat uretimi (fakulte bazli, kriter tamlık kontrolu ile)
             elif algo_id == "next_year":
-                from app.services.calculation import run_all_algorithms_for_year
                 import os
+
+                from app.services.calculation import run_all_algorithms_for_year
 
                 db_path = getattr(self.app, "db_path", None) or self.db_path
                 if not db_path:
@@ -663,7 +694,7 @@ class CalcTab(ttk.Frame):
                 if self.cb_algo_fakulte and self.cb_algo_fakulte.get():
                     secili_fakulte_ad = self.cb_algo_fakulte.get()
                     secili_fakulte_id = self._fakulte_map.get(secili_fakulte_ad)
-                
+
                 if not secili_fakulte_id:
                     raise ValueError("Lutfen bir fakulte seciniz.")
 
@@ -697,16 +728,16 @@ class CalcTab(ttk.Frame):
                 conn = getattr(self.db, "conn", None)
                 if conn:
                     kriter_tamam = is_faculty_criteria_complete(conn, secili_yil, secili_fakulte_id, refresh=True)
-                    
+
                     if not kriter_tamam:
                         # Eksik kriterleri listele
                         eksik_kriterler = get_missing_criteria(conn, secili_yil, fakulte_id=secili_fakulte_id)
-                        
+
                         # Eksik bölümleri bul
                         eksik_bolumler = set()
                         for ek in eksik_kriterler:
                             eksik_bolumler.add(ek.get("bolum", "?"))
-                        
+
                         hata_mesaji = _MSG_CRITERIA_BLOCK + "\n\n"
                         hata_mesaji += (
                             f"Fakulte: {secili_fakulte_ad}\n"
@@ -715,7 +746,7 @@ class CalcTab(ttk.Frame):
                         )
                         for bol in sorted(eksik_bolumler):
                             hata_mesaji += f"  - {bol}\n"
-                        
+
                         if eksik_kriterler:
                             hata_mesaji += f"\nToplam eksik ders sayisi: {len(eksik_kriterler)}\n"
                             hata_mesaji += "\nIlk 10 eksik ders:\n"
@@ -723,10 +754,10 @@ class CalcTab(ttk.Frame):
                                 hata_mesaji += f"  * {ek.get('bolum')} | {ek.get('ders')} (ID:{ek.get('ders_id')})\n"
                             if len(eksik_kriterler) > 10:
                                 hata_mesaji += f"  ... +{len(eksik_kriterler) - 10} ders daha\n"
-                        
+
                         sonuc_metni = hata_mesaji
                         basarili_mi = False
-                        
+
                         # UI'ı güncelle ve erken çık
                         widgets["status"].config(text="Kriter Eksik!", fg="#ef4444")
                         self._btn_next_year.config(
@@ -737,12 +768,11 @@ class CalcTab(ttk.Frame):
                         self.result_text.delete("1.0", tk.END)
                         self.result_text.insert(tk.END, sonuc_metni)
                         self.result_text.config(state="disabled")
-                        
+
                         # Kullanıcıya messagebox ile de uyarı ver
                         messagebox.showwarning(
                             "Kriter Girisleri Eksik",
-                            _MSG_CRITERIA_BLOCK
-                            + ("\n\nEksik bolumler: " + ", ".join(sorted(eksik_bolumler)) if eksik_bolumler else ""),
+                            self._friendly_ui_error(),
                         )
                         return
 
@@ -819,6 +849,7 @@ class CalcTab(ttk.Frame):
                 try:
                     self._refresh_algo_faculty_options()
                     self._refresh_algo_year_options()
+                    self._sync_algo_controls()
                 except Exception:
                     pass
                 try:
@@ -907,9 +938,8 @@ class CalcTab(ttk.Frame):
                         sonuc_metni += "\nBu fakulte ve yil kapsami icin ML tahmin verisi bulunamadi."
                 except Exception as ml_exc:
                     import traceback
-                    sonuc_metni = (
-                        f"ML Hata: {ml_exc}\n\n{traceback.format_exc()}"
-                    )
+                    print(f"[CalcTab] ML hata: {ml_exc}")
+                    sonuc_metni = self._friendly_ui_error() + f"\n\nDetay kaydı:\n{traceback.format_exc()}"
                     basarili_mi = False
                 finally:
                     try:
@@ -925,9 +955,9 @@ class CalcTab(ttk.Frame):
         except Exception as e:
             import traceback
             basarili_mi = False
-            sonuc_metni = f"HATA OLUŞTU:\n{e}\n\nDetay:\n{traceback.format_exc()}"
             print(f"[Algoritma {algo_id}] Hata: {e}")
             traceback.print_exc()
+            sonuc_metni = self._friendly_ui_error()
 
         self.results_cache[algo_id] = sonuc_metni
 
@@ -954,6 +984,8 @@ class CalcTab(ttk.Frame):
                 widgets["show_btn"].config(state="normal")
             self.show_result(algo_id)
 
+        self._sync_algo_controls()
+
     def show_result(self, algo_id: str):
         """Secilen algoritmanin cache'deki sonucunu log panelinde gosterir."""
         metin = self.results_cache.get(algo_id, "Sonuç bulunamadı.")
@@ -977,5 +1009,3 @@ class CalcTab(ttk.Frame):
             self._paned.forget(self._top_container)
             self._btn_fullscreen.config(text="Normal Gorunum")
             self._is_fullscreen = True
-
-

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-from typing import Dict, Any, List
+from typing import Any, Dict
+
 from app.core.config import AppConfig
+
 
 class SecurityHealthService:
     def __init__(self, config: AppConfig):

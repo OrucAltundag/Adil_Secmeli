@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import sqlite3
+from datetime import datetime
 from typing import Any
 
 from app.db.schema_compat import ensure_ahp_governance_schema
@@ -13,7 +13,6 @@ from app.services.ahp_calculation_service import (
     build_pairwise_matrix_from_weights,
     calculate_weights_from_pairwise_matrix,
     normalize_weights,
-    validate_pairwise_matrix,
 )
 from app.services.ahp_profile_policy_service import (
     can_activate_profile,
@@ -23,7 +22,6 @@ from app.services.ahp_profile_policy_service import (
     should_mark_decisions_stale,
 )
 from app.services.criteria_definition_service import seed_default_decision_criteria
-
 
 DEFAULT_CRITERIA_KEYS = ["basari", "trend", "populerlik", "anket"]
 DEFAULT_WEIGHTS = {

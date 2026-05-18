@@ -4,7 +4,16 @@ import tkinter as tk
 from tkinter import ttk
 
 from app.ui.benchmark import mock_data
-from app.ui.benchmark.widgets import COLORS, DataTable, ErrorBanner, JsonPreviewWidget, MetricCard, SectionHeader, algorithm_group_color, run_async
+from app.ui.benchmark.widgets import (
+    COLORS,
+    DataTable,
+    ErrorBanner,
+    JsonPreviewWidget,
+    MetricCard,
+    SectionHeader,
+    algorithm_group_color,
+    run_async,
+)
 
 
 class AlgorithmExplorerPage(ttk.Frame):

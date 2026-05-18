@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 
 def get_metrics_for_task(task_type: str) -> list[str]:
@@ -114,6 +114,7 @@ def _classification_metrics(y_true: Sequence[Any] | None, y_pred: Sequence[Any] 
     try:
         from sklearn.metrics import (
             accuracy_score,
+            auc,
             balanced_accuracy_score,
             brier_score_loss,
             confusion_matrix,
@@ -123,7 +124,6 @@ def _classification_metrics(y_true: Sequence[Any] | None, y_pred: Sequence[Any] 
             precision_score,
             recall_score,
             roc_auc_score,
-            auc,
         )
 
         metrics = {
@@ -166,7 +166,12 @@ def _regression_metrics(y_true: Sequence[Any] | None, y_pred: Sequence[Any] | No
         return {}
     residuals = [a - b for a, b in zip(yt, yp)]
     try:
-        from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error, r2_score
+        from sklearn.metrics import (
+            mean_absolute_error,
+            mean_squared_error,
+            median_absolute_error,
+            r2_score,
+        )
 
         rmse = math.sqrt(float(mean_squared_error(yt, yp)))
         mae = float(mean_absolute_error(yt, yp))

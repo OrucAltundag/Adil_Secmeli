@@ -19,7 +19,10 @@ from app.services.criteria_completion_service import (
     get_completion_summary,
 )
 from app.services.criteria_override_service import approve_override, request_override
-from app.services.criteria_task_service import generate_tasks_for_missing_criteria, get_tasks
+from app.services.criteria_task_service import (
+    generate_tasks_for_missing_criteria,
+    get_tasks,
+)
 from app.services.criteria_validation_service import validate_criterion_value
 
 

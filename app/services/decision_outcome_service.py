@@ -14,7 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.db.models import (
-    PostDecisionOutcome, CourseDecision, Performans, Populerlik, AnketSonuclari
+    CourseDecision,
+    Performans,
+    Populerlik,
+    PostDecisionOutcome,
 )
 
 
@@ -37,7 +40,7 @@ def record_post_decision_outcome(
 ) -> PostDecisionOutcome:
     """
     Karar sonrası outcome kaydedilir.
-    
+
     Karar verilen yılda (decision_year) ders için alınan karar sonrası,
     sonraki yıl(lar)da (outcome_year) gerçekleşen sonuçlar kaydedilir.
     """
@@ -46,7 +49,7 @@ def record_post_decision_outcome(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         outcome = PostDecisionOutcome(
             decision_run_id=decision_run_id,
@@ -64,7 +67,7 @@ def record_post_decision_outcome(
         )
         session.add(outcome)
         session.commit()
-        
+
         return outcome
     finally:
         if close_session:
@@ -77,7 +80,7 @@ def evaluate_decision_effectiveness(
 ) -> dict:
     """
     Bir kararın sonraki yıl ne kadar etkili olduğunu değerlendir.
-    
+
     Returns:
         {
             'decision_id': int,
@@ -93,12 +96,12 @@ def evaluate_decision_effectiveness(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         cd = session.query(CourseDecision).filter(
             CourseDecision.id == course_decision_id
         ).first()
-        
+
         if not cd:
             return {
                 'decision_id': course_decision_id,
@@ -106,13 +109,13 @@ def evaluate_decision_effectiveness(
                 'effectiveness_score': 0.0,
                 'explanation': 'Karar bulunamadı',
             }
-        
+
         # Get outcome from next year
         outcome = session.query(PostDecisionOutcome).filter(
             PostDecisionOutcome.course_decision_id == course_decision_id,
             PostDecisionOutcome.outcome_year > cd.year
         ).first()
-        
+
         if not outcome:
             return {
                 'decision_id': course_decision_id,
@@ -122,34 +125,34 @@ def evaluate_decision_effectiveness(
                 'effectiveness_score': 0.0,
                 'explanation': 'Henüz outcome verisi yok',
             }
-        
+
         # Compare with decision and calculate effectiveness
-        score_before = cd.topsis_score or 0
+        cd.topsis_score or 0
         fill_rate = outcome.actual_fill_rate or 0
         success_rate = outcome.actual_success_rate or 0
-        
+
         # Effectiveness: pozitif sonuçlar
         effectiveness_score = 0.0
         factors = []
-        
+
         if fill_rate > 0.7:
             effectiveness_score += 0.3
             factors.append("Yüksek doluluk")
         elif fill_rate > 0.5:
             effectiveness_score += 0.15
             factors.append("Orta doluluk")
-        
+
         if success_rate > 0.7:
             effectiveness_score += 0.3
             factors.append("Yüksek başarı")
         elif success_rate > 0.5:
             effectiveness_score += 0.15
             factors.append("Orta başarı")
-        
+
         if outcome.actual_survey_demand and outcome.actual_survey_demand > 0:
             effectiveness_score += 0.2
             factors.append("Talep var")
-        
+
         # Determine label
         if effectiveness_score > 0.6:
             label = "improved"
@@ -160,7 +163,7 @@ def evaluate_decision_effectiveness(
         else:
             label = "worsened"
             explanation = "Karar az etkili olmuş"
-        
+
         return {
             'decision_id': course_decision_id,
             'course_id': cd.course_id,
@@ -191,39 +194,39 @@ def compare_predicted_vs_actual(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         # Get decision
         cd = session.query(CourseDecision).filter(
             CourseDecision.course_id == course_id,
             CourseDecision.year == decision_year
         ).first()
-        
+
         # Get outcome
         outcome = session.query(PostDecisionOutcome).filter(
             PostDecisionOutcome.course_id == course_id,
             PostDecisionOutcome.decision_year == decision_year,
             PostDecisionOutcome.outcome_year == outcome_year
         ).first()
-        
+
         if not cd or not outcome:
             return {
                 'course_id': course_id,
                 'complete': False,
                 'message': 'Karar veya outcome verisi bulunamadı',
             }
-        
+
         # Get actual data from tables
         perf = session.query(Performans).filter(
             Performans.ders_id == course_id,
             Performans.akademik_yil == outcome_year
         ).first()
-        
+
         pop = session.query(Populerlik).filter(
             Populerlik.ders_id == course_id,
             Populerlik.akademik_yil == outcome_year
         ).first()
-        
+
         return {
             'course_id': course_id,
             'complete': True,
@@ -253,12 +256,12 @@ def generate_outcome_report(
         close_session = True
     else:
         close_session = False
-    
+
     try:
         outcomes = session.query(PostDecisionOutcome).filter(
             PostDecisionOutcome.decision_year == year
         ).all()
-        
+
         if not outcomes:
             return {
                 'year': year,
@@ -270,15 +273,15 @@ def generate_outcome_report(
                 'average_fill_rate': 0.0,
                 'average_success_rate': 0.0,
             }
-        
+
         total = len(outcomes)
         effective = sum(1 for o in outcomes if o.decision_was_effective is True)
         ineffective = sum(1 for o in outcomes if o.decision_was_effective is False)
         unknown = sum(1 for o in outcomes if o.decision_was_effective is None)
-        
+
         avg_fill_rate = sum(o.actual_fill_rate or 0 for o in outcomes) / total if total > 0 else 0
         avg_success_rate = sum(o.actual_success_rate or 0 for o in outcomes) / total if total > 0 else 0
-        
+
         return {
             'year': year,
             'total_outcomes': total,

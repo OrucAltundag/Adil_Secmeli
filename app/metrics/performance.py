@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import tracemalloc
 from dataclasses import dataclass
 from time import perf_counter
-import tracemalloc
 
 
 @dataclass(slots=True)
@@ -46,4 +46,3 @@ class PerformanceTracker:
         throughput = self.workload_size / max((self._stop_time - self._start_time), 1e-9)
         memory_peak_mb = self._peak_memory_bytes / (1024.0 * 1024.0)
         return PerformanceSnapshot(latency_ms=latency_ms, throughput_per_sec=throughput, memory_peak_mb=memory_peak_mb)
-

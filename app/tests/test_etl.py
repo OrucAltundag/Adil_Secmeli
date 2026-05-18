@@ -159,4 +159,3 @@ def test_run_import_replaces_only_target_scope():
             os.unlink(excel_path)
         except OSError:
             pass
-

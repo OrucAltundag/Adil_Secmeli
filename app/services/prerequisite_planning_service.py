@@ -10,7 +10,6 @@ from typing import Any
 from app.db.schema_compat import ensure_semester_planning_schema
 from app.services.course_semester_availability_service import normalize_semester
 
-
 SEMESTER_ORDER = {"fall": 1, "spring": 2, "unassigned": 99}
 
 

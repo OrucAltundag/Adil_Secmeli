@@ -1,31 +1,33 @@
 # -*- coding: utf-8 -*-
+import hashlib
 import os
 import shutil
-import hashlib
-from datetime import datetime, timezone
 import uuid
-from sqlalchemy.orm import Session
-from fastapi import HTTPException
+from datetime import datetime, timezone
 
-from app.db.models import DataSnapshot
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
 from app.core.config import AppConfig, resolve_sqlite_db_path
+from app.db.models import DataSnapshot
+
 
 class BackupRestoreService:
     def __init__(self, db: Session, config: AppConfig):
         self.db = db
         self.config = config
 
-    def create_sqlite_backup(self, snapshot_type: str, scope_type: str = "global", 
-                           faculty_id: int = None, department_id: int = None, year: int = None, 
-                           related_import_job_id: str = None, related_decision_run_id: int = None, 
+    def create_sqlite_backup(self, snapshot_type: str, scope_type: str = "global",
+                           faculty_id: int = None, department_id: int = None, year: int = None,
+                           related_import_job_id: str = None, related_decision_run_id: int = None,
                            created_by: str = "system") -> DataSnapshot:
-        
+
         db_path = resolve_sqlite_db_path(self.config.sqlite_db_path)
         if not db_path.exists():
             raise FileNotFoundError(f"Database file not found at {db_path}")
 
         snapshot_id = f"snap_{uuid.uuid4().hex}"
-        
+
         # Ensure backups directory exists
         base_dir = os.path.dirname(str(db_path))
         backup_dir = os.path.join(base_dir, "backups")
@@ -41,7 +43,7 @@ class BackupRestoreService:
         with open(backup_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_sha256.update(chunk)
-        
+
         snapshot_hash = hash_sha256.hexdigest()
 
         snapshot = DataSnapshot(
@@ -82,14 +84,14 @@ class BackupRestoreService:
         with open(backup_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_sha256.update(chunk)
-        
+
         if hash_sha256.hexdigest() != snapshot.snapshot_hash:
             raise HTTPException(status_code=400, detail="Snapshot hash mismatch. File may be corrupted.")
 
         # In a real system, you cannot replace the DB file while the connection is open
         # This is a conceptual implementation for SQLite. In reality you'd need to close the DB connection,
         # copy the file, and restart or reconnect.
-        
+
         db_path = resolve_sqlite_db_path(self.config.sqlite_db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(backup_path, str(db_path))

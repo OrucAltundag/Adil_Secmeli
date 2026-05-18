@@ -3,15 +3,17 @@
 
 from __future__ import annotations
 
-import sqlite3
+
 import pytest
 
 from app.services.havuz_karar import (
+    STATU_DINLENMEDE,
+    STATU_HAVUZDA,
+    STATU_IPTAL,
+    STATU_MUFREDATTA,
     calculate_next_status,
-    STATU_MUFREDATTA, STATU_HAVUZDA, STATU_DINLENMEDE, STATU_IPTAL,
 )
 from app.services.pool_state_machine_service import evaluate_course_state_transition
-
 
 pytestmark = pytest.mark.unit
 

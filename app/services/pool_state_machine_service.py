@@ -17,7 +17,6 @@ from app.services.havuz_karar import (
 )
 from app.services.pool_state_policy_service import normalize_semester, resolve_policy
 
-
 STATUS_TEXT = {
     STATU_MUFREDATTA: "müfredatta",
     STATU_HAVUZDA: "havuzda",

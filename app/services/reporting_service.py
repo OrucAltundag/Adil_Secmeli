@@ -1,22 +1,12 @@
 from __future__ import annotations
 
 import csv
+import sqlite3
 from datetime import datetime
 from io import StringIO
-import sqlite3
 from typing import Any
 
 from app.db.schema_compat import ensure_reporting_schema
-from app.services.import_audit_service import (
-    get_import_batch,
-    list_import_batches,
-    list_import_issues,
-    list_import_rows,
-)
-from app.services.import_diff_service import get_import_diff
-from app.services.import_impact_service import get_import_impact
-from app.services.import_quality_service import summarize_quality
-from app.services.criteria_import_service import summarize_report_criteria_scope
 from app.services.calculation import (
     DROP_AVERAGE_GRADE_THRESHOLD,
     DROP_SCORE_THRESHOLD,
@@ -27,24 +17,46 @@ from app.services.calculation import (
     persist_faculty_year_topsis_scores,
 )
 from app.services.course_type import build_elective_predicate
-from app.services.yearly_workflow import (
-    get_faculty_year_status,
-    is_yearly_workflow_enabled,
-)
 from app.services.criteria_completion_service import (
     get_completion_matrix,
     get_completion_summary,
     get_validation_issues,
 )
+from app.services.criteria_import_service import summarize_report_criteria_scope
 from app.services.criteria_task_service import get_tasks
-from app.services.missing_data_risk_service import get_missing_data_risk_report as _get_missing_data_risk_report
+from app.services.import_audit_service import (
+    get_import_batch,
+    list_import_batches,
+    list_import_issues,
+    list_import_rows,
+)
+from app.services.import_diff_service import get_import_diff
+from app.services.import_impact_service import get_import_impact
+from app.services.import_quality_service import summarize_quality
+from app.services.missing_data_risk_service import (
+    get_missing_data_risk_report as _get_missing_data_risk_report,
+)
 from app.services.pool_state_machine_service import (
     get_course_state_history as _get_course_state_history,
+)
+from app.services.pool_state_machine_service import (
     get_pool_lifecycle_summary as _get_pool_lifecycle_summary,
+)
+from app.services.pool_state_machine_service import (
     get_protected_courses as _get_protected_courses,
+)
+from app.services.pool_state_machine_service import (
     get_reactivation_candidates as _get_reactivation_candidates,
+)
+from app.services.pool_state_machine_service import (
     list_pending_approvals as _list_pool_pending_approvals,
+)
+from app.services.pool_state_machine_service import (
     list_state_transitions as _list_state_transitions,
+)
+from app.services.yearly_workflow import (
+    get_faculty_year_status,
+    is_yearly_workflow_enabled,
 )
 
 
@@ -833,14 +845,18 @@ def get_active_ahp_profile_summary(
     semester: str | None = None,
 ) -> dict[str, Any]:
     ensure_reporting_schema(conn)
-    from app.services.ahp_reporting_service import get_active_ahp_profile_summary as _summary
+    from app.services.ahp_reporting_service import (
+        get_active_ahp_profile_summary as _summary,
+    )
 
     return _summary(conn, year=year, faculty_id=faculty_id, department_id=department_id, semester=semester)
 
 
 def get_decision_run_ahp_summary(conn: sqlite3.Connection, run_id: int) -> dict[str, Any]:
     ensure_reporting_schema(conn)
-    from app.services.ahp_reporting_service import get_decision_run_ahp_summary as _summary
+    from app.services.ahp_reporting_service import (
+        get_decision_run_ahp_summary as _summary,
+    )
 
     return _summary(conn, int(run_id))
 
@@ -854,7 +870,9 @@ def export_ahp_profile_matrix(conn: sqlite3.Connection, profile_id: int, format:
 
 def export_ahp_sensitivity_report(conn: sqlite3.Connection, run_id: int, format: str = "csv") -> str:
     ensure_reporting_schema(conn)
-    from app.services.ahp_reporting_service import export_ahp_sensitivity_report as _export
+    from app.services.ahp_reporting_service import (
+        export_ahp_sensitivity_report as _export,
+    )
 
     return _export(conn, int(run_id), format=format)
 
@@ -868,48 +886,62 @@ def compare_ahp_profiles(conn: sqlite3.Connection, profile_a_id: int, profile_b_
 
 def get_semester_plan_summary(conn: sqlite3.Connection, run_id: int) -> dict[str, Any]:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import get_semester_plan_summary as _summary
+    from app.services.semester_planning_reporting_service import (
+        get_semester_plan_summary as _summary,
+    )
 
     return _summary(conn, int(run_id))
 
 
 def get_semester_plan_assignments(conn: sqlite3.Connection, run_id: int) -> list[dict[str, Any]]:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import get_semester_plan_assignments as _assignments
+    from app.services.semester_planning_reporting_service import (
+        get_semester_plan_assignments as _assignments,
+    )
 
     return _assignments(conn, int(run_id))
 
 
 def get_semester_plan_constraint_violations(conn: sqlite3.Connection, run_id: int) -> list[dict[str, Any]]:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import get_constraint_violations as _violations
+    from app.services.semester_planning_reporting_service import (
+        get_constraint_violations as _violations,
+    )
 
     return _violations(conn, int(run_id))
 
 
 def compare_semester_plan_scenarios(conn: sqlite3.Connection, run_id: int) -> list[dict[str, Any]]:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import compare_plan_scenarios as _scenarios
+    from app.services.semester_planning_reporting_service import (
+        compare_plan_scenarios as _scenarios,
+    )
 
     return _scenarios(conn, int(run_id))
 
 
 def export_semester_plan(conn: sqlite3.Connection, run_id: int, format: str = "csv") -> str:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import export_semester_plan as _export
+    from app.services.semester_planning_reporting_service import (
+        export_semester_plan as _export,
+    )
 
     return _export(conn, int(run_id), format=format)
 
 
 def export_semester_plan_constraint_violations(conn: sqlite3.Connection, run_id: int, format: str = "csv") -> str:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import export_constraint_violations as _export
+    from app.services.semester_planning_reporting_service import (
+        export_constraint_violations as _export,
+    )
 
     return _export(conn, int(run_id), format=format)
 
 
 def generate_human_readable_semester_plan_report(conn: sqlite3.Connection, run_id: int) -> str:
     ensure_reporting_schema(conn)
-    from app.services.semester_planning_reporting_service import generate_human_readable_plan_report as _report
+    from app.services.semester_planning_reporting_service import (
+        generate_human_readable_plan_report as _report,
+    )
 
     return _report(conn, int(run_id))

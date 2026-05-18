@@ -10,9 +10,19 @@
 # Not: havuz.ders_id TEXT olarak saklanir; JOIN'lerde CAST gerekir.
 # =============================================================================
 from sqlalchemy import (
-    Column, Integer, String, ForeignKey, Date, DateTime, Boolean, Float, Text, UniqueConstraint
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+
 from app.db.database import Base
 
 

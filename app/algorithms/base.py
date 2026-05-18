@@ -124,4 +124,3 @@ class IClusterer(IAlgorithm, ABC):
     @abstractmethod
     def cluster(self, X: Any) -> AlgorithmOutput:
         """Return cluster labels and clustering artifacts."""
-

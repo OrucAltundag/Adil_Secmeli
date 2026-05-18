@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
 from app.api import routes
 from app.core.config import AppConfig
-from app.core.database_policy import database_policy_summary, runtime_schema_mutation_allowed
+from app.core.database_policy import (
+    database_policy_summary,
+    runtime_schema_mutation_allowed,
+)
 from app.core.permissions import UserContext, can
 from app.db.schema_compat import ensure_reporting_schema
 from app.services.architecture_audit_service import generate_architecture_audit_report
 from app.services.schema_health_service import check_schema_health
-
 
 ROOT = Path(__file__).resolve().parents[2]
 

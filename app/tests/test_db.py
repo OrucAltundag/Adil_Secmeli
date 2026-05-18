@@ -6,10 +6,10 @@
 # - Raw SQLite ile havuz/ders tablolarından okuma yapar (ORM şemasından bağımsız)
 # =============================================================================
 
-import os
-import sys
 import json
+import os
 import sqlite3
+import sys
 
 # Proje kökünü path'e ekle
 _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

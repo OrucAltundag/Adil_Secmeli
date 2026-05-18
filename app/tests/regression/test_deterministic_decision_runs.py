@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Deterministiklik testleri — ayni veri + ayni ayar = ayni karar."""
 from __future__ import annotations
-import pytest
+
 import pandas as pd
-from app.algorithms.mcdm.topsis import TOPSISRanker
+import pytest
+
 from app.algorithms.mcdm.ahp import AHPRanker
-from app.tests.fixtures.test_db_builders import GOLDEN_CRITERIA, GOLDEN_PERFORMANCE
+from app.algorithms.mcdm.topsis import TOPSISRanker
 from app.services.trend_analysis_service import analyze_trend_values
+from app.tests.fixtures.test_db_builders import GOLDEN_CRITERIA, GOLDEN_PERFORMANCE
 
 pytestmark = pytest.mark.regression
 

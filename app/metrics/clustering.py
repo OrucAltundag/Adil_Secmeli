@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
+from sklearn.metrics import (
+    calinski_harabasz_score,
+    davies_bouldin_score,
+    silhouette_score,
+)
 
 
 def clustering_metrics(X: pd.DataFrame | np.ndarray, labels: list[int] | np.ndarray) -> dict[str, float]:
@@ -29,4 +33,3 @@ def clustering_metrics(X: pd.DataFrame | np.ndarray, labels: list[int] | np.ndar
         "davies_bouldin": float(davies_bouldin_score(X_eff, labels_eff)),
         "calinski_harabasz": float(calinski_harabasz_score(X_eff, labels_eff)),
     }
-

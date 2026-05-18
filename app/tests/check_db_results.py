@@ -7,15 +7,16 @@
 # =============================================================================
 
 import sqlite3
-import pandas as pd
+
+
 
 def kontrol_et():
     conn = sqlite3.connect("data/adil_secmeli.db")
     cursor = conn.cursor()
-    
+
     print("\n--- 1. 2023 YILI MÜFREDATINDAKİ DERSLER ---")
     cursor.execute("""
-        SELECT d.ad, h.skor 
+        SELECT d.ad, h.skor
         FROM mufredat m
         JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
         JOIN ders d ON md.ders_id = d.ders_id
@@ -31,7 +32,7 @@ def kontrol_et():
 
     print("\n--- 2. 2023 HAVUZ DURUMU (Statüler) ---")
     cursor.execute("""
-        SELECT d.ad, h.statu, h.skor 
+        SELECT d.ad, h.statu, h.skor
         FROM havuz h
         JOIN ders d ON h.ders_id = d.ders_id
         WHERE h.yil = 2023

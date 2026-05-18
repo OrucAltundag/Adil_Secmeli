@@ -22,8 +22,14 @@ from app.services.import_audit_service import (
     reject_import,
 )
 from app.services.import_diff_service import get_import_diff, recalculate_import_diff
-from app.services.import_impact_service import get_import_impact, recalculate_import_impact
-from app.services.import_quality_service import evaluate_import_quality, summarize_quality
+from app.services.import_impact_service import (
+    get_import_impact,
+    recalculate_import_impact,
+)
+from app.services.import_quality_service import (
+    evaluate_import_quality,
+    summarize_quality,
+)
 from app.services.import_rollback_service import get_rollback_plan, rollback_import
 
 
@@ -39,10 +45,14 @@ class DataManagementPage(ttk.Frame):
         path = getattr(self.app, "db_path", None)
         return os.path.abspath(path) if path else None
 
+    @staticmethod
+    def _friendly_backend_error() -> str:
+        return "Sistem şu anda işlem yapamıyor. Lütfen daha sonra tekrar deneyin."
+
     def _connect(self) -> sqlite3.Connection:
         path = self._db_path()
         if not path or not os.path.exists(path):
-            raise FileNotFoundError("Veritabani bulunamadi.")
+            raise FileNotFoundError(self._friendly_backend_error())
         return open_sqlite_connection(path, row_factory=True)
 
     def _build_ui(self) -> None:
@@ -186,9 +196,9 @@ class DataManagementPage(ttk.Frame):
                     ),
                 )
             self.status_var.set(f"{len(rows)} import kaydı listelendi.")
-        except Exception as exc:
+        except Exception:
             self.status_var.set("Import geçmişi yüklenemedi.")
-            messagebox.showerror("Veri Yönetimi", f"Import geçmişi yüklenemedi:\n{exc}")
+            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
 
     def _on_history_select(self, _event: Any = None) -> None:
         selected = self.history_tree.selection()
@@ -219,8 +229,8 @@ class DataManagementPage(ttk.Frame):
             self._set_text(self.diff_text, diff or "Bu import için henüz diff raporu yok. 'Diff Hesapla' butonunu kullanın.")
             self._set_text(self.rollback_text, plan)
             self._set_text(self.impact_text, impact or "Bu import için henüz karar etkisi raporu yok.")
-        except Exception as exc:
-            messagebox.showerror("Veri Yönetimi", f"Import detayı yüklenemedi:\n{exc}")
+        except Exception:
+            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
 
     def recalculate_diff(self) -> None:
         if self.selected_import_batch_id is None:
@@ -231,8 +241,8 @@ class DataManagementPage(ttk.Frame):
                 diff = recalculate_import_diff(conn, self.selected_import_batch_id)
                 conn.commit()
             self._set_text(self.diff_text, diff)
-        except Exception as exc:
-            messagebox.showerror("Diff", f"Diff hesaplanamadı:\n{exc}")
+        except Exception:
+            messagebox.showerror("Diff", self._friendly_backend_error())
 
     def recalculate_impact(self) -> None:
         if self.selected_import_batch_id is None:
@@ -243,8 +253,8 @@ class DataManagementPage(ttk.Frame):
                 impact = recalculate_import_impact(conn, self.selected_import_batch_id)
                 conn.commit()
             self._set_text(self.impact_text, impact)
-        except Exception as exc:
-            messagebox.showerror("Karar Etkisi", f"Etki raporu hesaplanamadı:\n{exc}")
+        except Exception:
+            messagebox.showerror("Karar Etkisi", self._friendly_backend_error())
 
     def load_rollback_plan(self) -> None:
         if self.selected_import_batch_id is None:
@@ -254,8 +264,8 @@ class DataManagementPage(ttk.Frame):
             with self._connect() as conn:
                 plan = get_rollback_plan(conn, self.selected_import_batch_id)
             self._set_text(self.rollback_text, plan)
-        except Exception as exc:
-            messagebox.showerror("Rollback", f"Rollback planı yüklenemedi:\n{exc}")
+        except Exception:
+            messagebox.showerror("Rollback", self._friendly_backend_error())
 
     def approve_selected(self) -> None:
         self._status_action(lambda conn, batch_id: approve_import(conn, batch_id), "Import onaylandı.")
@@ -293,5 +303,5 @@ class DataManagementPage(ttk.Frame):
             self.refresh_imports()
             self.load_selected_import()
             self._set_text(self.rollback_text, result)
-        except Exception as exc:
-            messagebox.showerror("Veri Yönetimi", f"İşlem tamamlanamadı:\n{exc}")
+        except Exception:
+            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())

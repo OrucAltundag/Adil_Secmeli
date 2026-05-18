@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.algorithms.base import AlgorithmOutput, IRanker
-
+from app.algorithms.mcdm._shared import ensure_weight_count, get_criteria_columns
 
 RI_TABLE = {
     1: 0.0,
@@ -39,10 +39,16 @@ class AHPRanker(IRanker):
         self.state: AHPFitState | None = None
 
     def fit(self, X: pd.DataFrame, y: None = None) -> "AHPRanker":
+        columns = get_criteria_columns(X)
+        n = len(columns)
+        if n == 0:
+            raise ValueError("AHP icin sayisal kriter bulunamadi.")
         if self.pairwise_matrix is None:
-            columns = [c for c in X.columns if c != "item_id"]
-            n = len(columns)
             self.pairwise_matrix = np.ones((n, n), dtype=float)
+        elif self.pairwise_matrix.shape[0] != self.pairwise_matrix.shape[1]:
+            raise ValueError(f"AHP pairwise matrix kare olmali, mevcut shape={self.pairwise_matrix.shape}.")
+        elif not np.all(np.isfinite(self.pairwise_matrix)):
+            raise ValueError("AHP pairwise matrix must contain finite numbers.")
         matrix = self.pairwise_matrix
         eigenvalues, eigenvectors = np.linalg.eig(matrix)
         idx = int(np.argmax(eigenvalues.real))
@@ -68,9 +74,11 @@ class AHPRanker(IRanker):
         assert self.state is not None
 
         df = X.copy()
-        criteria_cols = [c for c in df.columns if c != "item_id"]
-        if len(criteria_cols) != len(self.state.weights):
-            raise ValueError("Criteria count mismatch between pairwise matrix and input data")
+        criteria_cols = get_criteria_columns(df)
+        try:
+            ensure_weight_count(self.state.weights, len(criteria_cols), algorithm_name="AHP")
+        except ValueError as exc:
+            raise ValueError("Criteria count mismatch between pairwise matrix and input data") from exc
         for col in criteria_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
@@ -130,4 +138,3 @@ class AHPRanker(IRanker):
             f"CR={self.state.consistency_ratio:.4f}, CI={self.state.consistency_index:.4f}, "
             f"weights={self.state.weights.round(4).tolist()}"
         )
-

@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """Performans smoke testleri — büyük veri ile temel zamanlama."""
 from __future__ import annotations
+
 import time
-import pytest
+
 import pandas as pd
+import pytest
+
 from app.algorithms.mcdm.topsis import TOPSISRanker
 
 pytestmark = [pytest.mark.performance, pytest.mark.slow]

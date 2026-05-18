@@ -1,19 +1,25 @@
 # -*- coding: utf-8 -*-
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
-from sqlalchemy.orm import Session
-from typing import List
 
-from app.db.database import get_session
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
 from app.core.config import load_app_config
-from app.schemas.auth import UserContext, ApiClientCreate, ApiClientResponse, ApiClientCreatedResponse
-from app.services.auth_service import get_auth_service, AuthService, get_current_user
-from app.services.permission_service import get_permission_service, PermissionService, require_action
-from app.services.security_health_service import SecurityHealthService
-from app.services.security_audit_service import SecurityAuditService
-from app.services.sql_console_service import SqlConsoleService
+from app.db.database import get_session
+from app.schemas.auth import (
+    ApiClientCreate,
+    ApiClientCreatedResponse,
+    UserContext,
+)
+from app.services.auth_service import AuthService, get_auth_service
 from app.services.backup_restore_service import BackupRestoreService
 from app.services.file_upload_security_service import FileUploadSecurityService
+from app.services.permission_service import (
+    require_action,
+)
 from app.services.secure_import_service import SecureImportService
+from app.services.security_audit_service import SecurityAuditService
+from app.services.security_health_service import SecurityHealthService
+from app.services.sql_console_service import SqlConsoleService
 
 router = APIRouter(prefix="/security", tags=["security"])
 
@@ -46,7 +52,7 @@ def execute_sql(
     config = load_app_config()
     audit_service = SecurityAuditService(db, config)
     sql_service = SqlConsoleService(db, config, audit_service)
-    
+
     result = sql_service.execute_sql(sql_text, user)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
@@ -65,7 +71,7 @@ async def upload_secure_import(
     upload_security = FileUploadSecurityService(config)
     audit_service = SecurityAuditService(db, config)
     secure_import_service = SecureImportService(db, config, upload_security, audit_service)
-    
+
     job = await secure_import_service.create_import_job(import_type, file, user, faculty_id, year)
     return {"job_id": job.id, "status": job.status, "message": "File uploaded securely"}
 
@@ -79,7 +85,7 @@ def approve_secure_import(
     upload_security = FileUploadSecurityService(config)
     audit_service = SecurityAuditService(db, config)
     secure_import_service = SecureImportService(db, config, upload_security, audit_service)
-    
+
     job = secure_import_service.approve_import_job(job_id, user)
     return {"job_id": job.id, "status": job.status}
 

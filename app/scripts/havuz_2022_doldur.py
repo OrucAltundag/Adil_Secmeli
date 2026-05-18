@@ -6,8 +6,9 @@
 # ilgili güncellemeleri uygular.
 # =============================================================================
 
-import sqlite3
 import os
+import sqlite3
+
 
 def havuz_2022_doldur(fakulte_id=2):
     # Veritabanı yolu
@@ -26,12 +27,12 @@ def havuz_2022_doldur(fakulte_id=2):
     # 1. ADIM: 2022 Yılında Müfredatta Olan Dersler (REFERANS LİSTESİ)
     # ---------------------------------------------------------
     aktif_mufredat_2022 = [
-        "Analog Elektronik", "Sinyaller ve Sistemler", "Mikroişlemciler", 
+        "Analog Elektronik", "Sinyaller ve Sistemler", "Mikroişlemciler",
         "Elektrik Enerjisi İletim Sistemleri", "Elektromanyetik Alan Teorisi",
-        "Gömülü Sistemler I", "Otomatik Kontrol Sistemleri I", 
+        "Gömülü Sistemler I", "Otomatik Kontrol Sistemleri I",
         "Güç Elektroniği I", "Yenilenebilir Enerji Kaynakları", "Haberleşme I"
     ]
-    
+
     # Karşılaştırma kolaylığı için hepsini küçük harfe çevirelim
     aktif_mufredat_lower = [d.lower().strip() for d in aktif_mufredat_2022]
 
@@ -39,16 +40,16 @@ def havuz_2022_doldur(fakulte_id=2):
     # 2. ADIM: Veritabanından İlgili Fakültenin Seçmeli Derslerini Çek
     # ---------------------------------------------------------
     print(f"📡 Fakülte ID: {fakulte_id} için 'Seçmeli' dersler çekiliyor...")
-    
+
     # DÜZELTME BURADA YAPILDI: 'id' yerine 'rowid' kullanıldı.
     cur.execute("""
-        SELECT rowid, ad, bolum_id, kredi, akts 
-        FROM ders 
+        SELECT rowid, ad, bolum_id, kredi, akts
+        FROM ders
         WHERE fakulte_id = ? AND (DersTipi = 'Seçmeli' OR DersTipi = 'Secmeli')
     """, (fakulte_id,))
-    
+
     tum_secmeli_dersler = cur.fetchall()
-    
+
     if not tum_secmeli_dersler:
         print("⚠️ Hata: Bu kriterlere uygun hiç ders bulunamadı! 'ders' tablosunu kontrol et.")
         conn.close()
@@ -60,12 +61,12 @@ def havuz_2022_doldur(fakulte_id=2):
     # 3. ADIM: Her Ders İçin Statü, Skor ve Sayaç Hesapla
     # ---------------------------------------------------------
     eklenen_sayisi = 0
-    
+
     for ders in tum_secmeli_dersler:
         db_id = ders[0]      # Artık rowid (otomatik id)
         ders_adi = ders[1]   # Dersin Adı
         bolum_id = ders[2]
-        
+
         # --- OTOMATİK KARAR MEKANİZMASI ---
         # Ders adı aktif listede var mı?
         if ders_adi.lower().strip() in aktif_mufredat_lower:
@@ -86,10 +87,13 @@ def havuz_2022_doldur(fakulte_id=2):
 
         # Alan Tahmini
         alan = "Genel"
-        if "Mat" in ders_adi: alan = "Matematik"
-        elif "Elek" in ders_adi: alan = "Elektronik"
-        elif "Yazılım" in ders_adi or "Veri" in ders_adi: alan = "Yazılım"
-        
+        if "Mat" in ders_adi:
+            alan = "Matematik"
+        elif "Elek" in ders_adi:
+            alan = "Elektronik"
+        elif "Yazılım" in ders_adi or "Veri" in ders_adi:
+            alan = "Yazılım"
+
         # ---------------------------------------------------------
         # 4. ADIM: Havuz Tablosuna Ekle
         # ---------------------------------------------------------
@@ -100,7 +104,7 @@ def havuz_2022_doldur(fakulte_id=2):
                 INSERT INTO havuz (ders_id, yil, fakulte_id, bolum_id, alan, statu, sayac, skor, ders_adi)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (simulasyon_ders_id, 2022, fakulte_id, bolum_id, alan, statu, sayac, skor, ders_adi))
-            
+
             print(f"   -> {ders_adi:<35} : {durum_mesaj} | Sayaç:{sayac} Skor:{skor}")
             eklenen_sayisi += 1
         else:

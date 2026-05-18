@@ -3,15 +3,14 @@
 
 from __future__ import annotations
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
-from app.algorithms.mcdm.topsis import TOPSISRanker
 from app.algorithms.mcdm.ahp import AHPRanker
-from app.services.trend_analysis_service import analyze_trend_values
+from app.algorithms.mcdm.topsis import TOPSISRanker
 from app.services.data_confidence_service import calculate_data_confidence
-
+from app.services.trend_analysis_service import analyze_trend_values
 
 pytestmark = pytest.mark.unit
 
@@ -104,6 +103,7 @@ class TestEdgeCasesScoreCalculation:
         """Kontenjan 0 ise division by zero olmamali."""
         # Dogrudan havuz_karar calculate_next_status ile kontrol
         from app.services.havuz_karar import calculate_next_status
+
         # Bu fonksiyon basari verisine dogrudan bakmaz ama crash olmamali
         status, counter = calculate_next_status(0, 0, False)
         assert status == 0  # havuzda kalir

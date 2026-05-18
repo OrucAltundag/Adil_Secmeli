@@ -10,11 +10,20 @@ import pytest
 
 from app.db.schema_compat import ensure_semester_planning_schema
 from app.services.course_semester_availability_service import upsert_course_availability
-from app.services.instructor_planning_service import create_instructor, assign_course_instructor, upsert_instructor_availability
+from app.services.instructor_planning_service import (
+    assign_course_instructor,
+    create_instructor,
+    upsert_instructor_availability,
+)
 from app.services.prerequisite_planning_service import create_prerequisite
 from app.services.resource_planning_service import create_resource_requirement
 from app.services.semester_planning_engine import generate_semester_plan, get_plan_run
-from app.services.semester_planning_policy_service import create_policy, resolve_policy, seed_default_policy, validate_policy
+from app.services.semester_planning_policy_service import (
+    create_policy,
+    resolve_policy,
+    seed_default_policy,
+    validate_policy,
+)
 from app.services.semester_planning_reporting_service import get_semester_plan_summary
 
 

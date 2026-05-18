@@ -7,12 +7,21 @@ import json
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
-from app.services.ahp_profile_service import create_ahp_profile, list_ahp_profiles, activate_ahp_profile
-from app.services.decision_policy_service import create_decision_policy, list_decision_policies, activate_decision_policy
-from app.services.decision_run_service import list_course_decisions, list_decision_runs
+from app.services.ahp_profile_service import (
+    activate_ahp_profile,
+    create_ahp_profile,
+    list_ahp_profiles,
+)
 from app.services.calculation import run_all_algorithms_for_year
 from app.services.criteria_completion_service import can_run_algorithm
 from app.services.criteria_override_service import request_override
+from app.services.decision_policy_service import (
+    activate_decision_policy,
+    create_decision_policy,
+    list_decision_policies,
+)
+from app.services.decision_run_service import list_course_decisions, list_decision_runs
+from app.services.ml_prediction_service import get_predictions_for_course
 from app.services.pool_state_machine_service import (
     approve_state_approval,
     get_course_state_history,
@@ -21,7 +30,6 @@ from app.services.pool_state_machine_service import (
     list_state_transitions,
     reject_state_approval,
 )
-from app.services.ml_prediction_service import get_predictions_for_course
 from app.services.service_factory import get_service_factory
 from app.ui.tabs.semester_planning_page import SemesterPlanningPage
 
@@ -66,6 +74,7 @@ class DecisionCenterPage(ttk.Frame):
         self._decision_ids: dict[str, int] = {}
         self._pool_transition_rows: dict[str, dict] = {}
         self._pool_approval_ids: dict[str, int] = {}
+        self._action_buttons: list[ttk.Button] = []
 
         self._build_filters()
         self.sub_nb = ttk.Notebook(self)
@@ -85,8 +94,12 @@ class DecisionCenterPage(ttk.Frame):
     def _conn(self):
         conn = getattr(self.db, "conn", None)
         if conn is None:
-            raise RuntimeError("Veritabanı bağlantısı yok.")
+            raise RuntimeError(self._friendly_backend_error())
         return conn
+
+    @staticmethod
+    def _friendly_backend_error() -> str:
+        return "Sistem şu anda işlem yapamıyor. Lütfen daha sonra tekrar deneyin."
 
     def _build_filters(self):
         bar = ttk.LabelFrame(self, text="Filtreler", padding=8)
@@ -99,7 +112,7 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Label(bar, text="Fakülte").pack(side=tk.LEFT)
         self.cb_faculty = ttk.Combobox(bar, width=26, state="readonly")
         self.cb_faculty.pack(side=tk.LEFT, padx=(4, 12))
-        self.cb_faculty.bind("<<ComboboxSelected>>", lambda _e: self._load_departments())
+        self.cb_faculty.bind("<<ComboboxSelected>>", self._on_filter_change)
 
         ttk.Label(bar, text="Bölüm").pack(side=tk.LEFT)
         self.cb_department = ttk.Combobox(bar, width=26, state="readonly")
@@ -109,11 +122,13 @@ class DecisionCenterPage(ttk.Frame):
         self.cb_semester = ttk.Combobox(bar, width=10, state="readonly", values=["Guz", "Bahar"])
         self.cb_semester.set("Guz")
         self.cb_semester.pack(side=tk.LEFT, padx=(4, 12))
+        self.cb_semester.bind("<<ComboboxSelected>>", self._on_filter_change)
 
         ttk.Label(bar, text="Run").pack(side=tk.LEFT)
         self.cb_run = ttk.Combobox(bar, width=34, state="readonly")
         self.cb_run.pack(side=tk.LEFT, padx=(4, 12))
         self.cb_run.bind("<<ComboboxSelected>>", lambda _e: self._load_run_related())
+        self.cb_year.bind("<<ComboboxSelected>>", self._on_filter_change)
 
         ttk.Button(bar, text="Yenile", command=self.refresh).pack(side=tk.RIGHT)
 
@@ -156,7 +171,9 @@ class DecisionCenterPage(ttk.Frame):
         self.sub_nb.add(frame, text="Çalıştırmalar")
         top = ttk.Frame(frame)
         top.pack(fill=tk.X, pady=(0, 6))
-        ttk.Button(top, text="Yeni Karar Çalıştır", command=self._execute_run).pack(side=tk.LEFT)
+        self.btn_execute_run = ttk.Button(top, text="Yeni Karar Çalıştır", command=self._execute_run)
+        self.btn_execute_run.pack(side=tk.LEFT)
+        self._action_buttons.append(self.btn_execute_run)
         self.tree_runs = self._tree(
             frame,
             ("id", "yil", "fakülte", "dönem", "durum", "ahp", "politika", "başlangıç"),
@@ -261,6 +278,7 @@ class DecisionCenterPage(ttk.Frame):
     def refresh(self, force_reload: bool = False):
         try:
             self._load_filters()
+            self._sync_action_buttons()
             self._load_ahp()
             self._load_policies()
             self._load_runs()
@@ -269,10 +287,10 @@ class DecisionCenterPage(ttk.Frame):
             if getattr(self, "tab_semester_planning", None):
                 self.tab_semester_planning.refresh()
             self._load_run_related()
-        except Exception as exc:
+        except Exception:
             if getattr(self, "txt_readiness", None):
                 self.txt_readiness.delete("1.0", tk.END)
-                self.txt_readiness.insert(tk.END, f"Veriler yüklenemedi:\n{exc}")
+                self.txt_readiness.insert(tk.END, self._friendly_backend_error())
 
     def _load_filters(self):
         conn = self._conn()
@@ -293,6 +311,22 @@ class DecisionCenterPage(ttk.Frame):
         if faculty_names and self.cb_faculty.get() not in faculty_names:
             self.cb_faculty.set(faculty_names[0])
         self._load_departments()
+        self._sync_action_buttons()
+
+    def _on_filter_change(self, _event=None):
+        self._load_departments()
+        self._sync_action_buttons()
+
+    def _selection_ready(self) -> bool:
+        return bool((self.cb_year.get() or "").strip()) and bool(self._faculty_map.get(self.cb_faculty.get()))
+
+    def _sync_action_buttons(self):
+        state = tk.NORMAL if self._selection_ready() else tk.DISABLED
+        for button in getattr(self, "_action_buttons", []):
+            try:
+                button.configure(state=state)
+            except Exception:
+                pass
 
     def _load_departments(self):
         try:
@@ -310,6 +344,7 @@ class DecisionCenterPage(ttk.Frame):
             self.cb_department["values"] = values
             if self.cb_department.get() not in values:
                 self.cb_department.set("Tümü")
+            self._sync_action_buttons()
         except Exception:
             pass
 
@@ -436,9 +471,9 @@ class DecisionCenterPage(ttk.Frame):
                 )
             self.txt_readiness.insert(tk.END, "\n".join(lines))
             self._last_readiness_gate = gate
-        except Exception as exc:
+        except Exception:
             self.lbl_readiness.config(text="Hazırlık kontrolü yüklenemedi.")
-            self.txt_readiness.insert(tk.END, str(exc))
+            self.txt_readiness.insert(tk.END, self._friendly_backend_error())
 
     def _request_readiness_override(self):
         try:
@@ -473,8 +508,8 @@ class DecisionCenterPage(ttk.Frame):
             self._conn().commit()
             messagebox.showinfo("Override", "Override talebi kaydedildi.")
             self._load_readiness()
-        except Exception as exc:
-            messagebox.showerror("Override", str(exc))
+        except Exception:
+            messagebox.showerror("Override", self._friendly_backend_error())
 
     def _load_course_decisions(self, run_id):
         self._clear(self.tree_courses)
@@ -640,8 +675,8 @@ class DecisionCenterPage(ttk.Frame):
             approve_state_approval(self._conn(), int(selected[0]), reviewed_by="decision_center", review_note=note)
             self._conn().commit()
             self._load_pool_lifecycle()
-        except Exception as exc:
-            messagebox.showerror("Havuz Onayı", str(exc))
+        except Exception:
+            messagebox.showerror("Havuz Onayı", self._friendly_backend_error())
 
     def _reject_pool_state(self):
         selected = self.tree_pool_approvals.selection()
@@ -653,8 +688,8 @@ class DecisionCenterPage(ttk.Frame):
             reject_state_approval(self._conn(), int(selected[0]), reviewed_by="decision_center", review_note=note)
             self._conn().commit()
             self._load_pool_lifecycle()
-        except Exception as exc:
-            messagebox.showerror("Havuz Reddi", str(exc))
+        except Exception:
+            messagebox.showerror("Havuz Reddi", self._friendly_backend_error())
 
     def _load_sensitivity(self, run_id):
         self._clear(self.tree_sensitivity)
@@ -810,8 +845,8 @@ class DecisionCenterPage(ttk.Frame):
         try:
             create_ahp_profile(self._conn(), name=name, scope_type="global", activate=True)
             self._load_ahp()
-        except Exception as exc:
-            messagebox.showerror("AHP Profili", str(exc))
+        except Exception:
+            messagebox.showerror("AHP Profili", self._friendly_backend_error())
 
     def _activate_profile(self):
         selected = self.tree_ahp.selection()
@@ -821,8 +856,8 @@ class DecisionCenterPage(ttk.Frame):
         try:
             activate_ahp_profile(self._conn(), int(selected[0]))
             self._load_ahp()
-        except Exception as exc:
-            messagebox.showerror("AHP Profili", str(exc))
+        except Exception:
+            messagebox.showerror("AHP Profili", self._friendly_backend_error())
 
     def _create_policy(self):
         name = simpledialog.askstring("Karar Politikası", "Politika adı:")
@@ -831,8 +866,8 @@ class DecisionCenterPage(ttk.Frame):
         try:
             create_decision_policy(self._conn(), name=name, scope_type="global", activate=True)
             self._load_policies()
-        except Exception as exc:
-            messagebox.showerror("Karar Politikası", str(exc))
+        except Exception:
+            messagebox.showerror("Karar Politikası", self._friendly_backend_error())
 
     def _activate_policy(self):
         selected = self.tree_policy.selection()
@@ -842,15 +877,17 @@ class DecisionCenterPage(ttk.Frame):
         try:
             activate_decision_policy(self._conn(), int(selected[0]))
             self._load_policies()
-        except Exception as exc:
-            messagebox.showerror("Karar Politikası", str(exc))
+        except Exception:
+            messagebox.showerror("Karar Politikası", self._friendly_backend_error())
 
     def _execute_run(self):
+        if not self._selection_ready():
+            messagebox.showwarning("Karar Çalıştır", "Karar çalıştırmak için önce yıl ve fakülte seçiniz.")
+            self._sync_action_buttons()
+            return
         try:
             year = int(self.cb_year.get())
             faculty_id = self._faculty_map.get(self.cb_faculty.get())
-            if not faculty_id:
-                raise ValueError("Fakülte seçiniz.")
             gate = can_run_algorithm(
                 self._conn(),
                 year=year,
@@ -872,10 +909,10 @@ class DecisionCenterPage(ttk.Frame):
                 fakulte_id=int(faculty_id),
             )
             if not result.get("ok"):
-                messagebox.showwarning("Karar Çalıştır", str(result.get("messages") or result))
+                messagebox.showwarning("Karar Çalıştır", self._friendly_backend_error())
             self.refresh()
-        except Exception as exc:
-            messagebox.showerror("Karar Çalıştır", str(exc))
+        except Exception:
+            messagebox.showerror("Karar Çalıştır", self._friendly_backend_error())
 
     def _clear(self, tree):
         for item in tree.get_children():

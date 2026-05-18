@@ -7,7 +7,6 @@ import pytest
 
 from app.services.explanation_engine import build_decision_explanation
 
-
 pytestmark = pytest.mark.unit
 
 

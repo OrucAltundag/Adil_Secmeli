@@ -4,7 +4,14 @@ import tkinter as tk
 from tkinter import ttk
 
 from app.ui.benchmark import mock_data
-from app.ui.benchmark.widgets import BarChart, COLORS, DataTable, ErrorBanner, SectionHeader, run_async
+from app.ui.benchmark.widgets import (
+    COLORS,
+    BarChart,
+    DataTable,
+    ErrorBanner,
+    SectionHeader,
+    run_async,
+)
 
 
 class ComparisonPage(ttk.Frame):

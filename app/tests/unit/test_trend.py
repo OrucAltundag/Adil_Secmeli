@@ -6,11 +6,10 @@ from __future__ import annotations
 import pytest
 
 from app.services.trend_analysis_service import (
-    weighted_trend_score,
-    analyze_trend_values,
     TREND_DEFAULT_WEIGHTS,
+    analyze_trend_values,
+    weighted_trend_score,
 )
-
 
 pytestmark = pytest.mark.unit
 

@@ -19,7 +19,6 @@ from typing import Any
 from app.core.settings import load_settings
 from app.services.course_type import filter_elective_course_ids
 
-
 STATUS_NOT_STARTED = "not_started"
 STATUS_PARTIAL = "partial"
 STATUS_COMPLETED = "completed"
@@ -479,7 +478,10 @@ def is_faculty_criteria_complete(
     refresh: bool = True,
 ) -> bool:
     try:
-        from app.services.criteria_completion_service import can_run_algorithm, refresh_completion_status
+        from app.services.criteria_completion_service import (
+            can_run_algorithm,
+            refresh_completion_status,
+        )
 
         if refresh:
             refresh_completion_status(

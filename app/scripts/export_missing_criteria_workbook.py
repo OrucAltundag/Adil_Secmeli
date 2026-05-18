@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 import sqlite3
+import sys
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

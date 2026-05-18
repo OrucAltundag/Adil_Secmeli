@@ -3,16 +3,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
-from datetime import datetime
 import json
 import sqlite3
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
 
 from app.db.schema_compat import ensure_ml_governance_schema
-
 
 FEATURE_SCHEMA_VERSION = "course_features_v1"
 

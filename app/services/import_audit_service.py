@@ -17,7 +17,6 @@ import pandas as pd
 from app.db.schema_compat import ensure_import_governance_schema
 from app.db.sqlite_connection import connect_sqlite
 
-
 VALID_IMPORT_TYPES = {"criteria", "survey", "curriculum", "other"}
 VALID_STATUSES = {
     "uploaded",

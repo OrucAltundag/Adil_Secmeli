@@ -6,8 +6,14 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from app.services.semester_planning_engine import generate_semester_plan, get_plan_run, list_plan_runs
-from app.services.semester_planning_policy_service import list_policies, seed_default_policy
+from app.services.semester_planning_engine import (
+    generate_semester_plan,
+    get_plan_run,
+    list_plan_runs,
+)
+from app.services.semester_planning_policy_service import (
+    seed_default_policy,
+)
 from app.services.semester_planning_reporting_service import (
     compare_plan_scenarios,
     get_constraint_violations,
@@ -27,8 +33,12 @@ class SemesterPlanningPage(ttk.Frame):
     def _conn(self):
         conn = getattr(getattr(self.app, "db", None), "conn", None)
         if conn is None:
-            raise RuntimeError("Veritabanı bağlantısı yok.")
+            raise RuntimeError(self._friendly_backend_error())
         return conn
+
+    @staticmethod
+    def _friendly_backend_error() -> str:
+        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
 
     def _build_ui(self):
         header = ttk.Frame(self, padding=8)
@@ -48,8 +58,10 @@ class SemesterPlanningPage(ttk.Frame):
         ]:
             ttk.Label(filters, text=label).pack(side=tk.LEFT, padx=(0, 4))
             ttk.Entry(filters, textvariable=var, width=width).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(filters, text="Plan Üret", command=self.generate_plan).pack(side=tk.LEFT, padx=4)
-        ttk.Button(filters, text="Alternatifleri Üret", command=self.generate_plan).pack(side=tk.LEFT, padx=4)
+        self.btn_generate_plan = ttk.Button(filters, text="Plan Üret", command=self.generate_plan)
+        self.btn_generate_plan.pack(side=tk.LEFT, padx=4)
+        self.btn_generate_alternatives = ttk.Button(filters, text="Alternatifleri Üret", command=self.generate_plan)
+        self.btn_generate_alternatives.pack(side=tk.LEFT, padx=4)
 
         self.policy_text = tk.Text(filters, height=3, width=70)
         self.policy_text.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
@@ -153,10 +165,15 @@ class SemesterPlanningPage(ttk.Frame):
                 f"Güz {policy.get('fall_min')}-{policy.get('fall_max')} | Bahar {policy.get('spring_min')}-{policy.get('spring_max')}",
             )
             self._load_runs()
-        except Exception as exc:
-            messagebox.showerror("Dönem Planlama Hatası", str(exc))
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
 
     def generate_plan(self):
+        try:
+            int(self.var_year.get() or 0)
+        except ValueError:
+            messagebox.showwarning("Dönem Planlama", "Plan üretmek için geçerli bir yıl giriniz.")
+            return
         try:
             conn = self._conn()
             result = generate_semester_plan(
@@ -171,8 +188,8 @@ class SemesterPlanningPage(ttk.Frame):
             self._load_result(result)
             self._load_runs()
             messagebox.showinfo("Dönem Planlama", "Dönem planı üretildi.")
-        except Exception as exc:
-            messagebox.showerror("Dönem Planlama Hatası", str(exc))
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
 
     def _load_result(self, result):
         self._fill_course_tree(self.fall_tree, result.get("fall_courses", []))
@@ -256,5 +273,5 @@ class SemesterPlanningPage(ttk.Frame):
             if run:
                 self.policy_text.delete("1.0", tk.END)
                 self.policy_text.insert(tk.END, f"Seçili run: {run.get('run_name')} | skor {run.get('plan_score')} | durum {run.get('status')}")
-        except Exception as exc:
-            messagebox.showerror("Dönem Planlama Hatası", str(exc))
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())

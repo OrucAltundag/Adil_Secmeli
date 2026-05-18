@@ -5,11 +5,12 @@
 # Excel dosyasindan mufredat ve mufredat_ders iliskilerini SQLite veritabanina aktarir.
 # =============================================================================
 
-import sqlite3
-import pandas as pd
 import os
 import re
+import sqlite3
 from collections import defaultdict
+
+import pandas as pd
 
 # -------------------------------------------------------
 # PATH'leri CWD'ye değil, dosyanın konumuna göre bul (daha sağlam)

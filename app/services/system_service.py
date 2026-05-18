@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from pathlib import Path
 from typing import Any
 
 from app.core.config import AppConfig, load_app_config
@@ -19,7 +18,6 @@ from app.repositories.system_repository import SystemRepository
 from app.services.architecture_audit_service import generate_architecture_audit_report
 from app.services.schema_health_service import check_schema_health
 from app.viewmodels.system_health import SystemHealthViewModel
-
 
 LEGACY_DB_ACCESS_ALLOWLIST = {
     "view_tab.py": "Admin tablo görüntüleyici ve SQL Console",

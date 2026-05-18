@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-from typing import Optional, List, Dict, Any
-from fastapi import HTTPException, status, Depends
 
+from fastapi import Depends, HTTPException, status
+
+from app.core.config import AppConfig, load_app_config
 from app.schemas.auth import UserContext
-from app.core.config import load_app_config, AppConfig
 
 # Role definitions
 ROLE_ADMIN = "admin"
@@ -65,7 +65,7 @@ class PermissionService:
     def has_permission(self, user: UserContext, action: str) -> bool:
         if not self.config.require_rbac:
             return True
-        
+
         user_role = user.role
         if not user_role:
             return False
@@ -73,7 +73,7 @@ class PermissionService:
         allowed_actions = ROLE_PERMISSIONS.get(user_role, [])
         if "*" in allowed_actions:
             return True
-        
+
         return action in allowed_actions
 
     def can_access_faculty(self, user: UserContext, faculty_id: int) -> bool:

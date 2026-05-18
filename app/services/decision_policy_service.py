@@ -15,7 +15,6 @@ from app.services.havuz_karar import (
     STATU_MUFREDATTA,
 )
 
-
 DEFAULT_POLICY = {
     "name": "Varsayilan Karar Politikasi",
     "scope_type": "global",
@@ -293,13 +292,13 @@ def classify_score(score: float | None, policy: dict[str, Any]) -> dict[str, Any
         return {
             "recommended_status": STATU_HAVUZDA,
             "rule_triggered": "pool_threshold",
-            "reason": f"Skor havuz esigi altinda, ancak dinlenme esiginin ustunde.",
+            "reason": "Skor havuz esigi altinda, ancak dinlenme esiginin ustunde.",
         }
     if safe_score < float(policy.get("curriculum_keep_threshold", 70.0)):
         return {
             "recommended_status": STATU_HAVUZDA,
             "rule_triggered": "curriculum_keep_threshold",
-            "reason": f"Skor mufredatta kalma esiginin altinda.",
+            "reason": "Skor mufredatta kalma esiginin altinda.",
         }
     return {
         "recommended_status": STATU_MUFREDATTA,

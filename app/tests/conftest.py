@@ -8,12 +8,9 @@ Ana data/adil_secmeli.db dosyasına ASLA yazılmaz.
 
 from __future__ import annotations
 
-import os
 import sqlite3
-import tempfile
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Temel DB fixture

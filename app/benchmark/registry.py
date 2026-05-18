@@ -5,9 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from app.algorithms.allocation import (
+    FCFSAllocator,
+    GaleShapleyAllocator,
+    GreedyAllocator,
+    MinimumRegretAllocator,
+    RandomAllocator,
+)
 from app.algorithms.base import IAlgorithm
-from app.algorithms.allocation import FCFSAllocator, GaleShapleyAllocator, GreedyAllocator, MinimumRegretAllocator, RandomAllocator
-from app.algorithms.clustering import DBSCANClusterer, HierarchicalClusterer, KMeansClusterer
+from app.algorithms.clustering import (
+    DBSCANClusterer,
+    HierarchicalClusterer,
+    KMeansClusterer,
+)
 from app.algorithms.mcdm import AHPRanker, PROMETHEERanker, TOPSISRanker, VIKORRanker
 from app.algorithms.ml import (
     LogisticRegressionPredictor,

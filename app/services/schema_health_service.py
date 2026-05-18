@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from app.services.db import get_raw_connection
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -14,7 +13,6 @@ import sqlalchemy as sa
 from app.core.config import AppConfig, load_app_config
 from app.core.database_policy import runtime_schema_mutation_allowed
 from app.db.backend import is_sqlite_connection, is_sqlite_url
-
 
 CORE_REQUIRED_TABLES = {
     "ders",

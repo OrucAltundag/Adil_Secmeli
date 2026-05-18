@@ -71,9 +71,9 @@ def run_validation_strategy(model: Any, X: Any, y: Iterable[Any] | None, strateg
     if y is None:
         return {"strategy": strategy.to_dict(), "warnings": ["Hedef değişken olmadığı için validation çalıştırılmadı."], "fold_metrics": []}
     try:
+        import numpy as np
         from sklearn.base import clone
         from sklearn.metrics import accuracy_score, mean_absolute_error
-        import numpy as np
     except Exception as exc:
         return {"strategy": strategy.to_dict(), "warnings": [f"sklearn validation çalıştırılamadı: {exc}"], "fold_metrics": []}
 

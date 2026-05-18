@@ -184,4 +184,3 @@ class AlgorithmManager:
                 + 0.20 * min(cl.get("calinski_harabasz", 0.0) / 1000.0, 1.0)
             )
         return 0.0
-

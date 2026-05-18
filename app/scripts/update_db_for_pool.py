@@ -6,12 +6,13 @@
 # yönetimi için gerekli sütunları (statu, sayaç, skor, yıl, alan vb.) ekler.
 # =============================================================================
 
-import sqlite3
 import os
+import sqlite3
+
 
 def find_database_and_upgrade():
     # Terminalin açık olduğu ana klasör
-    base_dir = os.getcwd() 
+    base_dir = os.getcwd()
     print(f"📂 Arama Başlatılıyor: {base_dir} konumunda taranıyor...")
 
     target_db_path = None
@@ -37,38 +38,43 @@ def find_database_and_upgrade():
     print(f"🛠️ {os.path.basename(target_db_path)} güncelleniyor...")
     conn = sqlite3.connect(target_db_path)
     cur = conn.cursor()
-    
+
     try:
         # --- HAVUZ TABLOSU ---
         try:
             cur.execute("ALTER TABLE havuz ADD COLUMN statu INTEGER DEFAULT 0")
             print("✅ Havuz: 'statu' eklendi.")
-        except sqlite3.OperationalError: pass 
+        except sqlite3.OperationalError:
+            pass
 
         try:
             cur.execute("ALTER TABLE havuz ADD COLUMN sayac INTEGER DEFAULT 0")
             print("✅ Havuz: 'sayac' eklendi.")
-        except sqlite3.OperationalError: pass 
+        except sqlite3.OperationalError:
+            pass
 
         try:
             cur.execute("ALTER TABLE havuz ADD COLUMN skor REAL DEFAULT 0.0")
             print("✅ Havuz: 'skor' eklendi.")
-        except sqlite3.OperationalError: pass 
-        
+        except sqlite3.OperationalError:
+            pass
+
         try:
             cur.execute("ALTER TABLE havuz ADD COLUMN yil INTEGER")
             print("✅ Havuz: 'yil' eklendi.")
-        except sqlite3.OperationalError: pass 
+        except sqlite3.OperationalError:
+            pass
 
         # --- DERS TABLOSU ---
         try:
             cur.execute("ALTER TABLE ders ADD COLUMN alan TEXT DEFAULT 'Genel'")
             print("✅ Ders: 'alan' eklendi.")
-        except sqlite3.OperationalError: pass 
+        except sqlite3.OperationalError:
+            pass
 
     except Exception as e:
         print(f"⚠️ Bir hata oluştu: {e}")
-    
+
     conn.commit()
     conn.close()
     print("🏁 İşlem Başarıyla Tamamlandı.")

@@ -234,10 +234,8 @@ class SystemHealthPage(ttk.Frame):
     def _on_error(self, exc: Exception):
         self._set_running(False)
         self.status_var.set("Sağlık kontrolü başarısız.")
-        messagebox.showerror(
-            "Sistem Sağlığı",
-            f"Sağlık kontrolü çalıştırılamadı:\n{type(exc).__name__}: {exc}",
-        )
+        print(f"[SystemHealth] Sağlık kontrolü hatası: {exc}")
+        messagebox.showerror("Sistem Sağlığı", "Sağlık kontrolü sırasında hata oluştu. Lütfen daha sonra tekrar deneyin.")
 
     def _on_report(self, report):
         self._last_report = report
@@ -292,7 +290,8 @@ class SystemHealthPage(ttk.Frame):
             else:
                 result = svc.export_health_report_txt(path, self._last_report)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Sistem Sağlığı", f"Dışa aktarma hatası: {exc}")
+            print(f"[SystemHealth] Rapor dışa aktarma hatası: {exc}")
+            messagebox.showerror("Sistem Sağlığı", "Rapor dışa aktarımı başarısız oldu. Lütfen daha sonra tekrar deneyin.")
             return
         if getattr(result, "success", False):
             messagebox.showinfo("Sistem Sağlığı", result.message or "Rapor kaydedildi.")

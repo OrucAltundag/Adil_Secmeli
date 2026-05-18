@@ -18,7 +18,8 @@ Legacy (raw cursor) kullanim:
 from contextlib import contextmanager
 from typing import Generator, Optional
 
-from app.db.session import db_session as legacy_db_session, open_sqlite_connection
+from app.db.session import db_session as legacy_db_session
+from app.db.session import open_sqlite_connection
 
 
 @contextmanager

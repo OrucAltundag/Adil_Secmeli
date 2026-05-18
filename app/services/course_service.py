@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
 
 from app.core.result import ServiceResult
 from app.db.session import db_session

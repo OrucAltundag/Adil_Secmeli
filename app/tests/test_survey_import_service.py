@@ -6,9 +6,9 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from app.services.survey_import_service import (
+    SURVEY_TEMPLATE_SHEET_NAME,
     compute_total_participants,
     import_survey_excel,
-    SURVEY_TEMPLATE_SHEET_NAME,
     write_survey_template_excel,
 )
 

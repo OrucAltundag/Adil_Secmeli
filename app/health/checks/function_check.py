@@ -136,8 +136,9 @@ class BoundaryCheck(_FunctionCheck):
     def run(self, context: HealthContext) -> HealthCheckResult:
         problems: list[str] = []
         try:
-            from app.algorithms.mcdm.ahp import AHPRanker
             import pandas as pd
+
+            from app.algorithms.mcdm.ahp import AHPRanker
 
             ranker = AHPRanker(pairwise_matrix=[[1.0]])
             empty = pd.DataFrame({"item_id": [], "k": []})

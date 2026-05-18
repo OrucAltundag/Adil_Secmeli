@@ -5,12 +5,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 from app.db.schema_compat import ensure_import_governance_schema
-from app.services.import_audit_service import get_import_batch, list_import_issues, list_import_rows
+from app.services.import_audit_service import (
+    get_import_batch,
+    list_import_issues,
+    list_import_rows,
+)
 
 
 def _now() -> str:

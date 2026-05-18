@@ -3,7 +3,15 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from app.ui.benchmark.widgets import COLORS, DataTable, ErrorBanner, JsonPreviewWidget, MetricCard, SectionHeader, run_async
+from app.ui.benchmark.widgets import (
+    COLORS,
+    DataTable,
+    ErrorBanner,
+    JsonPreviewWidget,
+    MetricCard,
+    SectionHeader,
+    run_async,
+)
 
 
 class MLReadinessPage(ttk.Frame):

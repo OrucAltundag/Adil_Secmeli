@@ -7,8 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.algorithms.mcdm.ahp import AHPRanker, RI_TABLE
-
+from app.algorithms.mcdm.ahp import RI_TABLE, AHPRanker
 
 pytestmark = pytest.mark.unit
 

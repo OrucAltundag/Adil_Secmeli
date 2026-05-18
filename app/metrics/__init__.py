@@ -1,6 +1,9 @@
 """Metrics package."""
 
-from app.metrics.academic import pattern_reproduction_score, ranking_similarity_with_ground_truth
+from app.metrics.academic import (
+    pattern_reproduction_score,
+    ranking_similarity_with_ground_truth,
+)
 from app.metrics.classification import classification_metrics, top_k_accuracy
 from app.metrics.clustering import clustering_metrics
 from app.metrics.fairness import allocation_fairness_metrics

@@ -46,7 +46,7 @@ class TabRegistrationCheck(_UICheck):
         missing = [
             cls
             for cls in EXPECTED_TABS
-            if f"self.nb.add(" not in main_src or cls not in main_src
+            if "self.nb.add(" not in main_src or cls not in main_src
         ]
         if missing:
             return self.warning(

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-import secrets
 import hashlib
 import hmac
+import secrets
+
 
 def generate_api_key(prefix: str = "ak") -> str:
     """Generate a secure API key."""

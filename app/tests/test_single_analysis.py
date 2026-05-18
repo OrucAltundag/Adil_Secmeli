@@ -8,28 +8,29 @@ veya:
     python app/tests/test_single_analysis.py
 """
 
-import sys
 import os
 import sqlite3
+import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.services.havuz_karar import (
-    calculate_next_status,
-    STATU_MUFREDATTA, STATU_HAVUZDA, STATU_DINLENMEDE, STATU_IPTAL,
-    MAKS_DUSME_SAYACI,
-)
+from app.services.calculation import KararMotoru
 from app.services.course_analyzer import (
-    analyze_single_course,
-    VeriEksikHatasi,
     _run_ahp,
+    _run_rf_simple,
     _run_topsis_single,
     _run_trend,
-    _run_rf_simple,
+    analyze_single_course,
 )
-from app.services.calculation import KararMotoru
-
+from app.services.havuz_karar import (
+    MAKS_DUSME_SAYACI,
+    STATU_DINLENMEDE,
+    STATU_HAVUZDA,
+    STATU_IPTAL,
+    STATU_MUFREDATTA,
+    calculate_next_status,
+)
 
 # ===========================================================================
 # KISIM 1: State Machine birim testleri (calculate_next_status)
@@ -688,5 +689,3 @@ if __name__ == "__main__":
     print(f"\n{'='*55}")
     print(f"Toplam: {passed + failed} test - {passed} gecti, {failed} basarisiz")
     sys.exit(1 if failed else 0)
-
-

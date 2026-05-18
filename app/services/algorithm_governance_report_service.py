@@ -9,7 +9,10 @@ import json
 import sqlite3
 from typing import Any
 
-from app.services.algorithm_governance_service import list_algorithm_governance, list_task_mappings
+from app.services.algorithm_governance_service import (
+    list_algorithm_governance,
+    list_task_mappings,
+)
 from app.services.governed_benchmark_service import get_governed_run_report
 
 

@@ -3,7 +3,12 @@
 
 from __future__ import annotations
 
-from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL, STATU_MUFREDATTA
+from app.services.havuz_karar import (
+    STATU_DINLENMEDE,
+    STATU_HAVUZDA,
+    STATU_IPTAL,
+    STATU_MUFREDATTA,
+)
 from app.services.validation import ValidationIssue, ValidationResult
 
 

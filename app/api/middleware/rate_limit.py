@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 import time
-from fastapi import Request, status
-from fastapi.responses import JSONResponse
 from collections import defaultdict
 from typing import Dict
 
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
+
 from app.core.config import load_app_config
-from app.services.security_audit_service import SecurityAuditService
 from app.db.database import SessionLocal
+from app.services.security_audit_service import SecurityAuditService
+
 
 # Simple in-memory rate limiter for demonstration.
 # In a real production scenario, use Redis.
@@ -30,7 +32,7 @@ limiter = RateLimiter()
 
 async def rate_limit_middleware(request: Request, call_next):
     config = load_app_config()
-    
+
     if not config.rate_limit_enabled:
         return await call_next(request)
 
@@ -63,7 +65,7 @@ async def rate_limit_middleware(request: Request, call_next):
             )
         finally:
             db.close()
-            
+
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             content={"detail": "Çok fazla istek gönderildi. Lütfen daha sonra tekrar deneyin."},

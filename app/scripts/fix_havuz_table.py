@@ -6,8 +6,9 @@
 # uyumlu şemayla yeniden oluşturur.
 # =============================================================================
 
-import sqlite3
 import os
+import sqlite3
+
 
 def recreate_havuz_table():
     # Veritabanı dosyasını bul
@@ -41,7 +42,7 @@ def recreate_havuz_table():
             ders_adi TEXT        -- Kontrol için ders adı
         )
         """)
-        
+
         conn.commit()
         print("✅ Başarılı! 'havuz' tablosu 'bolum_id' sütunuyla birlikte yeniden kuruldu.")
 

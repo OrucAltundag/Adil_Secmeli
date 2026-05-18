@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -170,4 +169,3 @@ def split_features_and_target(
     X = features_df.drop(columns=[c for c in drop_cols if c in features_df.columns], errors="ignore")
     y = features_df[target_column]
     return X, y
-

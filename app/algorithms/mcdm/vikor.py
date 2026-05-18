@@ -6,6 +6,11 @@ import numpy as np
 import pandas as pd
 
 from app.algorithms.base import AlgorithmOutput, IRanker
+from app.algorithms.mcdm._shared import (
+    ensure_weight_count,
+    get_criteria_columns,
+    normalize_weights,
+)
 
 
 class VIKORRanker(IRanker):
@@ -15,14 +20,8 @@ class VIKORRanker(IRanker):
         self.v = float(v)
 
     def fit(self, X: pd.DataFrame, y: None = None) -> "VIKORRanker":
-        criteria_cols = [c for c in X.columns if c != "item_id"]
-        if self.weights is None:
-            self.weights = np.ones(len(criteria_cols), dtype=float) / max(len(criteria_cols), 1)
-        else:
-            if len(self.weights) != len(criteria_cols):
-                raise ValueError("Weight length mismatch for VIKOR")
-            total = float(np.sum(self.weights)) or 1.0
-            self.weights = self.weights / total
+        criteria_cols = get_criteria_columns(X)
+        self.weights = normalize_weights(self.weights, len(criteria_cols), algorithm_name="VIKOR")
         self.parameters["weights"] = self.weights.tolist()
         return self
 
@@ -33,7 +32,8 @@ class VIKORRanker(IRanker):
         assert self.weights is not None
 
         df = X.copy()
-        criteria_cols = [c for c in df.columns if c != "item_id"]
+        criteria_cols = get_criteria_columns(df)
+        ensure_weight_count(self.weights, len(criteria_cols), algorithm_name="VIKOR")
         matrix = df[criteria_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=float)
         f_star = np.max(matrix, axis=0)
         f_minus = np.min(matrix, axis=0)
@@ -83,4 +83,3 @@ class VIKORRanker(IRanker):
 
     def explain(self, X: pd.DataFrame | None = None) -> str:
         return f"VIKOR balances group utility and individual regret with v={self.v}."
-

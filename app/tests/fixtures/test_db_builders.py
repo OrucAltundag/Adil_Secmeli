@@ -8,7 +8,6 @@ Ana data/adil_secmeli.db dosyasina ASLA dokunmaz.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -273,9 +272,9 @@ def create_state_machine_db(db_path: str | None = None) -> sqlite3.Connection:
     seed_golden_dataset(conn)
     try:
         from app.db.schema_compat import (
-            ensure_pool_state_governance_schema,
-            ensure_decision_governance_schema,
             ensure_architecture_schema,
+            ensure_decision_governance_schema,
+            ensure_pool_state_governance_schema,
         )
         ensure_architecture_schema(conn, commit=True)
         ensure_decision_governance_schema(conn, commit=True)

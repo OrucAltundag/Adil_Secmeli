@@ -30,4 +30,3 @@ def build_comparison_table(run_payload: dict[str, Any]) -> list[dict[str, Any]]:
                 flat_metrics[f"{group_name}.{metric_name}"] = metric_value
         table.append({"algorithm": algorithm_name, **flat_metrics})
     return table
-

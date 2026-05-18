@@ -9,10 +9,10 @@
 # SimilarityEngine kullanarak TF-IDF bazli benzerlik skorlari hesaplanir.
 # =============================================================================
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 
-from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 
 class RelationsTab(ttk.Frame):

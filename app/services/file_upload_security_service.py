@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
+import hashlib
 import os
 import re
-import hashlib
-from fastapi import UploadFile, HTTPException, status
 import unicodedata
 
+from fastapi import HTTPException, UploadFile
+
 from app.core.config import AppConfig
+
 
 class FileUploadSecurityService:
     def __init__(self, config: AppConfig):
@@ -46,10 +48,10 @@ class FileUploadSecurityService:
             if total_size > max_bytes:
                 raise HTTPException(status_code=413, detail=f"File exceeds maximum allowed size of {self.config.max_upload_size_mb} MB.")
             file_hash.update(chunk)
-        
+
         # Seek back to 0 for normal reading later
         await file.seek(0)
-        
+
         return file_hash.hexdigest(), total_size
 
     async def validate_upload(self, file: UploadFile) -> tuple[str, int]:

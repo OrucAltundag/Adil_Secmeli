@@ -9,7 +9,7 @@ import math
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.tree import DecisionTreeClassifier
@@ -333,10 +333,10 @@ class HavuzAIEngine:
             coefs.sort(key=lambda x: abs(x[1]), reverse=True)
 
             lines = [
-                f"=== Lineer Regresyon (Basari Tahmini) ===",
+                "=== Lineer Regresyon (Basari Tahmini) ===",
                 f"K-Fold (K={n_splits}) MAE: {mae:.2f}",
                 f"Egitim verisi: {len(X)} satir",
-                f"Kullanim rolu: advisory_ml | Karara etkisi: hayir",
+                "Kullanim rolu: advisory_ml | Karara etkisi: hayir",
                 f"Not: {ML_ADVISORY_NOTE}",
             ]
             if meta.get("fallback_used"):
@@ -362,10 +362,10 @@ class HavuzAIEngine:
             importances.sort(key=lambda x: x[1], reverse=True)
 
             lines = [
-                f"=== Karar Agaci (Statu Tahmini) ===",
+                "=== Karar Agaci (Statu Tahmini) ===",
                 f"K-Fold (K={n_splits}) Accuracy: {scores.mean()*100:.1f}%",
                 f"Egitim verisi: {len(X)} satir",
-                f"Kullanim rolu: advisory_ml | Karara etkisi: hayir",
+                "Kullanim rolu: advisory_ml | Karara etkisi: hayir",
                 f"Not: {ML_ADVISORY_NOTE}",
             ]
             if meta.get("fallback_used"):
@@ -397,10 +397,10 @@ class HavuzAIEngine:
             importances.sort(key=lambda x: x[1], reverse=True)
 
             lines = [
-                f"=== Random Forest (Kesinlesme Puani Tahmini) ===",
+                "=== Random Forest (Kesinlesme Puani Tahmini) ===",
                 f"K-Fold (K={n_splits}) MAE: {mae:.2f}",
                 f"Egitim verisi: {len(X)} satir",
-                f"Kullanim rolu: advisory_ml | Karara etkisi: hayir",
+                "Kullanim rolu: advisory_ml | Karara etkisi: hayir",
                 f"Not: {ML_ADVISORY_NOTE}",
             ]
             if meta.get("fallback_used"):

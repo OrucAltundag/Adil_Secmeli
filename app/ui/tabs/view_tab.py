@@ -8,15 +8,14 @@
 #            siralama, sayfalama)
 # SQL Runner: serbest SQL sorgusu calistirma penceresi
 # =============================================================================
-import tkinter as tk
-from tkinter import ttk, messagebox
-import sqlite3
 import math
+import sqlite3
+import tkinter as tk
+from tkinter import messagebox, ttk
 
 from app.core.config import load_app_config
 from app.core.permissions import UserContext, can
 from app.services.report_table_service import ReportTableService
-
 
 PAGE_SIZE = 100
 
@@ -158,8 +157,12 @@ class ViewTab(ttk.Frame):
             return self._table_service_override
         conn = getattr(self.db, "conn", None)
         if conn is None:
-            raise RuntimeError("Veritabanı bağlantısı yok.")
+            raise RuntimeError(self._friendly_backend_error())
         return ReportTableService(conn)
+
+    @staticmethod
+    def _friendly_backend_error() -> str:
+        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
 
     def _is_sql_console_allowed(self) -> bool:
         return can(self.user_context, "use_sql_console", config=self.config)
@@ -168,8 +171,8 @@ class ViewTab(ttk.Frame):
         self.lst_tables.delete(0, tk.END)
         try:
             tables = self._service().list_tables().unwrap()
-        except Exception as e:
-            messagebox.showerror("DB Hatasi", f"Tablolar listelenemedi:\n{e}")
+        except Exception:
+            messagebox.showerror("DB Hatasi", self._friendly_backend_error())
             return
         for t in tables:
             self.lst_tables.insert(tk.END, t)
@@ -201,8 +204,8 @@ class ViewTab(ttk.Frame):
         try:
             data = self._service().table_head(table, limit=50000).unwrap()
             cols, rows = data["columns"], data["rows"]
-        except Exception as e:
-            messagebox.showerror("Hata", f"Tablo okunamadi:\n{e}")
+        except Exception:
+            messagebox.showerror("Hata", self._friendly_backend_error())
             return
 
         self._columns = list(cols)

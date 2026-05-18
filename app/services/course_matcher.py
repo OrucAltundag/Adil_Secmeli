@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
 import sqlite3
+from dataclasses import dataclass
 
 from app.services.course_type import build_elective_predicate
 

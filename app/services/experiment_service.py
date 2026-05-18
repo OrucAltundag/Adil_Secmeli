@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from app.benchmark import AlgorithmRegistry, DEFAULT_SCENARIOS, BenchmarkScenario, ExperimentRunner, ResultStore
+from app.benchmark import (
+    DEFAULT_SCENARIOS,
+    AlgorithmRegistry,
+    ExperimentRunner,
+    ResultStore,
+)
 from app.datasets import DataPipeline, PipelineConfig
 from app.services.algorithm_manager import AlgorithmManager
 
@@ -111,4 +116,3 @@ class ExperimentService:
             use_history=use_history,
         )
         return recommendation.as_dict()
-

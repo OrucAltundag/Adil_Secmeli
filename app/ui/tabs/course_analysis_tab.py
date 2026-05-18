@@ -14,10 +14,9 @@ Hesaplama arka planda threading.Thread ile calisir; sonuc after() ile UI'a bası
 
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 
 from app.services.course_analyzer import analyze_single_course
-
 
 # ---------------------------------------------------------------------------
 # Renk paleti
@@ -777,7 +776,6 @@ class CourseAnalysisTab(ttk.Frame):
 
     def _on_ders_selected(self, event=None):
         """Ders seçildiğinde (Analizi Başlat için hazır)."""
-        pass
 
     def _update_ders_combo(self, query: str):
         """Ders listesini SearchableCombo'ya yukle."""
@@ -826,11 +824,13 @@ class CourseAnalysisTab(ttk.Frame):
             self.app, "config_data", {}
         ).get("db_path")
         if not db_path:
-            messagebox.showerror("Bağlantı Yok", "Veritabanı yolu belirlenemedi.")
+            print("[CourseAnalysis] Veritabanı yolu bulunamadı")
+            messagebox.showerror("Bağlantı Yok", "Veritabanı yolu belirlenemedi. Lütfen uygulama ayarlarını kontrol edin.")
             return
         db_path = os.path.abspath(db_path)
         if not os.path.exists(db_path):
-            messagebox.showerror("Baglanti Yok", f"Veritabani bulunamadi: {db_path}")
+            print(f"[CourseAnalysis] Veritabanı dosyası mevcut değil: {db_path}")
+            messagebox.showerror("Baglanti Yok", "Veritabanına bağlanılamıyor. Lütfen veritabanı yolunu ve erişimi kontrol edin.")
             return
 
         # UI sifirla

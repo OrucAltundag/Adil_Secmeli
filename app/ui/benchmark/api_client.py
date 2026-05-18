@@ -12,7 +12,6 @@ from typing import Any
 
 from app.ui.benchmark import mock_data
 
-
 DEFAULT_BASE_URL = os.environ.get("ADIL_BENCHMARK_API_URL", "http://127.0.0.1:8000")
 
 

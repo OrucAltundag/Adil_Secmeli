@@ -17,29 +17,28 @@ analyze_single_course(course_id, year, db_conn) -> dict
  10. Tüm ara çıktıları dict olarak dön
 """
 
-import math
-import os
-import time
-import sqlite3
 import logging
+import math
+import sqlite3
+import time
 from typing import Any, Optional
 
 from app.core.config import resolve_sqlite_db_path
-from app.services.db import db_session
-from app.services.havuz_karar import (
-    calculate_next_status,
-    STATU_MUFREDATTA,
-    STATU_HAVUZDA,
-    STATU_DINLENMEDE,
-    STATU_IPTAL,
-    MAKS_DUSME_SAYACI,
-)
 from app.services.calculation import (
+    DROP_AVERAGE_GRADE_THRESHOLD,
+    DROP_SCORE_THRESHOLD,
     KararMotoru,
     get_faculty_year_topsis_results,
     should_drop_course,
-    DROP_SCORE_THRESHOLD,
-    DROP_AVERAGE_GRADE_THRESHOLD,
+)
+from app.services.db import db_session
+from app.services.havuz_karar import (
+    MAKS_DUSME_SAYACI,
+    STATU_DINLENMEDE,
+    STATU_HAVUZDA,
+    STATU_IPTAL,
+    STATU_MUFREDATTA,
+    calculate_next_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -525,8 +524,8 @@ def _run_trend_lr(gecmis_list: list) -> dict:
 
         if len(valid_gecmis) >= 3:
             try:
-                from sklearn.linear_model import LinearRegression
                 import numpy as np
+                from sklearn.linear_model import LinearRegression
                 years = np.array([g["yil"] for g in valid_gecmis]).reshape(-1, 1)
                 rates = np.array([g["oran"] for g in valid_gecmis])
                 lr = LinearRegression()

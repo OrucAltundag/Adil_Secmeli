@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import sqlite3
+
+from app.core.config import resolve_sqlite_db_path
 from app.services.db import get_raw_connection
 
 # ---------------------------------------------------------------------------
@@ -118,7 +120,9 @@ def calculate_next_status_governed(
     if conn is None or "course_id" not in payload or "year" not in payload:
         return legacy_statu, legacy_sayac, payload
     try:
-        from app.services.pool_state_machine_service import evaluate_course_state_transition
+        from app.services.pool_state_machine_service import (
+            evaluate_course_state_transition,
+        )
 
         result = evaluate_course_state_transition(conn, payload)
         return int(result["final_status"]), int(result["counter_after"]), result
@@ -277,7 +281,7 @@ def _get_year_curriculum_pairs(imlec, yil: int):
 # ---------------------------------------------------------------------------
 # 2022 Ground Truth Onarımı
 # ---------------------------------------------------------------------------
-def onar_2022_ground_truth(vt_yolu: str = "data/adil_secmeli.db"):
+def onar_2022_ground_truth(vt_yolu: str | None = None):
     """
     2022 yılı havuz kayıtlarını müfredat verisiyle senkronize eder.
 
@@ -287,6 +291,7 @@ def onar_2022_ground_truth(vt_yolu: str = "data/adil_secmeli.db"):
     Bu fonksiyon 2022'yi "Ground Truth" olarak kurar ve sonraki yıl
     hesaplamalarının doğru çalışması için şarttır.
     """
+    vt_yolu = str(resolve_sqlite_db_path(vt_yolu))
     baglanti = get_raw_connection(vt_yolu)
     imlec = baglanti.cursor()
 
@@ -330,7 +335,7 @@ def onar_2022_ground_truth(vt_yolu: str = "data/adil_secmeli.db"):
 # Zincirleme Yıllık Eşitleme (2022 Ground Truth → 2023 → 2024 → 2025)
 # ---------------------------------------------------------------------------
 def muhendislik_mufredat_durumunu_esitle(
-    vt_yolu: str = "data/adil_secmeli.db",
+    vt_yolu: str | None = None,
     baslangic_yili: int = 2022,
     bitis_yili: int = 2025,
 ):
@@ -466,7 +471,7 @@ def muhendislik_mufredat_durumunu_esitle(
 
 
 def mufredat_durumunu_esitle(
-    vt_yolu: str = "data/adil_secmeli.db",
+    vt_yolu: str | None = None,
     baslangic_yili: int = 2022,
     bitis_yili: int = 2025,
 ):
@@ -482,7 +487,3 @@ def mufredat_durumunu_esitle(
         baslangic_yili=baslangic_yili,
         bitis_yili=bitis_yili,
     )
-
-
-
-

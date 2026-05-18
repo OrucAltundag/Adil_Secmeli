@@ -11,7 +11,6 @@ from typing import Any
 from app.db.schema_compat import ensure_import_governance_schema
 from app.services.import_audit_service import get_import_batch, list_import_rows
 
-
 IGNORED_FIELDS = {
     "row_id",
     "import_id",

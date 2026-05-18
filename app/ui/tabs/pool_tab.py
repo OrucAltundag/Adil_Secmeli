@@ -15,7 +15,8 @@
 # =============================================================================
 
 import tkinter as tk
-from tkinter import ttk, messagebox, font as tkfont
+from tkinter import font as tkfont
+from tkinter import messagebox, ttk
 
 from app.services.calculation import (
     ensure_pool_visibility_for_curriculum,
@@ -483,7 +484,6 @@ class PoolTab(ttk.Frame):
         if fakulte_id is None:
             return
 
-        bolum_id = None
         if bolum:
             try:
                 _, bid_rows = self.db.run_sql(
@@ -491,9 +491,9 @@ class PoolTab(ttk.Frame):
                     (int(fakulte_id), bolum),
                 )
                 if bid_rows and bid_rows[0] and bid_rows[0][0] is not None:
-                    bolum_id = int(bid_rows[0][0])
+                    int(bid_rows[0][0])
             except Exception:
-                bolum_id = None
+                pass
 
         workflow_note = ""
         if getattr(self, "lbl_workflow_info", None):
@@ -853,4 +853,3 @@ class PoolTab(ttk.Frame):
             bg="#22c55e", fg="white", font=("Segoe UI", 10, "bold"),
             command=save_selection
         ).pack(pady=18, ipadx=10)
-

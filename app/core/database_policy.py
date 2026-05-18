@@ -8,7 +8,6 @@ from typing import Any
 
 from app.core.config import AppConfig, load_app_config
 
-
 OFFICIAL_DB_ACCESS = "repository"
 ALLOW_SQLITE_IN_REPOSITORIES = True
 ALLOW_SQLITE_IN_UI = False

@@ -26,7 +26,6 @@ from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
 )
 
-
 FIELD_DEFINITIONS: dict[str, dict[str, Any]] = {
     "total_students": {
         "label": "Toplam öğrenci",

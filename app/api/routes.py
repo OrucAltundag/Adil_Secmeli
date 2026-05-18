@@ -8,16 +8,12 @@ import os
 import sqlite3
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, Depends
-from app.schemas.auth import UserContext
-from app.services.permission_service import require_action
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 
 from app.core.config import load_app_config
 from app.db.backend import is_sqlite_url
-from app.db.session import open_sqlite_connection
-from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
-from app.schemas.common import ApiResponse
+from app.db.sqlite_connection import connect_sqlite
 from app.schemas.ahp import (
     AHPApprovalRequest,
     AHPCalculateRequest,
@@ -28,115 +24,13 @@ from app.schemas.ahp import (
     AHPRejectRequest,
     AHPSensitivityRequest,
 )
-from app.services.calculation import run_all_algorithms_for_year
-from app.services.course_service import CourseService
-from app.services.course_type import build_elective_predicate
-from app.services.curriculum_import_service import import_curriculum_excel
-from app.services.survey_import_service import import_survey_excel
-from app.services.ahp_profile_service import (
-    activate_ahp_profile,
-    approve_profile,
-    archive_profile,
-    clone_profile,
-    create_profile,
-    create_ahp_profile,
-    get_profile,
-    list_stale_decisions,
-    list_ahp_profiles,
-    reject_profile,
-    resolve_active_profile,
-    resolve_stale_decision,
-    submit_for_approval,
-    update_profile,
-    validate_profile,
+from app.schemas.algorithm_governance import (
+    AlgorithmGovernanceUpdateRequest,
+    DataGuardCheckRequest,
+    GovernedBenchmarkRunRequest,
 )
-from app.services.ahp_calculation_service import calculate_weights_from_pairwise_matrix, validate_pairwise_matrix
-from app.services.ahp_impact_explanation_service import explain_course_weight_contribution, explain_weight_profile
-from app.services.ahp_sensitivity_service import get_latest_sensitivity_for_run, run_weight_sensitivity_analysis
-from app.services.criteria_definition_service import (
-    create_or_update_criterion,
-    deactivate_criterion,
-    list_active_criteria,
-)
-from app.services.yearly_workflow import (
-    get_faculty_year_status,
-    list_active_years_for_faculty,
-)
-from app.services.decision_policy_service import (
-    activate_decision_policy,
-    create_decision_policy,
-    list_decision_policies,
-)
-from app.services.decision_run_service import (
-    get_course_decision_explanation,
-    get_decision_run,
-    list_course_decisions,
-    list_decision_runs,
-)
-from app.services.import_audit_service import (
-    activate_import,
-    approve_import,
-    get_import_batch,
-    list_import_batches,
-    list_import_issues,
-    list_import_rows,
-    preview_import,
-    reject_import,
-    save_upload_to_temp,
-    update_import_status,
-    validate_import,
-)
-from app.services.import_diff_service import get_import_diff, recalculate_import_diff
-from app.services.import_impact_service import get_import_impact, recalculate_import_impact
-from app.services.import_lineage_service import list_value_sources
-from app.services.import_quality_service import evaluate_import_quality, summarize_quality
-from app.services.import_rollback_service import get_rollback_plan, rollback_import
-from app.services.criteria_completion_service import (
-    can_run_algorithm as criteria_can_run_algorithm,
-    get_completion_history,
-    get_completion_matrix,
-    get_completion_summary,
-    get_validation_issues,
-)
-from app.services.criteria_completion_policy_service import (
-    activate_completion_policy,
-    create_completion_policy,
-    list_completion_policies,
-)
-from app.services.criteria_override_service import (
-    approve_override,
-    list_overrides,
-    reject_override,
-    request_override,
-)
-from app.services.criteria_task_service import (
-    generate_tasks_for_missing_criteria,
-    get_tasks,
-    update_task_status,
-)
-from app.services.missing_data_risk_service import get_missing_data_risk_report
-from app.services.pool_state_machine_service import (
-    approve_state_approval,
-    create_course_state_override,
-    evaluate_course_state_transition,
-    evaluate_scope_transitions,
-    get_course_state_history,
-    get_governance_flags,
-    get_pool_lifecycle_summary,
-    get_protected_courses,
-    get_reactivation_candidates,
-    list_overrides as list_pool_overrides,
-    list_pending_approvals as list_pool_pending_approvals,
-    list_state_transitions,
-    reject_state_approval,
-    upsert_governance_flags,
-)
-from app.services.pool_state_policy_service import (
-    activate_pool_state_policy,
-    create_pool_state_policy,
-    list_pool_state_policies,
-)
-from app.services.system_service import SystemService
+from app.schemas.auth import UserContext
+from app.schemas.common import ApiResponse
 from app.schemas.ml import (
     MLAlgorithmUpdateRequest,
     MLFeatureSnapshotRequest,
@@ -144,11 +38,6 @@ from app.schemas.ml import (
     MLPredictCourseRequest,
     MLReadinessReportRequest,
     MLTrainRequest,
-)
-from app.schemas.algorithm_governance import (
-    AlgorithmGovernanceUpdateRequest,
-    DataGuardCheckRequest,
-    GovernedBenchmarkRunRequest,
 )
 from app.schemas.semester_planning import (
     CourseAvailabilityRequest,
@@ -159,6 +48,49 @@ from app.schemas.semester_planning import (
     SemesterPlanGenerateRequest,
     SemesterPlanningPolicyRequest,
     TeachingResourceRequest,
+)
+from app.schemas.workflow_requests import (
+    ApprovalRequest,
+    CourseOrYearRequest,
+    CriteriaTaskCreateRequest,
+    ImportDiffRecalculateRequest,
+    ImportImpactRecalculateRequest,
+    OverrideCreateRequest,
+    OverridePatchRequest,
+    ReasonRequest,
+    TaskStatusUpdateRequest,
+    YearFacultySemesterRequest,
+    YearReasonRequest,
+    YearScopeRequest,
+)
+from app.services.ahp_calculation_service import (
+    calculate_weights_from_pairwise_matrix,
+    validate_pairwise_matrix,
+)
+from app.services.ahp_impact_explanation_service import (
+    explain_course_weight_contribution,
+    explain_weight_profile,
+)
+from app.services.ahp_profile_service import (
+    activate_ahp_profile,
+    approve_profile,
+    archive_profile,
+    clone_profile,
+    create_ahp_profile,
+    create_profile,
+    get_profile,
+    list_ahp_profiles,
+    list_stale_decisions,
+    reject_profile,
+    resolve_active_profile,
+    resolve_stale_decision,
+    submit_for_approval,
+    update_profile,
+    validate_profile,
+)
+from app.services.ahp_sensitivity_service import (
+    get_latest_sensitivity_for_run,
+    run_weight_sensitivity_analysis,
 )
 from app.services.algorithm_data_guard_service import check_data_requirements
 from app.services.algorithm_governance_report_service import (
@@ -171,8 +103,61 @@ from app.services.algorithm_governance_service import (
     get_allowed_algorithms_for_task,
     list_algorithm_governance,
     list_task_mappings,
+)
+from app.services.algorithm_governance_service import (
     seed_default_algorithm_registry as seed_default_governance_registry,
+)
+from app.services.algorithm_governance_service import (
     update_algorithm_role,
+)
+from app.services.calculation import run_all_algorithms_for_year
+from app.services.course_semester_availability_service import (
+    list_availability_by_scope,
+    upsert_course_availability,
+)
+from app.services.course_service import CourseService
+from app.services.course_type import build_elective_predicate
+from app.services.criteria_completion_policy_service import (
+    activate_completion_policy,
+    create_completion_policy,
+    list_completion_policies,
+)
+from app.services.criteria_completion_service import (
+    can_run_algorithm as criteria_can_run_algorithm,
+)
+from app.services.criteria_completion_service import (
+    get_completion_history,
+    get_completion_matrix,
+    get_completion_summary,
+    get_validation_issues,
+)
+from app.services.criteria_definition_service import (
+    create_or_update_criterion,
+    deactivate_criterion,
+    list_active_criteria,
+)
+from app.services.criteria_override_service import (
+    approve_override,
+    list_overrides,
+    reject_override,
+    request_override,
+)
+from app.services.criteria_task_service import (
+    generate_tasks_for_missing_criteria,
+    get_tasks,
+    update_task_status,
+)
+from app.services.curriculum_import_service import import_curriculum_excel
+from app.services.decision_policy_service import (
+    activate_decision_policy,
+    create_decision_policy,
+    list_decision_policies,
+)
+from app.services.decision_run_service import (
+    get_course_decision_explanation,
+    get_decision_run,
+    list_course_decisions,
+    list_decision_runs,
 )
 from app.services.governed_benchmark_service import (
     execute_governed_benchmark_run,
@@ -186,19 +171,56 @@ from app.services.governed_benchmark_service import (
     get_governed_run_validation,
     list_governed_benchmark_runs,
 )
+from app.services.import_audit_service import (
+    activate_import,
+    approve_import,
+    get_import_batch,
+    list_import_batches,
+    list_import_issues,
+    list_import_rows,
+    preview_import,
+    reject_import,
+    save_upload_to_temp,
+    validate_import,
+)
+from app.services.import_diff_service import get_import_diff, recalculate_import_diff
+from app.services.import_impact_service import (
+    get_import_impact,
+    recalculate_import_impact,
+)
+from app.services.import_lineage_service import list_value_sources
+from app.services.import_quality_service import (
+    evaluate_import_quality,
+    summarize_quality,
+)
+from app.services.import_rollback_service import get_rollback_plan, rollback_import
+from app.services.instructor_planning_service import (
+    create_instructor,
+    list_instructor_availability,
+    list_instructors,
+    upsert_instructor_availability,
+)
+from app.services.missing_data_risk_service import get_missing_data_risk_report
 from app.services.ml_algorithm_registry_service import (
     list_algorithm_registry,
     seed_default_algorithm_registry,
     update_algorithm_usage_role,
 )
 from app.services.ml_explainability_service import get_prediction_explanation
-from app.services.ml_feature_pipeline import build_course_feature_dataset, save_feature_snapshot
+from app.services.ml_feature_pipeline import (
+    build_course_feature_dataset,
+    save_feature_snapshot,
+)
 from app.services.ml_model_registry_service import (
     deprecate_model_run,
     get_model_run,
     list_model_runs,
 )
-from app.services.ml_prediction_service import list_predictions, predict_batch, predict_course
+from app.services.ml_prediction_service import (
+    list_predictions,
+    predict_batch,
+    predict_course,
+)
 from app.services.ml_readiness_report_service import (
     generate_ml_readiness_report,
     get_algorithm_readiness_table,
@@ -206,25 +228,59 @@ from app.services.ml_readiness_report_service import (
     list_readiness_reports,
 )
 from app.services.ml_training_service import train_model_run
-from app.services.course_semester_availability_service import list_availability_by_scope, upsert_course_availability
-from app.services.instructor_planning_service import (
-    create_instructor,
-    list_instructor_availability,
-    list_instructors,
-    upsert_instructor_availability,
+from app.services.permission_service import require_action
+from app.services.pool_state_machine_service import (
+    approve_state_approval,
+    create_course_state_override,
+    evaluate_course_state_transition,
+    evaluate_scope_transitions,
+    get_course_state_history,
+    get_governance_flags,
+    get_pool_lifecycle_summary,
+    get_protected_courses,
+    get_reactivation_candidates,
 )
-from app.services.prerequisite_planning_service import create_prerequisite, get_prerequisites
+from app.services.pool_state_machine_service import (
+    list_overrides as list_pool_overrides,
+)
+from app.services.pool_state_machine_service import (
+    list_pending_approvals as list_pool_pending_approvals,
+)
+from app.services.pool_state_machine_service import (
+    list_state_transitions,
+    reject_state_approval,
+    upsert_governance_flags,
+)
+from app.services.pool_state_policy_service import (
+    activate_pool_state_policy,
+    create_pool_state_policy,
+    list_pool_state_policies,
+)
+from app.services.prerequisite_planning_service import (
+    create_prerequisite,
+    get_prerequisites,
+)
 from app.services.resource_planning_service import (
     create_resource,
     create_resource_requirement,
     list_resource_requirements,
     list_resources,
 )
-from app.services.semester_planning_engine import generate_semester_plan, get_plan_run, list_plan_runs
+from app.services.semester_planning_engine import (
+    generate_semester_plan,
+    get_plan_run,
+    list_plan_runs,
+)
 from app.services.semester_planning_policy_service import (
     activate_policy as activate_semester_planning_policy,
+)
+from app.services.semester_planning_policy_service import (
     create_policy as create_semester_planning_policy,
+)
+from app.services.semester_planning_policy_service import (
     list_policies as list_semester_planning_policies,
+)
+from app.services.semester_planning_policy_service import (
     update_policy as update_semester_planning_policy,
 )
 from app.services.semester_planning_reporting_service import (
@@ -232,6 +288,12 @@ from app.services.semester_planning_reporting_service import (
     get_constraint_violations,
     get_semester_plan_assignments,
     get_semester_plan_summary,
+)
+from app.services.survey_import_service import import_survey_excel
+from app.services.system_service import SystemService
+from app.services.yearly_workflow import (
+    get_faculty_year_status,
+    list_active_years_for_faculty,
 )
 
 router = APIRouter()
@@ -592,23 +654,17 @@ def kriter_tamlik_issues(
 
 
 @router.post("/kriter/tamlik/validate")
-def kriter_tamlik_validate(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    if year is None:
-        raise HTTPException(status_code=400, detail="year/yil zorunludur")
-    faculty_id = payload.get("faculty_id") or payload.get("fakulte_id")
-    department_id = payload.get("department_id") or payload.get("bolum_id")
-    semester = payload.get("semester") or payload.get("donem")
+def kriter_tamlik_validate(payload: YearScopeRequest):
     conn = _open_connection()
     try:
-        scope = "department" if department_id is not None else "faculty"
+        scope = "department" if payload.department_id is not None else "faculty"
         summary = get_completion_summary(
             conn,
             scope_type=scope,
-            year=int(year),
-            faculty_id=faculty_id,
-            department_id=department_id,
-            semester=_normalize_donem(semester) if semester else None,
+            year=int(payload.year),
+            faculty_id=payload.faculty_id,
+            department_id=payload.department_id,
+            semester=_normalize_donem(payload.semester) if payload.semester else None,
             refresh=True,
         )
         conn.commit()
@@ -718,29 +774,24 @@ def kriter_tamlik_tasks(
 
 
 @router.post("/kriter/tamlik/tasks")
-def kriter_tamlik_task_create(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    faculty_id = payload.get("faculty_id") or payload.get("fakulte_id")
-    department_id = payload.get("department_id") or payload.get("bolum_id")
-    if year is None or faculty_id is None:
-        raise HTTPException(status_code=400, detail="year/yil ve faculty_id/fakulte_id zorunludur")
+def kriter_tamlik_task_create(payload: CriteriaTaskCreateRequest):
     conn = _open_connection()
     try:
-        scope = "department" if department_id is not None else "faculty"
+        scope = "department" if payload.department_id is not None else "faculty"
         summary = get_completion_summary(
             conn,
             scope_type=scope,
-            year=int(year),
-            faculty_id=int(faculty_id),
-            department_id=int(department_id) if department_id is not None else None,
-            semester=payload.get("semester") or payload.get("donem"),
+            year=int(payload.year),
+            faculty_id=int(payload.faculty_id),
+            department_id=int(payload.department_id) if payload.department_id is not None else None,
+            semester=_normalize_donem(payload.semester) if payload.semester else None,
             refresh=True,
         )
         tasks = generate_tasks_for_missing_criteria(
             conn,
             summary,
-            assigned_role=payload.get("assigned_role"),
-            created_by=payload.get("created_by"),
+            assigned_role=payload.assigned_role,
+            created_by=payload.created_by,
         )
         conn.commit()
         return {"data": tasks}
@@ -749,18 +800,15 @@ def kriter_tamlik_task_create(payload: dict[str, Any] = Body(default_factory=dic
 
 
 @router.patch("/kriter/tamlik/tasks/{task_id}")
-def kriter_tamlik_task_update(task_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
-    status = payload.get("status")
-    if not status:
-        raise HTTPException(status_code=400, detail="status zorunludur")
+def kriter_tamlik_task_update(task_id: int, payload: TaskStatusUpdateRequest):
     conn = _open_connection()
     try:
         task = update_task_status(
             conn,
             int(task_id),
-            status=str(status),
-            notes=payload.get("notes"),
-            approved_by=payload.get("approved_by"),
+            status=payload.status,
+            notes=payload.notes,
+            approved_by=payload.approved_by,
         )
         conn.commit()
         return task
@@ -793,26 +841,23 @@ def kriter_tamlik_overrides(
 
 
 @router.post("/kriter/tamlik/overrides/request")
-def kriter_tamlik_override_request(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    reason = str(payload.get("reason") or "").strip()
-    if year is None or not reason:
-        raise HTTPException(status_code=400, detail="year/yil ve reason zorunludur")
+def kriter_tamlik_override_request(payload: YearReasonRequest):
     conn = _open_connection()
     try:
+        scope_type = payload.scope_type or ("department" if payload.department_id is not None else "faculty")
         override = request_override(
             conn,
-            scope_type=str(payload.get("scope_type") or ("department" if payload.get("department_id") or payload.get("bolum_id") else "faculty")),
-            year=int(year),
-            faculty_id=payload.get("faculty_id") or payload.get("fakulte_id"),
-            department_id=payload.get("department_id") or payload.get("bolum_id"),
-            course_id=payload.get("course_id") or payload.get("ders_id"),
-            semester=payload.get("semester") or payload.get("donem"),
-            missing_fields=payload.get("missing_fields"),
-            validation_issues=payload.get("validation_issues"),
-            reason=reason,
-            requested_by=payload.get("requested_by"),
-            expires_at=payload.get("expires_at"),
+            scope_type=scope_type,
+            year=int(payload.year),
+            faculty_id=payload.faculty_id,
+            department_id=payload.department_id,
+            course_id=payload.course_id,
+            semester=_normalize_donem(payload.semester) if payload.semester else None,
+            missing_fields=payload.missing_fields,
+            validation_issues=payload.validation_issues,
+            reason=payload.reason,
+            requested_by=payload.requested_by,
+            expires_at=payload.expires_at,
         )
         conn.commit()
         return override
@@ -832,17 +877,14 @@ def kriter_tamlik_override_approve(override_id: int, payload: dict[str, Any] = B
 
 
 @router.post("/kriter/tamlik/overrides/{override_id}/reject")
-def kriter_tamlik_override_reject(override_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
-    reason = str(payload.get("rejection_reason") or payload.get("reason") or "").strip()
-    if not reason:
-        raise HTTPException(status_code=400, detail="Reddetme gerekçesi zorunludur")
+def kriter_tamlik_override_reject(override_id: int, payload: ReasonRequest):
     conn = _open_connection()
     try:
         override = reject_override(
             conn,
             int(override_id),
-            rejection_reason=reason,
-            rejected_by=payload.get("rejected_by"),
+            rejection_reason=payload.reason,
+            rejected_by=payload.rejected_by,
         )
         conn.commit()
         return override
@@ -1097,17 +1139,12 @@ def decision_runs():
 
 
 @router.post("/decision/runs/execute")
-def decision_runs_execute(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    faculty_id = payload.get("faculty_id") or payload.get("fakulte_id")
-    semester = payload.get("semester") or payload.get("donem") or "Guz"
-    if year is None or faculty_id is None:
-        raise HTTPException(status_code=400, detail="year/yil ve faculty_id/fakulte_id zorunludur")
+def decision_runs_execute(payload: YearFacultySemesterRequest):
     result = run_all_algorithms_for_year(
-        yil=int(year),
+        yil=int(payload.year),
         db_path=_get_db_path(),
-        donem=_normalize_donem(str(semester)),
-        fakulte_id=int(faculty_id),
+        donem=_normalize_donem(str(payload.semester or "Guz")),
+        fakulte_id=int(payload.faculty_id),
     )
     if not result.get("ok") and not result.get("processed"):
         raise HTTPException(status_code=400, detail=result)
@@ -1359,10 +1396,10 @@ def import_validate(import_batch_id: int):
 
 
 @router.post("/imports/{import_batch_id}/approve")
-def import_approve(import_batch_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def import_approve(import_batch_id: int, payload: ApprovalRequest = Body(default_factory=ApprovalRequest)):
     conn = _open_connection()
     try:
-        result = approve_import(conn, int(import_batch_id), approved_by=payload.get("approved_by"))
+        result = approve_import(conn, int(import_batch_id), approved_by=payload.approved_by or payload.actor or payload.user)
         conn.commit()
         return result
     finally:
@@ -1370,13 +1407,10 @@ def import_approve(import_batch_id: int, payload: dict[str, Any] = Body(default_
 
 
 @router.post("/imports/{import_batch_id}/reject")
-def import_reject(import_batch_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
-    reason = str(payload.get("reason") or payload.get("rejection_reason") or "").strip()
-    if not reason:
-        raise HTTPException(status_code=400, detail="Reddetme gerekcesi zorunludur")
+def import_reject(import_batch_id: int, payload: ReasonRequest):
     conn = _open_connection()
     try:
-        result = reject_import(conn, int(import_batch_id), reason=reason, rejected_by=payload.get("rejected_by"))
+        result = reject_import(conn, int(import_batch_id), reason=payload.reason, rejected_by=payload.rejected_by)
         conn.commit()
         return result
     finally:
@@ -1384,10 +1418,10 @@ def import_reject(import_batch_id: int, payload: dict[str, Any] = Body(default_f
 
 
 @router.post("/imports/{import_batch_id}/activate")
-def import_activate(import_batch_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def import_activate(import_batch_id: int, payload: ApprovalRequest = Body(default_factory=ApprovalRequest)):
     conn = _open_connection()
     try:
-        result = activate_import(conn, int(import_batch_id), user=payload.get("user"))
+        result = activate_import(conn, int(import_batch_id), user=payload.user or payload.actor or payload.approved_by)
         conn.commit()
         return result
     finally:
@@ -1408,13 +1442,16 @@ def import_diff(import_batch_id: int):
 
 
 @router.post("/imports/{import_batch_id}/diff/recalculate")
-def import_diff_recalculate(import_batch_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def import_diff_recalculate(
+    import_batch_id: int,
+    payload: ImportDiffRecalculateRequest = Body(default_factory=ImportDiffRecalculateRequest),
+):
     conn = _open_connection()
     try:
         result = recalculate_import_diff(
             conn,
             int(import_batch_id),
-            compared_to_import_batch_id=payload.get("compared_to_import_batch_id"),
+            compared_to_import_batch_id=payload.compared_to_import_batch_id,
         )
         conn.commit()
         return result
@@ -1432,13 +1469,10 @@ def import_rollback_plan(import_batch_id: int):
 
 
 @router.post("/imports/{import_batch_id}/rollback")
-def import_rollback(import_batch_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
-    reason = str(payload.get("reason") or payload.get("rollback_reason") or "").strip()
-    if not reason:
-        raise HTTPException(status_code=400, detail="Rollback gerekcesi zorunludur")
+def import_rollback(import_batch_id: int, payload: ReasonRequest):
     conn = _open_connection()
     try:
-        result = rollback_import(conn, int(import_batch_id), reason=reason, user=payload.get("user"))
+        result = rollback_import(conn, int(import_batch_id), reason=payload.reason, user=payload.user or payload.rejected_by)
         conn.commit()
         return result
     finally:
@@ -1459,14 +1493,17 @@ def import_impact(import_batch_id: int):
 
 
 @router.post("/imports/{import_batch_id}/impact/recalculate")
-def import_impact_recalculate(import_batch_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def import_impact_recalculate(
+    import_batch_id: int,
+    payload: ImportImpactRecalculateRequest = Body(default_factory=ImportImpactRecalculateRequest),
+):
     conn = _open_connection()
     try:
         result = recalculate_import_impact(
             conn,
             int(import_batch_id),
-            previous_decision_run_id=payload.get("previous_decision_run_id"),
-            new_decision_run_id=payload.get("new_decision_run_id"),
+            previous_decision_run_id=payload.previous_decision_run_id,
+            new_decision_run_id=payload.new_decision_run_id,
         )
         conn.commit()
         return result
@@ -1573,29 +1610,30 @@ def havuz_course_state_history(course_id: int):
 
 
 @router.post("/havuz/evaluate")
-def havuz_evaluate(payload: dict[str, Any] = Body(default_factory=dict)):
+def havuz_evaluate(payload: CourseOrYearRequest):
     conn = _open_connection()
     try:
-        if payload.get("course_id") is not None:
-            result = evaluate_course_state_transition(conn, dict(payload))
-            if payload.get("save"):
-                from app.services.pool_state_machine_service import save_state_transition, update_havuz_lifecycle
+        if payload.course_id is not None:
+            result = evaluate_course_state_transition(conn, payload.dict(exclude_none=True))
+            if payload.save:
+                from app.services.pool_state_machine_service import (
+                    save_state_transition,
+                    update_havuz_lifecycle,
+                )
 
                 transition_id = save_state_transition(conn, result)
                 update_havuz_lifecycle(conn, result, transition_id)
                 conn.commit()
             return result
-        if payload.get("year") is None:
-            raise HTTPException(status_code=400, detail="course_id veya year zorunludur")
         result = evaluate_scope_transitions(
             conn,
-            year=int(payload["year"]),
-            faculty_id=payload.get("faculty_id"),
-            department_id=payload.get("department_id"),
-            semester=payload.get("semester"),
-            save=bool(payload.get("save", False)),
+            year=int(payload.year),
+            faculty_id=payload.faculty_id,
+            department_id=payload.department_id,
+            semester=payload.semester,
+            save=bool(payload.save),
         )
-        if payload.get("save"):
+        if payload.save:
             conn.commit()
         return {"data": result}
     finally:
@@ -1666,24 +1704,21 @@ def havuz_overrides(year: Optional[int] = None, course_id: Optional[int] = None,
 
 
 @router.post("/havuz/overrides")
-def havuz_override_create(payload: dict[str, Any] = Body(default_factory=dict)):
-    reason = str(payload.get("reason") or "").strip()
-    if not reason:
-        raise HTTPException(status_code=400, detail="Override gerekcesi zorunludur")
+def havuz_override_create(payload: OverrideCreateRequest):
     conn = _open_connection()
     try:
         result = create_course_state_override(
             conn,
-            course_id=int(payload["course_id"]),
-            year=int(payload["year"]),
-            semester=payload.get("semester"),
-            overridden_final_status=int(payload["overridden_final_status"]),
-            recommended_status=payload.get("recommended_status"),
-            reason=reason,
-            requested_by=payload.get("requested_by"),
-            approved_by=payload.get("approved_by"),
-            expires_at=payload.get("expires_at"),
-            transition_id=payload.get("transition_id"),
+            course_id=int(payload.course_id),
+            year=int(payload.year),
+            semester=payload.semester,
+            overridden_final_status=int(payload.overridden_final_status),
+            recommended_status=payload.recommended_status,
+            reason=payload.reason,
+            requested_by=payload.requested_by,
+            approved_by=payload.approved_by,
+            expires_at=payload.expires_at,
+            transition_id=payload.transition_id,
         )
         conn.commit()
         return result
@@ -1692,12 +1727,10 @@ def havuz_override_create(payload: dict[str, Any] = Body(default_factory=dict)):
 
 
 @router.patch("/havuz/overrides/{override_id}")
-def havuz_override_update(override_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def havuz_override_update(override_id: int, payload: OverridePatchRequest):
     conn = _open_connection()
     try:
-        allowed = {k: payload[k] for k in ("reason", "expires_at", "is_active") if k in payload}
-        if not allowed:
-            raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
+        allowed = payload.dict(exclude_unset=True)
         assignments = ", ".join(f"{key} = ?" for key in allowed)
         conn.execute(
             f"UPDATE course_state_overrides SET {assignments} WHERE id = ?",
@@ -2823,8 +2856,10 @@ def data_coverage(
     semester: Optional[str] = None,
 ):
     """Veri kapsama raporunu al"""
-    from app.services.data_quality_integration_service import generate_coverage_report_cursor
-    
+    from app.services.data_quality_integration_service import (
+        generate_coverage_report_cursor,
+    )
+
     conn = _open_connection()
     try:
         cur = conn.cursor()
@@ -2847,8 +2882,10 @@ def data_readiness(
     semester: Optional[str] = None,
 ):
     """Veri olgunluğu değerlendirmesini al"""
-    from app.services.data_quality_integration_service import assess_data_readiness_cursor
-    
+    from app.services.data_quality_integration_service import (
+        assess_data_readiness_cursor,
+    )
+
     conn = _open_connection()
     try:
         cur = conn.cursor()
@@ -2921,32 +2958,25 @@ def data_confidence(
 
 
 @router.post("/data/coverage/generate")
-def data_coverage_generate(payload: dict[str, Any] = Body(default_factory=dict)):
+def data_coverage_generate(payload: YearScopeRequest):
     """Yeni kapsama raporu oluştur ve kaydet"""
-    year = payload.get("year") or payload.get("yil")
-    if year is None:
-        raise HTTPException(status_code=400, detail="year/yil zorunludur")
-    
+
     from app.services.data_quality_integration_service import (
         generate_coverage_report_cursor,
         save_data_coverage_report,
     )
-    
+
     conn = _open_connection()
     try:
         cur = conn.cursor()
-        faculty_id = payload.get("faculty_id") or payload.get("fakulte_id")
-        department_id = payload.get("department_id") or payload.get("bolum_id")
-        semester = payload.get("semester") or payload.get("donem")
-        
         report = generate_coverage_report_cursor(
-            cur, int(year), faculty_id, department_id, semester
+            cur, int(payload.year), payload.faculty_id, payload.department_id, payload.semester
         )
         report_id = save_data_coverage_report(
-            cur, int(year), faculty_id, department_id, semester, report
+            cur, int(payload.year), payload.faculty_id, payload.department_id, payload.semester, report
         )
         conn.commit()
-        
+
         return {
             "ok": True,
             "report_id": report_id,
@@ -2995,11 +3025,11 @@ def data_missing(
         """,
         params + [limit],
     )
-    
+
     data = []
     for row in rows:
         data.append(dict(zip(cols, row)))
-    
+
     return {"data": data, "count": len(data)}
 
 
@@ -3037,7 +3067,7 @@ def data_validation_issues(
     """Doğrulama sorunlarını listele"""
     where_parts = []
     params: list[Any] = []
-    
+
     if year:
         where_parts.append("year = ?")
         params.append(int(year))
@@ -3047,9 +3077,9 @@ def data_validation_issues(
     if is_resolved is not None:
         where_parts.append("is_resolved = ?")
         params.append(int(is_resolved))
-    
+
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"
-    
+
     cols, rows = _run_query(
         f"""
         SELECT id, course_id, issue_type, severity, message,
@@ -3061,11 +3091,11 @@ def data_validation_issues(
         """,
         params + [limit],
     )
-    
+
     data = []
     for row in rows:
         data.append(dict(zip(cols, row)))
-    
+
     return {"data": data, "count": len(data)}
 
 
@@ -3102,16 +3132,16 @@ def data_collection_priorities(
     """Veri toplama önceliklerini listele"""
     where_parts = []
     params: list[Any] = []
-    
+
     if year:
         where_parts.append("year = ?")
         params.append(int(year))
     if is_completed is not None:
         where_parts.append("status = ?")
         params.append("completed" if int(is_completed) else "open")
-    
+
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"
-    
+
     cols, rows = _run_query(
         f"""
         SELECT id, course_id,
@@ -3128,11 +3158,11 @@ def data_collection_priorities(
         """,
         params + [limit],
     )
-    
+
     data = []
     for row in rows:
         data.append(dict(zip(cols, row)))
-    
+
     return {"data": data, "count": len(data)}
 
 
@@ -3167,7 +3197,7 @@ def decisions_outcomes(
     """Karar sonuçlarını listele (outcome tracking)"""
     where_parts = []
     params: list[Any] = []
-    
+
     if run_id:
         where_parts.append("cd.decision_run_id = ?")
         params.append(int(run_id))
@@ -3184,9 +3214,9 @@ def decisions_outcomes(
             "WHEN cd.data_confidence_score >= 0.50 THEN 'medium' ELSE 'low' END) = ?"
         )
         params.append(confidence_level)
-    
+
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"
-    
+
     try:
         cols, rows = _run_query(
             f"""
@@ -3202,11 +3232,11 @@ def decisions_outcomes(
             """,
             params + [limit],
         )
-        
+
         data = []
         for row in rows:
             data.append(dict(zip(cols, row)))
-        
+
         return {"data": data, "count": len(data)}
     except sqlite3.OperationalError:
         return {"data": [], "count": 0, "error": "course_decisions tablosu bulunamadı"}

@@ -8,7 +8,6 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable
 
-
 COLORS = {
     "navy": "#0F172A",
     "blue": "#1D4ED8",
@@ -145,7 +144,7 @@ class DataTable(ttk.Frame):
         return list(self.tree.item(selected[0], "values"))
 
     def sort_by(self, col: str, descending: bool) -> None:
-        idx = self.columns.index(col)
+        self.columns.index(col)
         data = [(self.tree.set(item, col), item) for item in self.tree.get_children("")]
 
         def _key(item):

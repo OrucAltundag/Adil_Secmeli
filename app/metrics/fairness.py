@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 
@@ -65,4 +64,3 @@ def allocation_fairness_metrics(assignments: pd.DataFrame, courses: pd.DataFrame
         "envy_score": envy_score(assignments),
         "seat_fill_rate": seat_fill_rate(assignments, courses),
     }
-

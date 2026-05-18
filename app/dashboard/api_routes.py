@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from app.dashboard.serializers import build_comparison_table, summarize_run
 from app.services.experiment_service import ExperimentService
 
-
 router = APIRouter()
 service = ExperimentService()
 _STATE: dict[str, Any] = {"dataset": None}
@@ -143,4 +142,3 @@ def get_run(run_id: str):
         "comparison_table": build_comparison_table(run_payload),
         "details": payload,
     }
-

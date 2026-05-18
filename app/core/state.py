@@ -7,7 +7,7 @@
 # dinleyicilere bildirilir (observer pattern).
 # =============================================================================
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, List, Any
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass

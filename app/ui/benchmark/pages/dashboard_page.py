@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 
 from app.ui.benchmark import mock_data
-from app.ui.benchmark.widgets import COLORS, DataTable, ErrorBanner, MetricCard, SectionHeader, StatusCard, run_async
+from app.ui.benchmark.widgets import (
+    COLORS,
+    DataTable,
+    ErrorBanner,
+    MetricCard,
+    SectionHeader,
+    StatusCard,
+    run_async,
+)
 
 
 class DashboardPage(ttk.Frame):

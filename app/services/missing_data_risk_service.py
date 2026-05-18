@@ -10,7 +10,6 @@ from typing import Any
 
 from app.db.schema_compat import ensure_criteria_completion_governance_schema
 
-
 DEFAULT_FIELD_WEIGHTS = {
     "total_students": 0.18,
     "passed_students": 0.18,

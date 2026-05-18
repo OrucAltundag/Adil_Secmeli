@@ -195,7 +195,7 @@ def main():
     conn.execute("PRAGMA foreign_keys = ON")
     conn.close()
 
-    print(f"\nTamamlandı.")
+    print("\nTamamlandı.")
     print(f"  Silinen ders: {silinen}")
     for tbl, cnt in sorted(guncellenen.items()):
         if cnt:

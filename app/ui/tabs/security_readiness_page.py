@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
+import logging
 import tkinter as tk
 from tkinter import ttk
-import logging
 
 from app.core.config import load_app_config
 from app.services.security_health_service import SecurityHealthService
@@ -81,11 +81,11 @@ class SecurityReadinessPage(ttk.Frame):
 
     def _update_ui(self, data):
         self.lbl_score.config(text=f"Skor: {data.get('score', 0)}/{data.get('max_score', 100)}")
-        
+
         level = data.get('level', 'unknown')
         color = "red" if level in ["unsafe", "demo_only"] else ("orange" if level == "partially_ready" else "green")
         self.lbl_level.config(text=f"Seviye: {level.upper()}", foreground=color)
-        
+
         for item in self.tree.get_children():
             self.tree.delete(item)
 

@@ -8,15 +8,15 @@
 # =============================================================================
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import routes
+
+from app.api import routes, security_routes
+from app.api.middleware.rate_limit import rate_limit_middleware
 from app.core.config import load_app_config
 from app.core.errors import AppError, app_error_from_exception
 from app.core.logging_config import configure_logging
 from app.dashboard import api_routes as benchmark_routes
-from app.api import security_routes
-from app.api.middleware.rate_limit import rate_limit_middleware
-from fastapi.middleware.cors import CORSMiddleware
 
 config = load_app_config()
 configure_logging(config)
@@ -48,6 +48,7 @@ app.add_middleware(
 )
 
 from starlette.middleware.base import BaseHTTPMiddleware
+
 app.add_middleware(BaseHTTPMiddleware, dispatch=rate_limit_middleware)
 
 app.include_router(routes.router, prefix="/api/v1", tags=["v1"])

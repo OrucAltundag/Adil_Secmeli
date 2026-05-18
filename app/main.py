@@ -48,17 +48,18 @@ def _default_api_port() -> int:
 DEFAULT_API_HOST = os.environ.get("ADIL_SECMELI_API_HOST", load_app_config().api_host)
 DEFAULT_API_PORT = _default_api_port()
 
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+from app.core.state import AppState
+
 # ---------- Veritabanı ve temel bileşenler ----------
 from app.db.sqlite_db import Database
-from app.core.state import AppState
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
 from app.services.calculation import run_automatic_scoring
 from app.services.course_type import build_elective_predicate_from_columns
 from app.services.yearly_workflow import is_yearly_workflow_enabled
-
 
 
 # =============================================================================
@@ -256,19 +257,19 @@ class AdilSecmeliApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        from app.ui.tabs.view_tab import ViewTab
-        from app.ui.tabs.analysis_tab import AnalysisTab
-        from app.ui.tabs.calc_tab import CalcTab
-        from app.ui.tabs.tools_tab import ToolsTab
-        from app.ui.tabs.decision_center_page import DecisionCenterPage
-        from app.ui.tabs.ahp_weight_page import AHPWeightPage
-        from app.ui.tabs.semester_planning_page import SemesterPlanningPage
-        from app.ui.tabs.data_management_page import DataManagementPage
-        from app.ui.tabs.data_quality_page import DataQualityPage
-        from app.ui.tabs.system_health_page import SystemHealthPage
-        from app.ui.tabs.security_readiness_page import SecurityReadinessPage
         from app.ui.benchmark import BenchmarkPanel
         from app.ui.style import apply_style
+        from app.ui.tabs.ahp_weight_page import AHPWeightPage
+        from app.ui.tabs.analysis_tab import AnalysisTab
+        from app.ui.tabs.calc_tab import CalcTab
+        from app.ui.tabs.data_management_page import DataManagementPage
+        from app.ui.tabs.data_quality_page import DataQualityPage
+        from app.ui.tabs.decision_center_page import DecisionCenterPage
+        from app.ui.tabs.security_readiness_page import SecurityReadinessPage
+        from app.ui.tabs.semester_planning_page import SemesterPlanningPage
+        from app.ui.tabs.system_health_page import SystemHealthPage
+        from app.ui.tabs.tools_tab import ToolsTab
+        from app.ui.tabs.view_tab import ViewTab
 
         apply_style(self)
         self.app_config = load_app_config()
@@ -283,13 +284,13 @@ class AdilSecmeliApp(tk.Tk):
         self.current_table = None
 
         self.state = AppState(db_path=self.db_path)
-        
-        
+
+
         # Grafik ve Cache değişkenleri
         self.chart_canvas = None
-        self.ui_refs = {} 
+        self.ui_refs = {}
         self.results_cache = {}
-        
+
         # Algoritma Listesi
         self.algorithms = [
             {"id": "mock",    "name": "Veri Üretimi (Mock)"},
@@ -371,11 +372,11 @@ class AdilSecmeliApp(tk.Tk):
         self.nb.add(self.tab_view, text="📂 Tablo Görüntüle")
         # Otomatik Bağlan
         self.auto_connect()
-    
-   
 
-    
-    
+
+
+
+
     # ---- BÖLÜM 3: Veritabanı bağlantısı ve başlangıç -----
 
     def auto_connect(self):
@@ -642,11 +643,11 @@ class AdilSecmeliApp(tk.Tk):
         except Exception as e:
             messagebox.showerror("Hata", str(e))
 
-      
+
 
 
      # =========================================================
-    
+
     #  ANALİZ & DASHBOARD FONKSİYONLARI (YENİ EKLENECEK KISIM)
     # =========================================================
 

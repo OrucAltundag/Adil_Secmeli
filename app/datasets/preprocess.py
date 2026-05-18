@@ -84,4 +84,3 @@ def save_dataset_layers(bundle: DatasetBundle, output_root: str | Path) -> None:
         for table_name, table in layer_data.items():
             if isinstance(table, pd.DataFrame):
                 table.to_csv(layer_dir / f"{table_name}.csv", index=False)
-

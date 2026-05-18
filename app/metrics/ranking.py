@@ -63,4 +63,3 @@ def diversity(predicted_rankings: list[list]) -> float:
     if not pairwise:
         return 0.0
     return float(sum(pairwise) / len(pairwise))
-

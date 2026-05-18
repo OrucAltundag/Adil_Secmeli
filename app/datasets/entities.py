@@ -113,4 +113,3 @@ class DatasetBundle:
         except KeyError as exc:
             available = ", ".join(sorted(layer_map[layer].keys()))
             raise KeyError(f"Unknown table '{name}' in layer '{layer}'. Available: {available}") from exc
-

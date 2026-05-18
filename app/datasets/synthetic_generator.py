@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -131,4 +130,3 @@ class SyntheticDataGenerator:
         jitter = rng.integers(low=-2, high=3, size=len(cap))
         out["capacity"] = (cap + jitter).clip(lower=1.0)
         return out
-

@@ -8,7 +8,10 @@ import pytest
 
 from app.db.schema_compat import ensure_havuz_semester_schema, ensure_skor_schema
 from app.services.calculation import rebuild_school_curricula_dual_semester
-from app.services.havuz_karar import calculate_next_status_semester, enforce_cross_semester_constraints
+from app.services.havuz_karar import (
+    calculate_next_status_semester,
+    enforce_cross_semester_constraints,
+)
 
 
 def _build_dual_semester_db() -> str:

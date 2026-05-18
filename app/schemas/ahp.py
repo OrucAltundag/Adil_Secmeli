@@ -81,4 +81,3 @@ class AHPCalculateRequest(BaseModel):
 
 class AHPSensitivityRequest(BaseModel):
     variation_percent: float = 0.05
-

@@ -8,14 +8,11 @@
 
 class BaseError(Exception):
     """Tum proje hatalarinin taban sinifi."""
-    pass
 
 
 class StudentNotFoundError(BaseError):
     """Ogrenci bulunamadiginda firlatilir."""
-    pass
 
 
 class CourseQuotaExceededError(BaseError):
     """Ders kontenjani doldugunda firlatilir."""
-    pass

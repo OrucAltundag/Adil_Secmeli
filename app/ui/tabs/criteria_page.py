@@ -7,26 +7,30 @@
 # yazar. Algoritmalar (calculation.py) performans/popülerlik'ten okur.
 # =============================================================================
 
+import csv
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
-import sqlite3
-import csv
 from datetime import datetime, timezone
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
+
 from app.db.schema_compat import ensure_reporting_schema
+from app.services.criteria_completion_service import get_completion_summary
 from app.services.criteria_import_service import (
     FACULTY_SCOPE_LABEL,
     format_criteria_import_summary,
     get_active_criteria_import,
     get_criteria_import_by_id,
+)
+from app.services.criteria_import_service import (
     import_criteria_excel as run_criteria_import,
+)
+from app.services.criteria_import_service import (
     normalize_department_scope_name,
 )
-from app.services.yearly_workflow import mark_criteria_status
-from app.services.criteria_completion_service import get_completion_summary
 from app.services.criteria_override_service import request_override
 from app.services.criteria_task_service import generate_tasks_for_missing_criteria
+from app.services.yearly_workflow import mark_criteria_status
 
 
 class CriteriaPage:
@@ -101,11 +105,11 @@ class CriteriaPage:
 
     def setup_ui(self):
         # --- ANA DÜZEN: Üst (Filtre), Sol (Liste), Sağ (Form) ---
-        
+
         # 1. ÜST PANEL: FİLTRELER
         top_frame = tk.Frame(self.parent, bg="#f1f5f9", pady=10, padx=10)
         top_frame.pack(fill=tk.X)
-        
+
         # Filtre Bileşenleri
         self.create_filter_ui(top_frame)
 
@@ -116,32 +120,32 @@ class CriteriaPage:
         # A. SOL PANEL: DERS LİSTESİ
         left_frame = tk.Frame(paned, bg="white", width=400)
         paned.add(left_frame)
-        
+
         tk.Label(left_frame, text="DERS LİSTESİ", bg="#e2e8f0", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
-        
+
         # Treeview
         cols = ("ID", "Ders Adı", "Kriter Durumu")
         self.tree = ttk.Treeview(left_frame, columns=cols, show="headings", selectmode="browse")
         self.tree.heading("ID", text="ID")
         self.tree.heading("Ders Adı", text="Ders Adı")
         self.tree.heading("Kriter Durumu", text="Veri Var mı?")
-        
+
         self.tree.column("ID", width=50, anchor="center")
         self.tree.column("Ders Adı", width=250)
         self.tree.column("Kriter Durumu", width=100, anchor="center")
-        
+
         sb = ttk.Scrollbar(left_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(fill=tk.BOTH, expand=True)
-        
+
         # Seçim Olayı
         self.tree.bind("<<TreeviewSelect>>", self.on_course_select)
 
         # B. SAĞ PANEL: VERİ GİRİŞ FORMU
         right_frame = tk.Frame(paned, bg="#f8fafc", width=500)
         paned.add(right_frame)
-        
+
         self.create_form_ui(right_frame)
         self.create_completion_panel()
 
@@ -153,20 +157,20 @@ class CriteriaPage:
     def create_filter_ui(self, parent):
         # Stil
         lbl_style = {"bg": "#f1f5f9", "font": ("Segoe UI", 9, "bold")}
-        
+
         # Fakülte
         tk.Label(parent, text="Fakülte:", **lbl_style).pack(side=tk.LEFT, padx=5)
         self.cb_fakulte = ttk.Combobox(parent, state="readonly", width=25)
         self.cb_fakulte.pack(side=tk.LEFT, padx=5)
         self.cb_fakulte.bind("<<ComboboxSelected>>", self.on_faculty_change)
-        
+
         # Bölüm
         tk.Label(parent, text="Bölüm:", **lbl_style).pack(side=tk.LEFT, padx=10)
         self.cb_bolum = ttk.Combobox(parent, state="readonly", width=25)
         self.cb_bolum.pack(side=tk.LEFT, padx=5)
         # Bölüm değişince yıl listesini güncelle
         self.cb_bolum.bind("<<ComboboxSelected>>", self._on_department_change)
-        
+
         # Yıl - artık hard-coded değil, veritabanından dinamik yükleniyor
         tk.Label(parent, text="Yıl:", **lbl_style).pack(side=tk.LEFT, padx=10)
         self.cb_yil = ttk.Combobox(parent, state="readonly", width=10, values=[])
@@ -191,7 +195,7 @@ class CriteriaPage:
                                               values=["Tümü", "Müfredattakiler"])
         self.cb_mufredat_filtre.current(0)
         self.cb_mufredat_filtre.pack(side=tk.LEFT, padx=5)
-        
+
         # Listele Butonu
         tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
@@ -200,14 +204,14 @@ class CriteriaPage:
                   command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=10)
 
     def create_form_ui(self, parent):
-        tk.Label(parent, text="KRİTER VERİ GİRİŞİ", bg="#1e293b", fg="white", 
+        tk.Label(parent, text="KRİTER VERİ GİRİŞİ", bg="#1e293b", fg="white",
                  font=("Segoe UI", 11, "bold"), pady=10).pack(fill=tk.X)
-        
+
         self.form_frame = tk.Frame(parent, bg="#f8fafc", padx=20, pady=20)
         self.form_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Ders Başlığı
-        self.lbl_selected_course = tk.Label(self.form_frame, text="Lütfen soldan bir ders seçiniz.", 
+        self.lbl_selected_course = tk.Label(self.form_frame, text="Lütfen soldan bir ders seçiniz.",
                                             bg="#f8fafc", fg="#334155", font=("Segoe UI", 12, "bold"))
         self.lbl_selected_course.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 20))
         self.lbl_criteria_source_info = tk.Label(
@@ -222,13 +226,13 @@ class CriteriaPage:
         self.lbl_criteria_source_info.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
         # --- GİRİŞ ALANLARI ---
-        
+
         # 1. Akademik Başarı Verileri
         self.create_section_header(2, "1. Akademik Performans")
         self.ent_toplam_ogrenci = self.create_input_row(3, "Dersi Alan Toplam Öğrenci:", "0")
         self.ent_gecen_ogrenci = self.create_input_row(4, "Dersi Geçen Öğrenci:", "0")
         self.ent_ortalama = self.create_input_row(5, "Ders Not Ortalaması (0-100):", "0.0")
-        
+
         # Otomatik Hesaplanan: Başarı Oranı
         tk.Label(self.form_frame, text="Başarı Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=6, column=0, sticky="w", pady=5)
         self.lbl_basari_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
@@ -238,7 +242,7 @@ class CriteriaPage:
         self.create_section_header(7, "2. Kontenjan ve Popülerlik")
         self.ent_kontenjan = self.create_input_row(8, "Ders Kontenjanı:", "0")
         self.ent_kayitli = self.create_input_row(9, "Kayıtlı Öğrenci (otomatik):", "0")
-        
+
         # Otomatik Hesaplanan: Doluluk
         tk.Label(self.form_frame, text="Doluluk Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=10, column=0, sticky="w", pady=5)
         self.lbl_doluluk_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
@@ -264,7 +268,7 @@ class CriteriaPage:
         self.lbl_anket_kaynak_info.grid(row=15, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # KAYDET BUTONU
-        btn_save = tk.Button(self.form_frame, text="💾 VERİLERİ KAYDET VE GÜNCELLE", 
+        btn_save = tk.Button(self.form_frame, text="💾 VERİLERİ KAYDET VE GÜNCELLE",
                              bg="#16a34a", fg="white", font=("Segoe UI", 10, "bold"),
                              command=self.save_data, cursor="hand2")
         btn_save.grid(row=16, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
@@ -323,7 +327,7 @@ class CriteriaPage:
         self._last_completion_summary = None
 
     def create_section_header(self, row, text):
-        tk.Label(self.form_frame, text=text, bg="#f8fafc", fg="#2563eb", 
+        tk.Label(self.form_frame, text=text, bg="#f8fafc", fg="#2563eb",
                  font=("Segoe UI", 10, "bold", "underline")).grid(row=row, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
     def create_input_row(self, row, label_text, default_val):
@@ -561,6 +565,10 @@ class CriteriaPage:
     def _now_utc(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
+    @staticmethod
+    def _friendly_backend_error() -> str:
+        return "Sistem şu anda işlem yapamıyor. Lütfen daha sonra tekrar deneyin."
+
     # --- VERİ İŞLEMLERİ ---
 
     def import_kriterler_excel(self):
@@ -576,7 +584,6 @@ class CriteriaPage:
             messagebox.showwarning("Uyarı", "Veritabanı bağlantısı yok.")
             return
         faculty_id = self._selected_faculty_id()
-        department_id = self._selected_department_id()
         year_raw = self.cb_yil.get()
         term = self.cb_donem.get() or "Güz"
         if faculty_id is None or not year_raw:
@@ -599,7 +606,8 @@ class CriteriaPage:
             else:
                 messagebox.showerror("Hata", result.get("message", "Kriter dosyasi yuklenemedi."))
         except Exception as e:
-            messagebox.showerror("Hata", f"Import hatası: {e}")
+            print(f"[CriteriaPage] Import hatası: {e}")
+            messagebox.showerror("Hata", self._friendly_backend_error())
 
     def load_faculties(self, preserve_selection=False):
         if not getattr(self.db, "conn", None):
@@ -653,16 +661,13 @@ class CriteriaPage:
         Seçili fakülte/bölüm için müfredatı olan yılları yükler.
         Hard-coded yıl listesi kaldırıldı - sadece gerçek müfredat verisi kullanılıyor.
         """
-        if not getattr(self.db, "conn", None):
-            return
-        
         fakulte = self.cb_fakulte.get()
         bolum = self._selected_department_name()
-        
+
         if not fakulte:
             self.cb_yil["values"] = []
             return
-        
+
         try:
             # Fakülte ID'sini al
             _, res = self.db.run_sql("SELECT fakulte_id FROM fakulte WHERE ad=?", (fakulte,))
@@ -670,17 +675,17 @@ class CriteriaPage:
                 self.cb_yil["values"] = []
                 return
             fid = int(res[0][0])
-            
+
             # Bölüm ID'sini al (varsa)
             bid = None
             if bolum:
                 _, res_bol = self.db.run_sql(
-                    "SELECT bolum_id FROM bolum WHERE fakulte_id=? AND ad=?", 
+                    "SELECT bolum_id FROM bolum WHERE fakulte_id=? AND ad=?",
                     (fid, bolum)
                 )
                 if res_bol:
                     bid = int(res_bol[0][0])
-            
+
             # Müfredatı olan yılları sorgula (fakülte + bölüm bazlı)
             if bid:
                 # Belirli bir bölüm için müfredat yılları
@@ -705,13 +710,13 @@ class CriteriaPage:
                     """,
                     (fid,)
                 )
-            
+
             years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
-            
+
             # Mevcut seçimi koru veya en son yılı seç
             prev_year = self.cb_yil.get()
             self.cb_yil["values"] = years
-            
+
             if years:
                 if prev_year in years:
                     self.cb_yil.set(prev_year)
@@ -719,7 +724,7 @@ class CriteriaPage:
                     self.cb_yil.set(years[-1])  # En son yılı seç
             else:
                 self.cb_yil.set("")
-                
+
         except Exception as e:
             print(f"Yıl listesi yükleme hatası: {e}")
             self.cb_yil["values"] = []
@@ -757,7 +762,7 @@ class CriteriaPage:
             if sadece_mufredat:
                 # Mufredattaki TUM dersler (secimli + zorunlu). Eski filtre sadece secimli
                 # gosterdiginden mufredatta olup DersTipi=Zorunlu kayitli dersler listede yoktu.
-                query = f"""
+                query = """
                     SELECT DISTINCT d.ders_id, d.ad,
                            CASE WHEN dk.id IS NOT NULL THEN 'Girildi' ELSE 'Bos' END as durum
                     FROM mufredat m
@@ -1071,14 +1076,14 @@ class CriteriaPage:
     def on_course_select(self, event):
         sel = self.tree.selection()
         if not sel: return
-        
+
         item = self.tree.item(sel[0])
         values = item['values']
-        
+
         # GÜVENLİK KONTROLÜ 1: Değerler boş mu?
         if not values or values[0] == "":
             return  # ID yoksa veya boş satırsa işlem yapma
-            
+
         try:
             # GÜVENLİK KONTROLÜ 2: ID gerçekten sayı mı?
             self.selected_course_id = int(values[0])
@@ -1091,7 +1096,7 @@ class CriteriaPage:
 
         yil = self.cb_yil.get()
         # Yıl seçili değilse hata vermesin, varsayılanı korusun
-        if not yil: 
+        if not yil:
             messagebox.showwarning("Uyarı", "Lütfen bir yıl seçiniz.")
             return
 
@@ -1182,7 +1187,7 @@ class CriteriaPage:
                 self._apply_survey_lock_state(False)
 
             self.update_calculations()
-            
+
         except Exception as e:
             import traceback
             print(f"[Kriter on_course_select] Veri çekme hatası: {e}")
@@ -1381,8 +1386,6 @@ class CriteriaPage:
                         criteria_updated_at,
                     ),
                 )
-
-            if in_mufredat:
                 cur.execute(
                     "DELETE FROM performans WHERE ders_id=? AND akademik_yil=? AND donem=?",
                     (c_id, yil, donem_db)
@@ -1451,63 +1454,3 @@ class CriteriaPage:
             print(f"[Kriter Kaydet] SQL Hatası: {e}")
             traceback.print_exc()
             messagebox.showerror("Kritik Hata", f"Veritabanına yazılamadı:\n{e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            

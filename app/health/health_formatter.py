@@ -9,7 +9,6 @@ from app.health.models import (
     SEVERITY_LABELS_TR,
     STATUS_LABELS_TR,
     HealthReport,
-    HealthStatus,
 )
 
 LINE = "=" * 50

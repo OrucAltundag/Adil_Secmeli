@@ -99,27 +99,28 @@ class ConflictAppError(AppError):
 
 
 def app_error_from_exception(exc: Exception) -> AppError:
-    from app.core.config import load_app_config
     import uuid
-    
+
+    from app.core.config import load_app_config
+
     config = load_app_config()
     is_prod = config.environment == "production"
-    
+
     if isinstance(exc, AppError):
         # We don't want to expose raw details even in AppError if it's production
         # unless it's a validation error
         if is_prod and not isinstance(exc, ValidationAppError):
              exc.payload.details = {}
         return exc
-    
+
     request_id = uuid.uuid4().hex
     # Log the raw exception with request_id here in a real app
-    
+
     details = {}
     if not is_prod:
         details = {"type": type(exc).__name__, "raw": str(exc)}
-    
+
     # We always include request_id so user can report it
     details["request_id"] = request_id
-    
+
     return AppError("Beklenmeyen bir hata oluştu.", details=details)

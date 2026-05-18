@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import sqlite3
+from datetime import datetime
 from typing import Any
 
 from app.db.schema_compat import ensure_ahp_governance_schema
-
 
 DEFAULT_DECISION_CRITERIA = [
     ("basari", "Başarı", "Başarı oranı ve not ortalaması etkisi.", "score", 1, 1, 0.0, 1.0, "minmax", "computed", 10),

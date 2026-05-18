@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """ML / Benchmark testleri — minimum sample guard ve algorithm governance."""
 from __future__ import annotations
+
 import pytest
+
 from app.services.algorithm_governance_service import (
-    DEFAULT_ALGORITHMS, PRODUCTION_DECISION, BENCHMARK_ONLY,
+    BENCHMARK_ONLY,
+    DEFAULT_ALGORITHMS,
+    PRODUCTION_DECISION,
 )
 
 pytestmark = pytest.mark.benchmark

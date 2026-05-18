@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.db.backend import database_backend, is_sqlite_url
 from sqlalchemy.engine.url import make_url
+
+from app.db.backend import database_backend, is_sqlite_url
 
 try:
     from dotenv import load_dotenv

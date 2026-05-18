@@ -5,9 +5,11 @@
 # dersler_master.xlsx uzerinden fakulte, bolum ve ders kayitlarini SQLite veritabanina yukler.
 # =============================================================================
 
-import sqlite3
-import pandas as pd
 import os
+import sqlite3
+
+import pandas as pd
+
 
 # ==========================================
 # DOSYA BULUCU

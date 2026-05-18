@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import os
 import sqlite3
-import tempfile
 
 import pytest
 
 from app.db.schema_compat import ensure_ahp_governance_schema
-from app.services.ahp_calculation_service import calculate_weights_from_pairwise_matrix, validate_pairwise_matrix
+from app.services.ahp_calculation_service import (
+    calculate_weights_from_pairwise_matrix,
+    validate_pairwise_matrix,
+)
 from app.services.ahp_impact_explanation_service import explain_weight_profile
 from app.services.ahp_profile_policy_service import resolve_policy
 from app.services.ahp_profile_service import (
@@ -15,7 +16,6 @@ from app.services.ahp_profile_service import (
     activate_profile,
     approve_profile,
     create_profile,
-    get_profile,
     list_stale_decisions,
     resolve_active_profile,
     seed_default_profile,
@@ -23,7 +23,9 @@ from app.services.ahp_profile_service import (
     validate_profile,
 )
 from app.services.ahp_sensitivity_service import run_weight_sensitivity_analysis
-from app.services.criteria_definition_service import list_active_criteria, seed_default_decision_criteria
+from app.services.criteria_definition_service import (
+    seed_default_decision_criteria,
+)
 from app.services.decision_run_service import create_decision_run
 
 
@@ -234,4 +236,3 @@ def test_ahp_ui_importable():
     from app.ui.tabs.ahp_weight_page import AHPWeightPage
 
     assert AHPWeightPage is not None
-

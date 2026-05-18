@@ -8,7 +8,12 @@ import sqlite3
 from collections import Counter
 from typing import Any
 
-from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL, STATU_MUFREDATTA
+from app.services.havuz_karar import (
+    STATU_DINLENMEDE,
+    STATU_HAVUZDA,
+    STATU_IPTAL,
+    STATU_MUFREDATTA,
+)
 
 
 def _json_dump(value: Any) -> str:
