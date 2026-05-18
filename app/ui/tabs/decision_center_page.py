@@ -101,6 +101,36 @@ class DecisionCenterPage(ttk.Frame):
     def _friendly_backend_error() -> str:
         return "Sistem şu anda işlem yapamıyor. Lütfen daha sonra tekrar deneyin."
 
+    def _tab_info(self, parent, baslik, ne_ise_yarar, veri_kaynagi, ne_yapmali, renk="#1565C0"):
+        """Her sekmenin üstüne; amaç, veri kaynağı ve yapılacak işi açıklayan bilgi kutusu."""
+        box = tk.Frame(parent, bg=renk)
+        box.pack(fill=tk.X, pady=(0, 8))
+        inner = tk.Frame(box, bg="#F4F8FE")
+        inner.pack(fill=tk.X, padx=2, pady=2)
+
+        tk.Label(
+            inner, text=baslik, bg="#F4F8FE", fg=renk,
+            font=("Segoe UI", 10, "bold"), anchor=tk.W,
+        ).pack(fill=tk.X, padx=10, pady=(6, 3))
+
+        tk.Label(
+            inner, text="Ne işe yarar:  " + ne_ise_yarar,
+            bg="#F4F8FE", fg="#2A2A2A", font=("Segoe UI", 8),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1180,
+        ).pack(fill=tk.X, padx=10, pady=1)
+
+        tk.Label(
+            inner, text="Veri kaynağı:  " + veri_kaynagi,
+            bg="#FFF6DF", fg="#6B4E00", font=("Segoe UI", 8, "bold"),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1180,
+        ).pack(fill=tk.X, padx=10, pady=3, ipady=2)
+
+        tk.Label(
+            inner, text="Ne yapmalısınız:  " + ne_yapmali,
+            bg="#F4F8FE", fg="#1B5E20", font=("Segoe UI", 8),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1180,
+        ).pack(fill=tk.X, padx=10, pady=(1, 6))
+
     def _build_filters(self):
         bar = ttk.LabelFrame(self, text="Filtreler", padding=8)
         bar.pack(fill=tk.X, padx=8, pady=8)
@@ -135,6 +165,17 @@ class DecisionCenterPage(ttk.Frame):
     def _build_ahp_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="AHP Profilleri")
+        self._tab_info(
+            frame,
+            "AHP Profilleri — Kriter Ağırlıkları",
+            "Karar algoritmasının her kritere (başarı, trend, popülerlik, anket) ne kadar "
+            "önem vereceğini belirleyen ağırlık profillerini listeler. Karar çalıştırılmadan "
+            "önce mutlaka tutarlı (CR ≤ 0.10) ve AKTİF bir profil olmalıdır.",
+            "ahp_weight_profiles tablosu. Profiller 'AHP Ağırlık Yönetimi' ana sekmesinde "
+            "ikili karşılaştırma matrisi ile oluşturulur; buradan yalnızca listelenir ve aktif yapılır.",
+            "Listede tutarlı bir profil yoksa 'Yeni Varsayılan Profil' ile oluşturun, "
+            "ardından 'Seçileni Aktif Yap' butonuna basın.",
+        )
         columns = ("id", "ad", "kapsam", "yil", "agirliklar", "cr", "tutarlı", "aktif")
         self.tree_ahp = self._tree(frame, columns)
         actions = ttk.Frame(frame)
@@ -147,6 +188,18 @@ class DecisionCenterPage(ttk.Frame):
     def _build_readiness_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Hazırlık Kontrolü")
+        self._tab_info(
+            frame,
+            "Hazırlık Kontrolü — Algoritma Çalışmaya Hazır mı?",
+            "Seçili yıl/fakülte/dönem için kriter verilerinin yeterince dolu ve geçerli olup "
+            "olmadığını denetler. Tamlık oranı eşiğin altındaysa karar algoritması ÇALIŞTIRILAMAZ. "
+            "Bu sekme, hatalı/eksik veriyle yanlış karar üretilmesini engelleyen güvenlik kapısıdır.",
+            "criteria_completion_matrix, criteria_validation_issues, criteria_missing_data_risks "
+            "tabloları. Bu veriler 'Veri Yönetimi' sekmesinden kriter Excel'i içe aktarılarak doldurulur.",
+            "Yıl ve Fakülte seçip 'Hazırlığı Yenile' deyin. 'Engellendi' görüyorsanız eksik "
+            "kriterleri içe aktarın veya geçerli gerekçeyle 'Override Talep Et' kullanın.",
+            renk="#E65100",
+        )
         top = ttk.Frame(frame)
         top.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(top, text="Hazırlığı Yenile", command=self._load_readiness).pack(side=tk.LEFT, padx=4)
@@ -159,6 +212,18 @@ class DecisionCenterPage(ttk.Frame):
     def _build_policy_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Karar Politikaları")
+        self._tab_info(
+            frame,
+            "Karar Politikaları — Eşik Değerleri ve Kurallar",
+            "Bir dersin TOPSIS skoruna göre hangi statüye geçeceğini belirleyen eşikleri tutar: "
+            "müfredatta kalma eşiği, havuza düşme, dinlenmeye alma, iptal adayı eşiği ve "
+            "iptal için manuel onay gerekip gerekmediği. Karar çalıştırmadan önce AKTİF bir politika olmalıdır.",
+            "decision_policies tablosu. Politikalar bu sekmede oluşturulur (içe aktarma gerekmez); "
+            "değerler kurum kurallarınıza göre belirlenir.",
+            "Aktif politika yoksa 'Yeni Varsayılan Politika' oluşturun ve 'Seçileni Aktif Yap' deyin. "
+            "Eşikleri kurumunuzun kurallarına göre düzenleyin.",
+            renk="#6A1B9A",
+        )
         columns = ("id", "ad", "kapsam", "yil", "mod", "müfredat", "havuz", "dinlenme", "iptal", "onay", "aktif")
         self.tree_policy = self._tree(frame, columns)
         actions = ttk.Frame(frame)
@@ -169,6 +234,19 @@ class DecisionCenterPage(ttk.Frame):
     def _build_runs_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Çalıştırmalar")
+        self._tab_info(
+            frame,
+            "Çalıştırmalar — Karar Motorunun Çalıştırılması",
+            "Bu sekme tüm Karar Merkezi'nin KALBİDİR. 'Yeni Karar Çalıştır' butonu; AHP ağırlıkları "
+            "+ aktif politika + kriter verilerini kullanarak TOPSIS algoritmasını çalıştırır ve her ders "
+            "için karar üretir. Üretilen kayıtlar diğer 6 sekmeyi (Ders Kararları, Havuz, Hassas, "
+            "Akademik Onay, Adalet) besler.",
+            "decision_runs tablosu. Bu tablo yalnızca 'Yeni Karar Çalıştır' butonuyla dolar — "
+            "önkoşul: hazırlık 'Hazır' + aktif AHP profili + aktif politika + müfredat/ders verisi.",
+            "Üstten Yıl/Fakülte/Dönem seçin, 'Yeni Karar Çalıştır' deyin. Çalıştırma tamamlanınca "
+            "satıra tıklayıp diğer sekmelerde sonuçları inceleyin.",
+            renk="#1B5E20",
+        )
         top = ttk.Frame(frame)
         top.pack(fill=tk.X, pady=(0, 6))
         self.btn_execute_run = ttk.Button(top, text="Yeni Karar Çalıştır", command=self._execute_run)
@@ -187,6 +265,19 @@ class DecisionCenterPage(ttk.Frame):
         bottom = ttk.LabelFrame(frame, text="Ders Detayı ve Açıklama", padding=8)
         frame.add(top, weight=3)
         frame.add(bottom, weight=2)
+        self._tab_info(
+            top,
+            "Ders Kararları — Her Ders İçin Üretilen Karar",
+            "Seçili karar çalıştırması için ders ders sonuçları gösterir: eski statü, algoritmanın "
+            "önerdiği statü, final statü, TOPSIS skoru, trend, veri güveni ve gerekçe. Bir satıra "
+            "tıklayınca altta kriter kırılımı, ML destekleyici tahmin ve insan-okur açıklama görünür.",
+            "course_decisions + course_score_breakdowns + course_trend_analysis + "
+            "course_decision_explanations tabloları. Hepsi 'Çalıştırmalar' sekmesindeki karar "
+            "çalıştırması ile otomatik üretilir — ayrı içe aktarma gerekmez.",
+            "Üstteki 'Run' filtresinden bir çalıştırma seçin. Boşsa önce 'Çalıştırmalar' "
+            "sekmesinde karar çalıştırın.",
+            renk="#00838F",
+        )
         self.tree_courses = self._tree(
             top,
             ("id", "kod", "ders", "eski", "öneri", "final", "skor", "trend", "güven", "stabilite", "onay", "gerekçe"),
@@ -204,6 +295,18 @@ class DecisionCenterPage(ttk.Frame):
         frame.add(top, weight=3)
         frame.add(bottom, weight=2)
 
+        self._tab_info(
+            top,
+            "Havuz Yaşam Döngüsü — Derslerin Statü Geçiş Geçmişi",
+            "Derslerin müfredat ↔ havuz ↔ dinlenme ↔ iptal arasındaki geçişlerini, hangi kuralın "
+            "uygulandığını ve sayaç değişimlerini gösterir. Sağ altta manuel onay bekleyen kritik "
+            "kararlar (ör. kalıcı iptal) listelenir ve buradan onaylanıp reddedilebilir.",
+            "course_state_transitions + course_state_approvals tabloları. Karar çalıştırması + "
+            "havuz durum makinesi (pool_state_policies) tarafından otomatik üretilir.",
+            "Yıl/Fakülte/Dönem seçip 'Yaşam Döngüsünü Yenile' deyin. Onay bekleyen kaydı seçip "
+            "'Onayla' / 'Reddet' butonlarıyla karara bağlayın.",
+            renk="#AD1457",
+        )
         actions = ttk.Frame(top)
         actions.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(actions, text="Yaşam Döngüsünü Yenile", command=self._load_pool_lifecycle).pack(side=tk.LEFT, padx=4)
@@ -233,12 +336,36 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Button(approval_buttons, text="Reddet", command=self._reject_pool_state).pack(side=tk.LEFT, padx=4)
 
     def _build_semester_planning_tab(self):
-        self.tab_semester_planning = SemesterPlanningPage(self.sub_nb, app=self.app)
-        self.sub_nb.add(self.tab_semester_planning, text="Dönem Planlama")
+        container = ttk.Frame(self.sub_nb, padding=8)
+        self.sub_nb.add(container, text="Dönem Planlama")
+        self._tab_info(
+            container,
+            "Dönem Planlama — Açılacak Derslerin Çizelgesi",
+            "Karar sonuçlarına göre bir dönemde fiilen açılacak seçmeli dersleri planlar; "
+            "zorunlu ders yükü, eğitmen ve kontenjan kısıtlarını dikkate alarak çizelge önerir.",
+            "semester_plan_course_assignments + semester_required_course_loads tabloları. "
+            "Karar çalıştırması sonrası bu sekmedeki planlama araçlarıyla doldurulur.",
+            "Önce 'Çalıştırmalar' sekmesinde karar üretin, ardından bu sekmede dönem planını oluşturun.",
+            renk="#4E342E",
+        )
+        self.tab_semester_planning = SemesterPlanningPage(container, app=self.app)
+        self.tab_semester_planning.pack(fill=tk.BOTH, expand=True)
 
     def _build_sensitivity_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Hassas Kararlar")
+        self._tab_info(
+            frame,
+            "Hassas Kararlar — Riske Açık / Kırılgan Sonuçlar",
+            "Ağırlıklar biraz değişse kararı değişebilecek 'sınırda' dersleri gösterir. "
+            "Düşük stabilite = küçük veri/ağırlık oynamasında karar tersine dönebilir; bu dersler "
+            "ekstra incelenmelidir. min/max skor ve aralık genişliği duyarlılığı ölçer.",
+            "decision_sensitivity_results tablosu. 'Çalıştırmalar' sekmesindeki karar çalıştırması "
+            "sırasında duyarlılık analizi ile otomatik üretilir.",
+            "Üstteki 'Run' filtresinden çalıştırma seçin. 'low' stabiliteli dersleri öncelikli "
+            "olarak Akademik Onay'a yönlendirin.",
+            renk="#C62828",
+        )
         self.tree_sensitivity = self._tree(
             frame,
             ("ders", "skor", "min", "max", "aralık", "stabilite", "açıklama"),
@@ -247,6 +374,18 @@ class DecisionCenterPage(ttk.Frame):
     def _build_approvals_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Akademik Onay")
+        self._tab_info(
+            frame,
+            "Akademik Onay — Manuel Karar Gerektiren Dersler",
+            "Algoritmanın kendi başına karara bağlamadığı, insan onayı isteyen dersleri listeler "
+            "(düşük veri güveni, kritik statü değişimi veya politika gereği). Bunlar akademik "
+            "kurul tarafından gözden geçirilmelidir.",
+            "course_decisions tablosunda approval_required = 1 olan kayıtlar. Karar çalıştırması "
+            "ile otomatik işaretlenir.",
+            "Üstteki 'Run' filtresinden çalıştırma seçin. Düşük güvenli kararları kurulda "
+            "değerlendirip nihai statüyü 'Havuz Yaşam Döngüsü' sekmesinden onaylayın.",
+            renk="#E65100",
+        )
         self.tree_approvals = self._tree(
             frame,
             ("kod", "ders", "öneri", "final", "güven", "durum", "gerekçe"),
@@ -255,6 +394,17 @@ class DecisionCenterPage(ttk.Frame):
     def _build_fairness_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Adalet Raporu")
+        self._tab_info(
+            frame,
+            "Adalet Raporu — Kararların Yanlılık Denetimi",
+            "Üretilen kararların belirli grupları (fakülte, bölüm, ders türü) sistematik olarak "
+            "kayırıp kayırmadığını ölçer. Şeffaflık ve hesap verebilirlik için; kararların "
+            "savunulabilir ve dengeli olduğunu kanıtlayan rapordur.",
+            "decision_fairness_reports tablosu. Her karar çalıştırması sonunda otomatik üretilir.",
+            "Üstteki 'Run' filtresinden bir çalıştırma seçin; rapor otomatik yüklenir. "
+            "Dengesizlik uyarısı varsa AHP ağırlıklarını gözden geçirin.",
+            renk="#283593",
+        )
         self.txt_fairness = tk.Text(frame, height=18, wrap=tk.WORD)
         self.txt_fairness.pack(fill=tk.BOTH, expand=True)
 

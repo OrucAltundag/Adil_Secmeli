@@ -41,8 +41,20 @@ class CourseRepository:
 
     def list_faculties(self) -> list[dict[str, Any]]:
         cur = self.conn.cursor()
-        cur.execute("SELECT fakulte_id, ad, kampus FROM fakulte ORDER BY ad")
-        return fetch_all_dicts(cur)
+        # 'kampus' sutunu bazi semalarda bulunmayabilir; dinamik kontrol
+        cur.execute("PRAGMA table_info(fakulte)")
+        cols = {str(row[1]) for row in cur.fetchall()}
+        select_cols = ["fakulte_id", "ad"]
+        if "kampus" in cols:
+            select_cols.append("kampus")
+        cur.execute(
+            f"SELECT {', '.join(select_cols)} FROM fakulte ORDER BY ad"
+        )
+        rows = fetch_all_dicts(cur)
+        if "kampus" not in cols:
+            for row in rows:
+                row.setdefault("kampus", None)
+        return rows
 
     def list_departments(self, faculty_id: int | None = None) -> list[dict[str, Any]]:
         cur = self.conn.cursor()
