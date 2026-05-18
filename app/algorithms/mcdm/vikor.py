@@ -18,18 +18,46 @@ class VIKORRanker(IRanker):
         super().__init__(name="VIKOR", task_type="ranking", parameters={"v": v})
         self.weights = np.array(weights, dtype=float) if weights is not None else None
         self.v = float(v)
+        self._is_fitted = False
+
+    def _validate_weights(self, n_criteria: int) -> None:
+        """Validate weights array against criteria count."""
+        if self.weights is None:
+            return
+        if len(self.weights) != n_criteria:
+            raise ValueError(
+                f"Weight length mismatch: expected {n_criteria} criteria but got {len(self.weights)} weights"
+            )
+        if np.any(np.isnan(self.weights)) or np.any(np.isinf(self.weights)):
+            raise ValueError("Weights contain NaN or infinity values")
+        if np.all(self.weights == 0):
+            raise ValueError("Weights cannot be all zeros")
 
     def fit(self, X: pd.DataFrame, y: None = None) -> "VIKORRanker":
+<<<<<<< HEAD
         criteria_cols = get_criteria_columns(X)
         self.weights = normalize_weights(self.weights, len(criteria_cols), algorithm_name="VIKOR")
+=======
+        criteria_cols = [c for c in X.columns if c != "item_id"]
+        n_criteria = len(criteria_cols)
+        
+        if self.weights is None:
+            self.weights = np.ones(n_criteria, dtype=float) / max(n_criteria, 1)
+        else:
+            self._validate_weights(n_criteria)
+            total = float(np.sum(self.weights)) or 1.0
+            self.weights = self.weights / total
+        
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         self.parameters["weights"] = self.weights.tolist()
+        self._is_fitted = True
         return self
 
     def _rank(self, X: pd.DataFrame, top_k: int) -> AlgorithmOutput:
         started = self._start_timer()
-        if self.weights is None:
+        if not self._is_fitted or self.weights is None:
             self.fit(X)
-        assert self.weights is not None
+        assert self.weights is not None and self._is_fitted
 
         df = X.copy()
         criteria_cols = get_criteria_columns(df)

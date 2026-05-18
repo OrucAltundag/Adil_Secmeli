@@ -52,10 +52,12 @@ class Database:
             # Otomatik bağlan
             try:
                 self.connect()
-            except Exception:
-                pass
+            except Exception as e:
+                raise RuntimeError(f"Veritabanı bağlantısı kurulamadı: {str(e)}")
         if self._engine is None:
-            raise RuntimeError("Veritabanı bağlantısı yok.")
+            raise RuntimeError(
+                "Veritabanı motoru başlatılamadı. Config.json'daki db_path ve db_url değerlerini kontrol edin."
+            )
 
     def tables(self) -> list[str]:
         self.ensure()

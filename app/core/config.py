@@ -161,11 +161,27 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
     """config.json + environment değerlerini tek yerde birleştirir."""
     if load_dotenv is not None:
         load_dotenv(override=False)
+<<<<<<< HEAD
     config_file = resolve_config_path(config_path)
     cfg = _load_json(str(config_file))
     base_dir = config_file.parent
     default_db = resolve_sqlite_db_path(cfg.get("db_path"), base_dir=base_dir)
     sqlite_db_path = resolve_sqlite_db_path(os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH") or default_db, base_dir=base_dir)
+=======
+    cfg = _load_json(config_path)
+    base_dir = Path(__file__).resolve().parents[2]
+    # Use environment variable first, then config, then default
+    db_path_env = os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH")
+    if db_path_env:
+        sqlite_db_path = Path(db_path_env)
+    elif cfg.get("db_path"):
+        sqlite_db_path = Path(cfg.get("db_path"))
+    else:
+        sqlite_db_path = base_dir / "data" / "adil_secmeli.db"
+    
+    if not sqlite_db_path.is_absolute():
+        sqlite_db_path = base_dir / sqlite_db_path
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
     environment = str(os.getenv("ENVIRONMENT") or cfg.get("environment") or "development").lower()
     debug = _bool(os.getenv("DEBUG"), _bool(cfg.get("debug"), environment == "development"))
     developer_tools = _bool(

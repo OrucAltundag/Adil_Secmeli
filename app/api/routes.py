@@ -13,7 +13,20 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadF
 from app.core.config import load_app_config
 from app.db.backend import is_sqlite_url
 from app.db.schema_compat import ensure_reporting_schema
+<<<<<<< HEAD
 from app.db.sqlite_connection import connect_sqlite
+=======
+from app.schemas.common import ApiResponse
+from app.api.error_responses import ApiException, ErrorCode, create_error_response
+from app.schemas.criteria import (
+    CompletionValidateRequest,
+    CompletionTaskCreateRequest,
+    CompletionTaskUpdateRequest,
+    CompletionOverrideRequest,
+    CompletionOverrideApproveRequest,
+    CompletionOverrideRejectRequest,
+)
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
 from app.schemas.ahp import (
     AHPApprovalRequest,
     AHPCalculateRequest,
@@ -311,8 +324,14 @@ def _donem_key(value: str | None) -> str:
 
 
 def _get_db_path() -> str:
+<<<<<<< HEAD
     settings = load_app_config()
     if not is_sqlite_url(settings.database_url):
+=======
+    from app.core.config import load_app_config
+    cfg = load_app_config(config_path="config.json")
+    if not is_sqlite_url(cfg.database_url):
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         raise HTTPException(
             status_code=503,
             detail=(
@@ -321,16 +340,32 @@ def _get_db_path() -> str:
                 "olusturabilecegi icin islem durduruldu."
             ),
         )
-    return settings.db_path
+    return cfg.sqlite_db_path
 
 
 def _open_connection() -> sqlite3.Connection:
     path = _get_db_path()
     if not os.path.exists(path):
+<<<<<<< HEAD
         raise HTTPException(status_code=503, detail=f"Veritabani bulunamadi: {path}")
     conn = connect_sqlite(path, row_factory=True)
     ensure_reporting_schema(conn)
     return conn
+=======
+        raise HTTPException(
+            status_code=503,
+            detail=f"Veritabani bulunamadi: {path}"
+        )
+    try:
+        conn = connect_sqlite(path, row_factory=True)
+        ensure_reporting_schema(conn)
+        return conn
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Veritabani baglantisi kurulamadi: {str(e)}"
+        )
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
 
 
 def _run_query(query: str, params: tuple = ()) -> tuple[list[str], list[list]]:
@@ -654,7 +689,12 @@ def kriter_tamlik_issues(
 
 
 @router.post("/kriter/tamlik/validate")
+<<<<<<< HEAD
 def kriter_tamlik_validate(payload: YearScopeRequest):
+=======
+def kriter_tamlik_validate(payload: CompletionValidateRequest):
+    """Validate criteria completion status. Pydantic automatically validates required fields."""
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
     conn = _open_connection()
     try:
         scope = "department" if payload.department_id is not None else "faculty"
@@ -774,7 +814,12 @@ def kriter_tamlik_tasks(
 
 
 @router.post("/kriter/tamlik/tasks")
+<<<<<<< HEAD
 def kriter_tamlik_task_create(payload: CriteriaTaskCreateRequest):
+=======
+def kriter_tamlik_task_create(payload: CompletionTaskCreateRequest):
+    """Create completion task. Pydantic validates year and faculty_id are present."""
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
     conn = _open_connection()
     try:
         scope = "department" if payload.department_id is not None else "faculty"
@@ -784,7 +829,11 @@ def kriter_tamlik_task_create(payload: CriteriaTaskCreateRequest):
             year=int(payload.year),
             faculty_id=int(payload.faculty_id),
             department_id=int(payload.department_id) if payload.department_id is not None else None,
+<<<<<<< HEAD
             semester=_normalize_donem(payload.semester) if payload.semester else None,
+=======
+            semester=payload.semester,
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
             refresh=True,
         )
         tasks = generate_tasks_for_missing_criteria(
@@ -800,13 +849,22 @@ def kriter_tamlik_task_create(payload: CriteriaTaskCreateRequest):
 
 
 @router.patch("/kriter/tamlik/tasks/{task_id}")
+<<<<<<< HEAD
 def kriter_tamlik_task_update(task_id: int, payload: TaskStatusUpdateRequest):
+=======
+def kriter_tamlik_task_update(task_id: int, payload: CompletionTaskUpdateRequest):
+    """Update completion task status. Pydantic validates status is present."""
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
     conn = _open_connection()
     try:
         task = update_task_status(
             conn,
             int(task_id),
+<<<<<<< HEAD
             status=payload.status,
+=======
+            status=str(payload.status),
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
             notes=payload.notes,
             approved_by=payload.approved_by,
         )
@@ -841,12 +899,18 @@ def kriter_tamlik_overrides(
 
 
 @router.post("/kriter/tamlik/overrides/request")
+<<<<<<< HEAD
 def kriter_tamlik_override_request(payload: YearReasonRequest):
+=======
+def kriter_tamlik_override_request(payload: CompletionOverrideRequest):
+    """Request criteria completion override. Pydantic validates year and reason."""
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
     conn = _open_connection()
     try:
         scope_type = payload.scope_type or ("department" if payload.department_id is not None else "faculty")
         override = request_override(
             conn,
+<<<<<<< HEAD
             scope_type=scope_type,
             year=int(payload.year),
             faculty_id=payload.faculty_id,
@@ -858,6 +922,19 @@ def kriter_tamlik_override_request(payload: YearReasonRequest):
             reason=payload.reason,
             requested_by=payload.requested_by,
             expires_at=payload.expires_at,
+=======
+            scope_type="global",
+            year=int(payload.year),
+            faculty_id=None,
+            department_id=None,
+            course_id=None,
+            semester=None,
+            missing_fields=None,
+            validation_issues=None,
+            reason=payload.reason,
+            requested_by=None,
+            expires_at=None,
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         )
         conn.commit()
         return override
@@ -866,10 +943,11 @@ def kriter_tamlik_override_request(payload: YearReasonRequest):
 
 
 @router.post("/kriter/tamlik/overrides/{override_id}/approve")
-def kriter_tamlik_override_approve(override_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def kriter_tamlik_override_approve(override_id: int, payload: CompletionOverrideApproveRequest = Body(default_factory=CompletionOverrideApproveRequest)):
+    """Approve criteria completion override."""
     conn = _open_connection()
     try:
-        override = approve_override(conn, int(override_id), approved_by=payload.get("approved_by"))
+        override = approve_override(conn, int(override_id), approved_by=payload.approved_by)
         conn.commit()
         return override
     finally:
@@ -877,7 +955,12 @@ def kriter_tamlik_override_approve(override_id: int, payload: dict[str, Any] = B
 
 
 @router.post("/kriter/tamlik/overrides/{override_id}/reject")
+<<<<<<< HEAD
 def kriter_tamlik_override_reject(override_id: int, payload: ReasonRequest):
+=======
+def kriter_tamlik_override_reject(override_id: int, payload: CompletionOverrideRejectRequest):
+    """Reject criteria completion override. Pydantic validates reason is present."""
+>>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
     conn = _open_connection()
     try:
         override = reject_override(
