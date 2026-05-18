@@ -19,6 +19,14 @@ from app.db.session import open_sqlite_connection
 from app.db.sqlite_connection import connect_sqlite
 from app.db.schema_compat import ensure_reporting_schema
 from app.schemas.common import ApiResponse
+from app.schemas.criteria import (
+    CompletionValidateRequest,
+    CompletionTaskCreateRequest,
+    CompletionTaskUpdateRequest,
+    CompletionOverrideRequest,
+    CompletionOverrideApproveRequest,
+    CompletionOverrideRejectRequest,
+)
 from app.schemas.ahp import (
     AHPApprovalRequest,
     AHPCalculateRequest,
@@ -603,23 +611,18 @@ def kriter_tamlik_issues(
 
 
 @router.post("/kriter/tamlik/validate")
-def kriter_tamlik_validate(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    if year is None:
-        raise HTTPException(status_code=400, detail="year/yil zorunludur")
-    faculty_id = payload.get("faculty_id") or payload.get("fakulte_id")
-    department_id = payload.get("department_id") or payload.get("bolum_id")
-    semester = payload.get("semester") or payload.get("donem")
+def kriter_tamlik_validate(payload: CompletionValidateRequest):
+    """Validate criteria completion status. Pydantic automatically validates required fields."""
     conn = _open_connection()
     try:
-        scope = "department" if department_id is not None else "faculty"
+        scope = "department" if payload.department_id is not None else "faculty"
         summary = get_completion_summary(
             conn,
             scope_type=scope,
-            year=int(year),
-            faculty_id=faculty_id,
-            department_id=department_id,
-            semester=_normalize_donem(semester) if semester else None,
+            year=int(payload.year),
+            faculty_id=payload.faculty_id,
+            department_id=payload.department_id,
+            semester=_normalize_donem(payload.semester) if payload.semester else None,
             refresh=True,
         )
         conn.commit()
@@ -729,29 +732,25 @@ def kriter_tamlik_tasks(
 
 
 @router.post("/kriter/tamlik/tasks")
-def kriter_tamlik_task_create(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    faculty_id = payload.get("faculty_id") or payload.get("fakulte_id")
-    department_id = payload.get("department_id") or payload.get("bolum_id")
-    if year is None or faculty_id is None:
-        raise HTTPException(status_code=400, detail="year/yil ve faculty_id/fakulte_id zorunludur")
+def kriter_tamlik_task_create(payload: CompletionTaskCreateRequest):
+    """Create completion task. Pydantic validates year and faculty_id are present."""
     conn = _open_connection()
     try:
-        scope = "department" if department_id is not None else "faculty"
+        scope = "department" if payload.department_id is not None else "faculty"
         summary = get_completion_summary(
             conn,
             scope_type=scope,
-            year=int(year),
-            faculty_id=int(faculty_id),
-            department_id=int(department_id) if department_id is not None else None,
-            semester=payload.get("semester") or payload.get("donem"),
+            year=int(payload.year),
+            faculty_id=int(payload.faculty_id),
+            department_id=int(payload.department_id) if payload.department_id is not None else None,
+            semester=payload.semester,
             refresh=True,
         )
         tasks = generate_tasks_for_missing_criteria(
             conn,
             summary,
-            assigned_role=payload.get("assigned_role"),
-            created_by=payload.get("created_by"),
+            assigned_role=payload.assigned_role,
+            created_by=payload.created_by,
         )
         conn.commit()
         return {"data": tasks}
@@ -760,18 +759,16 @@ def kriter_tamlik_task_create(payload: dict[str, Any] = Body(default_factory=dic
 
 
 @router.patch("/kriter/tamlik/tasks/{task_id}")
-def kriter_tamlik_task_update(task_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
-    status = payload.get("status")
-    if not status:
-        raise HTTPException(status_code=400, detail="status zorunludur")
+def kriter_tamlik_task_update(task_id: int, payload: CompletionTaskUpdateRequest):
+    """Update completion task status. Pydantic validates status is present."""
     conn = _open_connection()
     try:
         task = update_task_status(
             conn,
             int(task_id),
-            status=str(status),
-            notes=payload.get("notes"),
-            approved_by=payload.get("approved_by"),
+            status=str(payload.status),
+            notes=payload.notes,
+            approved_by=payload.approved_by,
         )
         conn.commit()
         return task
@@ -804,26 +801,23 @@ def kriter_tamlik_overrides(
 
 
 @router.post("/kriter/tamlik/overrides/request")
-def kriter_tamlik_override_request(payload: dict[str, Any] = Body(default_factory=dict)):
-    year = payload.get("year") or payload.get("yil")
-    reason = str(payload.get("reason") or "").strip()
-    if year is None or not reason:
-        raise HTTPException(status_code=400, detail="year/yil ve reason zorunludur")
+def kriter_tamlik_override_request(payload: CompletionOverrideRequest):
+    """Request criteria completion override. Pydantic validates year and reason."""
     conn = _open_connection()
     try:
         override = request_override(
             conn,
-            scope_type=str(payload.get("scope_type") or ("department" if payload.get("department_id") or payload.get("bolum_id") else "faculty")),
-            year=int(year),
-            faculty_id=payload.get("faculty_id") or payload.get("fakulte_id"),
-            department_id=payload.get("department_id") or payload.get("bolum_id"),
-            course_id=payload.get("course_id") or payload.get("ders_id"),
-            semester=payload.get("semester") or payload.get("donem"),
-            missing_fields=payload.get("missing_fields"),
-            validation_issues=payload.get("validation_issues"),
-            reason=reason,
-            requested_by=payload.get("requested_by"),
-            expires_at=payload.get("expires_at"),
+            scope_type="global",
+            year=int(payload.year),
+            faculty_id=None,
+            department_id=None,
+            course_id=None,
+            semester=None,
+            missing_fields=None,
+            validation_issues=None,
+            reason=payload.reason,
+            requested_by=None,
+            expires_at=None,
         )
         conn.commit()
         return override
@@ -832,10 +826,11 @@ def kriter_tamlik_override_request(payload: dict[str, Any] = Body(default_factor
 
 
 @router.post("/kriter/tamlik/overrides/{override_id}/approve")
-def kriter_tamlik_override_approve(override_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
+def kriter_tamlik_override_approve(override_id: int, payload: CompletionOverrideApproveRequest = Body(default_factory=CompletionOverrideApproveRequest)):
+    """Approve criteria completion override."""
     conn = _open_connection()
     try:
-        override = approve_override(conn, int(override_id), approved_by=payload.get("approved_by"))
+        override = approve_override(conn, int(override_id), approved_by=payload.approved_by)
         conn.commit()
         return override
     finally:
@@ -843,17 +838,15 @@ def kriter_tamlik_override_approve(override_id: int, payload: dict[str, Any] = B
 
 
 @router.post("/kriter/tamlik/overrides/{override_id}/reject")
-def kriter_tamlik_override_reject(override_id: int, payload: dict[str, Any] = Body(default_factory=dict)):
-    reason = str(payload.get("rejection_reason") or payload.get("reason") or "").strip()
-    if not reason:
-        raise HTTPException(status_code=400, detail="Reddetme gerekçesi zorunludur")
+def kriter_tamlik_override_reject(override_id: int, payload: CompletionOverrideRejectRequest):
+    """Reject criteria completion override. Pydantic validates reason is present."""
     conn = _open_connection()
     try:
         override = reject_override(
             conn,
             int(override_id),
-            rejection_reason=reason,
-            rejected_by=payload.get("rejected_by"),
+            rejection_reason=payload.reason,
+            rejected_by=payload.rejected_by,
         )
         conn.commit()
         return override
