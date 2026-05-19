@@ -885,6 +885,8 @@ class DecisionCenterPage(ttk.Frame):
             self.txt_fairness.insert(tk.END, "Henüz adalet raporu bulunmuyor.")
             return
         cur = self._conn().cursor()
+
+        # 1) Kayıtlı adalet raporu (varsa)
         cur.execute(
             """
             SELECT summary_text, report_json
@@ -896,16 +898,111 @@ class DecisionCenterPage(ttk.Frame):
             (int(run_id),),
         )
         row = cur.fetchone()
-        if not row:
-            self.txt_fairness.insert(tk.END, "Bu karar çalıştırması için adalet raporu yok.")
-            return
-        self.txt_fairness.insert(tk.END, str(row[0] or "") + "\n\n")
+        if row:
+            self.txt_fairness.insert(tk.END, str(row[0] or "") + "\n\n")
+            try:
+                report = json.loads(row[1] or "{}")
+            except Exception:
+                report = {}
+            for key, value in report.items():
+                self.txt_fairness.insert(tk.END, f"{key}: {value}\n")
+        else:
+            self.txt_fairness.insert(
+                tk.END, "Bu çalıştırma için kayıtlı adalet raporu yok.\n"
+            )
+
+        # 2) Objektif metrikler — her zaman course_decisions'tan hesaplanır
         try:
-            report = json.loads(row[1] or "{}")
-        except Exception:
-            report = {}
-        for key, value in report.items():
-            self.txt_fairness.insert(tk.END, f"{key}: {value}\n")
+            self._append_objective_metrics(cur, int(run_id))
+        except Exception as exc:
+            self.txt_fairness.insert(
+                tk.END, f"\n[Objektif metrikler hesaplanamadı: {exc}]\n"
+            )
+
+    def _append_objective_metrics(self, cur, run_id: int):
+        """Karar çalıştırmasının ham sonuçlarından objektif kalite metrikleri."""
+        cur.execute(
+            """
+            SELECT final_status, topsis_score, data_confidence_score,
+                   approval_required, decision_stability, department_id
+            FROM course_decisions
+            WHERE decision_run_id = ?
+            """,
+            (run_id,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            self.txt_fairness.insert(
+                tk.END, "\nObjektif metrik için ders kararı bulunamadı.\n"
+            )
+            return
+
+        n = len(rows)
+        skorlar = [float(r[1] or 0) for r in rows]
+        guven = [float(r[2] or 0) for r in rows]
+        onay_gerek = sum(1 for r in rows if r[3])
+        mufredat = [float(r[1] or 0) for r in rows if r[0] == 1]
+        havuz = [float(r[1] or 0) for r in rows if r[0] is not None and r[0] <= 0]
+
+        def ort(x):
+            return sum(x) / len(x) if x else 0.0
+
+        def std(x):
+            if len(x) < 2:
+                return 0.0
+            m = ort(x)
+            return (sum((v - m) ** 2 for v in x) / len(x)) ** 0.5
+
+        # Statü dağılımı
+        dagilim = {}
+        stabilite = {}
+        bolumler = set()
+        for r in rows:
+            s = _status_text(r[0])
+            dagilim[s] = dagilim.get(s, 0) + 1
+            st = str(r[4] or "bilinmiyor")
+            stabilite[st] = stabilite.get(st, 0) + 1
+            if r[5] is not None:
+                bolumler.add(r[5])
+
+        ayrim = ort(mufredat) - ort(havuz)  # separation: yüksek = iyi ayrışma
+
+        lines = [
+            "",
+            "=" * 58,
+            "OBJEKTIF KALITE METRIKLERI (ham karar verisinden)",
+            "=" * 58,
+            f"Toplam ders karari        : {n}",
+            f"Kapsanan bolum sayisi     : {len(bolumler)}",
+            "",
+            "Karar dagilimi:",
+        ]
+        for s, c in sorted(dagilim.items(), key=lambda kv: -kv[1]):
+            lines.append(f"  - {s:<14}: {c:>4}  (%{c / n * 100:.1f})")
+        lines += [
+            "",
+            f"Ortalama TOPSIS skoru     : {ort(skorlar):.2f}  (std {std(skorlar):.2f})",
+            f"  Mufredatta kalan ort.   : {ort(mufredat):.2f}  (n={len(mufredat)})",
+            f"  Havuz/dinlenme ort.     : {ort(havuz):.2f}  (n={len(havuz)})",
+            f"  >> Skor ayrimi (separation): {ayrim:.2f}  "
+            f"({'iyi ayrisma' if ayrim >= 10 else 'zayif ayrisma — esikleri gozden gecirin'})",
+            "",
+            f"Ortalama veri guveni      : {ort(guven):.3f}  "
+            f"({'yeterli' if ort(guven) >= 0.6 else 'dusuk — veri tamlamayi artirin'})",
+            f"Manuel onay yuku          : {onay_gerek}/{n}  "
+            f"(%{onay_gerek / n * 100:.1f})",
+            "",
+            "Karar kararliligi (stability) dagilimi:",
+        ]
+        for st, c in sorted(stabilite.items(), key=lambda kv: -kv[1]):
+            lines.append(f"  - {st:<10}: {c:>4}  (%{c / n * 100:.1f})")
+        lines += [
+            "",
+            "Yorum: Skor ayrimi yuksek + veri guveni >=0.60 + dusuk onay yuku",
+            "       => karar motoru saglikli ve guvenilir calisiyor demektir.",
+            "",
+        ]
+        self.txt_fairness.insert(tk.END, "\n".join(lines))
 
     def _show_course_detail(self):
         selected = self.tree_courses.selection()
