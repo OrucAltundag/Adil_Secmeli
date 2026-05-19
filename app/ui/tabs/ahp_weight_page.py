@@ -229,6 +229,17 @@ class AHPWeightPage(ttk.Frame):
         for status, color in DURUM_RENK.items():
             self.profile_tree.tag_configure(status, background=color)
 
+        # Secili satir, durum rengi ne olursa olsun belirgin (koyu mavi) gorunsun
+        try:
+            style = ttk.Style()
+            style.map(
+                "Treeview",
+                background=[("selected", "#1565C0")],
+                foreground=[("selected", "white")],
+            )
+        except Exception:
+            pass
+
         scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.profile_tree.yview)
         self.profile_tree.configure(yscrollcommand=scroll_y.set)
         self.profile_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -317,6 +328,35 @@ class AHPWeightPage(ttk.Frame):
                 bg=color, padx=5, pady=1,
                 font=("Segoe UI", 7), relief=tk.GROOVE, bd=1,
             ).pack(side=tk.LEFT, padx=2)
+
+        # Yasam dongusu + TOPSIS akis aciklamasi
+        akis = tk.Frame(frame, bg="#F4F8FE")
+        akis.pack(fill=tk.X, pady=(8, 0))
+        tk.Label(
+            akis,
+            text="Profil yasam dongusu ve TOPSIS'e aktarim",
+            bg="#F4F8FE", fg="#1565C0",
+            font=("Segoe UI", 8, "bold"), anchor=tk.W,
+        ).pack(fill=tk.X, padx=8, pady=(4, 1))
+        tk.Label(
+            akis,
+            text=(
+                "Adimlar:  1) Yeni Profil (ad girilir)  ->  2) Ikili Karsilastirma "
+                "sekmesinde matris doldurulur  ->  3) Dogrula  ->  4) Onaya Gonder  "
+                "->  5) Onayla  ->  6) Aktif Yap.\n"
+                "Onayla: profil 'approved' olur (gecerli ama henuz kullanilmaz).  "
+                "Reddet: profil 'rejected' olur (kullanilamaz, gerekce sorulur).  "
+                "Aktif Yap: profil 'active' olur ve ESKI aktif profil otomatik pasige duser.\n"
+                "TOPSIS baglantisi: Yalnizca AKTIF profilin agirliklari kullanilir. "
+                "Karar Merkezi -> Calistirmalar -> 'Yeni Karar Calistir' dediginizde "
+                "aktif AHP profilinin agirliklari TOPSIS'e otomatik aktarilir. "
+                "Kontrol: Karar Merkezi -> Calistirmalar sekmesindeki 'ahp' sutunu "
+                "hangi profilin kullanildigini gosterir."
+            ),
+            bg="#F4F8FE", fg="#37474F",
+            font=("Segoe UI", 7), anchor=tk.W,
+            justify=tk.LEFT, wraplength=1050,
+        ).pack(fill=tk.X, padx=8, pady=(0, 5))
 
     # ─── Tab 2: Ikili Karsilastirma ───────────────────────────────────────────
     def _build_tab2(self):
@@ -573,6 +613,21 @@ class AHPWeightPage(ttk.Frame):
                 )
 
             self._rebuild_matrix_grid()
+
+            # Refresh sonrasi panel bos kalmasin: aktif profili (yoksa ilk
+            # satiri) otomatik sec ve detayini goster.
+            children = self.profile_tree.get_children()
+            if children:
+                hedef = None
+                if active_profile:
+                    for item, pid in self._profile_rows.items():
+                        if int(pid) == int(active_profile["id"]):
+                            hedef = item
+                            break
+                hedef = hedef or children[0]
+                self.profile_tree.selection_set(hedef)
+                self.profile_tree.focus(hedef)
+                self._on_profile_select()
         except Exception as exc:
             messagebox.showerror("AHP Agirlik Yonetimi", self._format_error(exc))
 
@@ -1039,20 +1094,58 @@ class AHPWeightPage(ttk.Frame):
 
     # ─── Profil CRUD ─────────────────────────────────────────────────────────
     def create_default_profile(self):
+        # Profil adini kullanici elle girer
+        ad = simpledialog.askstring(
+            "Yeni AHP Profili",
+            "Profil adi (zorunlu):",
+            parent=self,
+        )
+        if ad is None:
+            return  # iptal
+        ad = ad.strip()
+        if not ad:
+            messagebox.showwarning("AHP", "Profil adi bos olamaz.")
+            return
+        notlar = simpledialog.askstring(
+            "Yeni AHP Profili",
+            "Aciklama / not (istege bagli):",
+            parent=self,
+        ) or "UI uzerinden olusturuldu."
         try:
             conn = self._conn()
             profile = create_profile(
                 conn,
-                profile_name="Yeni AHP Profili",
+                profile_name=ad,
+                name=ad,
                 criteria_keys=self._criterion_keys or None,
                 source="manual",
-                notes="UI uzerinden olusturuldu.",
+                status="draft",
+                notes=notlar,
             )
             conn.commit()
             self.refresh()
-            messagebox.showinfo("AHP", f"Profil olusturuldu: #{profile['id']}")
+            # Yeni olusturulan profili otomatik sec
+            self._select_profile_by_id(int(profile["id"]))
+            messagebox.showinfo(
+                "AHP",
+                f"Profil olusturuldu: #{profile['id']} — '{ad}'\n\n"
+                "Sonraki adimlar:\n"
+                "1) 'Ikili Karsilastirma' sekmesinde matrisi doldurun\n"
+                "2) Dogrula -> Onaya Gonder -> Onayla\n"
+                "3) 'Aktif Yap' ile TOPSIS'in kullanacagi profil yapin",
+            )
         except Exception as exc:
             messagebox.showerror("AHP", self._format_error(exc))
+
+    def _select_profile_by_id(self, profile_id: int):
+        """Verilen profile_id'ye sahip treeview satirini sec ve detayini goster."""
+        for item, pid in self._profile_rows.items():
+            if int(pid) == int(profile_id):
+                self.profile_tree.selection_set(item)
+                self.profile_tree.focus(item)
+                self.profile_tree.see(item)
+                self._on_profile_select()
+                return
 
     def validate_selected(self):
         self._profile_action(
