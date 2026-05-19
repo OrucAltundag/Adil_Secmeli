@@ -15,6 +15,7 @@ from app.services.ahp_profile_service import (
     archive_profile,
     clone_profile,
     create_profile,
+    delete_profile,
     get_profile,
     list_ahp_profiles,
     reject_profile,
@@ -310,6 +311,7 @@ class AHPWeightPage(ttk.Frame):
             ("Aktif Yap", self.activate_selected),
             ("Klonla", self.clone_selected),
             ("Arsivle", self.archive_selected),
+            ("Sil", self.delete_selected),
             ("Matrisi Duzenle", self._edit_selected_in_tab2),
         ]:
             ttk.Button(row2, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
@@ -567,7 +569,15 @@ class AHPWeightPage(ttk.Frame):
 
             active_profile = None
             for profile in profiles:
-                status = profile.get("status", "draft")
+                # Yetkili/guncel veriyi get_profile ile cek (liste bazen
+                # eksik/eski donebiliyor; get_profile her zaman dogru).
+                try:
+                    full = get_profile(conn, int(profile["id"])) or profile
+                except Exception:
+                    full = profile
+                profile = full
+
+                status = profile.get("status") or "draft"
                 is_active = bool(profile.get("is_active"))
                 if is_active:
                     active_profile = profile
@@ -579,7 +589,6 @@ class AHPWeightPage(ttk.Frame):
                     or profile.get("name")
                     or "(isimsiz)"
                 )
-                # Bytes gelirse guvvenli str'e cevir
                 if isinstance(pname, bytes):
                     pname = pname.decode("utf-8", errors="replace")
                 pname = str(pname).strip() or "(isimsiz)"
@@ -1164,13 +1173,54 @@ class AHPWeightPage(ttk.Frame):
         )
 
     def reject_selected(self):
+        profile = self._selected_profile()
+        if not profile:
+            messagebox.showwarning("AHP", "Once bir profil secin.")
+            return
         reason = simpledialog.askstring("AHP Reddet", "Red gerekcesinizi yazin:")
         if not reason:
             return
-        self._profile_action(
-            lambda conn, pid: reject_profile(conn, pid, reason, rejected_by="ui"),
-            "Profil reddedildi.",
-        )
+        # Kullanici istegi: reddedilen profil ayni zamanda SILINIR.
+        if not messagebox.askyesno(
+            "AHP Reddet + Sil",
+            f"'{profile.get('profile_name') or profile.get('name')}' profili "
+            f"reddedilip KALICI olarak silinecek. Onayliyor musunuz?",
+        ):
+            return
+        try:
+            conn = self._conn()
+            pid = int(profile["id"])
+            try:
+                reject_profile(conn, pid, reason, rejected_by="ui")
+            except Exception:
+                pass  # reddetme basarisiz olsa bile silmeyi dene
+            delete_profile(conn, pid)
+            conn.commit()
+            self.refresh()
+            messagebox.showinfo("AHP", "Profil reddedildi ve silindi.")
+        except Exception as exc:
+            messagebox.showerror("AHP", self._format_error(exc))
+
+    def delete_selected(self):
+        profile = self._selected_profile()
+        if not profile:
+            messagebox.showwarning("AHP", "Once bir profil secin.")
+            return
+        ad = profile.get("profile_name") or profile.get("name") or f"#{profile['id']}"
+        if not messagebox.askyesno(
+            "Profil Sil",
+            f"'{ad}' profili KALICI olarak silinecek. Onayliyor musunuz?\n"
+            "(Aktif profil silinemez.)",
+        ):
+            return
+        try:
+            conn = self._conn()
+            delete_profile(conn, int(profile["id"]))
+            conn.commit()
+            self.refresh()
+            messagebox.showinfo("AHP", f"Profil silindi: '{ad}'")
+        except Exception as exc:
+            messagebox.showerror("AHP", self._format_error(exc))
 
     def activate_selected(self):
         self._profile_action(

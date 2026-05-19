@@ -850,3 +850,40 @@ def _log_profile_action(
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def delete_profile(conn: sqlite3.Connection, profile_id: int) -> dict[str, Any]:
+    """
+    Bir AHP profilini ve bagli kayitlarini kalici olarak siler.
+    Aktif profil silinemez (once baska profili aktif yapin).
+    """
+    pid = int(profile_id)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, profile_name, name, is_active FROM ahp_weight_profiles WHERE id = ?",
+        (pid,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"Profil bulunamadi: #{pid}")
+    if int(row[3] or 0) == 1:
+        raise ValueError(
+            "Aktif profil silinemez. Once baska bir profili 'Aktif Yap' yapin."
+        )
+    ad = row[1] or row[2] or f"#{pid}"
+
+    for sql in (
+        "DELETE FROM ahp_profile_approval_logs WHERE profile_id = ?",
+        "DELETE FROM ahp_sensitivity_results WHERE ahp_profile_id = ?",
+        "UPDATE ahp_weight_profiles SET parent_profile_id = NULL "
+        "WHERE parent_profile_id = ?",
+        "UPDATE ahp_weight_profiles SET superseded_by_profile_id = NULL "
+        "WHERE superseded_by_profile_id = ?",
+        "DELETE FROM ahp_weight_profiles WHERE id = ?",
+    ):
+        try:
+            cur.execute(sql, (pid,))
+        except sqlite3.OperationalError:
+            pass
+
+    return {"id": pid, "deleted": True, "name": ad}
