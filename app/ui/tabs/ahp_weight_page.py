@@ -144,6 +144,25 @@ class AHPWeightPage(ttk.Frame):
         self._editing_profile_id: int | None = None
         self._build_ui()
 
+    _TR_ASCII = {
+        "ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g", "Ğ": "G",
+        "ç": "c", "Ç": "C", "ö": "o", "Ö": "O", "ü": "u", "Ü": "U",
+        "\xef": "i", "�": "i",
+    }
+
+    @classmethod
+    def _ascii_safe(cls, s: str) -> str:
+        """Tkinter'in render edemedigi karakterleri ASCII'ye indir
+        (DB cagrisi yok; '(isimsiz)' sorununu kalici onler)."""
+        if not s:
+            return s
+        out = "".join(cls._TR_ASCII.get(ch, ch) for ch in s)
+        try:
+            out.encode("ascii")
+            return out
+        except UnicodeEncodeError:
+            return out.encode("ascii", "ignore").decode("ascii") or s
+
     # ─── Veritabani ──────────────────────────────────────────────────────────
     def _conn(self):
         conn = getattr(getattr(self.app, "db", None), "conn", None)
@@ -577,14 +596,9 @@ class AHPWeightPage(ttk.Frame):
 
             active_profile = None
             for profile in profiles:
-                # Yetkili/guncel veriyi get_profile ile cek (liste bazen
-                # eksik/eski donebiliyor; get_profile her zaman dogru).
-                try:
-                    full = get_profile(conn, int(profile["id"])) or profile
-                except Exception:
-                    full = profile
-                profile = full
-
+                # Performans: list_ahp_profiles zaten tam veriyi donuyor;
+                # per-satir get_profile cagrisi (ensure_schema DDL dahil)
+                # cok yavaslatiyordu — kaldirildi.
                 status = profile.get("status") or "draft"
                 is_active = bool(profile.get("is_active"))
                 if is_active:
@@ -599,7 +613,7 @@ class AHPWeightPage(ttk.Frame):
                 )
                 if isinstance(pname, bytes):
                     pname = pname.decode("utf-8", errors="replace")
-                pname = str(pname).strip() or "(isimsiz)"
+                pname = self._ascii_safe(str(pname).strip()) or "(isimsiz)"
 
                 item = self.profile_tree.insert(
                     "",
@@ -883,7 +897,7 @@ class AHPWeightPage(ttk.Frame):
             )
             if isinstance(name, bytes):
                 name = name.decode("utf-8", errors="replace")
-            name = str(name).strip() or "(isimsiz)"
+            name = self._ascii_safe(str(name).strip()) or "(isimsiz)"
 
             status = profile.get("status", "draft")
             cr = profile.get("consistency_ratio")

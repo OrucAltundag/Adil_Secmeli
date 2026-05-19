@@ -57,9 +57,24 @@ def seed_default_profile(conn: sqlite3.Connection) -> dict[str, Any]:
     if row:
         return _row_to_profile(row)
 
+    # Idempotent koruma: zaten AKTIF bir profil varsa (kullanici
+    # yeniden adlandirmis/baska profili aktif yapmis olabilir),
+    # YENI varsayilan profil OLUSTURMA — aksi halde her acilista
+    # kopya 'aktif' profil uretilir ve liste tutarsiz olur.
+    cur.execute(
+        "SELECT * FROM ahp_weight_profiles WHERE is_active=1 "
+        "ORDER BY id DESC LIMIT 1"
+    )
+    mevcut_aktif = cur.fetchone()
+    if mevcut_aktif:
+        return _row_to_profile(mevcut_aktif)
+
     matrix = build_pairwise_matrix_from_weights(DEFAULT_WEIGHTS, DEFAULT_CRITERIA_KEYS)
     result = calculate_weights_from_pairwise_matrix(DEFAULT_CRITERIA_KEYS, matrix)
     now = _now()
+    # Tek-aktif degismezligi: yeni varsayilani aktif yapmadan once
+    # kalan tum aktifleri pasiflestir.
+    cur.execute("UPDATE ahp_weight_profiles SET is_active=0 WHERE is_active=1")
     cur.execute(
         """
         INSERT INTO ahp_weight_profiles (
@@ -73,8 +88,8 @@ def seed_default_profile(conn: sqlite3.Connection) -> dict[str, Any]:
                 'active', 'system', ?, 1, ?, ?, 'system', ?)
         """,
         (
-            "Varsayılan Global AHP Profili",
-            "Varsayılan Global AHP Profili",
+            "Varsayilan Global AHP Profili",
+            "Varsayilan Global AHP Profili",
             "global-default-ahp",
             _json(DEFAULT_CRITERIA_KEYS),
             _json(matrix),
