@@ -10,6 +10,7 @@ from app.algorithms.ml.classifiers import (
     NaiveBayesPredictor,
     RandomForestPredictor,
     XGBoostLikePredictor,
+    build_adaptive_predictor,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "LogisticRegressionPredictor",
     "RandomForestPredictor",
     "XGBoostLikePredictor",
+    "build_adaptive_predictor",
 ]

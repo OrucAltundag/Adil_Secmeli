@@ -141,7 +141,17 @@ class LogisticRegressionPredictor(SklearnPredictorBase):
 
 
 class RandomForestPredictor(SklearnPredictorBase):
-    def __init__(self, n_estimators: int = 300, random_seed: int = 42) -> None:
+    def __init__(
+        self,
+        n_estimators: int = 300,
+        random_seed: int = 42,
+        *,
+        max_depth: int | None = None,
+        min_samples_leaf: int = 1,
+        ccp_alpha: float = 0.0,
+    ) -> None:
+        # ccp_alpha: cost-complexity pruning (agac budama) — overfitting'i
+        # azaltir. max_depth / min_samples_leaf de pruning amaclidir.
         super().__init__(
             name="RandomForest",
             estimator=RandomForestClassifier(
@@ -149,9 +159,65 @@ class RandomForestPredictor(SklearnPredictorBase):
                 random_state=random_seed,
                 n_jobs=-1,
                 class_weight="balanced_subsample",
+                max_depth=max_depth,
+                min_samples_leaf=min_samples_leaf,
+                ccp_alpha=ccp_alpha,
             ),
-            parameters={"n_estimators": n_estimators, "random_seed": random_seed},
+            parameters={
+                "n_estimators": n_estimators,
+                "random_seed": random_seed,
+                "max_depth": max_depth,
+                "min_samples_leaf": min_samples_leaf,
+                "ccp_alpha": ccp_alpha,
+            },
         )
+
+
+def build_adaptive_predictor(
+    n_samples: int, n_features: int = 0, *, random_seed: int = 42
+):
+    """
+    Veri boyutuna gore en uygun modeli + pruning parametrelerini secer.
+
+    - Cok kucuk veri (<30): LogisticRegression (basit, overfit'e dayanikli)
+    - Kucuk veri (30-150): guclu budanmis RandomForest
+      (siglar agaclar, yuksek min_samples_leaf, ccp_alpha)
+    - Orta (150-1000): orta budama
+    - Buyuk (>1000): tam kapasite RandomForest (minimal budama)
+
+    Az veride derin agac ezberler; bu yuzden veri kuculdukce budama artar.
+    """
+    n = int(n_samples or 0)
+    if n < 30:
+        return LogisticRegressionPredictor(), {
+            "secim": "LogisticRegression",
+            "gerekce": f"Cok az veri ({n}): basit lineer model overfit'e daha dayanikli.",
+        }
+    if n < 150:
+        return RandomForestPredictor(
+            n_estimators=120, random_seed=random_seed,
+            max_depth=4, min_samples_leaf=5, ccp_alpha=0.01,
+        ), {
+            "secim": "RandomForest (guclu budama)",
+            "gerekce": f"Kucuk veri ({n}): sig agac (max_depth=4), "
+            "min_samples_leaf=5, ccp_alpha=0.01.",
+        }
+    if n < 1000:
+        return RandomForestPredictor(
+            n_estimators=250, random_seed=random_seed,
+            max_depth=10, min_samples_leaf=3, ccp_alpha=0.002,
+        ), {
+            "secim": "RandomForest (orta budama)",
+            "gerekce": f"Orta veri ({n}): max_depth=10, "
+            "min_samples_leaf=3, ccp_alpha=0.002.",
+        }
+    return RandomForestPredictor(
+        n_estimators=400, random_seed=random_seed,
+        max_depth=None, min_samples_leaf=1, ccp_alpha=0.0,
+    ), {
+        "secim": "RandomForest (tam kapasite)",
+        "gerekce": f"Buyuk veri ({n}): minimal budama, tam kapasite.",
+    }
 
 
 class XGBoostLikePredictor(SklearnPredictorBase):

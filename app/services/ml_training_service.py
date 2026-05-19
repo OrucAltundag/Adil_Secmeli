@@ -60,7 +60,8 @@ def train_model_run(
         reason = "; ".join(readiness.blocking_reasons or ["Readiness koşulu sağlanmadı."])
         return mark_skipped(conn, run_id, reason) | {"readiness": readiness.as_dict()}
     try:
-        model = _build_model(cfg.algorithm_key)
+        n_samples = int(len(dataset.X)) if dataset.X is not None else 0
+        model = _build_model(cfg.algorithm_key, n_samples=n_samples)
         if cfg.algorithm_type == "regression":
             y = dataset.X["previous_topsis_score"].astype(float)
             if len(pd.Series(y).dropna()) < 2:
@@ -80,18 +81,41 @@ def train_model_run(
         )
         result["readiness"] = readiness.as_dict()
         result["warnings"] = evaluation.warnings
+        result["significance"] = evaluation.significance
+        result["model_params"] = getattr(model, "get_params", lambda: {})()
         return result
     except Exception as exc:
         return mark_failed(conn, run_id, str(exc)) | {"readiness": readiness.as_dict()}
 
 
-def _build_model(algorithm_key: str):
+def _adaptive_rf_params(n_samples: int) -> dict:
+    """Veri boyutuna gore RandomForest pruning parametreleri.
+    Az veride agresif budama (overfitting onleme)."""
+    n = int(n_samples or 0)
+    if n < 150:
+        return {"n_estimators": 120, "max_depth": 4,
+                "min_samples_leaf": 5, "ccp_alpha": 0.01}
+    if n < 1000:
+        return {"n_estimators": 250, "max_depth": 10,
+                "min_samples_leaf": 3, "ccp_alpha": 0.002}
+    return {"n_estimators": 400, "max_depth": None,
+            "min_samples_leaf": 1, "ccp_alpha": 0.0}
+
+
+def _build_model(algorithm_key: str, n_samples: int = 0):
     if algorithm_key == "linear_regression":
         return LinearRegression()
     if algorithm_key == "decision_tree":
-        return DecisionTreeClassifier(max_depth=5, random_state=42)
-    if algorithm_key == "random_forest":
-        return RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42, class_weight="balanced_subsample")
+        # ccp_alpha + min_samples_leaf = agac budama (pruning)
+        return DecisionTreeClassifier(
+            max_depth=5, min_samples_leaf=4, ccp_alpha=0.01, random_state=42
+        )
+    if algorithm_key in {"random_forest", "auto", "adaptive"}:
+        p = _adaptive_rf_params(n_samples)
+        return RandomForestClassifier(
+            random_state=42, n_jobs=-1,
+            class_weight="balanced_subsample", **p
+        )
     if algorithm_key == "logistic_regression":
         return LogisticRegression(max_iter=2000)
     if algorithm_key == "naive_bayes":
