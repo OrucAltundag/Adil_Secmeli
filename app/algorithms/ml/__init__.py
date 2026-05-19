@@ -7,6 +7,7 @@ from app.algorithms.ml.baselines import (
 )
 from app.algorithms.ml.classifiers import (
     LogisticRegressionPredictor,
+    MLPPredictor,
     NaiveBayesPredictor,
     RandomForestPredictor,
     XGBoostLikePredictor,
@@ -19,6 +20,7 @@ __all__ = [
     "PopularityRecommender",
     "NaiveBayesPredictor",
     "LogisticRegressionPredictor",
+    "MLPPredictor",
     "RandomForestPredictor",
     "XGBoostLikePredictor",
     "build_adaptive_predictor",

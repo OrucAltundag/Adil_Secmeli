@@ -124,4 +124,17 @@ def _build_model(algorithm_key: str, n_samples: int = 0):
         from sklearn.ensemble import GradientBoostingClassifier
 
         return GradientBoostingClassifier(random_state=42)
+    if algorithm_key in {"mlp", "deep_learning", "neural_network"}:
+        # Derin ogrenme: StandardScaler + MLP (early_stopping ile
+        # overfitting korumasi). Veri kuculdukce ag kuculur.
+        from app.algorithms.ml.classifiers import _build_mlp_estimator
+
+        n = int(n_samples or 0)
+        if n < 150:
+            hidden = (32,)
+        elif n < 1000:
+            hidden = (64, 32)
+        else:
+            hidden = (128, 64, 32)
+        return _build_mlp_estimator(hidden_layer_sizes=hidden, random_seed=42)
     return DecisionTreeClassifier(max_depth=3, random_state=42)

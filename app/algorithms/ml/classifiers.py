@@ -18,6 +18,41 @@ def _build_lr_estimator():
     return LogisticRegression(max_iter=2000, n_jobs=None)
 
 
+def _build_mlp_estimator(
+    *, hidden_layer_sizes=(64, 32), max_iter: int = 500, random_seed: int = 42
+):
+    """
+    Cok katmanli yapay sinir agi (MLP) — derin ogrenme.
+    Sinir aglari ozellik olceklemesine duyarli oldugundan
+    StandardScaler ile Pipeline icine alinir. early_stopping ile
+    overfitting'e karsi korunur.
+    """
+    from sklearn.neural_network import MLPClassifier
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    return Pipeline(
+        steps=[
+            ("scaler", StandardScaler()),
+            (
+                "mlp",
+                MLPClassifier(
+                    hidden_layer_sizes=hidden_layer_sizes,
+                    activation="relu",
+                    solver="adam",
+                    alpha=1e-3,                 # L2 regularizasyon
+                    learning_rate_init=1e-3,
+                    max_iter=max_iter,
+                    early_stopping=True,        # overfitting korumasi
+                    n_iter_no_change=15,
+                    validation_fraction=0.15,
+                    random_state=random_seed,
+                ),
+            ),
+        ]
+    )
+
+
 class SklearnPredictorBase(IPredictor):
     def __init__(self, name: str, estimator: Any, *, task_type: str = "prediction", parameters: dict[str, Any] | None = None) -> None:
         super().__init__(name=name, task_type=task_type, parameters=parameters or {})
@@ -138,6 +173,30 @@ class NaiveBayesPredictor(SklearnPredictorBase):
 class LogisticRegressionPredictor(SklearnPredictorBase):
     def __init__(self) -> None:
         super().__init__(name="LogisticRegression", estimator=_build_lr_estimator())
+
+
+class MLPPredictor(SklearnPredictorBase):
+    """Derin ogrenme — cok katmanli yapay sinir agi (StandardScaler+MLP)."""
+
+    def __init__(
+        self,
+        hidden_layer_sizes=(64, 32),
+        max_iter: int = 500,
+        random_seed: int = 42,
+    ) -> None:
+        super().__init__(
+            name="MLP",
+            estimator=_build_mlp_estimator(
+                hidden_layer_sizes=hidden_layer_sizes,
+                max_iter=max_iter,
+                random_seed=random_seed,
+            ),
+            parameters={
+                "hidden_layer_sizes": list(hidden_layer_sizes),
+                "max_iter": max_iter,
+                "random_seed": random_seed,
+            },
+        )
 
 
 class RandomForestPredictor(SklearnPredictorBase):
