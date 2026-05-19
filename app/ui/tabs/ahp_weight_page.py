@@ -140,6 +140,8 @@ class AHPWeightPage(ttk.Frame):
         self._matrix_entries: list[list] = []   # StringVar (off-diag) | None (diag)
         self._current_weights: dict[str, float] = {}
         self._current_cr: float | None = None
+        # Tab2'de duzenlenen profilin id'si (Tab1 secimi degisse de korunur)
+        self._editing_profile_id: int | None = None
         self._build_ui()
 
     # ─── Veritabani ──────────────────────────────────────────────────────────
@@ -309,6 +311,7 @@ class AHPWeightPage(ttk.Frame):
         row2.pack(fill=tk.X)
         for text, cmd in [
             ("Aktif Yap", self.activate_selected),
+            ("Yeniden Adlandir", self.rename_selected),
             ("Klonla", self.clone_selected),
             ("Arsivle", self.archive_selected),
             ("Sil", self.delete_selected),
@@ -440,9 +443,14 @@ class AHPWeightPage(ttk.Frame):
         ttk.Button(mat_btns, text="JSON Kopyala", command=self._copy_matrix_json).pack(
             side=tk.LEFT, padx=2
         )
-        ttk.Button(mat_btns, text="Profile Kaydet", command=self.save_matrix_to_selected).pack(
-            side=tk.RIGHT, padx=2
-        )
+        ttk.Button(
+            mat_btns, text="Kaydet ve Onayla (AKTIF yap)",
+            command=self.save_and_approve_matrix,
+        ).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(
+            mat_btns, text="Sadece Kaydet",
+            command=lambda: self.save_matrix_to_selected(False),
+        ).pack(side=tk.RIGHT, padx=2)
 
         # ── Sag: CR + Agirliklar ──
         right = ttk.Frame(content, padding=4)
@@ -966,13 +974,22 @@ class AHPWeightPage(ttk.Frame):
         self.detail_matrix_text.config(state=tk.DISABLED)
 
     def _edit_selected_in_tab2(self):
-        """Secili profil matrisini Tab 2'ye yukleyip o sekmeyi acar."""
+        """Secili profilin matrisini Tab 2'ye yukle (AYNI profil duzenlenir,
+        yeni profil OLUSTURULMAZ). Profil id'si sabitlenir."""
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once bir profil secin.")
+            messagebox.showwarning("AHP", "Once Tab 1'den bir profil secin.")
             return
+        self._editing_profile_id = int(profile["id"])
         matrix = profile.get("pairwise_matrix") or None
-        self.profile_label_tab2.config(text=profile.get("profile_name", "---"))
+        ad = (
+            profile.get("profile_name")
+            or profile.get("name")
+            or f"#{profile['id']}"
+        )
+        self.profile_label_tab2.config(
+            text=f"#{profile['id']} — {ad}  (bu profil duzenleniyor)"
+        )
         self._rebuild_matrix_grid(matrix)
         self.nb.select(1)
 
@@ -1006,27 +1023,73 @@ class AHPWeightPage(ttk.Frame):
             if var_ji is not None:
                 var_ji.set(self._fmt(1.0 / value))
 
-    def save_matrix_to_selected(self):
-        profile = self._selected_profile()
+    def _editing_profile(self):
+        """Tab2'de duzenlenen profili dondur (sabit id; Tab1 secimine bagli degil)."""
+        pid = self._editing_profile_id
+        if pid is None:
+            sel = self._selected_profile()
+            if sel:
+                self._editing_profile_id = int(sel["id"])
+                return sel
+            return None
+        try:
+            return get_profile(self._conn(), int(pid))
+        except Exception:
+            return None
+
+    def save_matrix_to_selected(self, then_approve: bool = False):
+        profile = self._editing_profile()
         if not profile:
             messagebox.showwarning(
                 "AHP",
-                "Profil secili degil.\n"
-                "Tab 1'den profil secin --> 'Matrisi Duzenle' --> duzenleyin --> buradan kaydedin.",
+                "Duzenlenecek profil belirsiz.\n"
+                "Tab 1'den profil secip 'Matrisi Duzenle' butonuna basin.",
             )
             return
         try:
-            keys = profile.get("criteria_keys") or self._criterion_keys
-            matrix = self._get_matrix_values()
             from app.services.ahp_profile_service import update_profile
 
+            pid = int(profile["id"])
+            keys = profile.get("criteria_keys") or self._criterion_keys
+            matrix = self._get_matrix_values()
             conn = self._conn()
-            update_profile(conn, int(profile["id"]), criteria_keys=keys, pairwise_matrix=matrix)
+            # AYNI profil yerinde guncellenir (yeni profil olusmaz)
+            update_profile(conn, pid, criteria_keys=keys, pairwise_matrix=matrix)
+            if then_approve:
+                # Dogrula -> onaya gonder -> onayla -> aktif yap zincirini
+                # tek tusla calistir (hata olursa o adimda durur)
+                for fn in (
+                    lambda: validate_profile(conn, pid),
+                    lambda: submit_for_approval(conn, pid),
+                    lambda: approve_profile(conn, pid, approved_by="ui"),
+                    lambda: activate_profile(conn, pid, actor="ui"),
+                ):
+                    try:
+                        fn()
+                    except Exception:
+                        break
             conn.commit()
             self.refresh()
-            messagebox.showinfo("AHP", "Matris profile kaydedildi.")
+            self._select_profile_by_id(pid)
+            if then_approve:
+                messagebox.showinfo(
+                    "AHP",
+                    "Matris kaydedildi, profil onaylandi ve AKTIF yapildi.\n"
+                    "Artik Karar Merkezi -> Calistirmalar'da TOPSIS bu profili kullanir.",
+                )
+            else:
+                messagebox.showinfo("AHP", "Matris ayni profile kaydedildi (yeni profil olusmadi).")
         except Exception as exc:
             messagebox.showerror("AHP", self._format_error(exc))
+
+    def save_and_approve_matrix(self):
+        if not messagebox.askyesno(
+            "Kaydet ve Onayla",
+            "Matris kaydedilip profil otomatik olarak Dogrula -> Onayla -> "
+            "AKTIF yapilacak. Devam edilsin mi?",
+        ):
+            return
+        self.save_matrix_to_selected(then_approve=True)
 
     # ─── Etki & Analiz ───────────────────────────────────────────────────────
     def load_impact(self):
@@ -1219,6 +1282,35 @@ class AHPWeightPage(ttk.Frame):
             conn.commit()
             self.refresh()
             messagebox.showinfo("AHP", f"Profil silindi: '{ad}'")
+        except Exception as exc:
+            messagebox.showerror("AHP", self._format_error(exc))
+
+    def rename_selected(self):
+        profile = self._selected_profile()
+        if not profile:
+            messagebox.showwarning("AHP", "Once bir profil secin.")
+            return
+        eski = profile.get("profile_name") or profile.get("name") or ""
+        yeni = simpledialog.askstring(
+            "Profil Adi Degistir", "Yeni profil adi:",
+            initialvalue=str(eski), parent=self,
+        )
+        if yeni is None:
+            return
+        yeni = yeni.strip()
+        if not yeni:
+            messagebox.showwarning("AHP", "Profil adi bos olamaz.")
+            return
+        try:
+            from app.services.ahp_profile_service import update_profile
+
+            conn = self._conn()
+            pid = int(profile["id"])
+            update_profile(conn, pid, profile_name=yeni, name=yeni)
+            conn.commit()
+            self.refresh()
+            self._select_profile_by_id(pid)
+            messagebox.showinfo("AHP", f"Profil adi degistirildi: '{yeni}'")
         except Exception as exc:
             messagebox.showerror("AHP", self._format_error(exc))
 
