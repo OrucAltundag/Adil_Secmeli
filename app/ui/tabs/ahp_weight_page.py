@@ -1038,18 +1038,40 @@ class AHPWeightPage(ttk.Frame):
                 var_ji.set(self._fmt(1.0 / value))
 
     def _editing_profile(self):
-        """Tab2'de duzenlenen profili dondur (sabit id; Tab1 secimine bagli degil)."""
+        """Tab2'de duzenlenen profili dondur. Oncelik sirasi:
+        1) acik 'Matrisi Duzenle' id'si  2) Tab1 secimi
+        3) AKTIF profil  4) listedeki ilk profil.
+        Asla gecersiz (0/None) id ile cagrilmaz."""
+        conn = self._conn()
+
+        # 1) Acikca duzenlenen profil
         pid = self._editing_profile_id
-        if pid is None:
-            sel = self._selected_profile()
-            if sel:
-                self._editing_profile_id = int(sel["id"])
-                return sel
-            return None
+        if pid and int(pid) > 0:
+            try:
+                p = get_profile(conn, int(pid))
+                if p:
+                    return p
+            except Exception:
+                pass
+
+        # 2) Tab1 secimi
+        sel = self._selected_profile()
+        if sel and int(sel.get("id") or 0) > 0:
+            self._editing_profile_id = int(sel["id"])
+            return sel
+
+        # 3) Aktif profil / 4) ilk profil
         try:
-            return get_profile(self._conn(), int(pid))
+            profiles = list_ahp_profiles(conn)
         except Exception:
-            return None
+            profiles = []
+        if profiles:
+            aktif = next(
+                (p for p in profiles if p.get("is_active")), profiles[0]
+            )
+            self._editing_profile_id = int(aktif["id"])
+            return get_profile(conn, int(aktif["id"])) or aktif
+        return None
 
     def save_matrix_to_selected(self, then_approve: bool = False):
         profile = self._editing_profile()
