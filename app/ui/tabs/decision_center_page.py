@@ -312,6 +312,7 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Button(actions, text="Yaşam Döngüsünü Yenile", command=self._load_pool_lifecycle).pack(side=tk.LEFT, padx=4)
         ttk.Button(actions, text="Havuzdan Öner", command=self._havuzdan_oner).pack(side=tk.LEFT, padx=4)
         ttk.Button(actions, text="Otomatik Karar Önerisi", command=self._otomatik_karar).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="ML Analiz (p-value/SHAP/LIME)", command=self._ml_analiz).pack(side=tk.LEFT, padx=4)
         self.lbl_pool_lifecycle = ttk.Label(actions, text="")
         self.lbl_pool_lifecycle.pack(side=tk.LEFT, padx=12)
         self.tree_pool_lifecycle = self._tree(
@@ -740,6 +741,46 @@ class DecisionCenterPage(ttk.Frame):
             )
         except Exception as exc:
             messagebox.showerror("Havuzdan Öner", self._friendly_backend_error())
+            try:
+                self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+                self.txt_pool_lifecycle_detail.insert(tk.END, f"Hata: {exc}")
+            except Exception:
+                pass
+
+    def _ml_analiz(self):
+        """Faz 2+3 ML yeteneklerini (p-value, SHAP/LIME, pruning/MLP)
+        kriter verisinden uretip raporlar."""
+        try:
+            from app.services.ml_analysis_service import run_ml_analysis
+
+            year = int(self.cb_year.get())
+            faculty_id = self._faculty_map.get(self.cb_faculty.get())
+            self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+            self.txt_pool_lifecycle_detail.insert(
+                tk.END, "ML analizi calisiyor (p-value + SHAP/LIME + model "
+                "egitimi)... birkac saniye surebilir.\n"
+            )
+            self.txt_pool_lifecycle_detail.update_idletasks()
+
+            bloklar = []
+            for mk, baslik in (("adaptive", "ADAPTIF (Pruning) [Faz2-D]"),
+                               ("mlp", "MLP DERIN OGRENME [Faz3-H]")):
+                r = run_ml_analysis(
+                    self._conn(), year=year,
+                    faculty_id=int(faculty_id) if faculty_id else None,
+                    model_key=mk,
+                )
+                bloklar.append(f">>> {baslik}\n" + r["rapor"])
+
+            self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+            self.txt_pool_lifecycle_detail.insert(
+                tk.END, "\n\n".join(bloklar)
+            )
+            self.lbl_pool_lifecycle.config(
+                text="ML analiz: p-value + SHAP/LIME + pruning/MLP raporu hazir"
+            )
+        except Exception as exc:
+            messagebox.showerror("ML Analiz", self._friendly_backend_error())
             try:
                 self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
                 self.txt_pool_lifecycle_detail.insert(tk.END, f"Hata: {exc}")
