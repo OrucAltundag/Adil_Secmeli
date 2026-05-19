@@ -310,6 +310,7 @@ class DecisionCenterPage(ttk.Frame):
         actions = ttk.Frame(top)
         actions.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(actions, text="Yaşam Döngüsünü Yenile", command=self._load_pool_lifecycle).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Havuzdan Öner", command=self._havuzdan_oner).pack(side=tk.LEFT, padx=4)
         self.lbl_pool_lifecycle = ttk.Label(actions, text="")
         self.lbl_pool_lifecycle.pack(side=tk.LEFT, padx=12)
         self.tree_pool_lifecycle = self._tree(
@@ -684,6 +685,65 @@ class DecisionCenterPage(ttk.Frame):
                     row.get("main_reason") or "",
                 ),
             )
+
+    def _havuzdan_oner(self):
+        """Havuzdaki secmeli dersleri AKTIF AHP agirliklariyla puanlayip
+        acilmasi onerilenleri listeler (Havuzdan Oner)."""
+        try:
+            from app.services.pool_recommendation_service import recommend_from_pool
+
+            year = int(self.cb_year.get())
+            faculty_id = self._faculty_map.get(self.cb_faculty.get())
+            department_id = self._department_map.get(self.cb_department.get())
+            semester = self.cb_semester.get() or None
+            rapor = recommend_from_pool(
+                self._conn(),
+                year=year,
+                faculty_id=int(faculty_id) if faculty_id else None,
+                department_id=int(department_id) if department_id is not None else None,
+                semester=semester,
+                top_n=25,
+            )
+            self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+            ag = rapor["agirliklar"]
+            lines = [
+                "HAVUZDAN ONERI (aktif AHP agirliklariyla puanlama)",
+                "=" * 58,
+                "Agirliklar: "
+                + ", ".join(f"{k}=%{v*100:.0f}" for k, v in ag.items()),
+                f"Esik: {rapor['esik']:.0f}  |  Toplam aday: {rapor['toplam_aday']}"
+                f"  |  Kriter verisi yok: {rapor['veri_yok']}",
+                "-" * 58,
+                f"{'Sira':>4} {'Kod':<10} {'Ders':<26} {'Skor':>6}  Oneri",
+                "-" * 58,
+            ]
+            for o in rapor["oneriler"]:
+                isaret = "AC ✓" if o["oneri"] == "AC" else "havuz"
+                lines.append(
+                    f"{o['sira']:>4} {o['kod']:<10} {o['ad'][:26]:<26} "
+                    f"{o['skor']:>6.1f}  {isaret}"
+                )
+            ac_sayisi = sum(1 for o in rapor["oneriler"] if o["oneri"] == "AC")
+            lines += [
+                "-" * 58,
+                f"ONERI: {ac_sayisi} ders acilmasi onerilir "
+                f"(skor >= {rapor['esik']:.0f}).",
+                "",
+                "Not: Kriter verisi olmayan dersler siralanmaz "
+                "(once 'Veri Yonetimi'nden kriter ice aktarin).",
+            ]
+            self.txt_pool_lifecycle_detail.insert(tk.END, "\n".join(lines))
+            self.lbl_pool_lifecycle.config(
+                text=f"Havuzdan oneri: {ac_sayisi} ders aciliabilir "
+                f"({len(rapor['oneriler'])} siralandi)"
+            )
+        except Exception as exc:
+            messagebox.showerror("Havuzdan Öner", self._friendly_backend_error())
+            try:
+                self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+                self.txt_pool_lifecycle_detail.insert(tk.END, f"Hata: {exc}")
+            except Exception:
+                pass
 
     def _load_pool_lifecycle(self):
         if not getattr(self, "tree_pool_lifecycle", None):
