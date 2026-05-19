@@ -202,6 +202,10 @@ class CriteriaPage:
         # Excel'den Toplu Kriter Yükle
         tk.Button(parent, text="📂 Kriter Dosyasi Yukle", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=10)
+        # Öğrenci veri setinden otomatik üret
+        tk.Button(parent, text="🎓 Ogrenci Veri Setinden Otomatik Uret",
+                  bg="#7c3aed", fg="white", font=("Segoe UI", 9, "bold"),
+                  command=self.auto_generate_from_dataset).pack(side=tk.LEFT, padx=5)
 
     def create_form_ui(self, parent):
         tk.Label(parent, text="KRİTER VERİ GİRİŞİ", bg="#1e293b", fg="white",
@@ -570,6 +574,57 @@ class CriteriaPage:
         return "Sistem şu anda işlem yapamıyor. Lütfen daha sonra tekrar deneyin."
 
     # --- VERİ İŞLEMLERİ ---
+
+    def auto_generate_from_dataset(self):
+        """Ogrenci not veri setinden (2022_ogrenci_not_veri_seti.xlsx)
+        butun derslerin kriterlerini OTOMATIK uretir.
+        Manuel girisin yerine gecer; mevcut o yilki kriterler yenilenir."""
+        from tkinter import messagebox as _mb
+
+        if not _mb.askyesno(
+            "Otomatik Kriter Uretimi",
+            "Ogrenci not veri setinden (2022_ogrenci_not_veri_seti.xlsx) "
+            "2022 yili icin TUM ders kriterleri OTOMATIK uretilecek.\n\n"
+            "Mevcut 2022 kriterleri (varsa) SILINIP yeniden yazilacak.\n\n"
+            "Devam edilsin mi?",
+        ):
+            return
+        try:
+            from app.services.student_dataset_criteria_service import (
+                auto_generate_criteria_from_student_dataset,
+            )
+
+            conn = getattr(self.db, "conn", None)
+            if conn is None:
+                _mb.showerror("Hata", "Veritabani baglantisi yok.")
+                return
+            sonuc = auto_generate_criteria_from_student_dataset(
+                conn, year=2022, replace=True
+            )
+            mesaj = (
+                f"OTOMATIK URETIM TAMAMLANDI\n\n"
+                f"  Eklenen kriter satiri: {sonuc['eklenen']}\n"
+                f"  Veri setindeki toplam ders: {sonuc['toplam']}\n"
+                f"  Eslesmeyen ders kodu: {len(sonuc['eslesmeyen'])}\n"
+            )
+            if sonuc["eslesmeyen"]:
+                mesaj += (
+                    f"  (Eslesmeyenler: "
+                    f"{', '.join(sonuc['eslesmeyen'][:5])}"
+                    f"{'...' if len(sonuc['eslesmeyen']) > 5 else ''})\n"
+                )
+            mesaj += f"\nKaynak: {sonuc['excel_path']}"
+            _mb.showinfo("Otomatik Uretim", mesaj)
+            try:
+                self.load_courses()
+            except Exception:
+                pass
+            try:
+                self.refresh_completion_panel()
+            except Exception:
+                pass
+        except Exception as exc:
+            _mb.showerror("Otomatik Uretim Hatasi", str(exc))
 
     def import_kriterler_excel(self):
         """Secili kapsam icin kriter dosyasini uygular."""
