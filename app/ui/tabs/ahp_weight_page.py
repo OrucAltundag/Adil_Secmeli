@@ -426,6 +426,33 @@ class AHPWeightPage(ttk.Frame):
             foreground="#757575",
         ).pack()
 
+        # CR <= 0.10 esiginin detayli aciklamasi
+        aciklama_kutu = tk.Frame(cr_frame, bg="#FFF6DF")
+        aciklama_kutu.pack(fill=tk.X, pady=(6, 0))
+        tk.Label(
+            aciklama_kutu,
+            text="CR (Tutarlilik Orani) nedir ve neden 0.10?",
+            bg="#FFF6DF", fg="#6B4E00",
+            font=("Segoe UI", 8, "bold"), anchor=tk.W,
+        ).pack(fill=tk.X, padx=6, pady=(4, 1))
+        tk.Label(
+            aciklama_kutu,
+            text=(
+                "CR = CI / RI.  CI = (lambda_max - n) / (n - 1)  tutarsizlik indeksi, "
+                "RI ise n boyutlu rastgele matrisin beklenen indeksidir (Saaty tablosu: "
+                "n=4 icin 0.90).  Ikili karsilastirmalar mukemmel tutarli olsaydi CR=0 olurdu.\n\n"
+                "Saaty'nin kurali: %10'a kadar tutarsizlik insan yargisinda normaldir. "
+                "Bu yuzden esik CR <= 0.10 secilmistir.\n\n"
+                "CR > 0.10 ise: yargilariniz celiskili (or. A>B, B>C ama C>A). "
+                "Bu durumda hesaplanan agirliklar guvenilmezdir; karsilastirmalari "
+                "gozden gecirip duzeltmeniz gerekir. Sistem tutarsiz profili AKTIF "
+                "yapmaniza izin vermez."
+            ),
+            bg="#FFF6DF", fg="#5D4037",
+            font=("Segoe UI", 7), anchor=tk.W,
+            justify=tk.LEFT, wraplength=300,
+        ).pack(fill=tk.X, padx=6, pady=(0, 5))
+
         ttk.Button(
             right, text="Agirliklari Hesapla", command=self.calculate_current_matrix
         ).pack(fill=tk.X, pady=(0, 6))

@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 from app.datasets.entities import DatasetBundle
 
@@ -16,6 +17,11 @@ class FeatureConfig:
     categorical_columns: list[str]
     numeric_columns: list[str]
     composite_weights: dict[str, float]
+    # Normalize yontemi: "minmax" (varsayilan, geriye uyumlu) | "zscore" | "none"
+    normalize_method: str = "minmax"
+    # Eksik veri doldurma: "median" (varsayilan) | "mean" | "knn"
+    impute_strategy: str = "median"
+    knn_neighbors: int = 5
 
 
 DEFAULT_FEATURE_CONFIG = FeatureConfig(
@@ -120,10 +126,38 @@ class FeatureEngineer:
                 max_rank = 1.0
             out["preference_rank"] = (max_rank + 1.0) - out["preference_rank"]
 
-        scaler = MinMaxScaler()
-        filled = out[numeric_cols].fillna(out[numeric_cols].median(numeric_only=True)).fillna(0.0)
-        out[numeric_cols] = scaler.fit_transform(filled)
+        filled = self._impute(out[numeric_cols])
+        out[numeric_cols] = self._scale(filled)
         return out
+
+    def _impute(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Eksik degerleri secilen stratejiye gore doldur."""
+        strategy = getattr(self.config, "impute_strategy", "median")
+        if frame.empty:
+            return frame
+        try:
+            if strategy == "knn":
+                k = max(1, int(getattr(self.config, "knn_neighbors", 5)))
+                imputer = KNNImputer(n_neighbors=k)
+            elif strategy == "mean":
+                imputer = SimpleImputer(strategy="mean")
+            else:  # "median" — varsayilan, geriye uyumlu
+                imputer = SimpleImputer(strategy="median")
+            arr = imputer.fit_transform(frame)
+            # Tum sutun NaN ise imputer sutunu dusurebilir; guvenli fallback
+            if arr.shape[1] != frame.shape[1]:
+                return frame.fillna(frame.median(numeric_only=True)).fillna(0.0)
+            return pd.DataFrame(arr, columns=frame.columns, index=frame.index).fillna(0.0)
+        except Exception:
+            return frame.fillna(frame.median(numeric_only=True)).fillna(0.0)
+
+    def _scale(self, frame: pd.DataFrame) -> np.ndarray | pd.DataFrame:
+        """Secilen yonteme gore olcekle: minmax | zscore | none."""
+        method = getattr(self.config, "normalize_method", "minmax")
+        if frame.empty or method == "none":
+            return frame
+        scaler = StandardScaler() if method == "zscore" else MinMaxScaler()
+        return scaler.fit_transform(frame)
 
     def _add_composite_scores(self, df: pd.DataFrame) -> pd.DataFrame:
         out = df.copy()
