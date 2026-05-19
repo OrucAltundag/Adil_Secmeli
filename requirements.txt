@@ -32,3 +32,8 @@ pydantic>=1.0.0
 
 # Env management
 python-dotenv>=1.0.0
+
+# Faz 2 - aciklanabilirlik ve istatistik
+scipy>=1.10
+shap>=0.44
+lime>=0.2
