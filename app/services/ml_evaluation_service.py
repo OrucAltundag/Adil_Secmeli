@@ -24,8 +24,14 @@ from sklearn.model_selection import (
     KFold,
     StratifiedKFold,
     cross_val_score,
+    permutation_test_score,
     train_test_split,
 )
+
+try:
+    from scipy import stats as _scipy_stats
+except Exception:  # pragma: no cover
+    _scipy_stats = None
 
 
 @dataclass
@@ -34,6 +40,7 @@ class EvaluationResult:
     validation_metrics: dict[str, Any] = field(default_factory=dict)
     cross_validation: dict[str, Any] = field(default_factory=dict)
     overfitting_report: dict[str, Any] = field(default_factory=dict)
+    significance: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -58,8 +65,11 @@ def evaluate_regression_model(model, X, y) -> EvaluationResult:
     result.train_metrics = _regression_metrics(y_train, train_pred)
     result.validation_metrics = _regression_metrics(y_val, val_pred)
     result.cross_validation = run_cross_validation(model, X_df, y_series, task_type="regression")
+    result.significance = run_significance_test(model, X_df, y_series, task_type="regression")
     result.overfitting_report = detect_overfitting(result.train_metrics, result.validation_metrics, metric_name="r2")
     result.warnings.extend(result.cross_validation.get("warnings", []))
+    if result.significance.get("performed") and not result.significance.get("significant"):
+        result.warnings.append(result.significance.get("message", "Model anlamli degil."))
     if result.overfitting_report.get("overfit_warning"):
         result.warnings.append(result.overfitting_report.get("message", "Overfitting riski var."))
     return result
@@ -93,8 +103,11 @@ def evaluate_classification_model(model, X, y) -> EvaluationResult:
     result.train_metrics = _classification_metrics(y_train, train_pred, train_proba)
     result.validation_metrics = _classification_metrics(y_val, val_pred, val_proba)
     result.cross_validation = run_cross_validation(model, X_df, y_series, task_type="classification")
+    result.significance = run_significance_test(model, X_df, y_series, task_type="classification")
     result.overfitting_report = detect_overfitting(result.train_metrics, result.validation_metrics, metric_name="accuracy")
     result.warnings.extend(result.cross_validation.get("warnings", []))
+    if result.significance.get("performed") and not result.significance.get("significant"):
+        result.warnings.append(result.significance.get("message", "Model anlamli degil."))
     if result.overfitting_report.get("overfit_warning"):
         result.warnings.append(result.overfitting_report.get("message", "Overfitting riski var."))
     return result
@@ -138,6 +151,77 @@ def run_cross_validation(model, X, y, *, task_type: str = "classification", max_
         }
     except Exception as exc:
         return {"performed": False, "warnings": [f"Cross-validation çalışmadı: {exc}"]}
+
+
+def run_significance_test(
+    model, X, y, *, task_type: str = "classification", n_permutations: int = 100
+) -> dict:
+    """
+    Modelin sansa (rastgele) gore istatistiksel olarak anlamli sekilde
+    iyi olup olmadigini test eder.
+
+    - permutation_test_score: etiketler karistirilarak elde edilen skor
+      dagilimina gore gercek skorun p-degeri (H0: model sanstan iyi degil).
+    - scipy t-test: CV fold skorlari ile sans seviyesi karsilastirmasi.
+
+    p < 0.05  => model anlamli (sansa gore gercekten iyi).
+    """
+    X_df = pd.DataFrame(X).fillna(0.0)
+    y_series = pd.Series(y)
+    if len(X_df) < 10:
+        return {"performed": False, "reason": "Veri sayisi anlamlilik testi icin yetersiz (<10)."}
+
+    try:
+        if task_type == "classification":
+            if y_series.nunique() < 2:
+                return {"performed": False, "reason": "Tek sinif; anlamlilik testi yapilamaz."}
+            min_class = int(y_series.value_counts().min())
+            folds = max(2, min(5, min_class))
+            cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=42)
+            scoring = "accuracy"
+            sans_seviyesi = float(y_series.value_counts(normalize=True).max())
+        else:
+            folds = max(2, min(5, len(X_df)))
+            cv = KFold(n_splits=folds, shuffle=True, random_state=42)
+            scoring = "r2"
+            sans_seviyesi = 0.0  # R2: rastgele ~ 0
+
+        gercek_skor, perm_skorlari, p_degeri = permutation_test_score(
+            model, X_df, y_series, scoring=scoring, cv=cv,
+            n_permutations=int(n_permutations), random_state=42, n_jobs=1,
+        )
+
+        # Ek: CV fold skorlari ile sans seviyesi arasinda tek-orneklem t-testi
+        t_p = None
+        try:
+            fold_scores = cross_val_score(model, X_df, y_series, cv=cv, scoring=scoring)
+            if _scipy_stats is not None and len(fold_scores) >= 2:
+                _, t_p = _scipy_stats.ttest_1samp(fold_scores, sans_seviyesi)
+                t_p = float(t_p)
+        except Exception:
+            t_p = None
+
+        anlamli = bool(p_degeri < 0.05)
+        return {
+            "performed": True,
+            "method": "permutation_test_score",
+            "scoring": scoring,
+            "model_score": float(gercek_skor),
+            "chance_level": float(sans_seviyesi),
+            "p_value": float(p_degeri),
+            "ttest_p_value": t_p,
+            "n_permutations": int(n_permutations),
+            "significant": anlamli,
+            "message": (
+                f"Model sansa gore ISTATISTIKSEL OLARAK ANLAMLI (p={p_degeri:.4f} < 0.05). "
+                f"Skor {gercek_skor:.3f}, sans seviyesi {sans_seviyesi:.3f}."
+                if anlamli else
+                f"Model sanstan anlamli sekilde iyi DEGIL (p={p_degeri:.4f} >= 0.05). "
+                f"Daha fazla/temiz veri veya farkli ozellikler gerekir."
+            ),
+        }
+    except Exception as exc:
+        return {"performed": False, "reason": f"Anlamlilik testi calismadi: {exc}"}
 
 
 def detect_overfitting(train_metrics: dict, validation_metrics: dict, *, metric_name: str = "accuracy") -> dict:
