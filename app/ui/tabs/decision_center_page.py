@@ -311,6 +311,7 @@ class DecisionCenterPage(ttk.Frame):
         actions.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(actions, text="Yaşam Döngüsünü Yenile", command=self._load_pool_lifecycle).pack(side=tk.LEFT, padx=4)
         ttk.Button(actions, text="Havuzdan Öner", command=self._havuzdan_oner).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Otomatik Karar Önerisi", command=self._otomatik_karar).pack(side=tk.LEFT, padx=4)
         self.lbl_pool_lifecycle = ttk.Label(actions, text="")
         self.lbl_pool_lifecycle.pack(side=tk.LEFT, padx=12)
         self.tree_pool_lifecycle = self._tree(
@@ -739,6 +740,70 @@ class DecisionCenterPage(ttk.Frame):
             )
         except Exception as exc:
             messagebox.showerror("Havuzdan Öner", self._friendly_backend_error())
+            try:
+                self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+                self.txt_pool_lifecycle_detail.insert(tk.END, f"Hata: {exc}")
+            except Exception:
+                pass
+
+    def _otomatik_karar(self):
+        """AHP skoru + (varsa) ML sinyalini birlestirip otomatik
+        aç/havuzda tut/iptal adayi onerisi uretir (Otomatik Karar Destek)."""
+        try:
+            from app.services.auto_decision_support_service import (
+                auto_decision_support,
+            )
+
+            year = int(self.cb_year.get())
+            faculty_id = self._faculty_map.get(self.cb_faculty.get())
+            department_id = self._department_map.get(self.cb_department.get())
+            semester = self.cb_semester.get() or None
+            r = auto_decision_support(
+                self._conn(),
+                year=year,
+                faculty_id=int(faculty_id) if faculty_id else None,
+                department_id=int(department_id) if department_id is not None else None,
+                semester=semester,
+            )
+            oz = r["ozet"]
+            es = r["esikler"]
+            lines = [
+                "OTOMATIK KARAR DESTEK ONERISI",
+                "=" * 58,
+                "Yontem: AHP-agirlikli havuz skoru"
+                + (" + ML sinyali" if oz["ml_kullanildi"] else "")
+                + f"  (esik AC>={es['ac']:.0f}, iptal<{es['iptal']:.0f})",
+                "-" * 58,
+                f"  AÇ önerilen          : {oz['ac']}",
+                f"  Havuzda tut          : {oz['havuzda_tut']}",
+                f"  İptal adayı          : {oz['iptal_adayi']}",
+                f"  Toplam degerlendirilen: {oz['toplam']}"
+                f"  (kriter verisi yok: {oz['veri_yok']})",
+                "-" * 58,
+                f"{'Kod':<10} {'Ders':<24} {'Skor':>5} {'ML':>5} "
+                f"{'Nihai':>6} {'Guven':>6}  Karar",
+                "-" * 58,
+            ]
+            for k in r["kararlar"][:30]:
+                lines.append(
+                    f"{k['kod']:<10} {k['ad'][:24]:<24} {k['skor']:>5.0f} "
+                    f"{k['ml_sinyal']:>+5.2f} {k['nihai_skor']:>6.1f} "
+                    f"{k['guven']:>6.2f}  {k['karar']}"
+                )
+            lines += [
+                "-" * 58,
+                "NOT: Bu modul kararlari OTOMATIK UYGULAMAZ; karar "
+                "vericiye destek amaclidir. Nihai onay 'Akademik Onay' "
+                "ve 'Havuz Yasam Dongusu' uzerinden verilir.",
+            ]
+            self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
+            self.txt_pool_lifecycle_detail.insert(tk.END, "\n".join(lines))
+            self.lbl_pool_lifecycle.config(
+                text=f"Otomatik karar: {oz['ac']} aç / "
+                f"{oz['havuzda_tut']} tut / {oz['iptal_adayi']} iptal adayı"
+            )
+        except Exception as exc:
+            messagebox.showerror("Otomatik Karar", self._friendly_backend_error())
             try:
                 self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
                 self.txt_pool_lifecycle_detail.insert(tk.END, f"Hata: {exc}")
