@@ -31,8 +31,6 @@ from app.services.pool_state_machine_service import (
     reject_state_approval,
 )
 from app.services.service_factory import get_service_factory
-from app.ui.tabs.semester_planning_page import SemesterPlanningPage
-
 
 def _status_text(status: int | None) -> str:
     labels = {1: "Müfredatta", 0: "Havuzda", -1: "Dinlenmede", -2: "Kalıcı iptal"}
@@ -86,7 +84,6 @@ class DecisionCenterPage(ttk.Frame):
         self._build_runs_tab()
         self._build_course_tab()
         self._build_pool_lifecycle_tab()
-        self._build_semester_planning_tab()
         self._build_sensitivity_tab()
         self._build_approvals_tab()
         self._build_fairness_tab()
@@ -338,22 +335,6 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Button(approval_buttons, text="Onayla", command=self._approve_pool_state).pack(side=tk.LEFT, padx=4)
         ttk.Button(approval_buttons, text="Reddet", command=self._reject_pool_state).pack(side=tk.LEFT, padx=4)
 
-    def _build_semester_planning_tab(self):
-        container = ttk.Frame(self.sub_nb, padding=8)
-        self.sub_nb.add(container, text="Dönem Planlama")
-        self._tab_info(
-            container,
-            "Dönem Planlama — Açılacak Derslerin Çizelgesi",
-            "Karar sonuçlarına göre bir dönemde fiilen açılacak seçmeli dersleri planlar; "
-            "zorunlu ders yükü, eğitmen ve kontenjan kısıtlarını dikkate alarak çizelge önerir.",
-            "semester_plan_course_assignments + semester_required_course_loads tabloları. "
-            "Karar çalıştırması sonrası bu sekmedeki planlama araçlarıyla doldurulur.",
-            "Önce 'Çalıştırmalar' sekmesinde karar üretin, ardından bu sekmede dönem planını oluşturun.",
-            renk="#4E342E",
-        )
-        self.tab_semester_planning = SemesterPlanningPage(container, app=self.app)
-        self.tab_semester_planning.pack(fill=tk.BOTH, expand=True)
-
     def _build_sensitivity_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Hassas Kararlar")
@@ -437,8 +418,6 @@ class DecisionCenterPage(ttk.Frame):
             self._load_runs()
             self._load_readiness()
             self._load_pool_lifecycle()
-            if getattr(self, "tab_semester_planning", None):
-                self.tab_semester_planning.refresh()
             self._load_run_related()
         except Exception:
             if getattr(self, "txt_readiness", None):
