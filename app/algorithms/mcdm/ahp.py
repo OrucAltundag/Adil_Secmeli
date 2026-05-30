@@ -61,14 +61,10 @@ class AHPRanker(IRanker):
             raise ValueError("AHP icin sayisal kriter bulunamadi.")
         if self.pairwise_matrix is None:
             self.pairwise_matrix = np.ones((n, n), dtype=float)
-<<<<<<< HEAD
         elif self.pairwise_matrix.shape[0] != self.pairwise_matrix.shape[1]:
             raise ValueError(f"AHP pairwise matrix kare olmali, mevcut shape={self.pairwise_matrix.shape}.")
         elif not np.all(np.isfinite(self.pairwise_matrix)):
             raise ValueError("AHP pairwise matrix must contain finite numbers.")
-=======
-        
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         matrix = self.pairwise_matrix
         self._validate_pairwise_matrix()
         
@@ -96,17 +92,11 @@ class AHPRanker(IRanker):
         assert self.state is not None
 
         df = X.copy()
-<<<<<<< HEAD
         criteria_cols = get_criteria_columns(df)
         try:
             ensure_weight_count(self.state.weights, len(criteria_cols), algorithm_name="AHP")
         except ValueError as exc:
             raise ValueError("Criteria count mismatch between pairwise matrix and input data") from exc
-=======
-        criteria_cols = [c for c in df.columns if c != "item_id"]
-        if len(criteria_cols) != len(self.state.weights):
-            raise ValueError(f"Criteria count mismatch: expected {len(self.state.weights)} but got {len(criteria_cols)}")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         for col in criteria_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 

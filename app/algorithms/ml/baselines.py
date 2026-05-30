@@ -16,15 +16,7 @@ class RandomPredictor(IPredictor):
         super().__init__(name="RandomPredictor", task_type="prediction", parameters={"random_seed": random_seed})
         self.classes = classes or []
         self.rng = np.random.default_rng(random_seed)
-<<<<<<< HEAD
-        self.is_fitted = False
-
-    def _ensure_fitted(self) -> None:
-        if not self.is_fitted:
-            raise ValueError("Model not fitted.")
-=======
-        self._is_fitted = len(self.classes) > 0
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
+        self._is_fitted = bool(self.classes)
 
     def fit(self, X: pd.DataFrame, y: pd.Series | np.ndarray | list[Any] | None = None) -> "RandomPredictor":
         if y is not None:
@@ -33,15 +25,6 @@ class RandomPredictor(IPredictor):
                 self.classes = sorted(set(values))
         if not self.classes:
             raise ValueError("RandomPredictor requires classes from constructor or fit(y).")
-<<<<<<< HEAD
-        self.is_fitted = True
-        return self
-
-    def predict_proba(self, X: pd.DataFrame) -> list[list[float]]:
-        self._ensure_fitted()
-        n = len(X)
-        m = len(self.classes)
-=======
         self._is_fitted = True
         return self
 
@@ -52,18 +35,13 @@ class RandomPredictor(IPredictor):
         m = len(self.classes)
         if m == 0:
             raise ValueError("Model not fitted: no classes available.")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         probs = np.full((n, m), 1.0 / m, dtype=float)
         return probs.tolist()
 
     def predict(self, X: pd.DataFrame) -> AlgorithmOutput:
         started = self._start_timer()
-<<<<<<< HEAD
-        self._ensure_fitted()
-=======
         if not self._is_fitted or not self.classes:
             raise ValueError("Model not fitted. Call fit() before predict().")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         preds = self.rng.choice(self.classes, size=len(X), replace=True).tolist()
         return self._build_output(
             started,
@@ -74,12 +52,8 @@ class RandomPredictor(IPredictor):
 
     def recommend(self, X: pd.DataFrame, top_k: int = 5) -> AlgorithmOutput:
         started = self._start_timer()
-<<<<<<< HEAD
-        self._ensure_fitted()
-=======
         if not self._is_fitted or not self.classes:
             raise ValueError("Model not fitted. Call fit() before recommend().")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         recs = []
         for idx in range(len(X)):
             sampled = self.rng.choice(self.classes, size=min(top_k, len(self.classes)), replace=False).tolist()
@@ -94,11 +68,7 @@ class RandomPredictor(IPredictor):
     def score(self, X: pd.DataFrame, y: pd.Series | None = None) -> float:
         if y is None or len(y) == 0:
             return 0.0
-<<<<<<< HEAD
-        if not self.is_fitted:
-=======
         if not self._is_fitted or not self.classes:
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
             self.fit(X, y)
         return 1.0 / max(len(self.classes), 1)
 
@@ -113,15 +83,7 @@ class MajorityClassPredictor(IPredictor):
         super().__init__(name="MajorityClassPredictor", task_type="prediction")
         self.majority_class: Any | None = None
         self.class_distribution: dict[Any, int] = {}
-<<<<<<< HEAD
-        self.is_fitted = False
-
-    def _ensure_fitted(self) -> None:
-        if not self.is_fitted:
-            raise ValueError("Model not fitted.")
-=======
         self._is_fitted = False
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
 
     def fit(self, X: pd.DataFrame, y: pd.Series | np.ndarray | list[Any] | None = None) -> "MajorityClassPredictor":
         if y is None:
@@ -131,33 +93,21 @@ class MajorityClassPredictor(IPredictor):
             raise ValueError("Empty target labels.")
         self.class_distribution = dict(counts)
         self.majority_class = counts.most_common(1)[0][0]
-<<<<<<< HEAD
-        self.is_fitted = True
-        return self
-
-    def predict_proba(self, X: pd.DataFrame) -> list[list[float]]:
-        self._ensure_fitted()
-=======
         self._is_fitted = True
         return self
 
     def predict_proba(self, X: pd.DataFrame) -> list[list[float]]:
         if not self._is_fitted:
             raise ValueError("Model not fitted. Call fit() before predict_proba().")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         classes = list(self.class_distribution.keys())
         total = sum(self.class_distribution.values()) or 1
-        p = [self.class_distribution[c] / total for c in classes]
-        return [p for _ in range(len(X))]
+        probabilities = [self.class_distribution[c] / total for c in classes]
+        return [probabilities for _ in range(len(X))]
 
     def predict(self, X: pd.DataFrame) -> AlgorithmOutput:
         started = self._start_timer()
-<<<<<<< HEAD
-        self._ensure_fitted()
-=======
         if not self._is_fitted or self.majority_class is None:
             raise ValueError("Model not fitted. Call fit() before predict().")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         preds = [self.majority_class for _ in range(len(X))]
         confidence = self.class_distribution[self.majority_class] / max(sum(self.class_distribution.values()), 1)
         return self._build_output(
@@ -170,13 +120,9 @@ class MajorityClassPredictor(IPredictor):
 
     def recommend(self, X: pd.DataFrame, top_k: int = 5) -> AlgorithmOutput:
         started = self._start_timer()
-<<<<<<< HEAD
-        self._ensure_fitted()
-=======
         if not self._is_fitted:
             raise ValueError("Model not fitted. Call fit() before recommend().")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
-        classes_by_freq = [k for k, _ in sorted(self.class_distribution.items(), key=lambda t: t[1], reverse=True)]
+        classes_by_freq = [k for k, _ in sorted(self.class_distribution.items(), key=lambda item: item[1], reverse=True)]
         recs = [{"entity_id": i, "items": classes_by_freq[:top_k]} for i in range(len(X))]
         return self._build_output(
             started,
@@ -202,15 +148,7 @@ class PopularityRecommender(IRanker):
     def __init__(self) -> None:
         super().__init__(name="PopularityRecommender", task_type="ranking")
         self.popularity: dict[Any, float] = {}
-<<<<<<< HEAD
-        self.is_fitted = False
-
-    def _ensure_fitted(self) -> None:
-        if not self.is_fitted:
-            raise ValueError("Model not fitted.")
-=======
         self._is_fitted = False
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> "PopularityRecommender":
         if y is not None:
@@ -222,22 +160,14 @@ class PopularityRecommender(IRanker):
         counts = series.value_counts()
         total = float(counts.sum()) or 1.0
         self.popularity = {k: float(v / total) for k, v in counts.items()}
-<<<<<<< HEAD
-        self.is_fitted = True
-=======
         self._is_fitted = True
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         return self
 
     def rank(self, X: pd.DataFrame, top_k: int = 5) -> AlgorithmOutput:
         started = self._start_timer()
-<<<<<<< HEAD
-        self._ensure_fitted()
-=======
         if not self._is_fitted or not self.popularity:
             raise ValueError("Model not fitted. Call fit() before rank().")
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
-        top_items = [k for k, _ in sorted(self.popularity.items(), key=lambda t: t[1], reverse=True)[:top_k]]
+        top_items = [k for k, _ in sorted(self.popularity.items(), key=lambda item: item[1], reverse=True)[:top_k]]
         recs = [{"entity_id": i, "items": top_items} for i in range(len(X))]
         return self._build_output(
             started,

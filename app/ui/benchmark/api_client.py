@@ -27,6 +27,10 @@ class BenchmarkApiClient:
     def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: float = 6.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = float(timeout)
+        self.last_dataset: dict[str, Any] | None = None
+        self.last_dataset_name: str | None = None
+        self.last_dataset_used_mock = False
+        self.selected_run_ids_for_comparison: list[str] = []
 
     def get_scenarios(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/scenarios"), mock_data.get_mock_scenarios)
@@ -36,7 +40,12 @@ class BenchmarkApiClient:
 
     def load_dataset(self, payload: dict[str, Any] | None = None) -> ApiResult:
         body = payload or {"source_type": "csv", "source_path": "data/benchmark/raw_real", "dataset_name": "desktop_benchmark_dataset"}
-        return self._with_mock(lambda: self._request("POST", "/api/v1/benchmark/datasets/load", body), mock_data.get_mock_dataset_load_result)
+        result = self._with_mock(lambda: self._request("POST", "/api/v1/benchmark/datasets/load", body), mock_data.get_mock_dataset_load_result)
+        if isinstance(result.data, dict):
+            self.last_dataset = result.data
+            self.last_dataset_name = result.data.get("dataset_name")
+            self.last_dataset_used_mock = bool(result.used_mock)
+        return result
 
     def execute_run(self, payload: dict[str, Any]) -> ApiResult:
         body = self._normalize_run_payload(payload)
@@ -55,7 +64,7 @@ class BenchmarkApiClient:
         }
         return self._with_mock(
             lambda: self._request("POST", "/api/v1/benchmark/recommendation", body),
-            lambda: mock_data.get_mock_recommendation(body["problem_type"]),
+            lambda: mock_data.get_mock_recommendation(body),
         )
 
     def get_runs(self) -> ApiResult:
@@ -74,6 +83,23 @@ class BenchmarkApiClient:
     def get_ml_predictions(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/ml/predictions"), mock_data.get_mock_ml_predictions)
 
+    def get_ml_feature_summary(self) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", "/api/v1/ml/features/summary"), mock_data.get_mock_ml_feature_summary)
+
+    def build_ml_feature_snapshot(self, payload: dict[str, Any] | None = None) -> ApiResult:
+        body = payload or {"save_snapshot": True}
+        return self._with_mock(lambda: self._request("POST", "/api/v1/ml/features/build-snapshot", body), lambda: mock_data.get_mock_ml_feature_snapshot(body))
+
+    def train_ml_model(self, payload: dict[str, Any]) -> ApiResult:
+        return self._with_mock(lambda: self._request("POST", "/api/v1/ml/model-runs/train", payload), lambda: mock_data.get_mock_ml_train(payload))
+
+    def create_ml_readiness_report(self, payload: dict[str, Any] | None = None) -> ApiResult:
+        body = payload or {"save": True}
+        return self._with_mock(lambda: self._request("POST", "/api/v1/ml/readiness/report", body), lambda: mock_data.get_mock_ml_readiness_report(body))
+
+    def get_ml_readiness_reports(self) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", "/api/v1/ml/readiness-reports"), mock_data.get_mock_ml_readiness_reports)
+
     def get_algorithm_governance(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/governance"), mock_data.get_mock_algorithm_governance)
 
@@ -83,14 +109,41 @@ class BenchmarkApiClient:
     def get_governed_runs(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/governed-runs"), mock_data.get_mock_governed_runs)
 
+    def execute_governed_run(self, payload: dict[str, Any]) -> ApiResult:
+        return self._with_mock(
+            lambda: self._request("POST", "/api/v1/benchmark/governed-runs/execute", payload),
+            lambda: mock_data.get_mock_execute_governed_run(payload),
+        )
+
+    def get_governed_run_metrics(self, run_id: int | str) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/metrics"), mock_data.get_mock_governed_run_metrics)
+
+    def get_governed_run_validation(self, run_id: int | str) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/validation"), mock_data.get_mock_governed_run_validation)
+
+    def get_governed_run_statistics(self, run_id: int | str) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/statistics"), mock_data.get_mock_governed_run_statistics)
+
+    def get_governed_run_diagnostics(self, run_id: int | str) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/diagnostics"), mock_data.get_mock_governed_run_diagnostics)
+
+    def get_governed_run_leakage(self, run_id: int | str) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/leakage"), mock_data.get_mock_governed_run_leakage)
+
+    def get_governed_run_clustering(self, run_id: int | str) -> ApiResult:
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/clustering"), mock_data.get_mock_governed_run_clustering)
+
     def _normalize_run_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         algorithms = payload.get("algorithm_names") or payload.get("algorithms") or []
-        return {
+        body = {
             "scenario_name": payload.get("scenario_name") or payload.get("scenario") or "real_mcdm_recommendation",
             "algorithm_names": algorithms,
             "synthetic_tier": payload.get("synthetic_tier"),
             "top_k": payload.get("top_k") or payload.get("k") or 10,
         }
+        if payload.get("allocation_parameters") is not None:
+            body["allocation_parameters"] = payload["allocation_parameters"]
+        return body
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         url = f"{self.base_url}{path}"

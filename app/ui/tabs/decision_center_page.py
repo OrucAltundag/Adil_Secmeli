@@ -313,6 +313,25 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Button(actions, text="Havuzdan Öner", command=self._havuzdan_oner).pack(side=tk.LEFT, padx=4)
         ttk.Button(actions, text="Otomatik Karar Önerisi", command=self._otomatik_karar).pack(side=tk.LEFT, padx=4)
         ttk.Button(actions, text="ML Analiz (p-value/SHAP/LIME)", command=self._ml_analiz).pack(side=tk.LEFT, padx=4)
+
+        # ── Normalize seçimi ──
+        ttk.Label(actions, text="Normalize:").pack(side=tk.LEFT, padx=(12, 2))
+        self.cb_ml_scaler = ttk.Combobox(
+            actions, state="readonly", width=10,
+            values=["none", "zscore", "minmax"],
+        )
+        self.cb_ml_scaler.set("none")
+        self.cb_ml_scaler.pack(side=tk.LEFT, padx=(0, 6))
+
+        # ── Imputation seçimi ──
+        ttk.Label(actions, text="Imputation:").pack(side=tk.LEFT, padx=(4, 2))
+        self.cb_ml_imputer = ttk.Combobox(
+            actions, state="readonly", width=8,
+            values=["median", "mean", "knn", "zero"],
+        )
+        self.cb_ml_imputer.set("median")
+        self.cb_ml_imputer.pack(side=tk.LEFT, padx=(0, 6))
+
         self.lbl_pool_lifecycle = ttk.Label(actions, text="")
         self.lbl_pool_lifecycle.pack(side=tk.LEFT, padx=12)
         self.tree_pool_lifecycle = self._tree(
@@ -709,28 +728,33 @@ class DecisionCenterPage(ttk.Frame):
             self.txt_pool_lifecycle_detail.delete("1.0", tk.END)
             ag = rapor["agirliklar"]
             lines = [
-                "HAVUZDAN ONERI (aktif AHP agirliklariyla puanlama)",
-                "=" * 58,
+                "HAVUZDAN ONERI (aktif AHP agirliklariyla puanlama + Cosine boost)",
+                "=" * 68,
                 "Agirliklar: "
                 + ", ".join(f"{k}=%{v*100:.0f}" for k, v in ag.items()),
                 f"Esik: {rapor['esik']:.0f}  |  Toplam aday: {rapor['toplam_aday']}"
                 f"  |  Kriter verisi yok: {rapor['veri_yok']}",
-                "-" * 58,
-                f"{'Sira':>4} {'Kod':<10} {'Ders':<26} {'Skor':>6}  Oneri",
-                "-" * 58,
+                "-" * 68,
+                f"{'Sira':>4} {'Kod':<10} {'Ders':<24} {'Skor':>6} {'Baz':>6} {'Cos+':>5} {'HvzN':>5}  Oneri",
+                "-" * 68,
             ]
             for o in rapor["oneriler"]:
                 isaret = "AC ✓" if o["oneri"] == "AC" else "havuz"
+                cos_str  = f"+{o.get('cosine_boost',0):.2f}" if o.get("cosine_boost", 0) > 0 else "   -"
+                hcnt_str = str(o.get("havuz_count", 0))
                 lines.append(
-                    f"{o['sira']:>4} {o['kod']:<10} {o['ad'][:26]:<26} "
-                    f"{o['skor']:>6.1f}  {isaret}"
+                    f"{o['sira']:>4} {o['kod']:<10} {o['ad'][:24]:<24} "
+                    f"{o['skor']:>6.1f} {o.get('skor_base',o['skor']):>6.1f} "
+                    f"{cos_str:>5} {hcnt_str:>5}  {isaret}"
                 )
             ac_sayisi = sum(1 for o in rapor["oneriler"] if o["oneri"] == "AC")
             lines += [
-                "-" * 58,
+                "-" * 68,
                 f"ONERI: {ac_sayisi} ders acilmasi onerilir "
                 f"(skor >= {rapor['esik']:.0f}).",
                 "",
+                "Sutunlar: Skor=AHP+Cosine nihai puan | Baz=sadece AHP skoru | "
+                "Cos+=cosine benzerlik boost | HvzN=havuz gecmis kayit sayisi",
                 "Not: Kriter verisi olmayan dersler siralanmaz "
                 "(once 'Veri Yonetimi'nden kriter ice aktarin).",
             ]
@@ -762,6 +786,11 @@ class DecisionCenterPage(ttk.Frame):
             )
             self.txt_pool_lifecycle_detail.update_idletasks()
 
+            scaler_key  = getattr(self, "cb_ml_scaler",  None)
+            scaler_key  = scaler_key.get()  if scaler_key  else "none"
+            imputer_key = getattr(self, "cb_ml_imputer", None)
+            imputer_key = imputer_key.get() if imputer_key else "median"
+
             bloklar = []
             for mk, baslik in (("adaptive", "ADAPTIF (Pruning) [Faz2-D]"),
                                ("mlp", "MLP DERIN OGRENME [Faz3-H]")):
@@ -769,6 +798,8 @@ class DecisionCenterPage(ttk.Frame):
                     self._conn(), year=year,
                     faculty_id=int(faculty_id) if faculty_id else None,
                     model_key=mk,
+                    scaler_key=scaler_key,
+                    imputer_key=imputer_key,
                 )
                 bloklar.append(f">>> {baslik}\n" + r["rapor"])
 

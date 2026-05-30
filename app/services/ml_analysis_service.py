@@ -58,19 +58,72 @@ def _veri_seti(conn: sqlite3.Connection, year: int,
     return X, y
 
 
+def _uygula_olcekleme(X: "pd.DataFrame", scaler_key: str) -> "tuple[pd.DataFrame, str]":
+    """
+    Ozellikleri normalize/standartlastir.
+
+    scaler_key:
+      "zscore"  — StandardScaler  (z-puan: (x-mu)/sigma)
+      "minmax"  — MinMaxScaler    (0-1 arasina sikistirir)
+      "none"    — Olcekleme yapma (ham degerler)
+
+    Returns: (olceklenmis_X, aciklama_metni)
+    """
+    import pandas as _pd
+    key = str(scaler_key or "none").strip().lower()
+    if key == "zscore":
+        from sklearn.preprocessing import StandardScaler
+        sc = StandardScaler()
+        arr = sc.fit_transform(X)
+        Xs = _pd.DataFrame(arr, columns=X.columns, index=X.index)
+        return Xs, "Z-Score (StandardScaler): (x-μ)/σ"
+    if key == "minmax":
+        from sklearn.preprocessing import MinMaxScaler
+        sc = MinMaxScaler()
+        arr = sc.fit_transform(X)
+        Xs = _pd.DataFrame(arr, columns=X.columns, index=X.index)
+        return Xs, "Min-Max: (x-min)/(max-min) → [0,1]"
+    return X.copy(), "Olcekleme yok (ham degerler)"
+
+
+def _uygula_imputation(X: "pd.DataFrame", imputer_key: str) -> "tuple[pd.DataFrame, str]":
+    """
+    Eksik degerleri doldur (ml_feature_pipeline.impute_missing_values wrapperı).
+
+    imputer_key: "median" | "mean" | "knn" | "zero"
+    """
+    from app.services.ml_feature_pipeline import impute_missing_values
+    key = str(imputer_key or "median").strip().lower()
+    filled, report = impute_missing_values(X, strategy=key)
+    used = report.get("strategy", key)
+    cols_fixed = len(report.get("columns", {}))
+    if cols_fixed:
+        acik = f"Imputation ({used}): {cols_fixed} sutunda eksik deger dolduruldu."
+    else:
+        acik = f"Imputation ({used}): eksik deger bulunamadi."
+    return filled, acik
+
+
 def run_ml_analysis(
     conn: sqlite3.Connection,
     *,
     year: int,
     faculty_id: int | None = None,
     model_key: str = "adaptive",
+    scaler_key: str = "none",
+    imputer_key: str = "median",
 ) -> dict[str, Any]:
     """
-    model_key: 'adaptive' (pruning) | 'mlp' (derin ogrenme) | 'random_forest'
+    model_key   : 'adaptive' (pruning) | 'mlp' (derin ogrenme) | 'random_forest'
+    scaler_key  : 'zscore' | 'minmax' | 'none'
+    imputer_key : 'median' | 'mean' | 'knn' | 'zero'
 
     Returns: {"ok": bool, "rapor": str, "ham": {...}}
     """
     X, y = _veri_seti(conn, year, faculty_id)
+    # Imputation → Olcekleme
+    X, imputer_acik = _uygula_imputation(X, imputer_key)
+    X, scaler_acik  = _uygula_olcekleme(X, scaler_key)
     n = len(X)
     if n < 12 or y.nunique() < 2:
         return {
@@ -120,6 +173,8 @@ def run_ml_analysis(
     A("=" * 60)
     A(f"Veri: {n} ders, {len(OZELLIKLER)} ozellik | Hedef: yuksek-basari "
       f"(medyan ustu)  | Sinif dagilimi: {dict(y.value_counts())}")
+    A(f"On-islem : {imputer_acik}")
+    A(f"Normalize: {scaler_acik}")
     try:
         params = model.get_params()
         if secim_key in ("auto", "random_forest"):
@@ -200,6 +255,8 @@ def run_ml_analysis(
         "rapor": "\n".join(L),
         "ham": {
             "n": n,
+            "scaler": scaler_key,
+            "imputer": imputer_key,
             "train_metrics": tm,
             "validation_metrics": vm,
             "cross_validation": cv,

@@ -8,25 +8,25 @@ from datetime import datetime
 SCENARIOS = [
     {
         "name": "real_mcdm_recommendation",
-        "description": "Gercek veri uzerinde MCDM onerileri.",
+        "description": "Gerçek veri üzerinde MCDM önerileri.",
         "problem_type": "ranking",
         "default_algorithms": ["AHP", "TOPSIS", "VIKOR", "PROMETHEE_II"],
     },
     {
         "name": "real_ml_prediction",
-        "description": "Gercek veri uzerinde ML tahmin karsilastirmasi.",
+        "description": "Gerçek veri üzerinde ML tahmin karşılaştırması.",
         "problem_type": "prediction",
         "default_algorithms": ["NaiveBayes", "LogisticRegression", "RandomForest", "XGBoostLike"],
     },
     {
         "name": "allocation_fairness",
-        "description": "Kontenjanli yerlestirme ve adalet karsilastirmasi.",
+        "description": "Kontenjanlı yerleştirme ve adalet karşılaştırması.",
         "problem_type": "allocation",
         "default_algorithms": ["GaleShapley", "RandomAllocation", "GreedyAllocation", "FirstComeFirstServed", "MinimumRegretAllocation"],
     },
     {
         "name": "clustering_exploration",
-        "description": "Ogrenci ilgi profili segmentasyonu.",
+        "description": "Öğrenci ilgi profili segmentasyonu.",
         "problem_type": "clustering",
         "default_algorithms": ["KMeans", "HierarchicalClustering", "DBSCAN"],
     },
@@ -79,6 +79,16 @@ ML_READINESS = {
             "can_use_for_production_decision": False,
             "warnings": ["Bu algoritma sadece benchmark olarak konumlandırılmıştır."],
         },
+        {
+            "algorithm_key": "logistic_regression",
+            "sample_count": 24,
+            "required_min_samples": 50,
+            "readiness_level": "low",
+            "usage_role": "benchmark_only",
+            "can_train": False,
+            "can_use_for_production_decision": False,
+            "warnings": ["Örnek sayısı düşük; benchmark baseline olarak kalmalı."],
+        },
     ],
     "message": "Mock ML readiness verisi.",
 }
@@ -119,6 +129,17 @@ ALGORITHM_GOVERNANCE = {
             "minimum_sample_count": 200,
             "recommended_metrics": ["balanced_accuracy", "f1_macro", "f1_weighted"],
             "user_facing_warning": "Destekleyici ML; nihai karar değildir.",
+        },
+        {
+            "algorithm_key": "logistic_regression",
+            "display_name": "Logistic Regression",
+            "algorithm_family": "ml",
+            "task_type": "classification",
+            "usage_role": "benchmark_only",
+            "can_affect_final_decision": False,
+            "minimum_sample_count": 50,
+            "recommended_metrics": ["balanced_accuracy", "f1_macro"],
+            "user_facing_warning": "Benchmark baseline; final karar olarak kullanılamaz.",
         },
         {
             "algorithm_key": "xgboost",
@@ -185,9 +206,9 @@ DATASETS = [
 
 
 DATASET_LAYER_CARDS = [
-    {"name": "raw_real", "count": "12.4K", "source": "CSV / SQLite", "updated": "Bugun", "description": "Gercek akademik ve tercih verisi"},
-    {"name": "derived", "count": "8.7K", "source": "Feature pipeline", "updated": "Bugun", "description": "Islenmis ve olceklendirilmis ozellikler"},
-    {"name": "synthetic", "count": "100K", "source": "Bootstrap", "updated": "Bugun", "description": "Olcek ve stres testi verisi"},
+    {"name": "raw_real", "count": "12.4K", "source": "CSV / SQLite", "updated": "Bugün", "description": "Gerçek akademik ve tercih verisi"},
+    {"name": "derived", "count": "8.7K", "source": "Feature pipeline", "updated": "Bugün", "description": "İşlenmiş ve ölçeklendirilmiş özellikler"},
+    {"name": "synthetic", "count": "100K", "source": "Bootstrap", "updated": "Bugün", "description": "Ölçek ve stres testi verisi"},
 ]
 
 
@@ -382,6 +403,45 @@ def get_mock_ml_predictions():
     return {"success": True, "data": [], "message": "Mock ML tahmin kaydı yok."}
 
 
+def get_mock_ml_feature_summary():
+    return {
+        "success": True,
+        "data": {
+            "feature_schema_version": "course_features_v1",
+            "sample_count": 24,
+            "feature_names": ["success_rate", "popularity_score", "trend_score"],
+            "missing_features_summary": {},
+            "warnings": ["Mock feature özeti."],
+        },
+    }
+
+
+def get_mock_ml_feature_snapshot(payload=None):
+    return {"success": True, "data": {"snapshot_id": 999, "sample_count": 24}, "message": "Mock snapshot üretildi."}
+
+
+def get_mock_ml_train(payload=None):
+    payload = payload or {}
+    return {
+        "success": True,
+        "data": {
+            "id": 999,
+            "algorithm_key": payload.get("algorithm_key", "random_forest"),
+            "status": "skipped",
+            "skip_reason": "Mock veri veya minimum sample yetersiz.",
+            "readiness_level": "not_ready",
+        },
+    }
+
+
+def get_mock_ml_readiness_report(payload=None):
+    return {"success": True, "data": {"report_id": 999, "summary": "Mock readiness raporu."}}
+
+
+def get_mock_ml_readiness_reports():
+    return {"success": True, "data": []}
+
+
 def get_mock_algorithm_governance():
     return deepcopy(ALGORITHM_GOVERNANCE)
 
@@ -394,12 +454,82 @@ def get_mock_governed_runs():
     return deepcopy(GOVERNED_RUNS)
 
 
+def get_mock_governed_run_metrics():
+    return {
+        "success": True,
+        "data": [
+            {
+                "algorithm_key": "majority_class_predictor",
+                "task_type": "classification",
+                "primary_metric_name": "f1_macro",
+                "primary_metric_value": 0.62,
+                "warnings": [],
+            }
+        ],
+    }
+
+
+def get_mock_governed_run_validation():
+    return {"success": True, "data": [{"algorithm_key": "majority_class_predictor", "validation_strategy": "stratified_kfold", "fold_count": 3}]}
+
+
+def get_mock_governed_run_statistics():
+    return {"success": True, "data": [{"primary_metric_name": "f1_macro", "summary_text": "Mock istatistiksel karşılaştırma."}]}
+
+
+def get_mock_governed_run_diagnostics():
+    return {"success": True, "data": [{"algorithm_key": "majority_class_predictor", "overfitting_warning": False, "summary_text": "Mock diagnostics."}]}
+
+
+def get_mock_governed_run_leakage():
+    return {"success": True, "data": [{"algorithm_key": "majority_class_predictor", "leakage_detected": False, "blocked": False, "summary_text": "Mock leakage yok."}]}
+
+
+def get_mock_governed_run_clustering():
+    return {"success": True, "data": []}
+
+
+def get_mock_execute_governed_run(payload=None):
+    payload = payload or {}
+    return {
+        "success": True,
+        "data": {
+            "run_id": 999,
+            "task_type": payload.get("task_type", "classification"),
+            "sample_count": len(payload.get("y_true") or []),
+            "feature_count": len(payload.get("feature_names") or []),
+            "algorithms": payload.get("algorithms") or ["majority_class_predictor"],
+            "metric_results": [],
+            "final_decision_note": "Mock governed benchmark sonucu final kararı etkilemez.",
+        },
+    }
+
+
 def get_mock_dataset_load_result():
     return {
         "dataset_name": "mock_benchmark_dataset",
         "raw_real_tables": ["students", "courses", "preferences", "survey_responses", "allocations"],
         "derived_tables": ["student_course_features", "student_course_features_unencoded"],
         "synthetic_tiers": ["5k", "10k", "50k", "100k", "250k"],
+        "layer_counts": {
+            "raw_real": {"students": 12400, "courses": 180, "preferences": 108000, "survey_responses": 63800, "allocations": 22900},
+            "derived": {"student_course_features": 8700, "student_course_features_unencoded": 8700},
+            "synthetic": {"5k": 5000, "10k": 10000, "50k": 50000, "100k": 100000, "250k": 250000},
+        },
+        "preview": {
+            "layer": "derived",
+            "table": "student_course_features",
+            "columns": ["student_id", "age", "gender", "gpa", "faculty", "pref_count", "avg_rank", "score_composite"],
+            "rows": deepcopy(DATA_PREVIEW_ROWS),
+        },
+        "quality_summary": {
+            "row_count": 8700,
+            "column_count": 8,
+            "missing_ratio": 0.012,
+            "target_column": "course_id",
+            "target_present": True,
+            "class_distribution": {"1001": 1250, "1002": 1180, "1004": 960},
+        },
         "metadata": {"source": "mock", "loaded_at": datetime.now().isoformat(timespec="seconds")},
     }
 
@@ -413,6 +543,44 @@ def get_mock_execute_run(payload=None):
         run["dataset"] = payload["dataset"]
     if payload.get("algorithm_names"):
         run["algorithms"] = payload["algorithm_names"]
+    if run["scenario"] == "allocation_fairness":
+        allocation_results = {}
+        for fairness_row in FAIRNESS_ROWS:
+            algorithm = fairness_row["algorithm"]
+            assignments = deepcopy(ALLOCATION_ROWS)
+            for assignment in assignments:
+                assignment["algorithm"] = algorithm
+                assignment.setdefault("faculty_id", "Mühendislik")
+                assignment.setdefault("department_id", "Bilgisayar Mühendisliği")
+                assignment.setdefault("course_capacity", 2)
+                assignment["allocated"] = bool(assignment.get("assigned_course_id"))
+                assignment["rank_received"] = assignment.get("preference_rank_received")
+            allocation_results[algorithm] = {
+                "output": {"assignments": assignments, "explanation": "Mock allocation sonucu."},
+                "metrics": {
+                    "fairness": {
+                        "average_rank": fairness_row["average_rank"],
+                        "top_k_satisfaction": fairness_row["top_k_satisfaction"],
+                        "envy_score": fairness_row["envy_score"],
+                        "seat_fill_rate": fairness_row["seat_fill_rate"],
+                    },
+                    "performance": {"latency_ms": 10.0},
+                },
+            }
+        return {
+            "summary": {
+                "run_id": run["run_id"],
+                "scenario_name": run["scenario"],
+                "dataset_name": run["dataset"],
+                "status": run["status"],
+                "started_at": run["date"],
+                "finished_at": run["date"],
+                "algorithms": list(allocation_results.keys()),
+            },
+            "comparison_table": deepcopy(FAIRNESS_ROWS),
+            "details": {"run": run, "results": allocation_results, "request_parameters": {"allocation": payload.get("allocation_parameters", {})}},
+            "request_parameters": {"allocation": payload.get("allocation_parameters", {})},
+        }
     return {
         "summary": {
             "run_id": run["run_id"],
@@ -429,19 +597,34 @@ def get_mock_execute_run(payload=None):
 
 
 def get_mock_recommendation(problem_type="prediction"):
+    explainability_priority = False
+    data_size = 5000
+    if isinstance(problem_type, dict):
+        payload = problem_type
+        explainability_priority = bool(payload.get("explainability_priority"))
+        data_size = int(payload.get("data_size") or data_size)
+        problem_type = payload.get("problem_type", "prediction")
     mapping = {
         "prediction": ("RandomForest", 0.884, "Gecmis benchmarklerde F1 ve ROC-AUC dengesi en guclu."),
         "ranking": ("AHP", 0.780, "Kucuk ve aciklanabilir siralama senaryosu icin kriter agirliklari seffaf."),
         "allocation": ("GaleShapley", 0.850, "Kontenjan ve tercih uyumu icin stabil eslesme en uygun baslangic."),
         "clustering": ("KMeans", 0.800, "Buyuk veri kesif senaryosunda en olceklenebilir kumeleme secenegi."),
     }
+    if problem_type == "prediction" and explainability_priority and data_size < 10000:
+        mapping["prediction"] = ("LogisticRegression", 0.790, "Küçük ve açıklanabilir tahmin senaryosunda lineer baseline önerilir.")
     algorithm, confidence, reason = mapping.get(problem_type, mapping["prediction"])
     return {
         "algorithm": algorithm,
         "confidence": confidence,
         "reason": reason,
-        "source": "mock",
+        "source": "rules",
         "candidates": ["RandomForest", "LogisticRegression", "AHP", "GaleShapley", "KMeans"],
+        "used_run_count": 0,
+        "data_coverage": {
+            "source": "rules",
+            "used_run_count": 0,
+            "coverage_note": "Mock/kural tabanlı öneri; geçmiş benchmark run kullanılmadı.",
+        },
     }
 
 

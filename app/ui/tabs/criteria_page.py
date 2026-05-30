@@ -56,6 +56,7 @@ class CriteriaPage:
         self._survey_locked = False
         self._current_survey_record = None
         self._current_criteria_import_summary = None
+        self._student_dataset_path = None  # Secilen ogrenci veri seti yolu
 
         self._ensure_table()
 
@@ -199,11 +200,23 @@ class CriteriaPage:
         # Listele Butonu
         tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
-        # Excel'den Toplu Kriter Yükle
-        tk.Button(parent, text="📂 Kriter Dosyasi Yukle", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
-                  command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=10)
-        # Öğrenci veri setinden otomatik üret
-        tk.Button(parent, text="🎓 Ogrenci Veri Setinden Otomatik Uret",
+
+        # Öğrenci Veri Seti seçici
+        tk.Button(parent, text="📂 Öğrenci Veri Seti", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
+                  command=self._select_student_dataset).pack(side=tk.LEFT, padx=(10, 2))
+        self.lbl_dataset_name = tk.Label(
+            parent,
+            text="seçilmedi",
+            bg="#f1f5f9",
+            fg="#64748b",
+            font=("Segoe UI", 8, "italic"),
+            width=22,
+            anchor="w",
+        )
+        self.lbl_dataset_name.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Otomatik kriter üretimi (seçilen veri setini kullanır)
+        tk.Button(parent, text="🎓 Otomatik Kriter Girdi İşlemleri",
                   bg="#7c3aed", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.auto_generate_from_dataset).pack(side=tk.LEFT, padx=5)
 
@@ -575,17 +588,44 @@ class CriteriaPage:
 
     # --- VERİ İŞLEMLERİ ---
 
+    def _select_student_dataset(self):
+        """Ogrenci not veri seti Excel dosyasini sec ve etiket ile goster."""
+        path = filedialog.askopenfilename(
+            title="Öğrenci Veri Seti Seç",
+            filetypes=[("Excel", "*.xlsx *.xls"), ("Tümü", "*.*")],
+        )
+        if not path:
+            return
+        self._student_dataset_path = path
+        filename = os.path.basename(path)
+        lbl = getattr(self, "lbl_dataset_name", None)
+        if lbl:
+            lbl.config(text=filename, fg="#15803d")
+
     def auto_generate_from_dataset(self):
-        """Ogrenci not veri setinden (2022_ogrenci_not_veri_seti.xlsx)
+        """Secilen (veya varsayilan) ogrenci not veri setinden
         butun derslerin kriterlerini OTOMATIK uretir.
-        Manuel girisin yerine gecer; mevcut o yilki kriterler yenilenir."""
+        Manuel girisin yerine gecer; mevcut yilki kriterler yenilenir."""
         from tkinter import messagebox as _mb
+
+        # Hangi dosya kullanilacak?
+        excel_path = self._student_dataset_path  # kullanici sectiyse
+        from pathlib import Path as _Path
+        _varsayilan = (
+            _Path(__file__).parent.parent.parent.parent / "data"
+            / "2022_ogrenci_not_veri_seti.xlsx"
+        )
+        if not excel_path:
+            excel_path = str(_varsayilan)
+
+        import os as _os
+        dosya_adi = _os.path.basename(str(excel_path))
 
         if not _mb.askyesno(
             "Otomatik Kriter Uretimi",
-            "Ogrenci not veri setinden (2022_ogrenci_not_veri_seti.xlsx) "
-            "2022 yili icin TUM ders kriterleri OTOMATIK uretilecek.\n\n"
-            "Mevcut 2022 kriterleri (varsa) SILINIP yeniden yazilacak.\n\n"
+            f"Secilen veri seti: {dosya_adi}\n\n"
+            "Bu dosyadan TUM ders kriterleri OTOMATIK uretilecek.\n"
+            "Mevcut kriterleri (varsa) SILINIP yeniden yazilacak.\n\n"
             "Devam edilsin mi?",
         ):
             return
@@ -599,10 +639,11 @@ class CriteriaPage:
                 _mb.showerror("Hata", "Veritabani baglantisi yok.")
                 return
             sonuc = auto_generate_criteria_from_student_dataset(
-                conn, year=2022, replace=True
+                conn, excel_path=excel_path, year=2022, replace=True
             )
             mesaj = (
                 f"OTOMATIK URETIM TAMAMLANDI\n\n"
+                f"  Kaynak dosya: {_os.path.basename(sonuc['excel_path'])}\n"
                 f"  Eklenen kriter satiri: {sonuc['eklenen']}\n"
                 f"  Veri setindeki toplam ders: {sonuc['toplam']}\n"
                 f"  Eslesmeyen ders kodu: {len(sonuc['eslesmeyen'])}\n"
@@ -613,7 +654,6 @@ class CriteriaPage:
                     f"{', '.join(sonuc['eslesmeyen'][:5])}"
                     f"{'...' if len(sonuc['eslesmeyen']) > 5 else ''})\n"
                 )
-            mesaj += f"\nKaynak: {sonuc['excel_path']}"
             _mb.showinfo("Otomatik Uretim", mesaj)
             try:
                 self.load_courses()

@@ -50,6 +50,68 @@ class SectionHeader(ttk.Frame):
             ttk.Label(self, text=description, font=("Segoe UI", 10), foreground=COLORS["muted"]).pack(anchor="w", pady=(2, 0))
 
 
+class PageInfoBox(tk.Frame):
+    """Compact purpose/usage box shown at the top of benchmark pages."""
+
+    def __init__(self, parent, purpose: str, usage: str, note: str | None = None):
+        super().__init__(parent, bg="#EFF6FF", highlightbackground="#BFDBFE", highlightthickness=1, padx=12, pady=10)
+        tk.Label(
+            self,
+            text="Bu sayfa ne işe yarar?",
+            bg="#EFF6FF",
+            fg=COLORS["blue"],
+            font=("Segoe UI", 10, "bold"),
+            anchor="w",
+        ).pack(fill=tk.X)
+        tk.Label(
+            self,
+            text=f"Amaç: {purpose}",
+            bg="#EFF6FF",
+            fg=COLORS["text"],
+            font=("Segoe UI", 9),
+            anchor="w",
+            justify="left",
+            wraplength=1100,
+        ).pack(fill=tk.X, pady=(4, 0))
+        tk.Label(
+            self,
+            text=f"Kullanım: {usage}",
+            bg="#EFF6FF",
+            fg=COLORS["text"],
+            font=("Segoe UI", 9),
+            anchor="w",
+            justify="left",
+            wraplength=1100,
+        ).pack(fill=tk.X, pady=(2, 0))
+        if note:
+            tk.Label(
+                self,
+                text=f"Not: {note}",
+                bg="#EFF6FF",
+                fg=COLORS["muted"],
+                font=("Segoe UI", 9, "italic"),
+                anchor="w",
+                justify="left",
+                wraplength=1100,
+            ).pack(fill=tk.X, pady=(2, 0))
+
+
+class SourceBadge(tk.Frame):
+    """Small badge that makes real API vs mock data visible."""
+
+    def __init__(self, parent):
+        super().__init__(parent, bg=COLORS["bg"])
+        self.label = tk.Label(self, text="", bg="#E0F2FE", fg=COLORS["blue"], font=("Segoe UI", 9, "bold"), padx=8, pady=4)
+        self.label.pack(anchor="e")
+        self.set_source(False)
+
+    def set_source(self, used_mock: bool, detail: str | None = None) -> None:
+        if used_mock:
+            self.label.configure(text=detail or "Veri kaynağı: Örnek veri (mock)", bg="#FFF7ED", fg=COLORS["orange"])
+        else:
+            self.label.configure(text=detail or "Veri kaynağı: Gerçek API", bg="#ECFDF5", fg=COLORS["green"])
+
+
 class MetricCard(tk.Frame):
     def __init__(self, parent, title: str, value: Any, subtitle: str | None = None, accent: str = COLORS["blue"]):
         super().__init__(parent, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1, padx=12, pady=10)
@@ -64,6 +126,10 @@ class MetricCard(tk.Frame):
         self.value_label.configure(text=str(value))
         if subtitle is not None:
             self.subtitle_label.configure(text=subtitle)
+
+    def set_accent(self, accent: str) -> None:
+        self._accent = accent
+        self.value_label.configure(fg=accent)
 
 
 class StatusCard(MetricCard):
@@ -105,9 +171,10 @@ class EmptyState(ttk.Frame):
 
 
 class DataTable(ttk.Frame):
-    def __init__(self, parent, columns: list[str], height: int = 8):
+    def __init__(self, parent, columns: list[str], height: int = 8, column_labels: dict[str, str] | None = None):
         super().__init__(parent)
         self.columns = columns
+        self.column_labels = column_labels or {}
         self.tree = ttk.Treeview(self, columns=columns, show="headings", height=height)
         ybar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
         xbar = ttk.Scrollbar(self, orient="horizontal", command=self.tree.xview)
@@ -118,7 +185,7 @@ class DataTable(ttk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         for col in columns:
-            self.tree.heading(col, text=col, command=lambda c=col: self.sort_by(c, False))
+            self.tree.heading(col, text=self.column_labels.get(col, col), command=lambda c=col: self.sort_by(c, False))
             self.tree.column(col, width=120, anchor="center", stretch=True)
         self.tree.tag_configure("best", background="#ECFDF5")
         self.tree.tag_configure("error", background="#FEF2F2")
@@ -215,6 +282,34 @@ class BarChart(tk.Canvas):
             self.create_text((x0 + x1) / 2, y0 - 10, text=f"{value:.3g}", fill=COLORS["navy"], font=("Segoe UI", 8, "bold"))
             label = str(row.get(label_key, ""))[:14]
             self.create_text((x0 + x1) / 2, height - 17, text=label, fill=COLORS["muted"], font=("Segoe UI", 8))
+
+    def plot_line(self, rows: list[dict[str, Any]], label_key: str, value_key: str, color: str = COLORS["blue"]) -> None:
+        self.delete("all")
+        self.update_idletasks()
+        width = max(self.winfo_width(), 500)
+        height = max(self.winfo_height(), 160)
+        margin = 36
+        values = []
+        for row in rows:
+            try:
+                values.append(float(row.get(value_key, 0) or 0))
+            except (TypeError, ValueError):
+                values.append(0.0)
+        max_value = max(values) if values else 1.0
+        max_value = max(max_value, 1e-6)
+        if len(rows) == 1:
+            rows = [rows[0], rows[0]]
+            values = [values[0], values[0]]
+        points = []
+        for idx, row in enumerate(rows):
+            x = margin + idx * ((width - margin * 2) / max(len(rows) - 1, 1))
+            y = height - 34 - (height - 72) * (values[idx] / max_value)
+            points.append((x, y))
+            self.create_oval(x - 4, y - 4, x + 4, y + 4, fill=color, outline="")
+            self.create_text(x, y - 12, text=f"{values[idx]:.3g}", fill=COLORS["navy"], font=("Segoe UI", 8, "bold"))
+            self.create_text(x, height - 17, text=str(row.get(label_key, ""))[:14], fill=COLORS["muted"], font=("Segoe UI", 8))
+        for start, end in zip(points, points[1:]):
+            self.create_line(start[0], start[1], end[0], end[1], fill=color, width=2)
 
 
 def algorithm_group_color(group: str) -> str:

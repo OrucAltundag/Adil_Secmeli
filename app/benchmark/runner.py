@@ -210,6 +210,44 @@ class ExperimentRunner:
         with PerformanceTracker(workload_size=len(students)) as tracker:
             output = algorithm.allocate(students, courses, preferences)
         perf = tracker.snapshot().as_dict()
+        self._enrich_allocation_assignments(output.assignments, students, courses)
         assignments_df = pd.DataFrame(output.assignments)
         fairness = allocation_fairness_metrics(assignments_df, courses, top_k=scenario.top_k)
         return output, {"fairness": fairness, "performance": perf}
+
+    def _enrich_allocation_assignments(self, assignments: list[dict], students: pd.DataFrame, courses: pd.DataFrame) -> None:
+        student_lookup = {}
+        if not students.empty and "student_id" in students.columns:
+            student_lookup = students.set_index("student_id").to_dict(orient="index")
+        course_lookup = {}
+        if not courses.empty and "course_id" in courses.columns:
+            course_lookup = courses.set_index("course_id").to_dict(orient="index")
+
+        def _clean(value):
+            if value is None:
+                return None
+            try:
+                if pd.isna(value):
+                    return None
+            except (TypeError, ValueError):
+                pass
+            return value
+
+        for row in assignments:
+            student_id = _clean(row.get("student_id"))
+            course_id = _clean(row.get("course_id") or row.get("assigned_course_id"))
+            student = student_lookup.get(student_id, {}) if student_id is not None else {}
+            course = course_lookup.get(course_id, {}) if course_id is not None else {}
+            allocated = bool(row.get("allocated", course_id is not None))
+            rank = _clean(row.get("rank_received") or row.get("preference_rank_received"))
+
+            row.setdefault("assigned_course_id", course_id)
+            row.setdefault("preference_rank_received", rank)
+            row.setdefault("faculty_id", _clean(student.get("faculty_id")))
+            row.setdefault("department_id", _clean(student.get("department_id")))
+            row.setdefault("assigned_course", _clean(course.get("name")) or course_id)
+            row.setdefault("course_capacity", _clean(course.get("capacity")))
+            row.setdefault("capacity_status", "Atandı" if allocated else "Atanmadı")
+            row.setdefault("satisfaction_score", float(1.0 / max(float(rank or 1), 1.0)) if allocated else 0.0)
+            if not allocated:
+                row.setdefault("unassigned_reason", "Tercih edilen derslerde kontenjan kalmadı veya uygun tercih yok.")

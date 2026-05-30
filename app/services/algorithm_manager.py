@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from statistics import mean
 from typing import Any
 
@@ -16,6 +16,8 @@ class AlgorithmRecommendation:
     reason: str
     source: str  # rules | history
     candidates: list[str]
+    used_run_count: int = 0
+    data_coverage: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -24,6 +26,13 @@ class AlgorithmRecommendation:
             "reason": self.reason,
             "source": self.source,
             "candidates": self.candidates,
+            "used_run_count": self.used_run_count,
+            "data_coverage": self.data_coverage
+            or {
+                "source": self.source,
+                "used_run_count": self.used_run_count,
+                "coverage_note": "Kural tabanlı öneri; geçmiş benchmark run kullanılmadı." if self.source == "rules" else "Geçmiş benchmark verisi kullanıldı.",
+            },
         }
 
 
@@ -141,7 +150,14 @@ class AlgorithmManager:
             confidence=max(0.5, min(0.95, avg_score)),
             reason=f"Selected from historical benchmark outcomes across {len(scores[algo])} runs.",
             source="history",
-            candidates=sorted(set(candidates.get(algo, []))),
+            candidates=sorted(scores.keys()),
+            used_run_count=len(scores[algo]),
+            data_coverage={
+                "problem_type": problem_type,
+                "used_run_count": len(scores[algo]),
+                "candidate_count": len(scores),
+                "scenarios": sorted(set(candidates.get(algo, []))),
+            },
         )
 
     def _objective_score(self, problem_type: str, metric_groups: dict[str, dict[str, float]]) -> float:

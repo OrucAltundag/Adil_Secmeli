@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -29,6 +30,7 @@ class ScenarioRunRequest(BaseModel):
     algorithm_names: list[str] | None = None
     synthetic_tier: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=100)
+    allocation_parameters: dict[str, Any] | None = None
 
 
 class CompareRequest(BaseModel):
@@ -36,6 +38,7 @@ class CompareRequest(BaseModel):
     algorithm_names: list[str]
     synthetic_tier: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=100)
+    allocation_parameters: dict[str, Any] | None = None
 
 
 class RecommendationRequest(BaseModel):
@@ -72,6 +75,9 @@ def load_dataset(request: DatasetLoadRequest):
         "derived_tables": sorted(dataset.derived.keys()),
         "synthetic_tiers": sorted(dataset.synthetic.keys()),
         "metadata": dataset.metadata,
+        "layer_counts": _layer_counts(dataset),
+        "preview": _dataset_preview(dataset),
+        "quality_summary": _quality_summary(dataset),
     }
 
 
@@ -87,10 +93,13 @@ def run_scenario(request: ScenarioRunRequest):
         synthetic_tier=request.synthetic_tier,
         top_k=request.top_k,
     )
+    if request.allocation_parameters is not None:
+        run_payload["request_parameters"] = {"allocation": request.allocation_parameters}
     return {
         "summary": summarize_run(run_payload),
         "comparison_table": build_comparison_table(run_payload),
         "details": run_payload,
+        "request_parameters": run_payload.get("request_parameters"),
     }
 
 
@@ -106,10 +115,13 @@ def compare_algorithms(request: CompareRequest):
         synthetic_tier=request.synthetic_tier,
         top_k=request.top_k,
     )
+    if request.allocation_parameters is not None:
+        run_payload["request_parameters"] = {"allocation": request.allocation_parameters}
     return {
         "summary": summarize_run(run_payload),
         "comparison_table": build_comparison_table(run_payload),
         "details": run_payload,
+        "request_parameters": run_payload.get("request_parameters"),
     }
 
 
@@ -142,3 +154,85 @@ def get_run(run_id: str):
         "comparison_table": build_comparison_table(run_payload),
         "details": payload,
     }
+
+
+def _layer_counts(dataset) -> dict[str, dict[str, int]]:
+    return {
+        "raw_real": {name: int(len(table)) for name, table in dataset.raw_real.items()},
+        "derived": {name: int(len(table)) for name, table in dataset.derived.items()},
+        "synthetic": {name: int(len(table)) for name, table in dataset.synthetic.items()},
+    }
+
+
+def _dataset_preview(dataset, limit: int = 25) -> dict[str, Any]:
+    table_name = "student_course_features"
+    layer_name = "derived"
+    table = dataset.derived.get(table_name)
+    if table is None or table.empty:
+        table_name = "student_course_features_unencoded"
+        table = dataset.derived.get(table_name)
+    if table is None or table.empty:
+        layer_name = "raw_real"
+        if dataset.raw_real:
+            table_name = sorted(dataset.raw_real.keys())[0]
+            table = dataset.raw_real[table_name]
+    if table is None:
+        return {"layer": layer_name, "table": table_name, "columns": [], "rows": []}
+    rows = []
+    cleaned = table.head(limit).where(table.head(limit).notna(), None)
+    for row in cleaned.to_dict(orient="records"):
+        rows.append({str(key): _json_safe(value) for key, value in row.items()})
+    return {
+        "layer": layer_name,
+        "table": table_name,
+        "columns": [str(column) for column in table.columns.tolist()],
+        "rows": rows,
+    }
+
+
+def _quality_summary(dataset, target_column: str = "course_id") -> dict[str, Any]:
+    table = dataset.derived.get("student_course_features")
+    if table is None or table.empty:
+        table = dataset.derived.get("student_course_features_unencoded")
+    if table is None or table.empty:
+        table = next(iter(dataset.raw_real.values()), None) if dataset.raw_real else None
+    if table is None:
+        return {
+            "row_count": 0,
+            "column_count": 0,
+            "missing_ratio": 0.0,
+            "target_column": target_column,
+            "target_present": False,
+            "class_distribution": {},
+        }
+    total_cells = max(1, int(table.shape[0] * table.shape[1]))
+    missing_ratio = float(table.isna().sum().sum() / total_cells)
+    target_present = target_column in table.columns
+    class_distribution = {}
+    if target_present:
+        counts = table[target_column].value_counts(dropna=False).head(10)
+        class_distribution = {str(key): int(value) for key, value in counts.to_dict().items()}
+    return {
+        "row_count": int(len(table)),
+        "column_count": int(len(table.columns)),
+        "missing_ratio": missing_ratio,
+        "target_column": target_column,
+        "target_present": bool(target_present),
+        "class_distribution": class_distribution,
+    }
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    return value

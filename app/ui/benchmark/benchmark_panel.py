@@ -55,15 +55,15 @@ class BenchmarkPanel(ttk.Frame):
         self.stack.columnconfigure(0, weight=1)
 
         page_defs = [
-            ("dashboard", "Benchmark Dashboard", DashboardPage),
-            ("comparison", "Algorithm Comparison", ComparisonPage),
-            ("dataset_lab", "Dataset Lab", DatasetLabPage),
-            ("algorithm_explorer", "Algorithm Explorer", AlgorithmExplorerPage),
+            ("dashboard", "Benchmark Paneli", DashboardPage),
+            ("comparison", "Algoritma Karşılaştırma", ComparisonPage),
+            ("dataset_lab", "Veri Seti Laboratuvarı", DatasetLabPage),
+            ("algorithm_explorer", "Algoritma Rehberi", AlgorithmExplorerPage),
             ("algorithm_governance", "Algoritma Yönetişimi", AlgorithmGovernancePage),
             ("ml_readiness", "ML Güvenilirlik", MLReadinessPage),
-            ("allocation_fairness", "Allocation Fairness", AllocationFairnessPage),
-            ("decision_engine", "Decision Engine", DecisionEnginePage),
-            ("run_history", "Run History", RunHistoryPage),
+            ("allocation_fairness", "Yerleştirme Adaleti", AllocationFairnessPage),
+            ("decision_engine", "Algoritma Önerisi", DecisionEnginePage),
+            ("run_history", "Çalıştırma Geçmişi", RunHistoryPage),
         ]
 
         for key, label, page_cls in page_defs:
@@ -74,7 +74,7 @@ class BenchmarkPanel(ttk.Frame):
 
         footer = tk.Label(
             self.nav,
-            text="API: http://127.0.0.1:8000\nMock fallback aktif",
+            text="API: http://127.0.0.1:8000\nAPI yoksa örnek veri gösterilir",
             bg=COLORS["navy"],
             fg="#CBD5E1",
             font=("Segoe UI", 8),

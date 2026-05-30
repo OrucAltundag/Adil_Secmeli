@@ -282,8 +282,40 @@ def normalize_features(raw_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, An
 
 
 def impute_missing_values(df: pd.DataFrame, strategy: str = "median") -> tuple[pd.DataFrame, dict[str, Any]]:
+    """
+    Eksik degerleri doldur.
+
+    strategy:
+      "median"  — her sutun icin medyan (varsayilan)
+      "mean"    — her sutun icin ortalama
+      "zero"    — sifir ile doldur
+      "knn"     — K-En Yakin Komsu (KNNImputer, k=min(5,n-1)),
+                  uzaklik agirlikli; sklearn >= 0.22 gerektirir.
+                  sklearn yoksa median'a duser.
+    """
     out = df.copy()
     report = {"strategy": strategy, "columns": {}}
+
+    if strategy == "knn":
+        try:
+            from sklearn.impute import KNNImputer
+
+            cols_missing = [c for c in out.columns if out[c].isna().any()]
+            if cols_missing:
+                n_neighbors = max(1, min(5, len(out) - 1))
+                imputer = KNNImputer(n_neighbors=n_neighbors, weights="distance")
+                arr = imputer.fit_transform(out)
+                out = pd.DataFrame(arr, columns=out.columns, index=out.index)
+                for col in cols_missing:
+                    report["columns"][col] = {
+                        "missing_count": int(df[col].isna().sum()),
+                        "method": f"knn(k={n_neighbors})",
+                    }
+            return out.fillna(0.0), report
+        except ImportError:
+            report["strategy"] = "median(knn_fallback)"
+            strategy = "median"
+
     for col in out.columns:
         missing = int(out[col].isna().sum())
         if missing == 0:
@@ -292,7 +324,7 @@ def impute_missing_values(df: pd.DataFrame, strategy: str = "median") -> tuple[p
             fill_value = float(out[col].mean()) if not out[col].dropna().empty else 0.0
         elif strategy == "zero":
             fill_value = 0.0
-        else:
+        else:  # median
             fill_value = float(out[col].median()) if not out[col].dropna().empty else 0.0
         out[col] = out[col].fillna(fill_value)
         report["columns"][col] = {"missing_count": missing, "fill_value": fill_value}

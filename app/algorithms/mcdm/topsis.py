@@ -33,21 +33,8 @@ class TOPSISRanker(IRanker):
             raise ValueError("Weights cannot be all zeros")
 
     def fit(self, X: pd.DataFrame, y: None = None) -> "TOPSISRanker":
-<<<<<<< HEAD
         criteria_cols = get_criteria_columns(X)
         self.weights = normalize_weights(self.weights, len(criteria_cols), algorithm_name="TOPSIS")
-=======
-        criteria_cols = [c for c in X.columns if c != "item_id"]
-        n_criteria = len(criteria_cols)
-        
-        if self.weights is None:
-            self.weights = np.ones(n_criteria, dtype=float) / max(n_criteria, 1)
-        else:
-            self._validate_weights(n_criteria)
-            total = float(np.sum(self.weights)) or 1.0
-            self.weights = self.weights / total
-        
->>>>>>> f064caebbf2bfd6fac014f86504bd92f9d64e647
         self.parameters["weights"] = self.weights.tolist()
         self._is_fitted = True
         return self

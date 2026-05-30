@@ -24,7 +24,11 @@ from app.services.semester_planning_policy_service import (
     seed_default_policy,
     validate_policy,
 )
-from app.services.semester_planning_reporting_service import get_semester_plan_summary
+from app.services.semester_planning_reporting_service import (
+    export_constraint_violations,
+    export_semester_plan,
+    get_semester_plan_summary,
+)
 
 
 def _conn(path: str = ":memory:") -> sqlite3.Connection:
@@ -156,6 +160,8 @@ def test_planning_engine_default_policy_generates_4_plus_4_and_audit():
     assert run and run["fall_count"] == 4 and run["spring_count"] == 4
     report = get_semester_plan_summary(conn, result["plan_id"])
     assert "report_text" in report
+    assert "course_code" in export_semester_plan(conn, result["plan_id"])
+    assert "constraint_type" in export_constraint_violations(conn, result["plan_id"])
 
 
 def test_course_availability_blocks_forbidden_semester():

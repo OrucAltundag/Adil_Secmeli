@@ -25,6 +25,88 @@ VARSAYILAN_AGIRLIK = {
     "basari": 0.40, "trend": 0.25, "populerlik": 0.20, "anket": 0.15,
 }
 
+# Cosine benzerlik boost katsayisi (0-1 arasi skor uzerine eklenir, max 5 puan)
+_COSINE_BOOST = 5.0
+
+
+def _cosine_benzerlik_boost(
+    conn: sqlite3.Connection,
+    aday_ids: list[int],
+    aktif_statu: int = 1,
+) -> dict[int, float]:
+    """
+    Her aday ders icin, aktif (statu=aktif_statu) derslerin isimleriyle
+    TF-IDF + cosine benzerligine gore [0, _COSINE_BOOST] araliginda boost hesaplar.
+
+    Fikir: Onceden mufredatta basarili olmus (acik) derslere isim benzerligine gore
+    aday derslere kucuk bir ek puan verilir; benzer icerikli ders acilmasi tarihsel
+    olarak desteklenmistir.
+
+    Returns: {ders_id: boost_puan}  (boost 0 ise sozlukte yok)
+    """
+    if not aday_ids:
+        return {}
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+        import numpy as np
+
+        cur = conn.cursor()
+        # Aktif (mufredatta) derslerin adlari
+        placeholders = ",".join("?" * len(aday_ids))
+        cur.execute(
+            f"""
+            SELECT d.ders_id, COALESCE(d.ad,'') || ' ' || COALESCE(d.kod,'') AS metin
+            FROM havuz h
+            JOIN ders d ON d.ders_id = CAST(h.ders_id AS INTEGER)
+            WHERE h.statu = ? AND d.ders_id NOT IN ({placeholders})
+            """,
+            [aktif_statu] + aday_ids,
+        )
+        aktif_rows = cur.fetchall()
+        if not aktif_rows:
+            return {}
+
+        # Aday ders metinleri
+        cur.execute(
+            f"""
+            SELECT ders_id, COALESCE(ad,'') || ' ' || COALESCE(kod,'') AS metin
+            FROM ders WHERE ders_id IN ({placeholders})
+            """,
+            aday_ids,
+        )
+        aday_rows = cur.fetchall()
+        if not aday_rows:
+            return {}
+
+        aktif_ids   = [int(r[0]) for r in aktif_rows]
+        aktif_metni = [str(r[1]) for r in aktif_rows]
+        aday_id_lst = [int(r[0]) for r in aday_rows]
+        aday_metni  = [str(r[1]) for r in aday_rows]
+
+        tum_metinler = aktif_metni + aday_metni
+        vektorizer = TfidfVectorizer(
+            analyzer="char_wb", ngram_range=(2, 4), min_df=1,
+        )
+        tfidf = vektorizer.fit_transform(tum_metinler)
+
+        n_aktif = len(aktif_metni)
+        aktif_vek = tfidf[:n_aktif]
+        aday_vek  = tfidf[n_aktif:]
+
+        # Her aday icin en yuksek aktif benzerligini al
+        sim_matrix = cosine_similarity(aday_vek, aktif_vek)
+        max_sim = np.max(sim_matrix, axis=1)  # shape: (n_aday,)
+
+        result: dict[int, float] = {}
+        for idx, did in enumerate(aday_id_lst):
+            sim = float(max_sim[idx])
+            if sim > 0.05:  # cok dusuk benzerlik ihmal et
+                result[did] = round(sim * _COSINE_BOOST, 3)
+        return result
+    except Exception:
+        return {}
+
 
 def _aktif_agirliklar(conn: sqlite3.Connection) -> dict[str, float]:
     try:
@@ -60,6 +142,28 @@ def _minmax(values: list[float]) -> tuple[float, float]:
         return 0.0, 1.0
     lo, hi = min(values), max(values)
     return (lo, hi) if hi > lo else (lo, lo + 1.0)
+
+
+def _havuz_giris_sayilari(
+    conn: sqlite3.Connection,
+    ders_ids: list[int],
+) -> dict[int, int]:
+    """
+    Her ders icin havuz tablosunda kac kayit oldugunu sayar
+    (tum yillar, tum statu'lar).  Bu degere 'havuz_count' denir;
+    dersin kac farkli yil/donem diliminde havuzda izlendigini gosterir.
+    """
+    if not ders_ids:
+        return {}
+    placeholders = ",".join("?" * len(ders_ids))
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT CAST(ders_id AS INTEGER), COUNT(*) FROM havuz "
+        f"WHERE CAST(ders_id AS INTEGER) IN ({placeholders}) "
+        f"GROUP BY CAST(ders_id AS INTEGER)",
+        ders_ids,
+    )
+    return {int(r[0]): int(r[1]) for r in cur.fetchall()}
 
 
 def recommend_from_pool(
@@ -132,6 +236,14 @@ def recommend_from_pool(
         for k in kriter_anahtarlari
     }
 
+    # ── Havuz geçmiş count (bu ders kac yil/donem havuzda gorundu) ──
+    tum_aday_ids = [int(r["ders_id"]) for r in veri_olan]
+    havuz_counts = _havuz_giris_sayilari(conn, tum_aday_ids)
+
+    # ── Cosine benzerlik boost (aktif derslerle isim/kod benzerligi) ──
+    aday_ids = tum_aday_ids
+    cosine_boost = _cosine_benzerlik_boost(conn, aday_ids)
+
     for r in veri_olan:
         norm = {}
         skor = 0.0
@@ -140,7 +252,11 @@ def recommend_from_pool(
             n = (r["_ham"][k] - lo) / (hi - lo) if hi > lo else 0.0
             norm[k] = round(n, 4)
             skor += float(agirlik.get(k, 0.0)) * n
-        r["skor"] = round(skor * 100.0, 2)
+        base_skor = round(skor * 100.0, 2)
+        boost     = cosine_boost.get(int(r["ders_id"]), 0.0)
+        r["skor"]         = round(base_skor + boost, 2)
+        r["skor_base"]    = base_skor
+        r["cosine_boost"] = boost
         r["kriterler"] = {
             k: round(r["_ham"][k], 2) for k in kriter_anahtarlari
         }
@@ -152,19 +268,28 @@ def recommend_from_pool(
     for i, r in enumerate(veri_olan, 1):
         oner = r["skor"] >= oner_esigi
         en_guclu = max(r["kriter_norm"].items(), key=lambda kv: kv[1])[0]
+        boost_acik = (
+            f" Cosine benzerlik boost: +{r['cosine_boost']:.2f}."
+            if r["cosine_boost"] > 0 else ""
+        )
         gerekce = (
-            f"Skor {r['skor']:.1f} (esik {oner_esigi:.0f}). "
+            f"Skor {r['skor']:.1f} (baz={r['skor_base']:.1f}{boost_acik}) "
+            f"(esik {oner_esigi:.0f}). "
             f"En guclu kriter: {en_guclu}. "
             + ("ACILMASI ONERILIR." if oner else
                "Havuzda beklemesi onerilir (skor dusuk).")
         )
+        hcount = havuz_counts.get(int(r["ders_id"]), 0)
         oneriler.append({
             "sira": i,
             "ders_id": int(r["ders_id"]),
             "kod": r["kod"],
             "ad": r["ad"],
             "statu": int(r["statu"]) if r["statu"] is not None else 0,
+            "havuz_count": hcount,          # kac yil/donem havuzda goruldu
             "skor": r["skor"],
+            "skor_base": r["skor_base"],
+            "cosine_boost": r["cosine_boost"],
             "kriterler": r["kriterler"],
             "oneri": "AC" if oner else "HAVUZDA_TUT",
             "gerekce": gerekce,

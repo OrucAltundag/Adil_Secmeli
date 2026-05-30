@@ -94,11 +94,21 @@ class SyntheticDataGenerator:
             counts = base["course_id"].value_counts(dropna=False).to_dict()
             course_series = base["course_id"].map(lambda x: counts.get(x, 1))
             inv = 1.0 / np.maximum(course_series.to_numpy(dtype=float), 1.0)
-            inv = inv / inv.sum()
+            inv = self._normalize_probabilities(inv)
             weights = (1 - class_imbalance_alpha) * (np.ones(n) / n) + class_imbalance_alpha * inv
-            weights = weights / weights.sum()
+        weights = self._normalize_probabilities(weights)
         indices = rng.choice(np.arange(n), size=int(target_size), replace=True, p=weights)
         return base.iloc[indices].copy()
+
+    def _normalize_probabilities(self, weights: np.ndarray) -> np.ndarray:
+        values = np.asarray(weights, dtype=float)
+        if values.size == 0:
+            return values
+        values = np.where(np.isfinite(values) & (values >= 0.0), values, 0.0)
+        total = float(values.sum())
+        if total <= 0.0:
+            return np.ones(values.size, dtype=float) / values.size
+        return values / total
 
     def _inject_noise(self, df: pd.DataFrame, noise_std: float, rng: np.random.Generator) -> pd.DataFrame:
         if noise_std <= 0:
