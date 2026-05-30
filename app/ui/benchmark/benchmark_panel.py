@@ -54,23 +54,50 @@ class BenchmarkPanel(ttk.Frame):
         self.stack.rowconfigure(0, weight=1)
         self.stack.columnconfigure(0, weight=1)
 
-        page_defs = [
-            ("dashboard", "Benchmark Paneli", DashboardPage),
-            ("comparison", "Algoritma Karşılaştırma", ComparisonPage),
-            ("dataset_lab", "Veri Seti Laboratuvarı", DatasetLabPage),
-            ("algorithm_explorer", "Algoritma Rehberi", AlgorithmExplorerPage),
-            ("algorithm_governance", "Algoritma Yönetişimi", AlgorithmGovernancePage),
-            ("ml_readiness", "ML Güvenilirlik", MLReadinessPage),
-            ("allocation_fairness", "Yerleştirme Adaleti", AllocationFairnessPage),
-            ("decision_engine", "Algoritma Önerisi", DecisionEnginePage),
-            ("run_history", "Çalıştırma Geçmişi", RunHistoryPage),
+        nav_groups = [
+            {
+                "header": "GENEL",
+                "pages": [
+                    ("dashboard", "Benchmark Paneli", DashboardPage),
+                ],
+            },
+            {
+                "header": "ALGORİTMA ARAÇLARI",
+                "pages": [
+                    ("algorithm_explorer", "Algoritma Rehberi", AlgorithmExplorerPage),
+                    ("algorithm_governance", "Algoritma Yönetişimi", AlgorithmGovernancePage),
+                    ("comparison", "Algoritma Karşılaştırma", ComparisonPage),
+                ],
+            },
+            {
+                "header": "ML & KARAR",
+                "pages": [
+                    ("ml_readiness", "ML Güvenilirlik", MLReadinessPage),
+                    ("decision_engine", "Algoritma Önerisi", DecisionEnginePage),
+                ],
+            },
+            {
+                "header": "VERİ & ADALET",
+                "pages": [
+                    ("dataset_lab", "Veri Seti Laboratuvarı", DatasetLabPage),
+                    ("allocation_fairness", "Yerleştirme Adaleti", AllocationFairnessPage),
+                ],
+            },
+            {
+                "header": "GEÇMİŞ",
+                "pages": [
+                    ("run_history", "Çalıştırma Geçmişi", RunHistoryPage),
+                ],
+            },
         ]
 
-        for key, label, page_cls in page_defs:
-            self._add_nav_button(key, label)
-            page = page_cls(self.stack, self.api)
-            page.grid(row=0, column=0, sticky="nsew")
-            self.pages[key] = page
+        for group in nav_groups:
+            self._add_nav_section_header(group["header"])
+            for key, label, page_cls in group["pages"]:
+                self._add_nav_button(key, label)
+                page = page_cls(self.stack, self.api)
+                page.grid(row=0, column=0, sticky="nsew")
+                self.pages[key] = page
 
         footer = tk.Label(
             self.nav,
@@ -83,6 +110,17 @@ class BenchmarkPanel(ttk.Frame):
         footer.pack(side=tk.BOTTOM, fill=tk.X, padx=18, pady=16)
 
         self.show_page("dashboard")
+
+    def _add_nav_section_header(self, text: str) -> None:
+        lbl = tk.Label(
+            self.nav,
+            text=text,
+            bg=COLORS["navy"],
+            fg="#64748B",
+            font=("Segoe UI", 7, "bold"),
+            anchor="w",
+        )
+        lbl.pack(fill=tk.X, padx=18, pady=(12, 2))
 
     def _add_nav_button(self, key: str, label: str) -> None:
         btn = tk.Button(
