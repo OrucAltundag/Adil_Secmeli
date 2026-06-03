@@ -46,6 +46,10 @@ class IAlgorithm(ABC):
         self.task_type = task_type
         self.parameters = dict(parameters or {})
 
+    @property
+    def is_fitted(self) -> bool:
+        return bool(getattr(self, "_is_fitted", False))
+
     @abstractmethod
     def fit(self, X: Any, y: Any | None = None) -> "IAlgorithm":
         """Fit internal state using training data."""

@@ -8,10 +8,13 @@
 # =============================================================================
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 import pandas as pd
 from sqlalchemy import inspect, text
+from sqlalchemy.engine.url import make_url
 
 from app.db.database import get_engine
 
@@ -34,8 +37,34 @@ class Database:
         if db_path:
             self.connect(db_path)
 
+    @staticmethod
+    def _apply_runtime_target(db_path: str | None) -> None:
+        if not db_path:
+            return
+        raw = str(db_path).strip()
+        if not raw:
+            return
+
+        if "://" in raw:
+            os.environ["DATABASE_URL"] = raw
+            try:
+                parsed = make_url(raw)
+                if parsed.get_backend_name() == "sqlite" and parsed.database and parsed.database != ":memory:":
+                    sqlite_path = Path(parsed.database)
+                    if not sqlite_path.is_absolute():
+                        sqlite_path = sqlite_path.resolve()
+                    os.environ["SQLITE_DB_PATH"] = str(sqlite_path)
+            except Exception:
+                pass
+            return
+
+        sqlite_path = Path(raw).expanduser().resolve()
+        os.environ["SQLITE_DB_PATH"] = str(sqlite_path)
+        os.environ["DATABASE_URL"] = f"sqlite:///{sqlite_path.as_posix()}"
+
     def connect(self, db_path: str | None = None) -> None:
-        """Veritabanı engine'ini hazırlar. PostgreSQL'de db_path yoksayılır."""
+        """Veritabanı engine'ini hazırlar."""
+        self._apply_runtime_target(db_path)
         self._engine = get_engine()
         self._connected = True
 

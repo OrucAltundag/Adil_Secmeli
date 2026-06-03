@@ -33,17 +33,34 @@ class RelationsTab(ttk.Frame):
         self.course_map = {}  # listbox index -> ders_id
         self._build_ui()
 
+    def _refresh_db_path(self):
+        self.db_path = getattr(self.app, "db_path", self.db_path)
+        return self.db_path
+
     def refresh(self):
         """Sekmeye gelince/yenile basılınca çağır."""
-        self.db_path = getattr(self.app, "db_path", self.db_path)
+        self._refresh_db_path()
+        self._load_faculties(preserve_selection=True)
+
+    def _load_faculties(self, preserve_selection: bool = False):
+        previous = self.cb_fakulte.get() if preserve_selection else ""
 
         try:
             fakulteler = [r[0] for r in (self.db.run_sql("SELECT ad FROM fakulte")[1] or [])]
             self.cb_fakulte["values"] = fakulteler
-            if fakulteler and self.cb_fakulte.current() < 0:
+            if previous in fakulteler:
+                self.cb_fakulte.set(previous)
+            elif fakulteler:
                 self.cb_fakulte.current(0)
         except Exception:
             pass
+
+    def _show_graph_message(self, message: str):
+        self.rel_fig.clear()
+        ax = self.rel_fig.add_subplot(111)
+        ax.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
+        ax.axis("off")
+        self.rel_canvas.draw()
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -57,14 +74,7 @@ class RelationsTab(ttk.Frame):
 
         tk.Button(top_frame, text="Listele", command=self.load_courses_for_relations).pack(side=tk.LEFT, padx=10)
 
-        # fakülteleri doldur
-        try:
-            fakulteler = [r[0] for r in (self.db.run_sql("SELECT ad FROM fakulte")[1] or [])]
-        except Exception:
-            fakulteler = []
-        self.cb_fakulte["values"] = fakulteler
-        if fakulteler:
-            self.cb_fakulte.current(0)
+        self._load_faculties()
 
         # split layout
         main_pane = tk.PanedWindow(self, orient=tk.HORIZONTAL, bg="#f1f5f9")
@@ -115,15 +125,15 @@ class RelationsTab(ttk.Frame):
         if not fakulte:
             return
 
-        query = f"""
+        query = """
             SELECT DISTINCT d.ders_id, d.ad
             FROM ders d
             JOIN fakulte f ON d.fakulte_id = f.fakulte_id
-            WHERE f.ad = '{fakulte}'
+            WHERE f.ad = ?
             ORDER BY d.ad
         """
         try:
-            _, rows = self.db.run_sql(query)
+            _, rows = self.db.run_sql(query, (fakulte,))
         except Exception:
             rows = []
 
@@ -144,7 +154,8 @@ class RelationsTab(ttk.Frame):
         try:
             import networkx as nx
         except Exception:
-            messagebox.showwarning("Eksik Paket", "networkx yüklü değil. (pip install networkx)")
+            self.tree_scores.delete(*self.tree_scores.get_children())
+            self._show_graph_message("networkx yüklü değil. requirements.txt ile bağımlılıkları kurun.")
             return
 
         course_id = self.course_map.get(sel[0])
@@ -154,22 +165,27 @@ class RelationsTab(ttk.Frame):
         # SimilarityEngine çalıştır
         try:
             from app.services.similarity_engine import SimilarityEngine
+            self._refresh_db_path()
+            if not self.db_path:
+                raise RuntimeError("Veritabanı yolu bulunamadı.")
             engine = SimilarityEngine(self.db_path)
             engine.compute_and_save(course_id, top_n=10)
         except Exception as e:
-            messagebox.showerror("Benzerlik Hatası", str(e))
+            self.tree_scores.delete(*self.tree_scores.get_children())
+            self._show_graph_message(f"Benzerlik hesaplanamadı.\n{e}")
+            messagebox.showerror("Benzerlik Hesaplama", f"Benzerlik hesaplanamadı:\n\n{e}")
             return
 
         # Skorları çek
-        query = f"""
+        query = """
             SELECT d.ad, di.skor
             FROM ders_iliski di
             JOIN ders d ON d.ders_id = di.hedef_ders_id
-            WHERE di.kaynak_ders_id = {course_id}
+            WHERE di.kaynak_ders_id = ?
             ORDER BY di.skor DESC
             LIMIT 10
         """
-        rows = (self.db.run_sql(query)[1] or [])
+        rows = (self.db.run_sql(query, (course_id,))[1] or [])
 
         # Sağ tabloyu doldur
         self.tree_scores.delete(*self.tree_scores.get_children())
@@ -177,9 +193,7 @@ class RelationsTab(ttk.Frame):
             self.tree_scores.insert("", tk.END, values=(ad, f"%{float(skor)*100:.1f}"))
 
         if not rows:
-            # grafiği de temizleyelim
-            self.rel_fig.clear()
-            self.rel_canvas.draw()
+            self._show_graph_message("Bu ders için kayıtlı benzerlik sonucu bulunamadı.")
             return
 
         # Grafik çiz

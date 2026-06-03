@@ -304,7 +304,13 @@ class SemesterPlanningPage(ttk.Frame):
         for table, column in (("skor", "akademik_yil"), ("mufredat", "akademik_yil"), ("semester_plan_runs", "year")):
             try:
                 cur.execute(f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL")
-                years.update(int(row[0]) for row in cur.fetchall() if row and row[0] is not None)
+                for row in cur.fetchall():
+                    if not row or row[0] is None:
+                        continue
+                    try:
+                        years.add(int(row[0]))
+                    except (TypeError, ValueError):
+                        continue
             except Exception:
                 continue
         return sorted(years)
@@ -351,12 +357,22 @@ class SemesterPlanningPage(ttk.Frame):
 
     def _load_current_policy(self) -> None:
         try:
+            conn = self._conn()
             policy = resolve_policy(
-                self._conn(),
+                conn,
                 year=self._selected_year() or 2026,
                 faculty_id=self._selected_faculty_id(),
                 department_id=self._selected_department_id(),
             )
+            if not policy:
+                seed_default_policy(conn)
+                conn.commit()
+                policy = resolve_policy(
+                    conn,
+                    year=self._selected_year() or 2026,
+                    faculty_id=self._selected_faculty_id(),
+                    department_id=self._selected_department_id(),
+                )
             self._set_policy_text(policy)
         except Exception:
             self.policy_var.set("Politika bilgisi yüklenemedi.")

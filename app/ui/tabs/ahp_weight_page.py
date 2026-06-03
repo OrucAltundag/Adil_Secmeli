@@ -135,7 +135,10 @@ class AHPWeightPage(ttk.Frame):
     def __init__(self, parent, app=None):
         super().__init__(parent)
         self.app = app
-        self._profile_rows: dict[str, int] = {}
+        self._profile_list_ids: list[int] = []
+        self._profile_options: dict[str, int] = {}
+        self._profile_cache: dict[int, dict] = {}
+        self._selected_profile_id: int | None = None
         self._criterion_keys: list[str] = []
         self._matrix_entries: list[list] = []   # StringVar (off-diag) | None (diag)
         self._current_weights: dict[str, float] = {}
@@ -163,6 +166,32 @@ class AHPWeightPage(ttk.Frame):
         except UnicodeEncodeError:
             return out.encode("ascii", "ignore").decode("ascii") or s
 
+    @classmethod
+    def _profile_display_name(cls, profile: dict) -> str:
+        raw = profile.get("profile_name") or profile.get("name") or ""
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        name = cls._ascii_safe(str(raw).strip())
+        if name.lower() in {"", "(isimsiz)", "isimsiz", "none", "null", "---"}:
+            return f"AHP Profili #{profile.get('id') or '?'}"
+        return name
+
+    @classmethod
+    def _profile_option_label(cls, profile: dict) -> str:
+        name = cls._profile_display_name(profile)
+        status = DURUM_ETIKET.get(str(profile.get("status") or "draft"), str(profile.get("status") or "draft"))
+        active = " | AKTIF" if profile.get("is_active") else ""
+        return f"#{profile.get('id')} - {name} | {status}{active}"
+
+    @classmethod
+    def _profile_list_line(cls, profile: dict) -> str:
+        name = cls._profile_display_name(profile)
+        scope = str(profile.get("scope_type") or "global")
+        version = str(profile.get("version") or "1")
+        status = DURUM_ETIKET.get(str(profile.get("status") or "draft"), str(profile.get("status") or "draft"))
+        active = " | AKTIF" if profile.get("is_active") else ""
+        return f"#{profile.get('id')}  {name}  |  {scope}  |  v{version}  |  {status}{active}"
+
     # ─── Veritabani ──────────────────────────────────────────────────────────
     def _conn(self):
         conn = getattr(getattr(self.app, "db", None), "conn", None)
@@ -172,7 +201,11 @@ class AHPWeightPage(ttk.Frame):
 
     @staticmethod
     def _friendly_backend_error() -> str:
-        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
+        return "Veritabanı bağlantısı kurulamadı. Geçerli veritabanı dosyasını seçip yeniden deneyin."
+
+    @staticmethod
+    def _profile_required_message() -> str:
+        return "Profil listesinden bir profil seçin. Liste boşsa '+ Yeni Profil' ile profil oluşturun."
 
     def _format_error(self, exc: Exception) -> str:
         text = str(exc)
@@ -220,53 +253,72 @@ class AHPWeightPage(ttk.Frame):
         paned = ttk.PanedWindow(frame, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        # Sol: Treeview
-        left = ttk.Frame(paned)
-        paned.add(left, weight=3)
+        # Sol: tablo yerine acik secim paneli
+        left = ttk.LabelFrame(paned, text="  Profil Secimi  ", padding=8)
+        paned.add(left, weight=2)
 
-        tree_frame = ttk.Frame(left)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
+        self.selected_profile_var = tk.StringVar(value="Secili profil yok")
+        tk.Label(
+            left,
+            textvariable=self.selected_profile_var,
+            bg="#E8F5E9",
+            fg="#1B5E20",
+            font=("Segoe UI", 9, "bold"),
+            anchor=tk.W,
+            padx=8,
+            pady=6,
+            relief=tk.GROOVE,
+            bd=1,
+        ).pack(fill=tk.X, pady=(0, 8))
 
-        columns = ("profil", "scope", "year", "version", "cr", "status", "active")
-        self.profile_tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", height=16
+        picker = ttk.Frame(left)
+        picker.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(picker, text="Profil:").pack(side=tk.LEFT)
+        self.profile_picker_var = tk.StringVar()
+        self.profile_picker = ttk.Combobox(
+            picker,
+            textvariable=self.profile_picker_var,
+            state="readonly",
+            width=46,
         )
-        headings = {
-            "profil": "Profil Adi",
-            "scope": "Kapsam",
-            "year": "Yil",
-            "version": "Versiyon",
-            "cr": "CR",
-            "status": "Durum",
-            "active": "Aktif",
-        }
-        widths = {
-            "profil": 180, "scope": 100, "year": 44,
-            "version": 68, "cr": 52, "status": 120, "active": 44,
-        }
-        for col, text in headings.items():
-            self.profile_tree.heading(col, text=text)
-            self.profile_tree.column(col, width=widths[col], minwidth=40, anchor=tk.W)
+        self.profile_picker.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        self.profile_picker.bind("<<ComboboxSelected>>", self._select_profile_from_picker)
+        ttk.Button(picker, text="Profili Sec", command=self._select_profile_from_picker).pack(side=tk.LEFT)
 
-        for status, color in DURUM_RENK.items():
-            self.profile_tree.tag_configure(status, background=color)
+        ttk.Label(
+            left,
+            text="Tek tikla profil secin. Cift tik: matrisi duzenle.",
+            foreground="#455A64",
+            font=("Segoe UI", 8),
+        ).pack(anchor=tk.W, pady=(0, 4))
 
-        # Secili satir, durum rengi ne olursa olsun belirgin (koyu mavi) gorunsun
-        try:
-            style = ttk.Style()
-            style.map(
-                "Treeview",
-                background=[("selected", "#1565C0")],
-                foreground=[("selected", "white")],
-            )
-        except Exception:
-            pass
+        list_frame = ttk.Frame(left)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        self.profile_listbox = tk.Listbox(
+            list_frame,
+            activestyle="dotbox",
+            exportselection=False,
+            font=("Segoe UI", 9),
+            height=18,
+            selectmode=tk.SINGLE,
+        )
+        # Backwards-compatibility alias: some code/tests reference `profile_tree`.
+        # Map it to the listbox so selection APIs remain available.
+        self.profile_tree = self.profile_listbox
+        list_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.profile_listbox.yview)
+        self.profile_listbox.configure(yscrollcommand=list_scroll.set)
+        self.profile_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.profile_listbox.bind("<<ListboxSelect>>", self._on_profile_list_select)
+        self.profile_listbox.bind(
+            "<Double-Button-1>",
+            lambda _e: (self._on_profile_list_select(), self._edit_selected_in_tab2()),
+        )
 
-        scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.profile_tree.yview)
-        self.profile_tree.configure(yscrollcommand=scroll_y.set)
-        self.profile_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-        self.profile_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_profile_select())
+        quick_actions = ttk.Frame(left)
+        quick_actions.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(quick_actions, text="Aktif Yap", command=self.activate_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_actions, text="Matrisi Duzenle", command=self._edit_selected_in_tab2).pack(side=tk.LEFT, padx=2)
 
         # Sag: Detay paneli
         right = ttk.LabelFrame(paned, text="  Profil Detayi  ", padding=8)
@@ -393,7 +445,7 @@ class AHPWeightPage(ttk.Frame):
         ttk.Label(topbar, text="Duzenlenen Profil:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
         self.profile_label_tab2 = ttk.Label(
             topbar,
-            text="--- (Tab 1'den profil secip 'Matrisi Duzenle' tiklayin)",
+            text="--- (Profil listesinden seçim yapıp 'Matrisi Duzenle' tiklayin)",
             font=("Segoe UI", 9, "bold"),
             foreground="#1565C0",
         )
@@ -580,6 +632,7 @@ class AHPWeightPage(ttk.Frame):
             profiles = list_ahp_profiles(conn)
             criteria = list_active_criteria(conn)
             conn.commit()
+            requested_profile_id = self._selected_profile_id
 
             self._criterion_keys = [row["criterion_key"] for row in criteria]
             self.cb_left["values"] = self._criterion_keys
@@ -590,9 +643,10 @@ class AHPWeightPage(ttk.Frame):
                     self._criterion_keys[min(1, len(self._criterion_keys) - 1)]
                 )
 
-            for item in self.profile_tree.get_children():
-                self.profile_tree.delete(item)
-            self._profile_rows.clear()
+            self._profile_list_ids.clear()
+            self._profile_options.clear()
+            self._profile_cache.clear()
+            self.profile_listbox.delete(0, tk.END)
 
             active_profile = None
             for profile in profiles:
@@ -603,39 +657,28 @@ class AHPWeightPage(ttk.Frame):
                 is_active = bool(profile.get("is_active"))
                 if is_active:
                     active_profile = profile
-                cr = profile.get("consistency_ratio")
-                cr_text = "" if cr is None else f"{float(cr):.3f}"
-                # profile_name veya name alanından al; ikisi de bos ise "(isimsiz)"
-                pname = (
-                    profile.get("profile_name")
-                    or profile.get("name")
-                    or "(isimsiz)"
-                )
-                if isinstance(pname, bytes):
-                    pname = pname.decode("utf-8", errors="replace")
-                pname = self._ascii_safe(str(pname).strip()) or "(isimsiz)"
+                profile_id = int(profile["id"])
+                self._profile_cache[profile_id] = profile
+                option_label = self._profile_option_label(profile)
+                self._profile_options[option_label] = profile_id
+                self._profile_list_ids.append(profile_id)
+                self.profile_listbox.insert(tk.END, self._profile_list_line(profile))
+                row_index = self.profile_listbox.size() - 1
+                try:
+                    self.profile_listbox.itemconfig(
+                        row_index,
+                        background=DURUM_RENK.get(status, "#FFFFFF"),
+                    )
+                except Exception:
+                    pass
 
-                item = self.profile_tree.insert(
-                    "",
-                    tk.END,
-                    values=(
-                        pname,
-                        self._scope_text(profile),
-                        profile.get("year") or "",
-                        profile.get("version") or "1",
-                        cr_text,
-                        DURUM_ETIKET.get(status, status),
-                        "Evet" if is_active else "",
-                    ),
-                    tags=(status,),
-                )
-                self._profile_rows[item] = int(profile["id"])
+            self.profile_picker["values"] = list(self._profile_options.keys())
 
             if active_profile:
                 cr = active_profile.get("consistency_ratio")
                 cr_str = f"   |   CR: {float(cr):.3f}" if cr is not None else ""
                 self.banner_var.set(
-                    f"* Aktif Profil: {active_profile.get('profile_name')}"
+                    f"* Aktif Profil: {self._profile_display_name(active_profile)}"
                     f"   (v{active_profile.get('version')}){cr_str}"
                 )
             else:
@@ -647,18 +690,19 @@ class AHPWeightPage(ttk.Frame):
 
             # Refresh sonrasi panel bos kalmasin: aktif profili (yoksa ilk
             # satiri) otomatik sec ve detayini goster.
-            children = self.profile_tree.get_children()
-            if children:
-                hedef = None
-                if active_profile:
-                    for item, pid in self._profile_rows.items():
-                        if int(pid) == int(active_profile["id"]):
-                            hedef = item
-                            break
-                hedef = hedef or children[0]
-                self.profile_tree.selection_set(hedef)
-                self.profile_tree.focus(hedef)
+            if self._profile_list_ids:
+                target_id = None
+                if requested_profile_id and int(requested_profile_id) in self._profile_cache:
+                    target_id = int(requested_profile_id)
+                elif active_profile:
+                    target_id = int(active_profile["id"])
+                else:
+                    target_id = self._profile_list_ids[0]
+                self._select_profile_by_id(target_id)
                 self._on_profile_select()
+            else:
+                self._selected_profile_id = None
+                self.selected_profile_var.set("Secili profil yok")
         except Exception as exc:
             messagebox.showerror("AHP Agirlik Yonetimi", self._format_error(exc))
 
@@ -674,7 +718,7 @@ class AHPWeightPage(ttk.Frame):
         if n == 0:
             ttk.Label(
                 self.matrix_inner,
-                text="Aktif kriter bulunamadi. Lutfen 'Yenile' butonuna basin.",
+                text="Aktif kriter bulunamadi. Kriterleri yenileyin veya kriter girişlerini kontrol edin.",
                 padding=16,
             ).pack()
             return
@@ -776,7 +820,7 @@ class AHPWeightPage(ttk.Frame):
             messagebox.showwarning(
                 "Matris Girisi",
                 f"Gecersiz deger: {exc}\n"
-                "Gecerli degerler: 1/9, 1/7, 1/5, 1/3, 1, 2, 3, 5, 7, 9",
+                "Gecerli ornekler: 1/9, 1/7, 1/5, 1/3, 1, 3, 5, 7, 9 veya pozitif sayi",
             )
 
     # ─── Hesaplama ────────────────────────────────────────────────────────────
@@ -784,7 +828,7 @@ class AHPWeightPage(ttk.Frame):
         try:
             keys = self._criterion_keys
             if not keys:
-                messagebox.showwarning("AHP", "Kriter listesi bos. 'Yenile' butonuna basin.")
+                messagebox.showwarning("AHP", "Kriter listesi bos. Kriterleri yenileyin veya kriter girişlerini kontrol edin.")
                 return
             matrix = self._get_matrix_values()
             result = calculate_weights_from_pairwise_matrix(keys, matrix)
@@ -884,20 +928,54 @@ class AHPWeightPage(ttk.Frame):
             )
 
     # ─── Profil Secim Olayi ──────────────────────────────────────────────────
+    def _on_profile_list_select(self, _event=None):
+        selected = self.profile_listbox.curselection()
+        if not selected:
+            return
+        index = int(selected[0])
+        if index >= len(self._profile_list_ids):
+            return
+        self._set_selected_profile_id(self._profile_list_ids[index])
+        self._on_profile_select()
+
+    def _select_profile_from_picker(self, _event=None):
+        label = self.profile_picker_var.get()
+        profile_id = self._profile_options.get(label)
+        if not profile_id:
+            return
+        self._set_selected_profile_id(profile_id)
+        self._on_profile_select()
+
+    def _set_selected_profile_id(self, profile_id: int):
+        self._selected_profile_id = int(profile_id)
+        if int(profile_id) in self._profile_list_ids:
+            index = self._profile_list_ids.index(int(profile_id))
+            self.profile_listbox.selection_clear(0, tk.END)
+            self.profile_listbox.selection_set(index)
+            self.profile_listbox.activate(index)
+            self.profile_listbox.see(index)
+        for label, pid in self._profile_options.items():
+            if int(pid) == int(profile_id):
+                self.profile_picker_var.set(label)
+                break
+        profile = self._profile_cache.get(int(profile_id))
+        if profile:
+            self.selected_profile_var.set(
+                f"SECILI: #{profile_id} - {self._profile_display_name(profile)}"
+            )
+        self._update_selection_marks()
+
+    def _update_selection_marks(self):
+        # Listbox'un secili satir rengi ve ustteki "SECILI" etiketi secimi gosterir.
+        return
+
     def _on_profile_select(self):
         try:
             profile = self._selected_profile()
             if not profile:
                 return
 
-            name = (
-                profile.get("profile_name")
-                or profile.get("name")
-                or "(isimsiz)"
-            )
-            if isinstance(name, bytes):
-                name = name.decode("utf-8", errors="replace")
-            name = self._ascii_safe(str(name).strip()) or "(isimsiz)"
+            name = self._profile_display_name(profile)
 
             status = profile.get("status", "draft")
             cr = profile.get("consistency_ratio")
@@ -992,15 +1070,11 @@ class AHPWeightPage(ttk.Frame):
         yeni profil OLUSTURULMAZ). Profil id'si sabitlenir."""
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once Tab 1'den bir profil secin.")
+            messagebox.showwarning("AHP", self._profile_required_message())
             return
         self._editing_profile_id = int(profile["id"])
         matrix = profile.get("pairwise_matrix") or None
-        ad = (
-            profile.get("profile_name")
-            or profile.get("name")
-            or f"#{profile['id']}"
-        )
+        ad = self._profile_display_name(profile)
         self.profile_label_tab2.config(
             text=f"#{profile['id']} — {ad}  (bu profil duzenleniyor)"
         )
@@ -1012,7 +1086,7 @@ class AHPWeightPage(ttk.Frame):
         """Hizli karsilastirma yardimcisindan secilen degeri matrise uygular."""
         keys = self._criterion_keys
         if not keys:
-            messagebox.showwarning("AHP", "Kriter yok. 'Yenile' butonuna basin.")
+            messagebox.showwarning("AHP", "Kriter yok. Kriterleri yenileyin veya kriter girişlerini kontrol edin.")
             return
         left = self.cb_left.get()
         right = self.cb_right.get()
@@ -1079,7 +1153,7 @@ class AHPWeightPage(ttk.Frame):
             messagebox.showwarning(
                 "AHP",
                 "Duzenlenecek profil belirsiz.\n"
-                "Tab 1'den profil secip 'Matrisi Duzenle' butonuna basin.",
+                "Profil listesinden profil secip 'Matrisi Duzenle' butonuna basin.",
             )
             return
         try:
@@ -1091,28 +1165,39 @@ class AHPWeightPage(ttk.Frame):
             conn = self._conn()
             # AYNI profil yerinde guncellenir (yeni profil olusmaz)
             update_profile(conn, pid, criteria_keys=keys, pairwise_matrix=matrix)
+            approval_error: tuple[str, Exception] | None = None
             if then_approve:
                 # Dogrula -> onaya gonder -> onayla -> aktif yap zincirini
                 # tek tusla calistir (hata olursa o adimda durur)
-                for fn in (
-                    lambda: validate_profile(conn, pid),
-                    lambda: submit_for_approval(conn, pid),
-                    lambda: approve_profile(conn, pid, approved_by="ui"),
-                    lambda: activate_profile(conn, pid, actor="ui"),
+                for step_name, fn in (
+                    ("Dogrula", lambda: validate_profile(conn, pid)),
+                    ("Onaya Gonder", lambda: submit_for_approval(conn, pid)),
+                    ("Onayla", lambda: approve_profile(conn, pid, approved_by="ui")),
+                    ("Aktif Yap", lambda: activate_profile(conn, pid, actor="ui")),
                 ):
                     try:
                         fn()
-                    except Exception:
+                    except Exception as step_exc:
+                        approval_error = (step_name, step_exc)
                         break
             conn.commit()
             self.refresh()
             self._select_profile_by_id(pid)
             if then_approve:
-                messagebox.showinfo(
-                    "AHP",
-                    "Matris kaydedildi, profil onaylandi ve AKTIF yapildi.\n"
-                    "Artik Karar Merkezi -> Calistirmalar'da TOPSIS bu profili kullanir.",
-                )
+                if approval_error:
+                    step_name, step_exc = approval_error
+                    messagebox.showwarning(
+                        "AHP",
+                        "Matris kaydedildi ancak profil onay/aktivasyon akışı tamamlanmadı.\n"
+                        f"Duran adım: {step_name}\n"
+                        f"Neden: {self._format_error(step_exc)}",
+                    )
+                else:
+                    messagebox.showinfo(
+                        "AHP",
+                        "Matris kaydedildi, profil onaylandi ve AKTIF yapildi.\n"
+                        "Artik Karar Merkezi -> Calistirmalar'da TOPSIS bu profili kullanir.",
+                    )
             else:
                 messagebox.showinfo("AHP", "Matris ayni profile kaydedildi (yeni profil olusmadi).")
         except Exception as exc:
@@ -1131,7 +1216,7 @@ class AHPWeightPage(ttk.Frame):
     def load_impact(self):
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once Tab 1'den bir profil secin.")
+            messagebox.showwarning("AHP", self._profile_required_message())
             return
         try:
             report = explain_weight_profile(self._conn(), int(profile["id"]))
@@ -1246,14 +1331,9 @@ class AHPWeightPage(ttk.Frame):
             messagebox.showerror("AHP", self._format_error(exc))
 
     def _select_profile_by_id(self, profile_id: int):
-        """Verilen profile_id'ye sahip treeview satirini sec ve detayini goster."""
-        for item, pid in self._profile_rows.items():
-            if int(pid) == int(profile_id):
-                self.profile_tree.selection_set(item)
-                self.profile_tree.focus(item)
-                self.profile_tree.see(item)
-                self._on_profile_select()
-                return
+        """Verilen profile_id'ye sahip profil satirini sec ve detayini goster."""
+        self._set_selected_profile_id(int(profile_id))
+        self._on_profile_select()
 
     def validate_selected(self):
         self._profile_action(
@@ -1274,7 +1354,7 @@ class AHPWeightPage(ttk.Frame):
     def reject_selected(self):
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once bir profil secin.")
+            messagebox.showwarning("AHP", self._profile_required_message())
             return
         reason = simpledialog.askstring("AHP Reddet", "Red gerekcesinizi yazin:")
         if not reason:
@@ -1282,7 +1362,7 @@ class AHPWeightPage(ttk.Frame):
         # Kullanici istegi: reddedilen profil ayni zamanda SILINIR.
         if not messagebox.askyesno(
             "AHP Reddet + Sil",
-            f"'{profile.get('profile_name') or profile.get('name')}' profili "
+            f"'{self._profile_display_name(profile)}' profili "
             f"reddedilip KALICI olarak silinecek. Onayliyor musunuz?",
         ):
             return
@@ -1295,6 +1375,7 @@ class AHPWeightPage(ttk.Frame):
                 pass  # reddetme basarisiz olsa bile silmeyi dene
             delete_profile(conn, pid)
             conn.commit()
+            self._selected_profile_id = None
             self.refresh()
             messagebox.showinfo("AHP", "Profil reddedildi ve silindi.")
         except Exception as exc:
@@ -1303,9 +1384,9 @@ class AHPWeightPage(ttk.Frame):
     def delete_selected(self):
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once bir profil secin.")
+            messagebox.showwarning("AHP", self._profile_required_message())
             return
-        ad = profile.get("profile_name") or profile.get("name") or f"#{profile['id']}"
+        ad = self._profile_display_name(profile)
         if not messagebox.askyesno(
             "Profil Sil",
             f"'{ad}' profili KALICI olarak silinecek. Onayliyor musunuz?\n"
@@ -1316,6 +1397,7 @@ class AHPWeightPage(ttk.Frame):
             conn = self._conn()
             delete_profile(conn, int(profile["id"]))
             conn.commit()
+            self._selected_profile_id = None
             self.refresh()
             messagebox.showinfo("AHP", f"Profil silindi: '{ad}'")
         except Exception as exc:
@@ -1324,9 +1406,9 @@ class AHPWeightPage(ttk.Frame):
     def rename_selected(self):
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once bir profil secin.")
+            messagebox.showwarning("AHP", self._profile_required_message())
             return
-        eski = profile.get("profile_name") or profile.get("name") or ""
+        eski = self._profile_display_name(profile)
         yeni = simpledialog.askstring(
             "Profil Adi Degistir", "Yeni profil adi:",
             initialvalue=str(eski), parent=self,
@@ -1370,23 +1452,36 @@ class AHPWeightPage(ttk.Frame):
     def _profile_action(self, action, message: str):
         profile = self._selected_profile()
         if not profile:
-            messagebox.showwarning("AHP", "Once bir profil secin.")
+            messagebox.showwarning("AHP", self._profile_required_message())
             return
         try:
             conn = self._conn()
-            action(conn, int(profile["id"]))
+            pid = int(profile["id"])
+            action(conn, pid)
             conn.commit()
             self.refresh()
+            self._select_profile_by_id(pid)
             messagebox.showinfo("AHP", message)
         except Exception as exc:
             messagebox.showerror("AHP", self._format_error(exc))
 
     def _selected_profile(self):
-        selected = self.profile_tree.selection()
-        if not selected:
-            return None
-        profile_id = self._profile_rows.get(selected[0])
-        return get_profile(self._conn(), int(profile_id)) if profile_id else None
+        listbox = getattr(self, "profile_listbox", None)
+        selected = listbox.curselection() if listbox is not None else ()
+        if selected:
+            index = int(selected[0])
+            if index < len(self._profile_list_ids):
+                self._selected_profile_id = int(self._profile_list_ids[index])
+        if not self._selected_profile_id:
+            if self._profile_list_ids:
+                self._set_selected_profile_id(self._profile_list_ids[0])
+            else:
+                return None
+        profile = get_profile(self._conn(), int(self._selected_profile_id))
+        if not profile:
+            self._selected_profile_id = None
+            self._update_selection_marks()
+        return profile
 
     def _get_matrix_values(self) -> list[list[float]]:
         """Entry widget'lardan NxN matris degerlerini okur."""

@@ -1517,7 +1517,30 @@ def ensure_ahp_governance_schema(conn: sqlite3.Connection, commit: bool = True) 
     if _table_exists(cur, "ahp_weight_profiles"):
         cols = _column_names(cur, "ahp_weight_profiles")
         if "profile_name" in cols:
-            cur.execute("UPDATE ahp_weight_profiles SET profile_name = COALESCE(profile_name, name)")
+            cur.execute(
+                """
+                UPDATE ahp_weight_profiles
+                SET profile_name = CASE
+                    WHEN name IS NOT NULL
+                         AND TRIM(name) <> ''
+                         AND LOWER(TRIM(name)) NOT IN ('(isimsiz)', 'isimsiz', 'none', 'null', '---')
+                    THEN TRIM(name)
+                    ELSE 'AHP Profili #' || id
+                END
+                WHERE profile_name IS NULL
+                   OR TRIM(profile_name) = ''
+                   OR LOWER(TRIM(profile_name)) IN ('(isimsiz)', 'isimsiz', 'none', 'null', '---')
+                """
+            )
+            cur.execute(
+                """
+                UPDATE ahp_weight_profiles
+                SET name = profile_name
+                WHERE name IS NULL
+                   OR TRIM(name) = ''
+                   OR LOWER(TRIM(name)) IN ('(isimsiz)', 'isimsiz', 'none', 'null', '---')
+                """
+            )
         if "status" in cols:
             cur.execute("UPDATE ahp_weight_profiles SET status = COALESCE(status, CASE WHEN is_active=1 THEN 'active' ELSE 'archived' END)")
 

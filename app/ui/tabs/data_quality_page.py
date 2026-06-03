@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox, ttk
@@ -24,6 +25,21 @@ class DataQualityPage(ttk.Frame):
         self.db_path = db_path or (getattr(app, "db_path", None) if app else None)
         self.config = load_app_config() if not app else getattr(app, "app_config", load_app_config())
         self._setup_ui()
+
+    def _refresh_db_path(self) -> str | None:
+        app_path = getattr(self.app, "db_path", None) if self.app else None
+        cfg_path = getattr(self.config, "sqlite_db_path", None)
+        for candidate in (app_path, self.db_path, cfg_path):
+            if candidate:
+                self.db_path = os.path.abspath(str(candidate))
+                return self.db_path
+        return None
+
+    def _open_connection(self):
+        db_path = self._refresh_db_path()
+        if not db_path:
+            raise RuntimeError("Veritabanı bağlantısı bulunamadı. Üst menüden geçerli veritabanı dosyasını seçin.")
+        return connect_sqlite(db_path)
 
     def _setup_ui(self):
         """UI bileşenlerini kur"""
@@ -274,16 +290,35 @@ class DataQualityPage(ttk.Frame):
     def _populate_years(self):
         """Akademik yılları doldur"""
         try:
-            if not self.db_path:
-                return
-            conn = connect_sqlite(self.db_path)
+            previous = self.year_combo.get() if hasattr(self, "year_combo") else ""
+            conn = self._open_connection()
             try:
                 cur = conn.cursor()
-                cur.execute("SELECT DISTINCT akademik_yil FROM performans ORDER BY akademik_yil DESC")
-                years = [str(row[0]) for row in cur.fetchall()]
-                self.year_combo["values"] = years or ["2022", "2023", "2024"]
-                if years:
+                year_values = set()
+                for query in (
+                    "SELECT DISTINCT akademik_yil FROM performans WHERE akademik_yil IS NOT NULL",
+                    "SELECT DISTINCT akademik_yil FROM mufredat WHERE akademik_yil IS NOT NULL",
+                    "SELECT DISTINCT yil FROM ders_kriterleri WHERE yil IS NOT NULL",
+                ):
+                    try:
+                        cur.execute(query)
+                        for row in cur.fetchall():
+                            if not row or row[0] is None:
+                                continue
+                            try:
+                                year_values.add(int(row[0]))
+                            except (TypeError, ValueError):
+                                continue
+                    except Exception:
+                        continue
+                years = [str(year) for year in sorted(year_values, reverse=True)]
+                self.year_combo["values"] = years
+                if previous in years:
+                    self.year_combo.set(previous)
+                elif years:
                     self.year_combo.current(0)
+                else:
+                    self.year_combo.set("")
             finally:
                 conn.close()
         except Exception as e:
@@ -292,18 +327,22 @@ class DataQualityPage(ttk.Frame):
     def _populate_faculties(self):
         """Fakülteleri doldur"""
         try:
-            if not self.db_path:
-                return
-            conn = connect_sqlite(self.db_path)
+            previous = self.faculty_combo.get() if hasattr(self, "faculty_combo") else ""
+            conn = self._open_connection()
             try:
                 cur = conn.cursor()
                 cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY ad")
                 faculties = [f"{row[1]} (ID: {row[0]})" for row in cur.fetchall()]
                 self.faculty_combo["values"] = ["Tümü"] + faculties
-                self.faculty_combo.current(0)
+                if previous in self.faculty_combo["values"]:
+                    self.faculty_combo.set(previous)
+                else:
+                    self.faculty_combo.current(0)
             finally:
                 conn.close()
         except Exception as e:
+            self.faculty_combo["values"] = ["Tümü"]
+            self.faculty_combo.current(0)
             print(f"Fakülte yükleme hatası: {e}")
 
     def _get_selected_faculty_id(self):
@@ -318,20 +357,25 @@ class DataQualityPage(ttk.Frame):
 
     def _generate_report(self):
         """Rapor oluştur"""
+        self._refresh_db_path()
+        if not self.year_combo.get():
+            self._populate_years()
+        if not self.faculty_combo.get():
+            self._populate_faculties()
+
         year_str = self.year_combo.get()
         if not year_str:
-            messagebox.showwarning("Uyarı", "Lütfen akademik yıl seçin.")
+            messagebox.showwarning(
+                "Veri Kalitesi",
+                "Rapor oluşturmak için akademik yıl bulunamadı. Veri Yönetimi sekmesinden müfredat/kriter verisi içe aktarın.",
+            )
             return
 
         try:
             year = int(year_str)
             faculty_id = self._get_selected_faculty_id()
 
-            if not self.db_path:
-                messagebox.showerror("Hata", "Veritabanı yolu ayarlanmamış.")
-                return
-
-            conn = connect_sqlite(self.db_path)
+            conn = self._open_connection()
             try:
                 cur = conn.cursor()
 
@@ -630,4 +674,8 @@ Tavsiyeler:
 
     def _refresh(self):
         """Sayfayı yenile"""
-        self._generate_report()
+        self._refresh_db_path()
+        self._populate_years()
+        self._populate_faculties()
+        if self.year_combo.get():
+            self._generate_report()

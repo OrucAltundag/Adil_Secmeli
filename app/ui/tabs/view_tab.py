@@ -162,7 +162,7 @@ class ViewTab(ttk.Frame):
 
     @staticmethod
     def _friendly_backend_error() -> str:
-        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
+        return "Veritabanı bağlantısı kurulamadı. Geçerli veritabanı dosyasını seçip yeniden deneyin."
 
     def _is_sql_console_allowed(self) -> bool:
         return can(self.user_context, "use_sql_console", config=self.config)

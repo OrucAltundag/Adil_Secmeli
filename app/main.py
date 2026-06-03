@@ -66,7 +66,8 @@ from app.services.yearly_workflow import is_yearly_workflow_enabled
 # BÖLÜM 1: Yapılandırma (config.json)
 # =============================================================================
 def load_config():
-    default = load_app_config().as_legacy_dict()
+    app_cfg = load_app_config()
+    default = app_cfg.as_legacy_dict()
     default.setdefault("charts", {"bins": 15})
     cfg_path = os.path.join(os.getcwd(), "config.json")
     if os.path.exists(cfg_path):
@@ -76,6 +77,12 @@ def load_config():
             default.update(data or {})
         except Exception:
             pass
+    db_path = default.get("db_path")
+    fallback_path = app_cfg.sqlite_db_path
+    if db_path and fallback_path and not os.path.exists(str(db_path)) and os.path.exists(str(fallback_path)):
+        default["db_path"] = fallback_path
+        fallback_url_path = os.path.abspath(str(fallback_path)).replace(os.sep, "/")
+        default["db_url"] = f"sqlite:///{fallback_url_path}"
     return default
 
 
@@ -140,10 +147,22 @@ def run_schema_check() -> int:
         return 1
 
 
+def _configure_health_output_encoding() -> None:
+    """Windows konsol kodlaması Unicode rapor karakterlerinde CLI'ı düşürmesin."""
+
+    try:
+        reconfig = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfig):
+            reconfig(encoding="utf-8", errors="replace")
+    except (ValueError, OSError):
+        pass
+
+
 def run_health(mode: str) -> int:
     """CLI sağlık modları: health-check / -full / -repair / -audit."""
 
     try:
+        _configure_health_output_encoding()
         from app.health.health_formatter import (
             format_algorithm_catalog,
             format_report,
@@ -391,6 +410,13 @@ class AdilSecmeliApp(tk.Tk):
         """
         db_path = self.db_path
         db_url = self.db_url
+        if self.app_config.db_backend == "sqlite" and db_path and not os.path.exists(str(db_path)):
+            fallback = os.path.abspath(str(self.app_config.sqlite_db_path))
+            if os.path.exists(fallback):
+                self.db_path = fallback
+                self.db_url = f"sqlite:///{fallback.replace(os.sep, '/')}"
+                db_path = self.db_path
+                db_url = self.db_url
 
         try:
             # 1) Veritabani baglantisi
@@ -450,7 +476,8 @@ class AdilSecmeliApp(tk.Tk):
         except FileNotFoundError:
             messagebox.showwarning(
                 "Veritabani Bulunamadi",
-                    f"Varsayilan veritabani yok:\n{db_path}\n\nLutfen config ayarlarini kontrol ediniz."
+                f"Veritabanı dosyası bulunamadı:\n{db_path}\n\n"
+                "Lütfen geçerli bir SQLite veritabanı dosyası seçiniz."
             )
             self.cmd_open_db()
 
@@ -478,11 +505,13 @@ class AdilSecmeliApp(tk.Tk):
         try:
             self.db.connect(path)
             self.db_path = os.path.abspath(path)
+            self.db_url = f"sqlite:///{self.db_path.replace(os.sep, '/')}"
             self.state.set("db_path", path)
 
             try:
                 with open("config.json", "w", encoding="utf-8") as f:
-                    json.dump({"db_path": path, "db_url": f"sqlite:///{os.path.abspath(path)}"}, f, ensure_ascii=False, indent=2)
+                    db_url_path = os.path.abspath(path).replace(os.sep, "/")
+                    json.dump({"db_path": path, "db_url": f"sqlite:///{db_url_path}"}, f, ensure_ascii=False, indent=2)
             except Exception:
                 pass
 
@@ -508,7 +537,10 @@ class AdilSecmeliApp(tk.Tk):
                 pass
 
         except Exception as e:
-            messagebox.showerror("Hata", str(e))
+            messagebox.showerror(
+                "Veritabanı Bağlantı Hatası",
+                f"Seçilen veritabanına bağlanılamadı:\n\n{e}",
+            )
 
 
     # ---- BÖLÜM 4: Havuz tablosu doldurma -----
@@ -586,6 +618,8 @@ class AdilSecmeliApp(tk.Tk):
 
         def run():
             q = txt.get("1.0", tk.END).strip()
+            if not q:
+                return
             try:
                 cols, rows = self.db.run_sql(q)
                 if cols:
@@ -641,7 +675,7 @@ class AdilSecmeliApp(tk.Tk):
 
 
         except Exception as e:
-            messagebox.showerror("Hata", str(e))
+            messagebox.showerror("Yenileme Hatası", str(e))
 
 
 

@@ -10,6 +10,7 @@ from app.health.health_formatter import (
     format_report,
 )
 from app.health.models import HealthCheckResult, HealthReport
+from app.ui.tabs.system_health_page import format_report_snapshot
 
 pytestmark = pytest.mark.unit
 
@@ -71,3 +72,11 @@ def test_format_algorithm_catalog():
     assert "MEVCUT KONTROLLER / ALGORİTMALAR" in text
     assert "[ACTIVE]" in text
     assert "[PLANNED]" in text
+
+
+def test_format_report_snapshot_marks_previous_report():
+    text = format_report_snapshot(_report(), developer=False)
+    assert "ÖNCEKİ SAĞLIK KONTROLÜ" in text
+    assert "Yeni değerler 'Sağlık Raporu' sekmesinde kalır." in text
+    assert "Önceki Puan   : 98 / 100" in text
+    assert "GENEL SİSTEM SAĞLIĞI" in text

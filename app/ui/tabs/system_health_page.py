@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Sistem Sağlığı ve mimari denetim paneli (uygulama sağlık merkezi).
 
-Bu sayfa hem geriye dönük "Eski Özet" görünümünü korur hem de yeni
-sağlık merkezini (kategorili rapor + algoritma kataloğu) sunar. Sağlık
-kontrolleri ayrı bir iş parçacığında çalışır; UI donmaz.
+Bu sayfa güncel sağlık raporunu, karşılaştırma için bir önceki sağlık
+raporunu ve algoritma kataloğunu sunar. Sağlık kontrolleri ayrı bir iş
+parçacığında çalışır; UI donmaz.
 """
 
 from __future__ import annotations
@@ -16,6 +16,27 @@ from tkinter import filedialog, messagebox, ttk
 from app.core.config import load_app_config
 from app.core.permissions import UserContext
 from app.services.service_factory import get_service_factory
+
+
+def format_report_snapshot(report, *, developer: bool = False) -> str:
+    """Karşılaştırma sekmesi için bir önceki sağlık raporunu başlıkla biçimlendirir."""
+
+    from app.health.health_formatter import format_report
+
+    lines = [
+        "ÖNCEKİ SAĞLIK KONTROLÜ",
+        "=" * 50,
+        "Bu sekme, son başarılı kontrolden hemen önceki sağlık raporunu gösterir.",
+        "Yeni değerler 'Sağlık Raporu' sekmesinde kalır.",
+        "",
+        f"Önceki Mod    : {report.mode}",
+        f"Önceki Durum  : {report.overall_status}",
+        f"Önceki Puan   : {report.score:.0f} / 100",
+        f"Önceki Test   : {report.total_checks}",
+        f"Önceki Tarih  : {report.generated_at}",
+        "",
+    ]
+    return "\n".join(lines) + format_report(report, developer=developer)
 
 
 class SystemHealthPage(ttk.Frame):
@@ -31,6 +52,7 @@ class SystemHealthPage(ttk.Frame):
         self._system_service = system_service
         self._running = False
         self._last_report = None
+        self._previous_report = None
         self._result_queue: "queue.Queue" = queue.Queue()
         self._buttons: list[ttk.Button] = []
         self._build_ui()
@@ -93,6 +115,7 @@ class SystemHealthPage(ttk.Frame):
             tk.END, "Sağlık raporu için 'Tam Sağlık Kontrolü' düğmesine basın.\n"
         )
         self._populate_algorithms()
+        self._render_previous_report()
 
     def _make_text_tab(self, title: str) -> tk.Text:
         frame = ttk.Frame(self.nb)
@@ -113,36 +136,44 @@ class SystemHealthPage(ttk.Frame):
 
     # -- Başlangıç / yenileme ----------------------------------------------------
     def _initial_load(self):
-        self._refresh_legacy_summary()
+        self._render_previous_report()
         self._start("quick")
 
     def refresh(self):
-        """main.py sekme değişiminde çağırır; hafif tutulur (eski özet)."""
-        self._refresh_legacy_summary()
+        """main.py sekme değişiminde çağırır; önceki raporu korur."""
+        self._render_previous_report()
 
-    def _refresh_legacy_summary(self):
-        """Eski Sistem Sağlığı davranışı (view_model + mimari denetim)."""
-        try:
-            lines: list[str] = []
-            vm = self._service().view_model(self.user_context)
-            lines.extend(vm.lines())
-            lines.append("")
-            lines.append("Mimari denetim özeti:")
-            findings = self._service().architecture_findings().unwrap()
-            if not findings:
-                lines.append("- UI katmanında doğrudan DB erişimi bulgusu yok.")
+    def _render_previous_report(self):
+        """Karşılaştırma sekmesini bir önceki başarılı sağlık raporuyla doldurur."""
+
+        if self._previous_report is None:
+            if self._last_report is None:
+                message = (
+                    "Henüz karşılaştırılacak eski sağlık raporu yok.\n\n"
+                    "İlk sağlık kontrolü tamamlandığında yeni değerler "
+                    "'Sağlık Raporu' sekmesinde görünür. İkinci ve sonraki "
+                    "başarılı kontrollerde, bir önceki rapor otomatik olarak "
+                    "bu sekmeye taşınır."
+                )
             else:
-                for item in findings:
-                    reason = item.get("allowlist_reason") or "Aşamalı refactor bekliyor"
-                    pattern = item.get("pattern") or item.get("patterns") or "bilinmeyen"
-                    line = item.get("line")
-                    line_info = f":{line}" if line else ""
-                    lines.append(f"- {item['file']}{line_info}: {pattern} | {reason}")
-            self._set_text(self.txt_legacy, "\n".join(lines))
+                message = (
+                    "Karşılaştırılacak önceki sağlık raporu yok.\n\n"
+                    "Bir sağlık kontrolü daha çalıştırıldığında mevcut rapor "
+                    "buraya taşınacak, yeni rapor 'Sağlık Raporu' sekmesinde "
+                    "kalacaktır."
+                )
+            self._set_text(self.txt_legacy, message)
+            return
+
+        try:
+            text = format_report_snapshot(
+                self._previous_report, developer=bool(self.dev_detail.get())
+            )
+            self._set_text(self.txt_legacy, text)
         except Exception as exc:  # noqa: BLE001 - sayfa asla çökmemeli
             self._set_text(
                 self.txt_legacy,
-                f"Eski özet üretilemedi: {type(exc).__name__}: {exc}",
+                f"Önceki rapor üretilemedi: {type(exc).__name__}: {exc}",
             )
 
     def _populate_algorithms(self):
@@ -238,6 +269,8 @@ class SystemHealthPage(ttk.Frame):
         messagebox.showerror("Sistem Sağlığı", "Sağlık kontrolü sırasında hata oluştu. Lütfen daha sonra tekrar deneyin.")
 
     def _on_report(self, report):
+        if self._last_report is not None:
+            self._previous_report = self._last_report
         self._last_report = report
         self._set_running(False)
         self.status_var.set(
@@ -252,6 +285,7 @@ class SystemHealthPage(ttk.Frame):
 
     def _rerender_last(self):
         if self._last_report is None:
+            self._render_previous_report()
             return
         try:
             from app.health.health_formatter import format_report
@@ -265,6 +299,7 @@ class SystemHealthPage(ttk.Frame):
                 self.txt_report,
                 f"Rapor biçimlendirilemedi: {type(exc).__name__}: {exc}",
             )
+        self._render_previous_report()
 
     # -- Dışa aktarma ------------------------------------------------------------
     def _export(self, fmt: str):

@@ -31,6 +31,19 @@ DEFAULT_WEIGHTS = {
     "anket": 0.20,
 }
 
+_PLACEHOLDER_PROFILE_NAMES = {"", "(isimsiz)", "isimsiz", "none", "null", "---"}
+
+
+def _clean_profile_name(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.lower() in _PLACEHOLDER_PROFILE_NAMES:
+        return ""
+    return text
+
+
+def _fallback_profile_name(profile_id: int | None = None) -> str:
+    return f"AHP Profili #{profile_id}" if profile_id else "Yeni AHP Profili"
+
 
 def seed_default_profile(conn: sqlite3.Connection) -> dict[str, Any]:
     """Global varsayılan AHP profilini idempotent oluşturur."""
@@ -159,7 +172,11 @@ def create_profile(
         activate = True
         final_status = "approved"
     version = _next_profile_version(conn, scope_type, faculty_id, department_id, year, semester)
-    display_name = str(profile_name or name or "Yeni AHP Profili")
+    display_name = (
+        _clean_profile_name(profile_name)
+        or _clean_profile_name(name)
+        or _fallback_profile_name()
+    )
     now = _now()
     cur = conn.cursor()
     cur.execute(
@@ -264,6 +281,10 @@ def update_profile(conn: sqlite3.Connection, profile_id: int, **updates: Any) ->
     for key, value in updates.items():
         if key not in allowed:
             continue
+        if key in {"name", "profile_name"}:
+            value = _clean_profile_name(value)
+            if not value:
+                raise ValueError("Profil adı boş veya '(isimsiz)' olamaz.")
         column = "profile_name" if key == "name" else key
         assignments.append(f"{column}=?")
         params.append(value)
@@ -782,10 +803,15 @@ def _row_to_profile(row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
     criteria_keys = _json_load(data.get("criteria_keys_json"), DEFAULT_CRITERIA_KEYS)
     weights = _json_load(data.get("weights_json"), {})
     pairwise_matrix = _json_load(data.get("pairwise_matrix_json"), [])
-    name = data.get("profile_name") or data.get("name") or ""
+    profile_id = int(data.get("id") or 0)
+    name = (
+        _clean_profile_name(data.get("profile_name"))
+        or _clean_profile_name(data.get("name"))
+        or _fallback_profile_name(profile_id)
+    )
     profile = {
         **data,
-        "id": int(data.get("id") or 0),
+        "id": profile_id,
         "name": str(name),
         "profile_name": str(name),
         "scope_type": str(data.get("scope_type") or "global"),
@@ -885,7 +911,7 @@ def delete_profile(conn: sqlite3.Connection, profile_id: int) -> dict[str, Any]:
         raise ValueError(
             "Aktif profil silinemez. Once baska bir profili 'Aktif Yap' yapin."
         )
-    ad = row[1] or row[2] or f"#{pid}"
+    ad = _clean_profile_name(row[1]) or _clean_profile_name(row[2]) or f"#{pid}"
 
     for sql in (
         "DELETE FROM ahp_profile_approval_logs WHERE profile_id = ?",

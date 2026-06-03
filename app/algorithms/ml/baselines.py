@@ -16,7 +16,7 @@ class RandomPredictor(IPredictor):
         super().__init__(name="RandomPredictor", task_type="prediction", parameters={"random_seed": random_seed})
         self.classes = classes or []
         self.rng = np.random.default_rng(random_seed)
-        self._is_fitted = bool(self.classes)
+        self._is_fitted = False
 
     def fit(self, X: pd.DataFrame, y: pd.Series | np.ndarray | list[Any] | None = None) -> "RandomPredictor":
         if y is not None:

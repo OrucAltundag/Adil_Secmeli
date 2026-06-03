@@ -16,10 +16,12 @@ from app.services.ahp_profile_service import (
     activate_profile,
     approve_profile,
     create_profile,
+    get_profile,
     list_stale_decisions,
     resolve_active_profile,
     seed_default_profile,
     submit_for_approval,
+    update_profile,
     validate_profile,
 )
 from app.services.ahp_sensitivity_service import run_weight_sensitivity_analysis
@@ -122,6 +124,36 @@ def test_profile_lifecycle_and_policy(conn):
     assert active["status"] == "active"
     policy = resolve_policy(conn)
     assert policy["max_consistency_ratio"] == pytest.approx(0.10)
+
+
+def test_profile_name_placeholders_are_normalized(conn):
+    profile = create_profile(
+        conn,
+        profile_name="   ",
+        name="(isimsiz)",
+        source="manual",
+        status="draft",
+    )
+    assert profile["profile_name"] == "Yeni AHP Profili"
+    assert profile["name"] == "Yeni AHP Profili"
+
+    with pytest.raises(ValueError):
+        update_profile(conn, profile["id"], profile_name="(isimsiz)")
+
+
+def test_schema_cleanup_repairs_legacy_unnamed_profiles(conn):
+    profile = create_profile(conn, profile_name="Geçici", source="manual", status="draft")
+    conn.execute(
+        "UPDATE ahp_weight_profiles SET name='(isimsiz)', profile_name='(isimsiz)' WHERE id=?",
+        (int(profile["id"]),),
+    )
+    conn.commit()
+
+    ensure_ahp_governance_schema(conn)
+
+    repaired = get_profile(conn, profile["id"])
+    assert repaired["profile_name"] == f"AHP Profili #{profile['id']}"
+    assert repaired["name"] == f"AHP Profili #{profile['id']}"
 
 
 def test_decision_run_stores_ahp_snapshot_and_staleness(conn):
@@ -236,3 +268,53 @@ def test_ahp_ui_importable():
     from app.ui.tabs.ahp_weight_page import AHPWeightPage
 
     assert AHPWeightPage is not None
+    assert (
+        AHPWeightPage._profile_display_name(
+            {"id": 42, "profile_name": "(isimsiz)", "name": ""}
+        )
+        == "AHP Profili #42"
+    )
+    assert "AKTIF" in AHPWeightPage._profile_list_line(
+        {"id": 42, "profile_name": "Secim Test", "scope_type": "global", "version": 1, "status": "active", "is_active": True}
+    )
+
+
+def test_ahp_selected_profile_falls_back_to_first_list_item(monkeypatch):
+    from app.ui.tabs import ahp_weight_page
+    from app.ui.tabs.ahp_weight_page import AHPWeightPage
+
+    class DummyListbox:
+        def curselection(self):
+            return ()
+
+        def selection_clear(self, *_args):
+            pass
+
+        def selection_set(self, *_args):
+            pass
+
+        def activate(self, *_args):
+            pass
+
+        def see(self, *_args):
+            pass
+
+    class DummyVar:
+        def set(self, _value):
+            pass
+
+    tab = AHPWeightPage.__new__(AHPWeightPage)
+    tab.profile_listbox = DummyListbox()
+    tab._profile_list_ids = [7]
+    tab._selected_profile_id = None
+    tab._profile_options = {"Profil #7": 7}
+    tab._profile_cache = {7: {"id": 7, "profile_name": "Profil #7"}}
+    tab.profile_picker_var = DummyVar()
+    tab.selected_profile_var = DummyVar()
+    monkeypatch.setattr(ahp_weight_page, "get_profile", lambda _conn, pid: {"id": pid, "profile_name": "Profil #7"})
+    tab._conn = lambda: object()
+
+    profile = tab._selected_profile()
+
+    assert profile["id"] == 7
+    assert tab._selected_profile_id == 7

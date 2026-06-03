@@ -31,7 +31,7 @@ def validate_combobox_selection(
     """
     value = combobox.get() if combobox else ""
     if not value or not value.strip():
-        messagebox.showerror(
+        messagebox.showwarning(
             error_title,
             f"{field_name} seçilmelidir.",
         )
@@ -62,7 +62,7 @@ def validate_required_field(
         value = ""
     
     if not value or not value.strip():
-        messagebox.showerror(
+        messagebox.showwarning(
             error_title,
             f"{field_name} boş bırakılamaz.",
         )

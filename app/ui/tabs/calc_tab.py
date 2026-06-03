@@ -27,13 +27,7 @@ from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
 from app.ui.tabs.criteria_page import CriteriaPage
 from app.ui.tabs.pool_tab import PoolTab
 from app.ui.tabs.relations_tab import RelationsTab
-from app.ui.utils.validation import validate_combobox_selection, show_validation_error
-from app.services.yearly_workflow import (
-    is_faculty_criteria_complete,
-    get_missing_criteria,
-    get_faculty_year_status,
-    get_years_eligible_for_algorithm,
-)
+from app.ui.utils.validation import validate_combobox_selection
 
 # Kullanici mesaji (tam metin — spesifikasyon)
 _MSG_CRITERIA_BLOCK = (
@@ -235,7 +229,20 @@ class CalcTab(ttk.Frame):
 
     @staticmethod
     def _friendly_ui_error() -> str:
-        return "Sistem şu an meşgul, daha sonra tekrar deneyin."
+        return "İşlem tamamlanamadı. Detay alanındaki hata kaydını kontrol edin."
+
+    def _missing_algo_scope_message(self) -> str:
+        missing = []
+        if not self.cb_algo_fakulte or not (self.cb_algo_fakulte.get() or "").strip():
+            missing.append("Fakülte")
+        if not self.cb_algo_year or not (self.cb_algo_year.get() or "").strip():
+            missing.append("Akademik yıl")
+        if not missing:
+            return "Algoritma çalıştırmak için fakülte ve yıl seçiniz."
+        return (
+            "Algoritma çalıştırmak için önce seçimleri tamamlayınız.\n\n"
+            f"Eksik alan: {', '.join(missing)}"
+        )
 
     def _algo_scope(self) -> tuple[int, str, int]:
         """Algoritma paneli: (fakulte_id, fakulte_ad, akademik_yil)."""
@@ -305,7 +312,6 @@ class CalcTab(ttk.Frame):
         self.cb_algo_fakulte = ttk.Combobox(next_year_bar, state="readonly", width=28)
         self.cb_algo_fakulte.pack(side=tk.LEFT, padx=(0, 8))
         self.cb_algo_fakulte.bind("<<ComboboxSelected>>", self._on_algo_faculty_change)
-        self.cb_algo_fakulte.bind("<<ComboboxSelected>>", lambda e: self._update_button_state())
 
         tk.Label(
             next_year_bar,
@@ -495,7 +501,7 @@ class CalcTab(ttk.Frame):
         if not self._algo_scope_ready():
             messagebox.showwarning(
                 "Eksik Seçim",
-                "Algoritma çalıştırmak için önce fakülte ve yıl seçiniz.",
+                self._missing_algo_scope_message(),
             )
             self._sync_algo_controls()
             return
@@ -805,7 +811,7 @@ class CalcTab(ttk.Frame):
                         # Kullanıcıya messagebox ile de uyarı ver
                         messagebox.showwarning(
                             "Kriter Girisleri Eksik",
-                            self._friendly_ui_error(),
+                            hata_mesaji,
                         )
                         return
 

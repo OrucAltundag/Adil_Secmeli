@@ -70,6 +70,32 @@ def resolve_sqlite_db_path(
     return resolve_project_path(candidate, base_dir=base_dir or PROJECT_ROOT)
 
 
+def _configured_sqlite_db_path(
+    db_path: str | os.PathLike[str] | None = None,
+    *,
+    base_dir: Path | None = None,
+) -> Path:
+    resolved = resolve_sqlite_db_path(db_path, base_dir=base_dir)
+    default_path = resolve_sqlite_db_path(None, base_dir=PROJECT_ROOT)
+    if db_path and not resolved.exists() and default_path.exists():
+        return default_path
+    return resolved
+
+
+def _sqlite_path_from_url(database_url: str, *, base_dir: Path | None = None) -> Path | None:
+    try:
+        parsed = make_url(database_url)
+        db_path = parsed.database
+        if not db_path or str(db_path).strip() == ":memory:":
+            return None
+        resolved = Path(db_path)
+        if not resolved.is_absolute():
+            resolved = resolve_sqlite_db_path(resolved, base_dir=base_dir)
+        return resolved.resolve()
+    except Exception:
+        return None
+
+
 def normalize_sqlite_database_url(database_url: str, *, base_dir: Path | None = None) -> str:
     try:
         parsed = make_url(database_url)
@@ -168,7 +194,7 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
     if db_path_env:
         sqlite_db_path = resolve_sqlite_db_path(db_path_env, base_dir=base_dir)
     else:
-        sqlite_db_path = resolve_sqlite_db_path(cfg.get("db_path"), base_dir=base_dir)
+        sqlite_db_path = _configured_sqlite_db_path(cfg.get("db_path"), base_dir=base_dir)
     environment = str(os.getenv("ENVIRONMENT") or cfg.get("environment") or "development").lower()
     debug = _bool(os.getenv("DEBUG"), _bool(cfg.get("debug"), environment == "development"))
     developer_tools = _bool(
@@ -193,7 +219,15 @@ def load_app_config(config_path: str = "config.json") -> AppConfig:
         allow_runtime_schema_mutation = False
     raw_database_url = str(os.getenv("DATABASE_URL") or cfg.get("db_url") or "").strip()
     if raw_database_url:
-        database_url = normalize_sqlite_database_url(raw_database_url, base_dir=base_dir) if is_sqlite_url(raw_database_url) else raw_database_url
+        if is_sqlite_url(raw_database_url):
+            normalized_url = normalize_sqlite_database_url(raw_database_url, base_dir=base_dir)
+            normalized_path = _sqlite_path_from_url(normalized_url, base_dir=base_dir)
+            if normalized_path and not normalized_path.exists() and sqlite_db_path.exists():
+                database_url = f"sqlite:///{sqlite_db_path.as_posix()}"
+            else:
+                database_url = normalized_url
+        else:
+            database_url = raw_database_url
     else:
         database_url = f"sqlite:///{sqlite_db_path}"
     if not is_sqlite_url(database_url) and not raw_database_url:

@@ -8,6 +8,7 @@ import sqlite3
 import pytest
 
 from app.health.health_runner import HealthRunner
+from app.health.checks.base_check import BaseHealthCheck
 from app.health.models import HealthReport, HealthStatus
 
 pytestmark = pytest.mark.db
@@ -73,6 +74,34 @@ def test_audit_mode_subset(tmp_db_path):
 def test_invalid_mode_falls_back_to_full(tmp_db_path):
     report = HealthRunner(db_path=tmp_db_path).run("bilinmeyen")
     assert report.mode == "full"
+
+
+def test_full_mode_runs_checks_fresh_each_call(monkeypatch, tmp_db_path):
+    from app.health import health_runner as runner_module
+
+    calls: list[int] = []
+
+    class CountingCheck(BaseHealthCheck):
+        name = "Sayaçlı tazelik kontrolü"
+        category = "Test Paketi"
+        score_bucket = "tests"
+
+        def run(self, context):
+            calls.append(len(calls) + 1)
+            return self.ok(
+                "Kontrol yeniden çalıştı.",
+                detail=f"run={calls[-1]} mode={context.mode}",
+            )
+
+    monkeypatch.setattr(runner_module, "all_checks", lambda: [CountingCheck()])
+
+    first = HealthRunner(db_path=tmp_db_path).run("full")
+    second = HealthRunner(db_path=tmp_db_path).run("full")
+
+    assert calls == [1, 2]
+    assert first is not second
+    assert first.results[0].detail == "run=1 mode=full"
+    assert second.results[0].detail == "run=2 mode=full"
 
 
 def test_repair_mode_safe(tmp_db_path):
