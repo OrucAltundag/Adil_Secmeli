@@ -10,6 +10,7 @@ logs/
 _arsiv/
 exports/*.csv
 exports/*.xlsx
+!exports/messages_summary_2.csv
 *.log
 *.db-journal
 *.db-wal
