@@ -233,25 +233,45 @@ class RunHistoryPage(ttk.Frame):
         run_id = values[0] if values else (self.runs[0]["run_id"] if self.runs else mock_data.RUNS[0]["run_id"])
         selected_row = next((row for row in self.runs if str(row.get("run_id")) == str(run_id)), None)
         if selected_row and selected_row.get("source") == "Governed DB":
-            detail = {
-                "summary": selected_row,
-                "details": {
-                    "diagnostics": "Governed run metrik/validation/diagnostics ayrıntıları Algoritma Yönetişimi sayfasındaki alt panellerde gösterilir.",
-                    "validation": "Governed DB kaydı klasik JSON run değildir; kaynak filtresiyle birlikte tek geçmiş listesinde görünür.",
-                    "leakage": "Leakage detayı için Algoritma Yönetişimi > Benchmark Sonuçları panelini kullanın.",
-                },
-            }
-            self._load_detail_tabs(detail)
+            governed_id = selected_row.get("governed_id") or run_id
+
+            def gov_worker():
+                return self.api.get_governed_run_leakage(governed_id)
+
+            def gov_success(leakage_result):
+                detail = {
+                    "summary": selected_row,
+                    "details": {
+                        "diagnostics": "Governed run metrik/validation/diagnostics ayrıntıları Algoritma Yönetişimi sayfasındaki alt panellerde gösterilir.",
+                        "validation": "Governed DB kaydı klasik JSON run değildir; kaynak filtresiyle birlikte tek geçmiş listesinde görünür.",
+                        "leakage": _format_leakage(leakage_result.data),
+                    },
+                }
+                self._load_detail_tabs(detail)
+
+            if self.api.__class__.__name__ != "BenchmarkApiClient":
+                gov_success(gov_worker())
+            else:
+                run_async(self, gov_worker, gov_success)
             return
 
         def worker():
-            return self.api.get_run_detail(run_id)
+            detail_result = self.api.get_run_detail(run_id)
+            leakage_result = self.api.get_governed_run_leakage(run_id)
+            return {"detail": detail_result, "leakage": leakage_result}
 
         def success(result):
-            if result.used_mock:
+            detail_result = result["detail"]
+            leakage_result = result["leakage"]
+            if detail_result.used_mock:
                 self.banner.show("Run detayı API'den alınamadı; örnek JSON gösteriliyor.", level="warning")
-            self.last_detail = result.data
-            self._load_detail_tabs(result.data)
+            data = detail_result.data
+            if not isinstance(data.get("details"), dict):
+                data["details"] = {}
+            if not data["details"].get("leakage"):
+                data["details"]["leakage"] = _format_leakage(leakage_result.data)
+            self.last_detail = data
+            self._load_detail_tabs(data)
 
         if self.api.__class__.__name__ != "BenchmarkApiClient":
             success(worker())
@@ -328,6 +348,26 @@ class RunHistoryPage(ttk.Frame):
         widget.delete("1.0", tk.END)
         widget.insert("1.0", value if isinstance(value, str) else json.dumps(value, indent=2, ensure_ascii=False))
         widget.configure(state="disabled")
+
+
+def _format_leakage(leakage_data: dict) -> str:
+    if not leakage_data:
+        return "Leakage verisi bulunamadı."
+    items = leakage_data.get("data") or []
+    if not items:
+        return "Leakage kaydı yok."
+    lines = []
+    for item in items:
+        algo = item.get("algorithm_key", "?")
+        detected = item.get("leakage_detected", False)
+        blocked = item.get("blocked", False)
+        summary = item.get("summary_text", "")
+        status = "⚠️ TESPİT EDİLDİ" if detected else "✓ Temiz"
+        block_info = " [ENGELLENDİ]" if blocked else ""
+        lines.append(f"{algo}: {status}{block_info}")
+        if summary:
+            lines.append(f"  {summary}")
+    return "\n".join(lines)
 
 
 def _parse_date_range(text: str) -> tuple[datetime | None, datetime | None]:

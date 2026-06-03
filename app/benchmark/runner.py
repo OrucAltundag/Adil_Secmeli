@@ -21,6 +21,7 @@ from app.metrics.clustering import clustering_metrics
 from app.metrics.fairness import allocation_fairness_metrics
 from app.metrics.performance import PerformanceTracker
 from app.metrics.ranking import coverage, diversity, hit_at_k, map_at_k, ndcg_at_k
+from app.services.statistical_comparison_service import bootstrap_confidence_interval
 
 
 class ExperimentRunner:
@@ -120,6 +121,10 @@ class ExperimentRunner:
         y_pred = output.predictions
         y_proba = np.array(algorithm.predict_proba(X_test), dtype=float) if isinstance(algorithm, IPredictor) else None
         cls_metrics = classification_metrics(y_true=y_test.tolist(), y_pred=y_pred, y_proba=y_proba)
+        correct = [1.0 if t == p else 0.0 for t, p in zip(y_test.tolist(), y_pred)]
+        _ci = bootstrap_confidence_interval(correct)
+        if _ci.get("lower") is not None and _ci["lower"] != _ci["upper"]:
+            cls_metrics["confidence_interval"] = f"[{_ci['lower']:.4f}, {_ci['upper']:.4f}]"
         ranked_labels = []
         for rec in ranked_output.recommendations:
             items = rec.get("items", [])

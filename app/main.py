@@ -337,58 +337,78 @@ class AdilSecmeliApp(tk.Tk):
         self.nb = ttk.Notebook(container)
         self.nb.pack(fill=tk.BOTH, expand=True)
 
-        # 🔔 Notebook tab değişim event'i (hemen ayarla)
+        # 🔔 Dış notebook tab değişim event'i
         self.nb.bind("<<NotebookTabChanged>>", self.on_tab_change)
 
-        # Ürün akışı sırası: Başlangıç → Veri → Kalite → Kriter/AHP → Karar → Plan → Rapor → Lab
+        # ── GRUP 1: SİSTEM ────────────────────────────────────────────
+        _g_sistem = ttk.Frame(self.nb)
+        self.nb.add(_g_sistem, text="🖥️ Sistem")
+        self._nb_sistem = ttk.Notebook(_g_sistem)
+        self._nb_sistem.pack(fill=tk.BOTH, expand=True)
+        self._nb_sistem.bind("<<NotebookTabChanged>>",
+                             lambda e: self._on_inner_tab_change(e, "sistem"))
 
-        # 1. SEKME: Sistem Sağlığı (Başlangıç)
-        self.tab_system_health = SystemHealthPage(self.nb, app=self)
-        self.nb.add(self.tab_system_health, text="🏥 Sistem Sağlığı")
+        self.tab_system_health = SystemHealthPage(self._nb_sistem, app=self)
+        self._nb_sistem.add(self.tab_system_health, text="🏥 Sistem Sağlığı")
 
-        # 2. SEKME: Güvenlik & Üretim Hazırlığı (Başlangıç)
-        self.tab_security_readiness = SecurityReadinessPage(self.nb)
-        self.nb.add(self.tab_security_readiness, text="🔐 Güvenlik & Üretim Hazırlığı")
+        self.tab_security_readiness = SecurityReadinessPage(self._nb_sistem)
+        self._nb_sistem.add(self.tab_security_readiness, text="🔐 Güvenlik & Hazırlık")
 
-        # 3. SEKME: Veri Yönetimi (Veri hazırlığı)
-        self.tab_data_management = DataManagementPage(self.nb, app=self)
-        self.nb.add(self.tab_data_management, text="📥 Veri Yönetimi")
+        self.tab_view = ViewTab(self._nb_sistem, app=self)
+        self._nb_sistem.add(self.tab_view, text="📂 Veritabanı Görüntüle")
 
-        # 4. SEKME: Veri Kalitesi (Veri validasyonu)
-        self.tab_data_quality = DataQualityPage(self.nb, app=self, db_path=self.db_path)
-        self.nb.add(self.tab_data_quality, text="✓ Veri Kalitesi")
+        # ── GRUP 2: VERİ ──────────────────────────────────────────────
+        _g_veri = ttk.Frame(self.nb)
+        self.nb.add(_g_veri, text="📥 Veri")
+        self._nb_veri = ttk.Notebook(_g_veri)
+        self._nb_veri.pack(fill=tk.BOTH, expand=True)
 
-        # 5. SEKME: Hesaplama & Test (Kriter hazırlığı)
-        self.tab_calc = CalcTab(self.nb, app=self)
-        self.nb.add(self.tab_calc, text="🧮 Hesaplama & Test")
+        self.tab_data_management = DataManagementPage(self._nb_veri, app=self)
+        self._nb_veri.add(self.tab_data_management, text="📥 Veri Yönetimi")
 
-        # 6. SEKME: AHP Ağırlık Yönetimi (Karar ayarları)
-        self.tab_ahp_weight = AHPWeightPage(self.nb, app=self)
-        self.nb.add(self.tab_ahp_weight, text="⚖️ AHP Ağırlık Yönetimi")
+        self.tab_data_quality = DataQualityPage(self._nb_veri, app=self, db_path=self.db_path)
+        self._nb_veri.add(self.tab_data_quality, text="✓ Veri Kalitesi")
 
-        # 7. SEKME: Karar Merkezi (Ana karar hattı)
-        self.tab_decision_center = DecisionCenterPage(self.nb, app=self)
-        self.nb.add(self.tab_decision_center, text="🎯 Karar Merkezi")
+        # ── GRUP 3: KARAR SÜRECİ ──────────────────────────────────────
+        _g_karar = ttk.Frame(self.nb)
+        self.nb.add(_g_karar, text="⚙️ Karar Süreci")
+        self._nb_karar = ttk.Notebook(_g_karar)
+        self._nb_karar.pack(fill=tk.BOTH, expand=True)
+        self._nb_karar.bind("<<NotebookTabChanged>>",
+                            lambda e: self._on_inner_tab_change(e, "karar"))
 
-        # 8. SEKME: Dönem Planlama (Karar uygulaması)
-        self.tab_semester_planning = SemesterPlanningPage(self.nb, app=self)
-        self.nb.add(self.tab_semester_planning, text="📅 Dönem Planlama")
+        self.tab_calc = CalcTab(self._nb_karar, app=self)
+        self._nb_karar.add(self.tab_calc, text="🧮 Kriter & Havuz")
 
-        # 9. SEKME: Rapor & Yukleme (Çıktı üretimi)
-        self.tab_tools = ToolsTab(self.nb, app=self)
-        self.nb.add(self.tab_tools, text="📄 Rapor & Yukleme")
+        self.tab_ahp_weight = AHPWeightPage(self._nb_karar, app=self)
+        self._nb_karar.add(self.tab_ahp_weight, text="⚖️ AHP Ağırlık Yönetimi")
 
-        # 10. SEKME: Analiz & Grafik (Sonrası analiz)
-        self.tab_analysis = AnalysisTab(self.nb, app=self)
-        self.nb.add(self.tab_analysis, text="📊 Analiz & Grafik")
+        self.tab_decision_center = DecisionCenterPage(self._nb_karar, app=self)
+        self._nb_karar.add(self.tab_decision_center, text="🎯 Karar Merkezi")
 
-        # 11. SEKME: Benchmark Platformu (Lab/deneysel)
-        self.tab_benchmark = BenchmarkPanel(self.nb, app=self)
-        self.nb.add(self.tab_benchmark, text="🔬 Benchmark Platformu")
+        self.tab_semester_planning = SemesterPlanningPage(self._nb_karar, app=self)
+        self._nb_karar.add(self.tab_semester_planning, text="📅 Dönem Planlama")
 
-        # 12. SEKME: Tablo Görüntüle (Admin/debug)
-        self.tab_view = ViewTab(self.nb, app=self)
-        self.nb.add(self.tab_view, text="📂 Tablo Görüntüle")
+        # ── GRUP 4: RAPORLAMA & ANALİZ ────────────────────────────────
+        _g_rapor = ttk.Frame(self.nb)
+        self.nb.add(_g_rapor, text="📊 Raporlama & Analiz")
+        self._nb_rapor = ttk.Notebook(_g_rapor)
+        self._nb_rapor.pack(fill=tk.BOTH, expand=True)
+        self._nb_rapor.bind("<<NotebookTabChanged>>",
+                            lambda e: self._on_inner_tab_change(e, "rapor"))
+
+        self.tab_analysis = AnalysisTab(self._nb_rapor, app=self)
+        self._nb_rapor.add(self.tab_analysis, text="📊 Analiz & Grafik")
+
+        self.tab_tools = ToolsTab(self._nb_rapor, app=self)
+        self._nb_rapor.add(self.tab_tools, text="📄 Rapor & Yükleme")
+
+        # ── GRUP 5: BENCHMARK LAB ─────────────────────────────────────
+        _g_bench = ttk.Frame(self.nb)
+        self.nb.add(_g_bench, text="🔬 Benchmark Lab")
+        self.tab_benchmark = BenchmarkPanel(_g_bench, app=self)
+        self.tab_benchmark.pack(fill=tk.BOTH, expand=True)
+
         # Otomatik Bağlan
         self.auto_connect()
 
@@ -643,37 +663,31 @@ class AdilSecmeliApp(tk.Tk):
     def refresh_all(self):
         try:
             self.tab_view.refresh()
-
-            # Analiz sekmesi açıksa yenile
-            current_tab_text = self.nb.tab(self.nb.index("current"), "text")
-            if "Analiz" in current_tab_text:
-                self.tab_analysis.refresh()
-
-            if "Hesaplama" in current_tab_text:
-                self.tab_calc.refresh()
-
-            if "Rapor" in current_tab_text:
-                self.tab_tools.refresh()
-
-            if "Benchmark" in current_tab_text:
+            outer = self.nb.tab(self.nb.index("current"), "text")
+            if "Sistem" in outer:
+                inner = self._nb_sistem.tab(self._nb_sistem.index("current"), "text")
+                if "Sağlık" in inner:
+                    self.tab_system_health.refresh()
+                elif "Güvenlik" in inner:
+                    self.tab_security_readiness.refresh_data()
+            elif "Karar Süreci" in outer:
+                inner = self._nb_karar.tab(self._nb_karar.index("current"), "text")
+                if "Kriter" in inner:
+                    self.tab_calc.refresh()
+                elif "AHP" in inner:
+                    self.tab_ahp_weight.refresh()
+                elif "Karar Merkezi" in inner:
+                    self.tab_decision_center.refresh()
+                elif "Dönem" in inner:
+                    self.tab_semester_planning.refresh()
+            elif "Raporlama" in outer:
+                inner = self._nb_rapor.tab(self._nb_rapor.index("current"), "text")
+                if "Analiz" in inner:
+                    self.tab_analysis.refresh()
+                elif "Rapor" in inner:
+                    self.tab_tools.refresh()
+            elif "Benchmark" in outer:
                 self.tab_benchmark.refresh()
-
-            if "Karar Merkezi" in current_tab_text:
-                self.tab_decision_center.refresh()
-
-            if "AHP Ağırlık" in current_tab_text:
-                self.tab_ahp_weight.refresh()
-
-            if "Dönem Planlama" in current_tab_text:
-                self.tab_semester_planning.refresh()
-
-            if "Sistem Sağlığı" in current_tab_text:
-                self.tab_system_health.refresh()
-
-            if "Güvenlik" in current_tab_text:
-                self.tab_security_readiness.refresh_data()
-
-
         except Exception as e:
             messagebox.showerror("Yenileme Hatası", str(e))
 
@@ -686,32 +700,61 @@ class AdilSecmeliApp(tk.Tk):
     # =========================================================
 
     def on_tab_change(self, event):
-        """Ana sekme degistiginde ilgili sekmenin refresh() metodunu cagırır."""
-        selected_tab = event.widget.tab(event.widget.index("current"), "text")
+        """Dış sekme değiştiğinde aktif iç sekmeyi yeniler."""
+        selected = event.widget.tab(event.widget.index("current"), "text")
+        try:
+            if "Sistem" in selected:
+                inner = self._nb_sistem.tab(self._nb_sistem.index("current"), "text")
+                if "Sağlık" in inner:
+                    self.tab_system_health.refresh()
+                elif "Güvenlik" in inner:
+                    self.tab_security_readiness.refresh_data()
+            elif "Karar Süreci" in selected:
+                inner = self._nb_karar.tab(self._nb_karar.index("current"), "text")
+                if "Kriter" in inner:
+                    self.tab_calc.refresh()
+                elif "AHP" in inner:
+                    self.tab_ahp_weight.refresh()
+                elif "Karar Merkezi" in inner:
+                    self.tab_decision_center.refresh()
+                elif "Dönem" in inner:
+                    self.tab_semester_planning.refresh()
+            elif "Raporlama" in selected:
+                inner = self._nb_rapor.tab(self._nb_rapor.index("current"), "text")
+                if "Analiz" in inner:
+                    self.tab_analysis.refresh()
+                elif "Rapor" in inner:
+                    self.tab_tools.refresh()
+            elif "Benchmark" in selected:
+                self.tab_benchmark.refresh()
+        except Exception:
+            pass
 
-        if "Analiz" in selected_tab:
-            self.tab_analysis.refresh()
-
-        if "Hesaplama" in selected_tab:
-            self.tab_calc.refresh()
-
-        if "Benchmark" in selected_tab:
-            self.tab_benchmark.refresh()
-
-        if "Karar Merkezi" in selected_tab:
-            self.tab_decision_center.refresh()
-
-        if "AHP Ağırlık" in selected_tab:
-            self.tab_ahp_weight.refresh()
-
-        if "Dönem Planlama" in selected_tab:
-            self.tab_semester_planning.refresh()
-
-        if "Sistem Sağlığı" in selected_tab:
-            self.tab_system_health.refresh()
-
-        if "Güvenlik" in selected_tab:
-            self.tab_security_readiness.refresh_data()
+    def _on_inner_tab_change(self, event, group: str):
+        """İç sekme değiştiğinde ilgili sayfanın refresh() metodunu çağırır."""
+        try:
+            selected = event.widget.tab(event.widget.index("current"), "text")
+            if group == "sistem":
+                if "Sağlık" in selected:
+                    self.tab_system_health.refresh()
+                elif "Güvenlik" in selected:
+                    self.tab_security_readiness.refresh_data()
+            elif group == "karar":
+                if "Kriter" in selected:
+                    self.tab_calc.refresh()
+                elif "AHP" in selected:
+                    self.tab_ahp_weight.refresh()
+                elif "Karar Merkezi" in selected:
+                    self.tab_decision_center.refresh()
+                elif "Dönem" in selected:
+                    self.tab_semester_planning.refresh()
+            elif group == "rapor":
+                if "Analiz" in selected:
+                    self.tab_analysis.refresh()
+                elif "Rapor" in selected:
+                    self.tab_tools.refresh()
+        except Exception:
+            pass
 
 
     def ensure_pool_initialized_once(self):

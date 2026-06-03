@@ -3,6 +3,10 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from app.services.statistical_comparison_service import (
+    bootstrap_confidence_interval,
+    compare_two_models,
+)
 from app.ui.benchmark import mock_data
 from app.ui.benchmark.widgets import (
     COLORS,
@@ -156,7 +160,9 @@ class ComparisonPage(ttk.Frame):
         if group and group != "Tümü":
             rows = [row for row in rows if row.get("group") == group]
         metric = self.metric_cb.get()
-        rows = [_with_baseline_fields(row, rows, metric) for row in rows]
+        sig_map = _compute_significance_map(rows, metric)
+        ci_map = _compute_ci_map(rows, metric)
+        rows = [_with_baseline_fields(row, rows, metric, sig_map, ci_map) for row in rows]
         rows = sorted(rows, key=lambda r: float(r.get(metric) or 0), reverse=metric != "latency_ms")
         if rows:
             rows[0]["best"] = "best"
@@ -224,6 +230,7 @@ def _normalize_comparison_row(item: dict) -> dict:
         "silhouette_score": "silhouette",
         "seat_fill_rate": "fairness",
         "latency_ms": "latency_ms",
+        "confidence_interval": "confidence_interval",
     }
     for raw_key, value in item.items():
         metric_name = str(raw_key).split(".")[-1]
@@ -244,7 +251,13 @@ def _infer_group(algorithm: str) -> str:
     return "ML"
 
 
-def _with_baseline_fields(row: dict, rows: list[dict], metric: str) -> dict:
+def _with_baseline_fields(
+    row: dict,
+    rows: list[dict],
+    metric: str,
+    sig_map: dict[str, str] | None = None,
+    ci_map: dict[str, str] | None = None,
+) -> dict:
     out = dict(row)
     baseline = _baseline_value(rows, metric)
     try:
@@ -252,12 +265,12 @@ def _with_baseline_fields(row: dict, rows: list[dict], metric: str) -> dict:
     except (TypeError, ValueError):
         metric_value = None
     if baseline is not None and metric_value is not None:
-        out["baseline_diff"] = metric_value - baseline
-        out["significance"] = "Hesaplanmadı"
+        out["baseline_diff"] = round(metric_value - baseline, 4)
     else:
         out["baseline_diff"] = "—"
-        out["significance"] = "—"
-    out["confidence_interval"] = out.get("confidence_interval") or "—"
+    algorithm_key = str(out.get("algorithm", "")).lower()
+    out["significance"] = (sig_map or {}).get(algorithm_key, "—")
+    out["confidence_interval"] = (ci_map or {}).get(algorithm_key) or out.get("confidence_interval") or "—"
     return out
 
 
@@ -272,3 +285,62 @@ def _baseline_value(rows: list[dict], metric: str) -> float | None:
         except (TypeError, ValueError):
             return None
     return None
+
+
+_BASELINE_TOKENS = ("baseline", "random", "majority", "dummy")
+
+
+def _compute_significance_map(rows: list[dict], metric: str) -> dict[str, str]:
+    """Her algoritma için baseline'a karşı istatistiksel anlamlılık hesaplar."""
+    algo_values: dict[str, list[float]] = {}
+    baseline_values: list[float] = []
+    for row in rows:
+        key = str(row.get("algorithm", "")).lower()
+        try:
+            val = float(row.get(metric))
+        except (TypeError, ValueError):
+            continue
+        if any(t in key for t in _BASELINE_TOKENS):
+            baseline_values.append(val)
+        else:
+            algo_values.setdefault(key, []).append(val)
+
+    if not baseline_values:
+        return {}
+
+    result: dict[str, str] = {}
+    for key, values in algo_values.items():
+        if any(t in key for t in _BASELINE_TOKENS):
+            result[key] = "Baseline"
+            continue
+        comparison = compare_two_models(values, baseline_values)
+        p_val = comparison.get("p_value")
+        if p_val is not None:
+            sig_mark = "✓ Anlamlı" if comparison.get("significant") else "✗ Anlamsız"
+            result[key] = f"p={p_val:.3f} ({sig_mark})"
+        elif len(values) == 1 and len(baseline_values) == 1:
+            diff = values[0] - baseline_values[0]
+            result[key] = f"Δ={diff:+.4f} (tek çalıştırma)"
+        else:
+            result[key] = comparison.get("summary", "—")
+    return result
+
+
+def _compute_ci_map(rows: list[dict], metric: str) -> dict[str, str]:
+    """Her algoritma için bootstrap güven aralığı hesaplar."""
+    algo_values: dict[str, list[float]] = {}
+    for row in rows:
+        key = str(row.get("algorithm", "")).lower()
+        try:
+            val = float(row.get(metric))
+        except (TypeError, ValueError):
+            continue
+        algo_values.setdefault(key, []).append(val)
+
+    result: dict[str, str] = {}
+    for key, values in algo_values.items():
+        ci = bootstrap_confidence_interval(values)
+        lower, upper = ci.get("lower"), ci.get("upper")
+        if lower is not None and upper is not None and lower != upper:
+            result[key] = f"[{lower:.4f}, {upper:.4f}]"
+    return result
