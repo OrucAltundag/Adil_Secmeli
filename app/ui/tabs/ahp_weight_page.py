@@ -117,6 +117,108 @@ SAATY_ETIKETLER: list[str] = [
 SAATY_DEGERLER: list[float] = [1 / 9, 1 / 7, 1 / 5, 1 / 3, 1.0, 3.0, 5.0, 7.0, 9.0]
 
 
+class _NewProfileDialog(tk.Toplevel):
+    """Yeni AHP profili oluşturmak için tek pencerede tüm alanları toplayan modal dialog."""
+
+    def __init__(self, parent: tk.Widget):
+        super().__init__(parent)
+        self.title("Yeni AHP Profili Oluştur")
+        self.resizable(False, False)
+        self.result: dict | None = None
+        self._build()
+        self.update_idletasks()
+        w = self.winfo_reqwidth()
+        h = self.winfo_reqheight()
+        px = parent.winfo_rootx() + max((parent.winfo_width() - w) // 2, 0)
+        py = parent.winfo_rooty() + max((parent.winfo_height() - h) // 2, 0)
+        self.geometry(f"{w}x{h}+{px}+{py}")
+        self.transient(parent)
+        self.grab_set()
+        self._name_entry.focus_set()
+        self.wait_window(self)
+
+    def _build(self) -> None:
+        # Renkli başlık şeridi
+        hdr = tk.Frame(self, bg="#1B5E20")
+        hdr.pack(fill=tk.X)
+        tk.Label(
+            hdr,
+            text="Yeni AHP Profili Oluştur",
+            bg="#1B5E20", fg="white",
+            font=("Segoe UI", 12, "bold"),
+            pady=14, padx=18, anchor="w",
+        ).pack(fill=tk.X)
+
+        body = ttk.Frame(self, padding=18)
+        body.pack(fill=tk.BOTH, expand=True)
+        body.columnconfigure(0, weight=1)
+
+        # ─ Profil Adı ─
+        ttk.Label(body, text="Profil Adı  *", font=("Segoe UI", 9, "bold")).grid(
+            row=0, column=0, sticky="w", pady=(0, 3)
+        )
+        self._name_var = tk.StringVar()
+        self._name_entry = ttk.Entry(
+            body, textvariable=self._name_var, width=42, font=("Segoe UI", 10)
+        )
+        self._name_entry.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+
+        # ─ Notlar ─
+        ttk.Label(body, text="Notlar / Açıklama  (isteğe bağlı)", font=("Segoe UI", 9)).grid(
+            row=2, column=0, sticky="w", pady=(0, 3)
+        )
+        self._notes = tk.Text(
+            body, height=5, width=42,
+            font=("Segoe UI", 9), wrap=tk.WORD,
+            relief=tk.FLAT, bd=1,
+            highlightthickness=1, highlightbackground="#BDBDBD",
+            bg="#F9F9F9",
+        )
+        self._notes.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+
+        # ─ Kapsam + Yıl ─
+        meta = ttk.Frame(body)
+        meta.grid(row=4, column=0, sticky="ew", pady=(0, 16))
+        ttk.Label(meta, text="Kapsam:").pack(side=tk.LEFT)
+        self._scope_var = tk.StringVar(value="global")
+        ttk.Combobox(
+            meta, textvariable=self._scope_var,
+            values=["global", "faculty", "department"],
+            state="readonly", width=14,
+        ).pack(side=tk.LEFT, padx=(4, 20))
+        ttk.Label(meta, text="Yıl:").pack(side=tk.LEFT)
+        self._year_var = tk.StringVar()
+        ttk.Entry(meta, textvariable=self._year_var, width=8).pack(side=tk.LEFT, padx=4)
+
+        # ─ Butonlar ─
+        ttk.Separator(body, orient=tk.HORIZONTAL).grid(
+            row=5, column=0, sticky="ew", pady=(0, 12)
+        )
+        btn_row = ttk.Frame(body)
+        btn_row.grid(row=6, column=0, sticky="e")
+        ttk.Button(btn_row, text="İptal", command=self.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(btn_row, text="  Oluştur  ", command=self._ok).pack(side=tk.RIGHT)
+
+        self.bind("<Return>", lambda _e: self._ok())
+        self.bind("<Escape>", lambda _e: self.destroy())
+
+    def _ok(self) -> None:
+        name = self._name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Yeni Profil", "Profil adı boş olamaz.", parent=self)
+            self._name_entry.focus_set()
+            return
+        notes = self._notes.get("1.0", tk.END).strip() or "UI üzerinden oluşturuldu."
+        year_s = self._year_var.get().strip()
+        self.result = {
+            "name": name,
+            "notes": notes,
+            "scope_type": self._scope_var.get(),
+            "year": int(year_s) if year_s.isdigit() else None,
+        }
+        self.destroy()
+
+
 class AHPWeightPage(ttk.Frame):
     """
     AHP Agirlik Yonetimi sayfasi - uc sekme:
@@ -189,6 +291,7 @@ class AHPWeightPage(ttk.Frame):
             header, text="AHP Agirlik Yonetimi", style="Header.TLabel"
         ).pack(side=tk.LEFT)
         ttk.Button(header, text="Yenile", command=self.refresh).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(header, text="Tümünü Temizle", command=self.delete_all_profiles).pack(side=tk.RIGHT, padx=2)
         ttk.Button(header, text="+ Yeni Profil", command=self.create_default_profile).pack(
             side=tk.RIGHT, padx=2
         )
@@ -312,75 +415,47 @@ class AHPWeightPage(ttk.Frame):
         self.detail_matrix_text.pack(fill=tk.X, pady=(2, 0))
         mat_sb_x.pack(fill=tk.X)
 
-        # Aksiyon butonlari --- 2 sira
-        action_frame = ttk.Frame(frame, padding=(0, 6, 0, 0))
+        # ─ Aksiyon butonlari ─
+        action_frame = ttk.Frame(frame, padding=(0, 8, 0, 0))
         action_frame.pack(fill=tk.X)
 
-        row1 = ttk.Frame(action_frame)
-        row1.pack(fill=tk.X, pady=(0, 2))
+        lc = ttk.LabelFrame(action_frame, text=" Yaşam Döngüsü ", padding=(8, 4))
+        lc.pack(side=tk.LEFT, padx=(0, 10))
         for text, cmd in [
-            ("Dogrula", self.validate_selected),
-            ("Onaya Gonder", self.submit_selected),
+            ("Doğrula", self.validate_selected),
+            ("Onaya Gönder", self.submit_selected),
             ("Onayla", self.approve_selected),
             ("Reddet", self.reject_selected),
         ]:
-            ttk.Button(row1, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
+            ttk.Button(lc, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
 
-        row2 = ttk.Frame(action_frame)
-        row2.pack(fill=tk.X)
+        mgmt = ttk.LabelFrame(action_frame, text=" Yönetim ", padding=(8, 4))
+        mgmt.pack(side=tk.LEFT, padx=(0, 10))
         for text, cmd in [
             ("Aktif Yap", self.activate_selected),
-            ("Yeniden Adlandir", self.rename_selected),
+            ("Yeniden Adlandır", self.rename_selected),
             ("Klonla", self.clone_selected),
-            ("Arsivle", self.archive_selected),
+            ("Arşivle", self.archive_selected),
             ("Sil", self.delete_selected),
-            ("Matrisi Duzenle", self._edit_selected_in_tab2),
         ]:
-            ttk.Button(row2, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
+            ttk.Button(mgmt, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
+
+        ttk.Button(
+            action_frame, text="Matrisi Düzenle →",
+            command=self._edit_selected_in_tab2,
+        ).pack(side=tk.LEFT)
 
         # Durum renk aciklamasi
         legend = ttk.Frame(frame)
         legend.pack(fill=tk.X, pady=(8, 0))
-        ttk.Label(legend, text="Durum renkleri:", font=("Segoe UI", 7, "italic")).pack(
-            side=tk.LEFT, padx=(0, 4)
-        )
+        ttk.Label(legend, text="Durum:", font=("Segoe UI", 7, "italic")).pack(side=tk.LEFT, padx=(0, 4))
         for status in ("active", "approved", "pending_approval", "validated", "draft", "archived", "rejected"):
-            color = DURUM_RENK[status]
             tk.Label(
                 legend,
                 text=DURUM_ETIKET[status],
-                bg=color, padx=5, pady=1,
+                bg=DURUM_RENK[status], padx=4, pady=1,
                 font=("Segoe UI", 7), relief=tk.GROOVE, bd=1,
             ).pack(side=tk.LEFT, padx=2)
-
-        # Yasam dongusu + TOPSIS akis aciklamasi
-        akis = tk.Frame(frame, bg="#F4F8FE")
-        akis.pack(fill=tk.X, pady=(8, 0))
-        tk.Label(
-            akis,
-            text="Profil yasam dongusu ve TOPSIS'e aktarim",
-            bg="#F4F8FE", fg="#1565C0",
-            font=("Segoe UI", 8, "bold"), anchor=tk.W,
-        ).pack(fill=tk.X, padx=8, pady=(4, 1))
-        tk.Label(
-            akis,
-            text=(
-                "Adimlar:  1) Yeni Profil (ad girilir)  ->  2) Ikili Karsilastirma "
-                "sekmesinde matris doldurulur  ->  3) Dogrula  ->  4) Onaya Gonder  "
-                "->  5) Onayla  ->  6) Aktif Yap.\n"
-                "Onayla: profil 'approved' olur (gecerli ama henuz kullanilmaz).  "
-                "Reddet: profil 'rejected' olur (kullanilamaz, gerekce sorulur).  "
-                "Aktif Yap: profil 'active' olur ve ESKI aktif profil otomatik pasige duser.\n"
-                "TOPSIS baglantisi: Yalnizca AKTIF profilin agirliklari kullanilir. "
-                "Karar Merkezi -> Calistirmalar -> 'Yeni Karar Calistir' dediginizde "
-                "aktif AHP profilinin agirliklari TOPSIS'e otomatik aktarilir. "
-                "Kontrol: Karar Merkezi -> Calistirmalar sekmesindeki 'ahp' sutunu "
-                "hangi profilin kullanildigini gosterir."
-            ),
-            bg="#F4F8FE", fg="#37474F",
-            font=("Segoe UI", 7), anchor=tk.W,
-            justify=tk.LEFT, wraplength=1050,
-        ).pack(fill=tk.X, padx=8, pady=(0, 5))
 
     # ─── Tab 2: Ikili Karsilastirma ───────────────────────────────────────────
     def _build_tab2(self):
@@ -494,33 +569,6 @@ class AHPWeightPage(ttk.Frame):
             font=("Segoe UI", 7),
             foreground="#757575",
         ).pack()
-
-        # CR <= 0.10 esiginin detayli aciklamasi
-        aciklama_kutu = tk.Frame(cr_frame, bg="#FFF6DF")
-        aciklama_kutu.pack(fill=tk.X, pady=(6, 0))
-        tk.Label(
-            aciklama_kutu,
-            text="CR (Tutarlilik Orani) nedir ve neden 0.10?",
-            bg="#FFF6DF", fg="#6B4E00",
-            font=("Segoe UI", 8, "bold"), anchor=tk.W,
-        ).pack(fill=tk.X, padx=6, pady=(4, 1))
-        tk.Label(
-            aciklama_kutu,
-            text=(
-                "CR = CI / RI.  CI = (lambda_max - n) / (n - 1)  tutarsizlik indeksi, "
-                "RI ise n boyutlu rastgele matrisin beklenen indeksidir (Saaty tablosu: "
-                "n=4 icin 0.90).  Ikili karsilastirmalar mukemmel tutarli olsaydi CR=0 olurdu.\n\n"
-                "Saaty'nin kurali: %10'a kadar tutarsizlik insan yargisinda normaldir. "
-                "Bu yuzden esik CR <= 0.10 secilmistir.\n\n"
-                "CR > 0.10 ise: yargilariniz celiskili (or. A>B, B>C ama C>A). "
-                "Bu durumda hesaplanan agirliklar guvenilmezdir; karsilastirmalari "
-                "gozden gecirip duzeltmeniz gerekir. Sistem tutarsiz profili AKTIF "
-                "yapmaniza izin vermez."
-            ),
-            bg="#FFF6DF", fg="#5D4037",
-            font=("Segoe UI", 7), anchor=tk.W,
-            justify=tk.LEFT, wraplength=300,
-        ).pack(fill=tk.X, padx=6, pady=(0, 5))
 
         ttk.Button(
             right, text="Agirliklari Hesapla", command=self.calculate_current_matrix
@@ -944,11 +992,7 @@ class AHPWeightPage(ttk.Frame):
             self._show_detail_matrix(profile, keys)
 
         except Exception as exc:
-            # Sessiz cokme yerine detay panelinde goster
-            try:
-                self.detail_name.config(text=f"Hata: {exc}")
-            except Exception:
-                pass
+            messagebox.showerror("AHP", f"Profil detayı yüklenemedi: {self._format_error(exc)}")
 
     def _show_detail_matrix(self, profile: dict, keys: list):
         """Detay panelindeki salt-okunur matris widget'ini gunceller."""
@@ -1202,45 +1246,31 @@ class AHPWeightPage(ttk.Frame):
 
     # ─── Profil CRUD ─────────────────────────────────────────────────────────
     def create_default_profile(self):
-        # Profil adini kullanici elle girer
-        ad = simpledialog.askstring(
-            "Yeni AHP Profili",
-            "Profil adi (zorunlu):",
-            parent=self,
-        )
-        if ad is None:
-            return  # iptal
-        ad = ad.strip()
-        if not ad:
-            messagebox.showwarning("AHP", "Profil adi bos olamaz.")
+        dlg = _NewProfileDialog(self)
+        if dlg.result is None:
             return
-        notlar = simpledialog.askstring(
-            "Yeni AHP Profili",
-            "Aciklama / not (istege bagli):",
-            parent=self,
-        ) or "UI uzerinden olusturuldu."
+        data = dlg.result
         try:
             conn = self._conn()
             profile = create_profile(
                 conn,
-                profile_name=ad,
-                name=ad,
+                profile_name=data["name"],
+                name=data["name"],
                 criteria_keys=self._criterion_keys or None,
                 source="manual",
                 status="draft",
-                notes=notlar,
+                notes=data["notes"],
+                scope_type=data["scope_type"],
+                year=data["year"],
             )
             conn.commit()
             self.refresh()
-            # Yeni olusturulan profili otomatik sec
             self._select_profile_by_id(int(profile["id"]))
             messagebox.showinfo(
                 "AHP",
-                f"Profil olusturuldu: #{profile['id']} — '{ad}'\n\n"
-                "Sonraki adimlar:\n"
-                "1) 'Ikili Karsilastirma' sekmesinde matrisi doldurun\n"
-                "2) Dogrula -> Onaya Gonder -> Onayla\n"
-                "3) 'Aktif Yap' ile TOPSIS'in kullanacagi profil yapin",
+                f"Profil oluşturuldu: #{profile['id']} — '{data['name']}'\n\n"
+                "Sıradaki adım: 'İkili Karşılaştırma' sekmesinde matrisi doldurup\n"
+                "Kaydet ve Onayla (AKTİF Yap) butonuna basın.",
             )
         except Exception as exc:
             messagebox.showerror("AHP", self._format_error(exc))
@@ -1366,6 +1396,27 @@ class AHPWeightPage(ttk.Frame):
             lambda conn, pid: archive_profile(conn, pid, actor="ui"), "Profil arsivlendi."
         )
 
+    def delete_all_profiles(self):
+        if not messagebox.askyesno(
+            "Tüm Profilleri Sil",
+            "Tüm AHP profilleri kalıcı olarak silinecek.\n"
+            "Bu işlem geri alınamaz. Emin misiniz?",
+        ):
+            return
+        try:
+            conn = self._conn()
+            profiles = list_ahp_profiles(conn)
+            for p in profiles:
+                try:
+                    delete_profile(conn, int(p["id"]))
+                except Exception:
+                    pass
+            conn.commit()
+            self.refresh()
+            messagebox.showinfo("AHP", "Tüm profiller silindi.")
+        except Exception as exc:
+            messagebox.showerror("AHP", self._format_error(exc))
+
     # ─── Yardimci ────────────────────────────────────────────────────────────
     def _profile_action(self, action, message: str):
         profile = self._selected_profile()
@@ -1386,7 +1437,13 @@ class AHPWeightPage(ttk.Frame):
         if not selected:
             return None
         profile_id = self._profile_rows.get(selected[0])
-        return get_profile(self._conn(), int(profile_id)) if profile_id else None
+        if not profile_id:
+            return None
+        try:
+            return get_profile(self._conn(), int(profile_id))
+        except Exception as exc:
+            messagebox.showerror("AHP", f"Profil yüklenemedi: {self._format_error(exc)}")
+            return None
 
     def _get_matrix_values(self) -> list[list[float]]:
         """Entry widget'lardan NxN matris degerlerini okur."""
