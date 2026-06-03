@@ -47,6 +47,10 @@ class FakeRunHistoryApi:
             },
         )
 
+    def get_governed_run_leakage(self, run_id):
+        # Return empty leakage payload for tests (no leaks detected)
+        return ApiResult(ok=True, used_mock=False, data={"data": []})
+
 
 def _root_or_skip():
     try:

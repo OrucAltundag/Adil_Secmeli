@@ -240,6 +240,8 @@ class AHPWeightPage(ttk.Frame):
         self._profile_list_ids: list[int] = []
         self._profile_options: dict[str, int] = {}
         self._profile_cache: dict[int, dict] = {}
+        # Treeview item-id -> profile_id (gerçek Treeview üzerinde seçim için)
+        self._profile_rows: dict[str, int] = {}
         self._selected_profile_id: int | None = None
         self._criterion_keys: list[str] = []
         self._matrix_entries: list[list] = []   # StringVar (off-diag) | None (diag)
@@ -247,6 +249,8 @@ class AHPWeightPage(ttk.Frame):
         self._current_cr: float | None = None
         # Tab2'de duzenlenen profilin id'si (Tab1 secimi degisse de korunur)
         self._editing_profile_id: int | None = None
+        # Seçim olmadan tıklanırsa uyarı veren aksiyon butonları (enable/disable için)
+        self._selection_required_buttons: list[ttk.Button] = []
         self._build_ui()
 
     _TR_ASCII = {
@@ -356,72 +360,102 @@ class AHPWeightPage(ttk.Frame):
         paned = ttk.PanedWindow(frame, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        # Sol: tablo yerine acik secim paneli
-        left = ttk.LabelFrame(paned, text="  Profil Secimi  ", padding=8)
+        # Sol: Profil seçim paneli (Treeview tabanlı, tek seçim mekanizması)
+        left = ttk.LabelFrame(paned, text="  Profil Listesi  ", padding=8)
         paned.add(left, weight=2)
 
-        self.selected_profile_var = tk.StringVar(value="Secili profil yok")
-        tk.Label(
+        # Üst: kalıcı "seçili profil" rozeti — kullanıcı her zaman hangi profilin
+        # aktif olduğunu görür. Seçim yokken belirgin uyarı renkleri kullanılır.
+        self.selected_profile_var = tk.StringVar(value="◇  Henüz profil seçilmedi")
+        self._selection_banner = tk.Label(
             left,
             textvariable=self.selected_profile_var,
-            bg="#E8F5E9",
-            fg="#1B5E20",
-            font=("Segoe UI", 9, "bold"),
+            bg="#FFF3E0",
+            fg="#E65100",
+            font=("Segoe UI", 10, "bold"),
             anchor=tk.W,
-            padx=8,
-            pady=6,
+            padx=10,
+            pady=8,
             relief=tk.GROOVE,
             bd=1,
-        ).pack(fill=tk.X, pady=(0, 8))
-
-        picker = ttk.Frame(left)
-        picker.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(picker, text="Profil:").pack(side=tk.LEFT)
-        self.profile_picker_var = tk.StringVar()
-        self.profile_picker = ttk.Combobox(
-            picker,
-            textvariable=self.profile_picker_var,
-            state="readonly",
-            width=46,
         )
-        self.profile_picker.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        self.profile_picker.bind("<<ComboboxSelected>>", self._select_profile_from_picker)
-        ttk.Button(picker, text="Profili Sec", command=self._select_profile_from_picker).pack(side=tk.LEFT)
+        self._selection_banner.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(
             left,
-            text="Tek tikla profil secin. Cift tik: matrisi duzenle.",
+            text="Tek tık: profili seç  •  Çift tık: matrisi düzenle  •  Kolon başlığına tıkla: sırala",
             foreground="#455A64",
             font=("Segoe UI", 8),
         ).pack(anchor=tk.W, pady=(0, 4))
 
+        # Treeview: gerçek tablo — .selection() API'si ile profil seçimi
         list_frame = ttk.Frame(left)
         list_frame.pack(fill=tk.BOTH, expand=True)
-        self.profile_listbox = tk.Listbox(
+
+        columns = ("id", "ad", "kapsam", "versiyon", "durum", "cr", "aktif")
+        self.profile_tree = ttk.Treeview(
             list_frame,
-            activestyle="dotbox",
-            exportselection=False,
-            font=("Segoe UI", 9),
-            height=18,
-            selectmode=tk.SINGLE,
+            columns=columns,
+            show="headings",
+            selectmode="browse",  # tek satır seçilebilir
+            height=16,
         )
-        # Backwards-compatibility alias: some code/tests reference `profile_tree`.
-        # Map it to the listbox so selection APIs remain available.
-        self.profile_tree = self.profile_listbox
-        list_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.profile_listbox.yview)
-        self.profile_listbox.configure(yscrollcommand=list_scroll.set)
-        self.profile_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.profile_listbox.bind("<<ListboxSelect>>", self._on_profile_list_select)
-        self.profile_listbox.bind(
+        column_specs = [
+            ("id",       "#",       40,  tk.CENTER),
+            ("ad",       "Profil Adı", 200, tk.W),
+            ("kapsam",   "Kapsam",  90,  tk.CENTER),
+            ("versiyon", "v",       40,  tk.CENTER),
+            ("durum",    "Durum",   130, tk.W),
+            ("cr",       "CR",      60,  tk.CENTER),
+            ("aktif",    "Aktif",   50,  tk.CENTER),
+        ]
+        for col, text, width, anchor in column_specs:
+            self.profile_tree.heading(
+                col, text=text,
+                command=lambda c=col: self._sort_profile_tree(c),
+            )
+            self.profile_tree.column(col, width=width, anchor=anchor, stretch=(col == "ad"))
+        # Durum tag'leri (satır arka plan rengi)
+        for status, color in DURUM_RENK.items():
+            self.profile_tree.tag_configure(status, background=color)
+        # Seçili satır vurgusu (üst katman)
+        self.profile_tree.tag_configure(
+            "_selected", background="#1565C0", foreground="white",
+        )
+
+        tree_scroll = ttk.Scrollbar(
+            list_frame, orient=tk.VERTICAL, command=self.profile_tree.yview,
+        )
+        self.profile_tree.configure(yscrollcommand=tree_scroll.set)
+        self.profile_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.profile_tree.bind("<<TreeviewSelect>>", self._on_profile_list_select)
+        self.profile_tree.bind(
             "<Double-Button-1>",
             lambda _e: (self._on_profile_list_select(), self._edit_selected_in_tab2()),
         )
+        # Sıralama durumu (kolon -> ascending bool)
+        self._sort_state: dict[str, bool] = {}
+
+        # Geriye dönük uyumluluk: bazı eski testler `profile_listbox` ve
+        # `profile_picker_var` özniteliklerini bekliyor. Burada None/hidden
+        # olarak tutuyoruz; `_selected_profile()` her ikisini de güvenle ele alır.
+        self.profile_listbox = None
+        self.profile_picker_var = tk.StringVar()
 
         quick_actions = ttk.Frame(left)
         quick_actions.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(quick_actions, text="Aktif Yap", command=self.activate_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(quick_actions, text="Matrisi Duzenle", command=self._edit_selected_in_tab2).pack(side=tk.LEFT, padx=2)
+        btn_activate = ttk.Button(
+            quick_actions, text="Aktif Yap", command=self.activate_selected,
+        )
+        btn_activate.pack(side=tk.LEFT, padx=2)
+        btn_edit_quick = ttk.Button(
+            quick_actions, text="Matrisi Düzenle →",
+            command=self._edit_selected_in_tab2,
+        )
+        btn_edit_quick.pack(side=tk.LEFT, padx=2)
+        self._selection_required_buttons.extend([btn_activate, btn_edit_quick])
 
         # Sag: Detay paneli
         right = ttk.LabelFrame(paned, text="  Profil Detayi  ", padding=8)
@@ -479,7 +513,9 @@ class AHPWeightPage(ttk.Frame):
             ("Onayla", self.approve_selected),
             ("Reddet", self.reject_selected),
         ]:
-            ttk.Button(lc, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
+            btn = ttk.Button(lc, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2)
+            self._selection_required_buttons.append(btn)
 
         mgmt = ttk.LabelFrame(action_frame, text=" Yönetim ", padding=(8, 4))
         mgmt.pack(side=tk.LEFT, padx=(0, 10))
@@ -490,12 +526,19 @@ class AHPWeightPage(ttk.Frame):
             ("Arşivle", self.archive_selected),
             ("Sil", self.delete_selected),
         ]:
-            ttk.Button(mgmt, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
+            btn = ttk.Button(mgmt, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2)
+            self._selection_required_buttons.append(btn)
 
-        ttk.Button(
+        btn_edit_main = ttk.Button(
             action_frame, text="Matrisi Düzenle →",
             command=self._edit_selected_in_tab2,
-        ).pack(side=tk.LEFT)
+        )
+        btn_edit_main.pack(side=tk.LEFT)
+        self._selection_required_buttons.append(btn_edit_main)
+
+        # Başlangıçta hiçbir şey seçili değil -> aksiyonlar kapalı
+        self._apply_selection_state(False)
 
         # Durum renk aciklamasi
         legend = ttk.Frame(frame)
@@ -694,7 +737,15 @@ class AHPWeightPage(ttk.Frame):
             self._profile_list_ids.clear()
             self._profile_options.clear()
             self._profile_cache.clear()
-            self.profile_listbox.delete(0, tk.END)
+            self._profile_rows.clear()
+            # Treeview'ı temizle (varsa)
+            tree = getattr(self, "profile_tree", None)
+            if isinstance(tree, ttk.Treeview):
+                for iid in tree.get_children():
+                    tree.delete(iid)
+            # Eski listbox uyumluluğu (testler/eski kod için)
+            if isinstance(getattr(self, "profile_listbox", None), tk.Listbox):
+                self.profile_listbox.delete(0, tk.END)
 
             active_profile = None
             for profile in profiles:
@@ -710,17 +761,37 @@ class AHPWeightPage(ttk.Frame):
                 option_label = self._profile_option_label(profile)
                 self._profile_options[option_label] = profile_id
                 self._profile_list_ids.append(profile_id)
-                self.profile_listbox.insert(tk.END, self._profile_list_line(profile))
-                row_index = self.profile_listbox.size() - 1
-                try:
-                    self.profile_listbox.itemconfig(
-                        row_index,
-                        background=DURUM_RENK.get(status, "#FFFFFF"),
-                    )
-                except Exception:
-                    pass
 
-            self.profile_picker["values"] = list(self._profile_options.keys())
+                # Treeview satırı
+                if isinstance(tree, ttk.Treeview):
+                    name = self._profile_display_name(profile)
+                    scope = str(profile.get("scope_type") or "global")
+                    version = str(profile.get("version") or "1")
+                    durum_lbl = DURUM_ETIKET.get(status, status)
+                    cr_val = profile.get("consistency_ratio")
+                    cr_text = f"{float(cr_val):.3f}" if cr_val is not None else "—"
+                    aktif_text = "✓" if is_active else ""
+                    iid = tree.insert(
+                        "", tk.END,
+                        values=(
+                            profile_id, name, scope, version,
+                            durum_lbl, cr_text, aktif_text,
+                        ),
+                        tags=(status,),
+                    )
+                    self._profile_rows[iid] = profile_id
+
+                # Eski listbox (varsa) doldur
+                if isinstance(getattr(self, "profile_listbox", None), tk.Listbox):
+                    self.profile_listbox.insert(tk.END, self._profile_list_line(profile))
+                    row_index = self.profile_listbox.size() - 1
+                    try:
+                        self.profile_listbox.itemconfig(
+                            row_index,
+                            background=DURUM_RENK.get(status, "#FFFFFF"),
+                        )
+                    except Exception:
+                        pass
 
             if active_profile:
                 cr = active_profile.get("consistency_ratio")
@@ -750,7 +821,13 @@ class AHPWeightPage(ttk.Frame):
                 self._on_profile_select()
             else:
                 self._selected_profile_id = None
-                self.selected_profile_var.set("Secili profil yok")
+                self.selected_profile_var.set("◇  Henüz profil seçilmedi")
+                if hasattr(self, "_selection_banner"):
+                    try:
+                        self._selection_banner.config(bg="#FFF3E0", fg="#E65100")
+                    except Exception:
+                        pass
+                self._apply_selection_state(False)
         except Exception as exc:
             messagebox.showerror("AHP Agirlik Yonetimi", self._format_error(exc))
 
@@ -977,17 +1054,32 @@ class AHPWeightPage(ttk.Frame):
 
     # ─── Profil Secim Olayi ──────────────────────────────────────────────────
     def _on_profile_list_select(self, _event=None):
-        selected = self.profile_listbox.curselection()
-        if not selected:
-            return
-        index = int(selected[0])
-        if index >= len(self._profile_list_ids):
-            return
-        self._set_selected_profile_id(self._profile_list_ids[index])
-        self._on_profile_select()
+        """Treeview ya da (eski) Listbox'tan tetiklenir; ortak seçim akışı."""
+        # 1) Treeview tarafı (gerçek `.selection()` API'si)
+        tree = getattr(self, "profile_tree", None)
+        if isinstance(tree, ttk.Treeview):
+            sel = tree.selection()
+            if sel:
+                pid = self._profile_rows.get(sel[0])
+                if pid:
+                    self._set_selected_profile_id(int(pid))
+                    self._on_profile_select()
+                    return
+        # 2) Eski Listbox tarafı (geriye dönük)
+        listbox = getattr(self, "profile_listbox", None)
+        if isinstance(listbox, tk.Listbox):
+            sel = listbox.curselection()
+            if not sel:
+                return
+            index = int(sel[0])
+            if index >= len(self._profile_list_ids):
+                return
+            self._set_selected_profile_id(self._profile_list_ids[index])
+            self._on_profile_select()
 
     def _select_profile_from_picker(self, _event=None):
-        label = self.profile_picker_var.get()
+        """Eski combobox seçicisi kaldırıldı; geriye dönük uyumluluk için tutuluyor."""
+        label = self.profile_picker_var.get() if hasattr(self, "profile_picker_var") else ""
         profile_id = self._profile_options.get(label)
         if not profile_id:
             return
@@ -996,21 +1088,64 @@ class AHPWeightPage(ttk.Frame):
 
     def _set_selected_profile_id(self, profile_id: int):
         self._selected_profile_id = int(profile_id)
-        if int(profile_id) in self._profile_list_ids:
+        # Treeview'da ilgili satırı seç + odakla + görünür yap
+        tree = getattr(self, "profile_tree", None)
+        if isinstance(tree, ttk.Treeview):
+            target_iid = None
+            for iid, pid in self._profile_rows.items():
+                if int(pid) == int(profile_id):
+                    target_iid = iid
+                    break
+            if target_iid is not None:
+                try:
+                    tree.selection_set(target_iid)
+                    tree.focus(target_iid)
+                    tree.see(target_iid)
+                except Exception:
+                    pass
+        # Eski listbox (varsa) eş zamanlı senkron tut
+        listbox = getattr(self, "profile_listbox", None)
+        if isinstance(listbox, tk.Listbox) and int(profile_id) in self._profile_list_ids:
             index = self._profile_list_ids.index(int(profile_id))
-            self.profile_listbox.selection_clear(0, tk.END)
-            self.profile_listbox.selection_set(index)
-            self.profile_listbox.activate(index)
-            self.profile_listbox.see(index)
-        for label, pid in self._profile_options.items():
-            if int(pid) == int(profile_id):
-                self.profile_picker_var.set(label)
-                break
+            try:
+                listbox.selection_clear(0, tk.END)
+                listbox.selection_set(index)
+                listbox.activate(index)
+                listbox.see(index)
+            except Exception:
+                pass
+        # Eski picker (varsa) eş zamanlı senkron tut
+        if hasattr(self, "profile_picker_var"):
+            for label, pid in self._profile_options.items():
+                if int(pid) == int(profile_id):
+                    try:
+                        self.profile_picker_var.set(label)
+                    except Exception:
+                        pass
+                    break
+        # Banner güncelle
         profile = self._profile_cache.get(int(profile_id))
-        if profile:
-            self.selected_profile_var.set(
-                f"SECILI: #{profile_id} - {self._profile_display_name(profile)}"
+        if profile and hasattr(self, "selected_profile_var"):
+            durum = DURUM_ETIKET.get(
+                str(profile.get("status") or "draft"),
+                str(profile.get("status") or "draft"),
             )
+            aktif = " ★ AKTİF" if profile.get("is_active") else ""
+            try:
+                self.selected_profile_var.set(
+                    f"●  Seçili Profil: #{profile_id} — "
+                    f"{self._profile_display_name(profile)}   |   {durum}{aktif}"
+                )
+            except Exception:
+                pass
+        # Banner rengini "seçili" durumuna çek
+        if hasattr(self, "_selection_banner"):
+            try:
+                self._selection_banner.config(bg="#E8F5E9", fg="#1B5E20")
+            except Exception:
+                pass
+        # Aksiyon butonlarını aç
+        self._apply_selection_state(True)
         self._update_selection_marks()
 
     def _update_selection_marks(self):
@@ -1517,36 +1652,96 @@ class AHPWeightPage(ttk.Frame):
             messagebox.showerror("AHP", self._format_error(exc))
 
     def _selected_profile(self):
-        # Prefer tree selection (newer UI) but fall back to listbox for compatibility.
-        tree = getattr(self, "profile_tree", None)
-        if tree is not None:
-            try:
-                selected = tree.selection()
-                if selected:
-                    profile_id = self._profile_rows.get(selected[0])
-                    if profile_id:
-                        return get_profile(self._conn(), int(profile_id))
-            except Exception as exc:
-                messagebox.showerror("AHP", f"Profil yüklenemedi: {self._format_error(exc)}")
-                return None
+        """Güncel seçili profili döndürür.
 
-        # Fallback to older listbox-based selection for backward compatibility
-        listbox = getattr(self, "profile_listbox", None)
-        selected = listbox.curselection() if listbox is not None else ()
-        if selected:
-            index = int(selected[0])
-            if index < len(self._profile_list_ids):
-                self._selected_profile_id = int(self._profile_list_ids[index])
+        Kademeli kaynak sırası — hiçbir aşamada exception fırlatmaz:
+        1) `ttk.Treeview` seçimi (yeni UI — `_profile_rows` üzerinden)
+        2) `tk.Listbox.curselection()` (eski UI / legacy test mock'ları)
+        3) En son bilinen `_selected_profile_id`
+        4) Listede ilk profil (otomatik düşüş)
+        """
+        # 1) Treeview seçimi — yalnızca gerçek bir Treeview ise dene
+        tree = getattr(self, "profile_tree", None)
+        if isinstance(tree, ttk.Treeview):
+            try:
+                sel = tree.selection()
+            except Exception:
+                sel = ()
+            if sel:
+                pid = self._profile_rows.get(sel[0])
+                if pid:
+                    self._selected_profile_id = int(pid)
+
+        # 2) Listbox seçimi (eski API — varsa)
+        if not self._selected_profile_id:
+            listbox = getattr(self, "profile_listbox", None)
+            if isinstance(listbox, tk.Listbox) or (
+                listbox is not None and hasattr(listbox, "curselection")
+            ):
+                try:
+                    sel = listbox.curselection()
+                except Exception:
+                    sel = ()
+                if sel:
+                    index = int(sel[0])
+                    if index < len(self._profile_list_ids):
+                        self._selected_profile_id = int(self._profile_list_ids[index])
+
+        # 3 + 4) Hiçbir seçim yoksa listedeki ilk profili otomatik seç
         if not self._selected_profile_id:
             if self._profile_list_ids:
                 self._set_selected_profile_id(self._profile_list_ids[0])
             else:
                 return None
-        profile = get_profile(self._conn(), int(self._selected_profile_id))
+
+        try:
+            profile = get_profile(self._conn(), int(self._selected_profile_id))
+        except Exception as exc:
+            messagebox.showerror(
+                "AHP", f"Profil yüklenemedi: {self._format_error(exc)}",
+            )
+            return None
+
         if not profile:
             self._selected_profile_id = None
             self._update_selection_marks()
         return profile
+
+    def _apply_selection_state(self, has_selection: bool) -> None:
+        """Aksiyon butonlarını seçim durumuna göre etkinleştir/devre dışı bırak."""
+        state = ("!disabled",) if has_selection else ("disabled",)
+        for btn in getattr(self, "_selection_required_buttons", []):
+            try:
+                btn.state(state)
+            except Exception:
+                pass
+
+    def _sort_profile_tree(self, column: str) -> None:
+        """Treeview kolon başlığına tıklayınca o kolona göre sırala."""
+        tree = getattr(self, "profile_tree", None)
+        if not isinstance(tree, ttk.Treeview):
+            return
+        ascending = not self._sort_state.get(column, False)
+        self._sort_state[column] = ascending
+
+        def keyfn(iid: str):
+            v = tree.set(iid, column)
+            if column in ("id", "versiyon"):
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return 0
+            if column == "cr":
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return 999.0
+            return str(v).lower()
+
+        items = list(tree.get_children(""))
+        items.sort(key=keyfn, reverse=not ascending)
+        for idx, iid in enumerate(items):
+            tree.move(iid, "", idx)
 
     def _get_matrix_values(self) -> list[list[float]]:
         """Entry widget'lardan NxN matris degerlerini okur."""
