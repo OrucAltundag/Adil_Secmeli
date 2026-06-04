@@ -917,8 +917,9 @@ class AHPWeightPage(ttk.Frame):
                     target_id = int(active_profile["id"])
                 else:
                     target_id = self._profile_list_ids[0]
+                # _select_profile_by_id zaten _on_profile_select() cagiriyor;
+                # burada TEKRAR cagirmiyoruz (gereksiz cift render).
                 self._select_profile_by_id(target_id)
-                self._on_profile_select()
             else:
                 self._selected_profile_id = None
                 self.selected_profile_var.set("◇  Henüz profil seçilmedi")
@@ -1154,7 +1155,14 @@ class AHPWeightPage(ttk.Frame):
 
     # ─── Profil Secim Olayi ──────────────────────────────────────────────────
     def _on_profile_list_select(self, _event=None):
-        """Treeview ya da (eski) Listbox'tan tetiklenir; ortak seçim akışı."""
+        """Treeview ya da (eski) Listbox'tan tetiklenir; ortak seçim akışı.
+
+        Bu metod Treeview'in KENDI <<TreeviewSelect>> olayindan cagrilir; satir
+        zaten secili oldugundan `sync_tree=False` ile cagiriyoruz. Aksi halde
+        `_set_selected_profile_id` tekrar `selection_set` cagirir, bu da yeni bir
+        <<TreeviewSelect>> uretip sonsuz olay dongusune (UI "Yanit Vermiyor")
+        yol acar.
+        """
         # 1) Treeview tarafı (gerçek `.selection()` API'si)
         tree = getattr(self, "profile_tree", None)
         if isinstance(tree, ttk.Treeview):
@@ -1162,7 +1170,7 @@ class AHPWeightPage(ttk.Frame):
             if sel:
                 pid = self._profile_rows.get(sel[0])
                 if pid:
-                    self._set_selected_profile_id(int(pid))
+                    self._set_selected_profile_id(int(pid), sync_tree=False)
                     self._on_profile_select()
                     return
         # 2) Eski Listbox tarafı (geriye dönük)
@@ -1174,7 +1182,7 @@ class AHPWeightPage(ttk.Frame):
             index = int(sel[0])
             if index >= len(self._profile_list_ids):
                 return
-            self._set_selected_profile_id(self._profile_list_ids[index])
+            self._set_selected_profile_id(self._profile_list_ids[index], sync_tree=False)
             self._on_profile_select()
 
     def _select_profile_from_picker(self, _event=None):
@@ -1186,34 +1194,44 @@ class AHPWeightPage(ttk.Frame):
         self._set_selected_profile_id(profile_id)
         self._on_profile_select()
 
-    def _set_selected_profile_id(self, profile_id: int):
+    def _set_selected_profile_id(self, profile_id: int, *, sync_tree: bool = True):
+        """Secili profil id'sini kaydet + bagli UI'yi (rozet, butonlar) guncelle.
+
+        `sync_tree=True` (varsayilan): programatik secimdir; Treeview satirini da
+        `selection_set` ile sec. `sync_tree=False`: cagri zaten bir
+        <<TreeviewSelect>> olayindan geliyordur, satir SECILI; tekrar
+        `selection_set` cagirmak yeni olay uretip SONSUZ DONGU olusturur, bu
+        yuzden agac/list-box secimine DOKUNMA.
+        """
         self._selected_profile_id = int(profile_id)
-        # Treeview'da ilgili satırı seç + odakla + görünür yap
-        tree = getattr(self, "profile_tree", None)
-        if isinstance(tree, ttk.Treeview):
-            target_iid = None
-            for iid, pid in self._profile_rows.items():
-                if int(pid) == int(profile_id):
-                    target_iid = iid
-                    break
-            if target_iid is not None:
+        # Treeview/Listbox satir secimi yalnizca programatik cagrida yapilir.
+        if sync_tree:
+            # Treeview'da ilgili satırı seç + odakla + görünür yap
+            tree = getattr(self, "profile_tree", None)
+            if isinstance(tree, ttk.Treeview):
+                target_iid = None
+                for iid, pid in self._profile_rows.items():
+                    if int(pid) == int(profile_id):
+                        target_iid = iid
+                        break
+                if target_iid is not None:
+                    try:
+                        tree.selection_set(target_iid)
+                        tree.focus(target_iid)
+                        tree.see(target_iid)
+                    except Exception:
+                        pass
+            # Eski listbox (varsa) eş zamanlı senkron tut
+            listbox = getattr(self, "profile_listbox", None)
+            if isinstance(listbox, tk.Listbox) and int(profile_id) in self._profile_list_ids:
+                index = self._profile_list_ids.index(int(profile_id))
                 try:
-                    tree.selection_set(target_iid)
-                    tree.focus(target_iid)
-                    tree.see(target_iid)
+                    listbox.selection_clear(0, tk.END)
+                    listbox.selection_set(index)
+                    listbox.activate(index)
+                    listbox.see(index)
                 except Exception:
                     pass
-        # Eski listbox (varsa) eş zamanlı senkron tut
-        listbox = getattr(self, "profile_listbox", None)
-        if isinstance(listbox, tk.Listbox) and int(profile_id) in self._profile_list_ids:
-            index = self._profile_list_ids.index(int(profile_id))
-            try:
-                listbox.selection_clear(0, tk.END)
-                listbox.selection_set(index)
-                listbox.activate(index)
-                listbox.see(index)
-            except Exception:
-                pass
         # Eski picker (varsa) eş zamanlı senkron tut
         if hasattr(self, "profile_picker_var"):
             for label, pid in self._profile_options.items():
