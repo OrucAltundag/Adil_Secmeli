@@ -35,6 +35,11 @@ class Database:
     def __init__(self, db_path: Optional[str] = None):
         self._engine = None
         self._connected = False
+        # Uzun omurlu (long-lived) tek UI baglantisi. `.conn` her erisimde
+        # havuzdan YENI baglanti cekerse (eski davranis) QueuePool (size 5 +
+        # overflow 10) ~15 erisimde tukenir ve sonraki erisim 30sn bloklanir
+        # -> "Yanit Vermiyor". Tek baglantiyi cache'leyerek bunu onluyoruz.
+        self._raw_conn = None
         if db_path:
             self.connect(db_path)
 
@@ -66,29 +71,64 @@ class Database:
     def connect(self, db_path: str | None = None) -> None:
         """Veritabanı engine'ini hazırlar."""
         self._apply_runtime_target(db_path)
+        # Hedef (re)baglanti degisti -> eski cache'lenmis baglantiyi birak.
+        self._discard_cached_conn()
         self._engine = get_engine()
         self._connected = True
 
+    def _discard_cached_conn(self) -> None:
+        """Cache'lenmis UI baglantisini havuza geri ver / kapat."""
+        existing = self._raw_conn
+        self._raw_conn = None
+        if existing is not None:
+            try:
+                existing.close()
+            except Exception:
+                pass
+
     @property
     def conn(self):
-        """Legacy uyumluluk: raw DBAPI connection döndürür.
-        Dikkat: Çağıran kod close() yapmakla yükümlüdür.
+        """Legacy uyumluluk: uzun omurlu (long-lived) tek DBAPI baglantisi.
 
-        SQLite altyapısı için, `conn.row_factory = sqlite3.Row` ataması
-        SQLAlchemy proxy'sine (_ConnectionFairy) yapıldığında alttaki
-        DBAPI bağlantısına ulaşmaz; cursor hâlâ tuple döndürür. Bu
-        sebeple proxy'i döndürmeden önce `row_factory`'yi driver
-        bağlantısına da yazıyoruz; aksi halde `data.get("id")` None
-        dönüp profil id=0 oluyor ve UI satırları sessizce eliyor.
+        Eski Tkinter kodu `.conn`'u tek bir kalici sqlite3 baglantisi gibi
+        kullaniyor: tekrar tekrar erisir, ayni baglanti uzerinde commit()
+        yapar ve genelde close() etmez. SQLAlchemy gecisinde `.conn` her
+        erisimde havuzdan YENI bir `raw_connection()` donduruyordu; bu hem
+        commit()'i farkli baglantiya yaziyor hem de havuzu (size 5 +
+        overflow 10) ~15 erisimde tuketip 30sn'lik kilitlenmeye
+        ("Yanit Vermiyor") yol aciyordu. Cozum: tek baglantiyi cache'le.
+
+        Ayrica `conn.row_factory = sqlite3.Row` proxy'ye (_ConnectionFairy)
+        yazildiginda alttaki DBAPI baglantisina ulasmaz; bu yuzden
+        row_factory'yi driver baglantisina da yaziyoruz (aksi halde
+        `data.get("id")` None donup profil id=0 oluyor ve satirlar eleniyor).
         """
         self.ensure()
+        existing = self._raw_conn
+        if existing is not None:
+            try:
+                # Ucuz canlilik kontrolu: kapali/bozuksa hata firlatir.
+                existing.cursor().close()
+                return existing
+            except Exception:
+                self._discard_cached_conn()
         proxy = self._engine.raw_connection()
         driver_conn = getattr(proxy, "driver_connection", None) or getattr(
             proxy, "connection", None
         )
         if isinstance(driver_conn, sqlite3.Connection):
             driver_conn.row_factory = sqlite3.Row
+        self._raw_conn = proxy
         return proxy
+
+    @conn.setter
+    def conn(self, value):
+        """`self.db.conn = None` ile baglantiyi serbest birakma destegi
+        (tools_tab harici servis islemlerinden once cagiriyor)."""
+        if value is None:
+            self._discard_cached_conn()
+        else:
+            self._raw_conn = value
 
     def ensure(self) -> None:
         if not self._connected or self._engine is None:
