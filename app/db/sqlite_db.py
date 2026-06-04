@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -72,9 +73,22 @@ class Database:
     def conn(self):
         """Legacy uyumluluk: raw DBAPI connection döndürür.
         Dikkat: Çağıran kod close() yapmakla yükümlüdür.
+
+        SQLite altyapısı için, `conn.row_factory = sqlite3.Row` ataması
+        SQLAlchemy proxy'sine (_ConnectionFairy) yapıldığında alttaki
+        DBAPI bağlantısına ulaşmaz; cursor hâlâ tuple döndürür. Bu
+        sebeple proxy'i döndürmeden önce `row_factory`'yi driver
+        bağlantısına da yazıyoruz; aksi halde `data.get("id")` None
+        dönüp profil id=0 oluyor ve UI satırları sessizce eliyor.
         """
         self.ensure()
-        return self._engine.raw_connection()
+        proxy = self._engine.raw_connection()
+        driver_conn = getattr(proxy, "driver_connection", None) or getattr(
+            proxy, "connection", None
+        )
+        if isinstance(driver_conn, sqlite3.Connection):
+            driver_conn.row_factory = sqlite3.Row
+        return proxy
 
     def ensure(self) -> None:
         if not self._connected or self._engine is None:
