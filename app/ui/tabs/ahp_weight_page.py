@@ -351,6 +351,7 @@ class AHPWeightPage(ttk.Frame):
         self._build_tab1()
         self._build_tab2()
         self._build_tab3()
+        self._build_tab4_approval()
 
     # ─── Tab 1: Profil Listesi ────────────────────────────────────────────────
     def _build_tab1(self):
@@ -501,50 +502,32 @@ class AHPWeightPage(ttk.Frame):
         self.detail_matrix_text.pack(fill=tk.X, pady=(2, 0))
         mat_sb_x.pack(fill=tk.X)
 
-        # ─ Aksiyon butonlari ─
+        # ─ Aksiyon butonlari (Yönetim — sadece bu sayfanın işi) ─
+        # NOT: Doğrula / Onaya Gönder / Onayla / Reddet artık
+        # "Onay Akışı" sekmesinde. Aktif Yap ve Matrisi Düzenle üstte
+        # hızlı aksiyon olarak duruyor; burada tekrar göstermiyoruz.
         action_frame = ttk.Frame(frame, padding=(0, 8, 0, 0))
         action_frame.pack(fill=tk.X)
 
-        lc = ttk.LabelFrame(action_frame, text=" Yaşam Döngüsü ", padding=(8, 4))
-        lc.pack(side=tk.LEFT, padx=(0, 10))
-        for text, cmd in [
-            ("Doğrula", self.validate_selected),
-            ("Onaya Gönder", self.submit_selected),
-            ("Onayla", self.approve_selected),
-            ("Reddet", self.reject_selected),
-        ]:
-            btn = ttk.Button(lc, text=text, command=cmd)
-            btn.pack(side=tk.LEFT, padx=2)
-            self._selection_required_buttons.append(btn)
-
-        mgmt = ttk.LabelFrame(action_frame, text=" Yönetim ", padding=(8, 4))
+        mgmt = ttk.LabelFrame(action_frame, text=" Profil Yönetimi ", padding=(8, 4))
         mgmt.pack(side=tk.LEFT, padx=(0, 10))
         for text, cmd in [
-            ("Aktif Yap", self.activate_selected),
             ("Yeniden Adlandır", self.rename_selected),
             ("Klonla", self.clone_selected),
-            ("Arşivle", self.archive_selected),
             ("Sil", self.delete_selected),
         ]:
             btn = ttk.Button(mgmt, text=text, command=cmd)
             btn.pack(side=tk.LEFT, padx=2)
             self._selection_required_buttons.append(btn)
 
-        btn_edit_main = ttk.Button(
-            action_frame, text="Matrisi Düzenle →",
-            command=self._edit_selected_in_tab2,
-        )
-        btn_edit_main.pack(side=tk.LEFT)
-        self._selection_required_buttons.append(btn_edit_main)
-
         # Başlangıçta hiçbir şey seçili değil -> aksiyonlar kapalı
         self._apply_selection_state(False)
 
-        # Durum renk aciklamasi
+        # Durum renk aciklamasi — "archived" KALDIRILDI
         legend = ttk.Frame(frame)
         legend.pack(fill=tk.X, pady=(8, 0))
         ttk.Label(legend, text="Durum:", font=("Segoe UI", 7, "italic")).pack(side=tk.LEFT, padx=(0, 4))
-        for status in ("active", "approved", "pending_approval", "validated", "draft", "archived", "rejected"):
+        for status in ("active", "approved", "pending_approval", "validated", "draft", "rejected"):
             tk.Label(
                 legend,
                 text=DURUM_ETIKET[status],
@@ -716,6 +699,117 @@ class AHPWeightPage(ttk.Frame):
         self.impact_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         impact_sb.pack(side=tk.RIGHT, fill=tk.Y)
 
+    # ─── Tab 4: Onay Akisi (Yasam Dongusu) ──────────────────────────────────
+    def _build_tab4_approval(self):
+        """Doğrula -> Onaya Gönder -> Onayla / Reddet akışı.
+
+        Tab 1 (Profil Listesi) artık onay düğmelerini barındırmıyor;
+        kullanıcı önce profili seçer, sonra bu sekmeye gelerek yaşam
+        döngüsü işlemlerini yapar.
+        """
+        frame = ttk.Frame(self.nb, padding=10)
+        self.nb.add(frame, text="Onay Akışı")
+
+        ttk.Label(
+            frame,
+            text="Profil Onay ve Yaşam Döngüsü",
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor=tk.W, pady=(0, 4))
+
+        ttk.Label(
+            frame,
+            text=(
+                "Önce 'Profil Listesi' sekmesinden profili seçin, sonra buradan "
+                "doğrulama / onay aksiyonlarını uygulayın."
+            ),
+            font=("Segoe UI", 9),
+            foreground="#455A64",
+            wraplength=720,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 12))
+
+        # ── Şu an seçili profil ── (canlı banner; ana banner ile aynı değişkene bağlı)
+        sel_box = ttk.LabelFrame(frame, text=" Şu an seçili profil ", padding=10)
+        sel_box.pack(fill=tk.X, pady=(0, 12))
+        tk.Label(
+            sel_box,
+            textvariable=self.selected_profile_var,
+            bg="#E3F2FD",
+            fg="#0D47A1",
+            font=("Segoe UI", 10, "bold"),
+            anchor=tk.W,
+            padx=10,
+            pady=8,
+            relief=tk.GROOVE,
+            bd=1,
+        ).pack(fill=tk.X)
+
+        # ── Akış diyagramı (yatay yazı) ──
+        flow = ttk.Frame(frame)
+        flow.pack(fill=tk.X, pady=(0, 12))
+        steps = [
+            ("1. Taslak",          "#F5F5F5", "#424242"),
+            ("→",                  None, "#9E9E9E"),
+            ("2. Doğrulandı",      "#E3F2FD", "#1565C0"),
+            ("→",                  None, "#9E9E9E"),
+            ("3. Onay Bekliyor",   "#FFE0B2", "#E65100"),
+            ("→",                  None, "#9E9E9E"),
+            ("4. Onaylandı",       "#B3E5FC", "#01579B"),
+            ("→",                  None, "#9E9E9E"),
+            ("5. AKTİF",           "#C8E6C9", "#1B5E20"),
+        ]
+        for text, bg, fg in steps:
+            if bg is None:
+                ttk.Label(flow, text=text, font=("Segoe UI", 11), foreground=fg).pack(side=tk.LEFT, padx=4)
+            else:
+                tk.Label(
+                    flow, text=text, bg=bg, fg=fg,
+                    font=("Segoe UI", 9, "bold"),
+                    padx=8, pady=4, relief=tk.GROOVE, bd=1,
+                ).pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(4, 12))
+
+        # ── Aksiyon butonları ──
+        actions = ttk.Frame(frame)
+        actions.pack(fill=tk.X, pady=(0, 8))
+
+        approval_specs = [
+            ("Doğrula",          self.validate_selected,
+             "Profilin tutarlılık (CR) ve şema kurallarını kontrol eder."),
+            ("Onaya Gönder",     self.submit_selected,
+             "Profili 'Onay Bekliyor' durumuna alır."),
+            ("Onayla",           self.approve_selected,
+             "Onaylanmış statüsüne taşır. Sonraki adım: Aktif Yap (Profil Listesi)."),
+            ("Reddet",           self.reject_selected,
+             "Profili reddeder. (Reddedilen profil silinir — onay sorulur.)"),
+        ]
+        for label, cmd, tip in approval_specs:
+            row = ttk.Frame(actions)
+            row.pack(fill=tk.X, pady=2)
+            btn = ttk.Button(row, text=label, command=cmd, width=18)
+            btn.pack(side=tk.LEFT)
+            self._selection_required_buttons.append(btn)
+            ttk.Label(
+                row, text=tip, font=("Segoe UI", 8),
+                foreground="#546E7A", wraplength=600, justify=tk.LEFT,
+            ).pack(side=tk.LEFT, padx=10)
+
+        ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(12, 8))
+
+        # ── Onay-akışına özel durum legendi ──
+        legend = ttk.Frame(frame)
+        legend.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(legend, text="Durum etiketleri:", font=("Segoe UI", 8, "italic")).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        for status in ("draft", "validated", "pending_approval", "approved", "active", "rejected"):
+            tk.Label(
+                legend, text=DURUM_ETIKET[status],
+                bg=DURUM_RENK[status], padx=6, pady=2,
+                font=("Segoe UI", 8), relief=tk.GROOVE, bd=1,
+            ).pack(side=tk.LEFT, padx=2)
+
     # ─── Yenile ──────────────────────────────────────────────────────────────
     def refresh(self):
         try:
@@ -749,14 +843,20 @@ class AHPWeightPage(ttk.Frame):
 
             active_profile = None
             for profile in profiles:
+                profile_id = int(profile.get("id") or 0)
+                # id<=0 olan satırlar bozuk veridir — kullanıcının görmesi
+                # gerekmez (seçilemez, işlem yapılamaz). Sessizce atla.
+                if profile_id <= 0:
+                    continue
+
                 # Performans: list_ahp_profiles zaten tam veriyi donuyor;
-                # per-satir get_profile cagrisi (ensure_schema DDL dahil)
-                # cok yavaslatiyordu — kaldirildi.
-                status = profile.get("status") or "draft"
+                # per-satir get_profile cagrisi cok yavaslatiyordu — kaldirildi.
+                raw_status = profile.get("status") or "draft"
+                # "archived" durumu UI'da kaldırıldı: görüntüde "draft" gibi davran.
+                status = "draft" if raw_status == "archived" else raw_status
                 is_active = bool(profile.get("is_active"))
                 if is_active:
                     active_profile = profile
-                profile_id = int(profile["id"])
                 self._profile_cache[profile_id] = profile
                 option_label = self._profile_option_label(profile)
                 self._profile_options[option_label] = profile_id
@@ -1654,11 +1754,10 @@ class AHPWeightPage(ttk.Frame):
     def _selected_profile(self):
         """Güncel seçili profili döndürür.
 
-        Kademeli kaynak sırası — hiçbir aşamada exception fırlatmaz:
-        1) `ttk.Treeview` seçimi (yeni UI — `_profile_rows` üzerinden)
-        2) `tk.Listbox.curselection()` (eski UI / legacy test mock'ları)
-        3) En son bilinen `_selected_profile_id`
-        4) Listede ilk profil (otomatik düşüş)
+        Kademeli kaynak sırası — hiçbir aşamada exception fırlatmaz.
+        Tüm kontroller `is None` veya `> 0` kullanır; profil id=0 GEÇERLİ
+        kabul edilmez (SQLite autoincrement ile 1'den başlar, 0 bozuk veri
+        işaretidir).
         """
         # 1) Treeview seçimi — yalnızca gerçek bir Treeview ise dene
         tree = getattr(self, "profile_tree", None)
@@ -1669,11 +1768,11 @@ class AHPWeightPage(ttk.Frame):
                 sel = ()
             if sel:
                 pid = self._profile_rows.get(sel[0])
-                if pid:
+                if pid is not None and int(pid) > 0:
                     self._selected_profile_id = int(pid)
 
         # 2) Listbox seçimi (eski API — varsa)
-        if not self._selected_profile_id:
+        if self._selected_profile_id is None or int(self._selected_profile_id) <= 0:
             listbox = getattr(self, "profile_listbox", None)
             if isinstance(listbox, tk.Listbox) or (
                 listbox is not None and hasattr(listbox, "curselection")
@@ -1685,12 +1784,15 @@ class AHPWeightPage(ttk.Frame):
                 if sel:
                     index = int(sel[0])
                     if index < len(self._profile_list_ids):
-                        self._selected_profile_id = int(self._profile_list_ids[index])
+                        candidate = int(self._profile_list_ids[index])
+                        if candidate > 0:
+                            self._selected_profile_id = candidate
 
-        # 3 + 4) Hiçbir seçim yoksa listedeki ilk profili otomatik seç
-        if not self._selected_profile_id:
-            if self._profile_list_ids:
-                self._set_selected_profile_id(self._profile_list_ids[0])
+        # 3 + 4) Hiçbir geçerli seçim yoksa listedeki ilk GEÇERLİ profili sec
+        if self._selected_profile_id is None or int(self._selected_profile_id) <= 0:
+            valid_ids = [int(p) for p in self._profile_list_ids if int(p) > 0]
+            if valid_ids:
+                self._set_selected_profile_id(valid_ids[0])
             else:
                 return None
 
