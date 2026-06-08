@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
@@ -14,7 +15,12 @@ from app.services.ahp_profile_service import (
 )
 from app.services.calculation import run_all_algorithms_for_year
 from app.services.criteria_completion_service import can_run_algorithm
-from app.services.criteria_override_service import request_override
+from app.services.criteria_override_service import (
+    approve_override,
+    list_overrides,
+    reject_override,
+    request_override,
+)
 from app.services.decision_policy_service import (
     activate_decision_policy,
     create_decision_policy,
@@ -32,9 +38,13 @@ from app.services.pool_state_machine_service import (
 )
 from app.services.service_factory import get_service_factory
 
+logger = logging.getLogger(__name__)
+
 
 def _status_text(status: int | None) -> str:
     labels = {1: "Müfredatta", 0: "Havuzda", -1: "Dinlenmede", -2: "Kalıcı iptal"}
+    if status is None:
+        return "Belirsiz"
     try:
         return labels.get(int(status), "Belirsiz")
     except (TypeError, ValueError):
@@ -68,12 +78,13 @@ class DecisionCenterPage(ttk.Frame):
             config=getattr(app, "app_config", None),
         )
         self._faculty_map: dict[str, int] = {}
-        self._department_map: dict[str, int] = {}
+        self._department_map: dict[str, int | None] = {}
         self._run_ids: dict[str, int] = {}
         self._decision_ids: dict[str, int] = {}
         self._pool_transition_rows: dict[str, dict] = {}
         self._pool_approval_ids: dict[str, int] = {}
         self._action_buttons: list[ttk.Button] = []
+        self._override_ids: dict[str, int] = {}
 
         self._build_filters()
         self.sub_nb = ttk.Notebook(self)
@@ -129,36 +140,57 @@ class DecisionCenterPage(ttk.Frame):
             anchor=tk.W, justify=tk.LEFT, wraplength=1180,
         ).pack(fill=tk.X, padx=10, pady=(1, 6))
 
+    # Run combobox boş durum metni — kullanıcı ne yapacağını bilsin diye.
+    _RUN_EMPTY_PLACEHOLDER = "(Bu kapsamda henüz karar çalıştırması yok)"
+
     def _build_filters(self):
         bar = ttk.LabelFrame(self, text="Filtreler", padding=8)
         bar.pack(fill=tk.X, padx=8, pady=8)
 
-        ttk.Label(bar, text="Yıl").pack(side=tk.LEFT)
-        self.cb_year = ttk.Combobox(bar, width=8, state="readonly")
-        self.cb_year.pack(side=tk.LEFT, padx=(4, 12))
+        # ---- 1. SATIR: Kapsam seçimi (Yıl / Fakülte / Bölüm / Dönem) ----
+        row1 = ttk.Frame(bar)
+        row1.pack(fill=tk.X, pady=(0, 6))
 
-        ttk.Label(bar, text="Fakülte").pack(side=tk.LEFT)
-        self.cb_faculty = ttk.Combobox(bar, width=26, state="readonly")
+        ttk.Label(row1, text="Yıl").pack(side=tk.LEFT)
+        self.cb_year = ttk.Combobox(row1, width=8, state="readonly")
+        self.cb_year.pack(side=tk.LEFT, padx=(4, 12))
+        self.cb_year.bind("<<ComboboxSelected>>", self._on_filter_change)
+
+        ttk.Label(row1, text="Fakülte").pack(side=tk.LEFT)
+        self.cb_faculty = ttk.Combobox(row1, width=26, state="readonly")
         self.cb_faculty.pack(side=tk.LEFT, padx=(4, 12))
         self.cb_faculty.bind("<<ComboboxSelected>>", self._on_filter_change)
 
-        ttk.Label(bar, text="Bölüm").pack(side=tk.LEFT)
-        self.cb_department = ttk.Combobox(bar, width=26, state="readonly")
+        ttk.Label(row1, text="Bölüm").pack(side=tk.LEFT)
+        self.cb_department = ttk.Combobox(row1, width=26, state="readonly")
         self.cb_department.pack(side=tk.LEFT, padx=(4, 12))
+        self.cb_department.bind("<<ComboboxSelected>>", self._on_filter_change)
 
-        ttk.Label(bar, text="Dönem").pack(side=tk.LEFT)
-        self.cb_semester = ttk.Combobox(bar, width=10, state="readonly", values=["Guz", "Bahar"])
+        ttk.Label(row1, text="Dönem").pack(side=tk.LEFT)
+        self.cb_semester = ttk.Combobox(row1, width=10, state="readonly", values=["Guz", "Bahar"])
         self.cb_semester.set("Guz")
         self.cb_semester.pack(side=tk.LEFT, padx=(4, 12))
         self.cb_semester.bind("<<ComboboxSelected>>", self._on_filter_change)
 
-        ttk.Label(bar, text="Run").pack(side=tk.LEFT)
-        self.cb_run = ttk.Combobox(bar, width=34, state="readonly")
-        self.cb_run.pack(side=tk.LEFT, padx=(4, 12))
-        self.cb_run.bind("<<ComboboxSelected>>", lambda _e: self._load_run_related())
-        self.cb_year.bind("<<ComboboxSelected>>", self._on_filter_change)
+        ttk.Button(row1, text="Yenile", command=self.refresh).pack(side=tk.RIGHT)
 
-        ttk.Button(bar, text="Yenile", command=self.refresh).pack(side=tk.RIGHT)
+        # ---- 2. SATIR: Karar çalıştırması + bağlam göstergesi ----
+        # Eski sürümde "Run" tek satırda diğer filtrelerle sıkışıyordu, etiketi İngilizceydi
+        # ve combobox kapsam filtresinden bağımsız tüm sistemdeki run'ları gösteriyordu —
+        # bu yüzden başka yıl/fakülte çalıştırmaları görünüyor ya da boşsa hiçbir ipucu olmuyordu.
+        row2 = ttk.Frame(bar)
+        row2.pack(fill=tk.X)
+
+        ttk.Label(row2, text="Karar Çalıştırması:").pack(side=tk.LEFT)
+        self.cb_run = ttk.Combobox(row2, width=52, state="readonly")
+        self.cb_run.pack(side=tk.LEFT, padx=(4, 8))
+        self.cb_run.bind("<<ComboboxSelected>>", lambda _e: self._load_run_related())
+
+        ttk.Button(row2, text="⚡ Yeni Çalıştır", command=self._jump_to_runs_tab).pack(side=tk.LEFT, padx=(0, 12))
+
+        # Kapsama göre durum göstergesi: kaç çalıştırma var, son ne zaman yapılmış vb.
+        self.lbl_scope_status = ttk.Label(row2, text="", font=("Segoe UI", 9))
+        self.lbl_scope_status.pack(side=tk.LEFT)
 
     def _build_ahp_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
@@ -204,8 +236,24 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Button(top, text="Override Talep Et", command=self._request_readiness_override).pack(side=tk.LEFT, padx=4)
         self.lbl_readiness = ttk.Label(top, text="")
         self.lbl_readiness.pack(side=tk.LEFT, padx=12)
-        self.txt_readiness = tk.Text(frame, height=18, wrap=tk.WORD)
-        self.txt_readiness.pack(fill=tk.BOTH, expand=True)
+
+        paned = ttk.PanedWindow(frame, orient=tk.VERTICAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+        self.txt_readiness = tk.Text(paned, height=12, wrap=tk.WORD)
+        paned.add(self.txt_readiness, weight=3)
+
+        # Override (istisna) onay/red paneli — talep eden ≠ onaylayan (Roller Ayrılığı).
+        override_panel = ttk.LabelFrame(
+            paned, text="Bekleyen Override (İstisna) Talepleri — Yetkili Onayı", padding=6
+        )
+        paned.add(override_panel, weight=2)
+        self.tree_overrides = self._tree(
+            override_panel, ("id", "kapsam", "talep_eden", "eksik_alanlar", "gerekçe", "durum", "tarih")
+        )
+        ovr_buttons = ttk.Frame(override_panel)
+        ovr_buttons.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(ovr_buttons, text="Seçileni Onayla", command=self._approve_selected_override).pack(side=tk.LEFT, padx=4)
+        ttk.Button(ovr_buttons, text="Seçileni Reddet", command=self._reject_selected_override).pack(side=tk.LEFT, padx=4)
 
     def _build_policy_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
@@ -429,20 +477,22 @@ class DecisionCenterPage(ttk.Frame):
             tree.column(column, width=130, anchor=tk.W)
         return tree
 
-    def refresh(self, force_reload: bool = False):
+    def _safe_load(self, name: str, func) -> None:
+        """Tek bir bileşenin hatası tüm sayfayı yarım bırakmasın; hata loglanır."""
         try:
-            self._load_filters()
-            self._sync_action_buttons()
-            self._load_ahp()
-            self._load_policies()
-            self._load_runs()
-            self._load_readiness()
-            self._load_pool_lifecycle()
-            self._load_run_related()
+            func()
         except Exception:
-            if getattr(self, "txt_readiness", None):
-                self.txt_readiness.delete("1.0", tk.END)
-                self.txt_readiness.insert(tk.END, self._friendly_backend_error())
+            logger.exception("Karar Merkezi bileşeni yüklenemedi: %s", name)
+
+    def refresh(self, force_reload: bool = False):
+        self._safe_load("filtreler", self._load_filters)
+        self._safe_load("aksiyon butonları", self._sync_action_buttons)
+        self._safe_load("AHP profilleri", self._load_ahp)
+        self._safe_load("karar politikaları", self._load_policies)
+        self._safe_load("çalıştırmalar", self._load_runs)
+        self._safe_load("hazırlık kontrolü", self._load_readiness)
+        self._safe_load("havuz yaşam döngüsü", self._load_pool_lifecycle)
+        self._safe_load("run ilişkili raporlar", self._load_run_related)
 
     def _load_filters(self):
         conn = self._conn()
@@ -468,6 +518,13 @@ class DecisionCenterPage(ttk.Frame):
     def _on_filter_change(self, _event=None):
         self._load_departments()
         self._sync_action_buttons()
+        # Filtre değişince hazırlık görünümü ve Run listesi otomatik tazelensin
+        # (Run combobox eskiden filtre değişince güncellenmiyordu → boş kalıyordu).
+        if getattr(self, "txt_readiness", None) is not None:
+            self._safe_load("hazırlık kontrolü", self._load_readiness)
+        if getattr(self, "cb_run", None) is not None:
+            self._safe_load("çalıştırmalar", self._load_runs)
+            self._safe_load("run ilişkili raporlar", self._load_run_related)
 
     def _selection_ready(self) -> bool:
         return bool((self.cb_year.get() or "").strip()) and bool(self._faculty_map.get(self.cb_faculty.get()))
@@ -498,7 +555,13 @@ class DecisionCenterPage(ttk.Frame):
                 self.cb_department.set("Tümü")
             self._sync_action_buttons()
         except Exception:
-            pass
+            logger.exception("Bölüm listesi yüklenemedi")
+            self._department_map = {"Tümü": None}
+            try:
+                self.cb_department["values"] = ["Tümü"]
+                self.cb_department.set("Tümü")
+            except Exception:
+                pass
 
     def _load_ahp(self):
         self._clear(self.tree_ahp)
@@ -539,14 +602,73 @@ class DecisionCenterPage(ttk.Frame):
                 ),
             )
 
+    @staticmethod
+    def _norm_sem(value: str | None) -> str:
+        raw = str(value or "").strip().lower()
+        return "Bahar" if raw.startswith("b") else "Guz"
+
+    def _run_in_scope(self, run: dict, year: int | None, faculty_id: int | None,
+                      department_id: int | None, semester: str | None) -> bool:
+        """Bir decision_run'ın seçili filtre kapsamına uyup uymadığı.
+
+        Kapsama None geçen alanlar 'tümü' anlamına gelir; örn. department_id seçili
+        değilse fakülte düzeyindeki ve bölüm bazlı tüm run'lar dahil olur.
+        """
+        run_year = run.get("year")
+        if year is not None and run_year is not None and int(run_year) != int(year):
+            return False
+        run_fid = run.get("faculty_id")
+        if faculty_id is not None and run_fid is not None and int(run_fid) != int(faculty_id):
+            return False
+        run_did = run.get("department_id")
+        if department_id is not None and run_did is not None and int(run_did) != int(department_id):
+            return False
+        run_sem = run.get("semester")
+        if semester and run_sem and self._norm_sem(run_sem) != self._norm_sem(semester):
+            return False
+        return True
+
+    @staticmethod
+    def _format_run_label(run: dict) -> str:
+        """İnsan-okur run etiketi: '#5 · 2022 Guz · Bilgisayar Müh. · completed'."""
+        parts: list[str] = [f"#{run['id']}"]
+        year = run.get("year")
+        sem = run.get("semester") or ""
+        if year is not None:
+            parts.append(f"{year} {sem}".strip())
+        # Çalıştırmanın başlığı varsa onu ekle (kullanıcının verdiği isim)
+        run_name = (run.get("run_name") or "").strip()
+        if run_name:
+            parts.append(run_name)
+        status = (run.get("status") or "").strip()
+        if status:
+            parts.append(status)
+        return " · ".join(parts)
+
     def _load_runs(self):
+        """Tüm run'ları Treeview'e dök; Combobox'a yalnızca seçili kapsama uyanları koy.
+
+        Eski sürüm `cb_run`'a tüm sistemdeki run'ları (kapsamdan bağımsız) doldurduğu
+        için kullanıcı 2022 Ilahiyat seçince bile başka yıl/fakülte çalıştırmalarını
+        görüyor, hiç run yoksa da boş dropdown'un sebebini bilmiyordu.
+        """
         self._clear(self.tree_runs)
         self._run_ids.clear()
-        run_values = []
-        for run in list_decision_runs(self._conn(), limit=200):
-            label = f"#{run['id']} | {run.get('year')} | {run.get('status')}"
-            self._run_ids[label] = int(run["id"])
-            run_values.append(label)
+
+        year_raw = (self.cb_year.get() or "").strip()
+        selected_year = int(year_raw) if year_raw.isdigit() else None
+        faculty_id = self._faculty_map.get(self.cb_faculty.get())
+        department_id = self._department_map.get(self.cb_department.get())
+        semester = (self.cb_semester.get() or "").strip() or None
+
+        scope_run_values: list[str] = []
+        scope_count = 0
+        last_started: str | None = None
+
+        for run in list_decision_runs(self._conn(), limit=500):
+            in_scope = self._run_in_scope(run, selected_year, faculty_id, department_id, semester)
+            # Treeview kapsamı önemsiz tüm sistemdeki run'ları görüntülemeyi sürdürür
+            # (kullanıcı tarihçeye bakmak istediğinde yeni filtreye geçmeden görsün).
             self.tree_runs.insert(
                 "",
                 tk.END,
@@ -559,9 +681,46 @@ class DecisionCenterPage(ttk.Frame):
                     run.get("started_at") or "",
                 ),
             )
-        self.cb_run["values"] = run_values
-        if run_values and self.cb_run.get() not in run_values:
-            self.cb_run.set(run_values[0])
+            if in_scope:
+                label = self._format_run_label(run)
+                self._run_ids[label] = int(run["id"])
+                scope_run_values.append(label)
+                scope_count += 1
+                started = run.get("started_at")
+                if started and (last_started is None or str(started) > str(last_started)):
+                    last_started = str(started)
+
+        if scope_run_values:
+            self.cb_run["values"] = scope_run_values
+            if self.cb_run.get() not in scope_run_values:
+                self.cb_run.set(scope_run_values[0])  # en yenisi (list_decision_runs DESC döner)
+        else:
+            # Boş durumda placeholder göster, yine de combobox boş kalmasın
+            self.cb_run["values"] = [self._RUN_EMPTY_PLACEHOLDER]
+            self.cb_run.set(self._RUN_EMPTY_PLACEHOLDER)
+
+        # Bağlam göstergesi: kullanıcıya kapsam özetini ve ne yapması gerektiğini söyle
+        if hasattr(self, "lbl_scope_status"):
+            if scope_count == 0:
+                self.lbl_scope_status.config(
+                    text="● Bu kapsamda çalıştırma yok — sağdaki '⚡ Yeni Çalıştır' ile başlatın",
+                    foreground="#9CA3AF",
+                )
+            else:
+                hint = f"● {scope_count} çalıştırma"
+                if last_started:
+                    hint += f"  ·  son: {last_started}"
+                self.lbl_scope_status.config(text=hint, foreground="#15803d")
+
+    def _jump_to_runs_tab(self):
+        """'Çalıştırmalar' alt sekmesine geçer ve kullanıcının yeni run başlatmasını kolaylaştırır."""
+        try:
+            for idx in range(self.sub_nb.index("end")):
+                if self.sub_nb.tab(idx, "text") == "Çalıştırmalar":
+                    self.sub_nb.select(idx)
+                    return
+        except Exception:
+            logger.exception("Çalıştırmalar sekmesine geçilemedi")
 
     def _load_run_related(self):
         run_id = self._selected_run_id()
@@ -575,27 +734,49 @@ class DecisionCenterPage(ttk.Frame):
         if not getattr(self, "txt_readiness", None):
             return
         self.txt_readiness.delete("1.0", tk.END)
+        if getattr(self, "tree_overrides", None) is not None:
+            self._clear(self.tree_overrides)
+        self._override_ids.clear()
         try:
             year = int(self.cb_year.get())
             faculty_id = self._faculty_map.get(self.cb_faculty.get())
             department_id = self._department_map.get(self.cb_department.get())
+            semester = self.cb_semester.get() or "Guz"
+            scope_type = "department" if department_id is not None else "faculty"
             if not faculty_id:
                 self.lbl_readiness.config(text="Fakülte seçimi bekleniyor.")
                 self.txt_readiness.insert(tk.END, "Hazırlık kontrolü için fakülte ve yıl seçiniz.")
                 return
+            # Salt okunur değerlendirme: izleme görünümü kalıcı snapshot yazmasın.
             gate = can_run_algorithm(
                 self._conn(),
                 year=year,
                 faculty_id=int(faculty_id),
                 department_id=int(department_id) if department_id is not None else None,
-                semester=self.cb_semester.get() or "Guz",
-                scope_type="department" if department_id is not None else "faculty",
+                semester=semester,
+                scope_type=scope_type,
+                refresh=False,
             )
             summary = gate.get("summary") or {}
             risk = gate.get("risk") or {}
-            durum = "Hazır" if gate.get("can_run") else "Engellendi"
-            if gate.get("override_active"):
-                durum = "Override ile hazır" if gate.get("can_run") else "Override bekliyor"
+            # Bekleyen (pending) override talepleri — override_active yalnızca onaylı (approved) olanı yansıtır.
+            pending = list_overrides(
+                self._conn(),
+                scope_type=scope_type,
+                year=year,
+                faculty_id=int(faculty_id),
+                department_id=int(department_id) if department_id is not None else None,
+                semester=semester,
+                approval_status="pending",
+            )
+            if gate.get("override_active") and gate.get("can_run"):
+                durum = "Override ile hazır"
+            elif pending:
+                durum = "Override onayı bekliyor"
+            elif gate.get("can_run"):
+                durum = "Hazır"
+            else:
+                durum = "Engellendi"
             self.lbl_readiness.config(
                 text=(
                     f"{durum} | Tamlık %{float(gate.get('completion_ratio') or 0) * 100:.1f} | "
@@ -612,31 +793,68 @@ class DecisionCenterPage(ttk.Frame):
                 f"Kritik/geçersiz issue: {gate.get('blocking_issue_count')}",
                 f"Risk: {risk.get('risk_level', 'low')} ({risk.get('risk_score', 0)})",
                 f"Aktif override: {'Evet' if gate.get('override_active') else 'Hayır'}",
+                f"Bekleyen override talebi: {len(pending)}",
                 "",
                 gate.get("blocking_reason") or summary.get("warning_reason") or "Hazırlık kontrolünde engelleyici bulgu yok.",
-                "",
-                "Kriter bazlı özet:",
             ]
-            for key, item in (summary.get("criterion_summary") or {}).items():
+            if department_id is not None:
                 lines.append(
-                    f"- {key}: %{float(item.get('required_completion_ratio', item.get('completion_ratio', 0))) * 100:.1f}"
+                    "Not: Karar çalıştırma fakülte düzeyinde yapılır; bölüm filtresi yalnızca bu "
+                    "hazırlık görünümünü daraltır."
                 )
+            lines.extend(["", "Kriter bazlı özet:"])
+            # Opsiyonel kriterler için gerçek doluluk (display_ratio) gösterilir; zorunlu olmayan
+            # alanların hep %100 görünmesi sorununu giderir.
+            required_fields = set(summary.get("required_fields") or [])
+            for key, item in (summary.get("criterion_summary") or {}).items():
+                is_req = key in required_fields or bool(item.get("is_required"))
+                if "display_ratio" in item:
+                    ratio = item.get("display_ratio")
+                else:
+                    ratio = item.get("required_completion_ratio") if is_req else item.get("completion_ratio")
+                suffix = "" if is_req else " (opsiyonel)"
+                lines.append(f"- {key}{suffix}: %{float(ratio or 0) * 100:.1f}")
             self.txt_readiness.insert(tk.END, "\n".join(lines))
             self._last_readiness_gate = gate
+            # Bekleyen override taleplerini onay tablosuna doldur.
+            for req in pending:
+                iid = str(req.get("id"))
+                self._override_ids[iid] = int(req.get("id") or 0)
+                gaps = ", ".join(req.get("missing_fields") or []) or "—"
+                self.tree_overrides.insert(
+                    "",
+                    tk.END,
+                    iid=iid,
+                    values=(
+                        req.get("id"),
+                        req.get("scope_type") or "",
+                        req.get("requested_by") or "",
+                        gaps,
+                        (req.get("reason") or "")[:80],
+                        req.get("approval_status") or "",
+                        req.get("requested_at") or "",
+                    ),
+                )
         except Exception:
+            logger.exception("Hazırlık kontrolü yüklenemedi")
             self.lbl_readiness.config(text="Hazırlık kontrolü yüklenemedi.")
             self.txt_readiness.insert(tk.END, self._friendly_backend_error())
+
+    def _current_username(self, default: str) -> str:
+        active_user = getattr(self.app, "current_user", None)
+        return getattr(active_user, "username", None) or default
 
     def _request_readiness_override(self):
         try:
             if not getattr(self, "_last_readiness_gate", None):
                 self._load_readiness()
-            gate = getattr(self, "_last_readiness_gate", None)
-            summary = (gate or {}).get("summary") or {}
+            gate = getattr(self, "_last_readiness_gate", None) or {}
+            summary = gate.get("summary") or {}
             if not summary:
                 return
-            reason = simpledialog.askstring("Override Talebi", "Override gerekçesi:")
-            if not reason:
+            # Hazırlık zaten uygunsa override gereksiz.
+            if gate.get("can_run") and not gate.get("blocking_reason"):
+                messagebox.showinfo("Override", "Hazırlık zaten uygun; override talebine gerek yok.")
                 return
             missing_fields = sorted(
                 {
@@ -645,23 +863,92 @@ class DecisionCenterPage(ttk.Frame):
                     if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
                 }
             )
-            request_override(
+            reason = simpledialog.askstring("Override Talebi", "Override gerekçesi:")
+            if not reason or not reason.strip():
+                return
+            override = request_override(
                 self._conn(),
                 scope_type=str(summary.get("scope_type") or "faculty"),
-                year=int(summary.get("year")),
+                year=int(summary.get("year") or 0),
                 faculty_id=summary.get("faculty_id"),
                 department_id=summary.get("department_id"),
                 semester=summary.get("semester"),
                 missing_fields=missing_fields,
                 validation_issues=summary.get("validation_issues") or [],
-                reason=reason,
-                requested_by="decision_center",
+                reason=reason.strip(),
+                requested_by=self._current_username("decision_center"),
             )
             self._conn().commit()
-            messagebox.showinfo("Override", "Override talebi kaydedildi.")
+            status = (override or {}).get("approval_status")
+            if status == "pending":
+                messagebox.showinfo(
+                    "Override",
+                    "Override talebi kaydedildi; ancak algoritma hâlâ çalıştırılamaz. "
+                    "Bu kapsam için yetkili onayı gerekiyor (alttaki tablodan onaylanabilir).",
+                )
+            elif status == "approved":
+                messagebox.showinfo(
+                    "Override",
+                    "Override aktif edildi (politika onay gerektirmiyor). Algoritma override ile çalıştırılabilir.",
+                )
+            else:
+                messagebox.showinfo("Override", f"Override talebi kaydedildi. Durum: {status}")
             self._load_readiness()
+        except Exception as exc:
+            logger.exception("Override talebi oluşturulamadı")
+            messagebox.showerror("Override", f"Override talebi oluşturulamadı: {exc}")
+
+    def _approve_selected_override(self):
+        selected = self.tree_overrides.selection()
+        if not selected:
+            messagebox.showwarning("Override Onayı", "Lütfen bekleyen bir override talebi seçin.")
+            return
+        override_id = self._override_ids.get(str(selected[0]))
+        if override_id is None:
+            return
+        try:
+            approve_override(
+                self._conn(),
+                override_id=int(override_id),
+                approved_by=self._current_username("decision_center_admin"),
+            )
+            self._conn().commit()
+            messagebox.showinfo("Override Onayı", f"#{override_id} numaralı talep onaylandı.")
+            self._load_readiness()
+        except ValueError as exc:
+            # Roller ayrılığı / durum makinesi gibi yönetişim kuralları buradan döner.
+            messagebox.showwarning("Override Onayı", str(exc))
         except Exception:
-            messagebox.showerror("Override", self._friendly_backend_error())
+            logger.exception("Override onaylanamadı")
+            messagebox.showerror("Override Onayı", self._friendly_backend_error())
+
+    def _reject_selected_override(self):
+        selected = self.tree_overrides.selection()
+        if not selected:
+            messagebox.showwarning("Override Reddi", "Lütfen bekleyen bir override talebi seçin.")
+            return
+        override_id = self._override_ids.get(str(selected[0]))
+        if override_id is None:
+            return
+        note = simpledialog.askstring("Override Reddi", "Ret gerekçesi:")
+        if not note or not note.strip():
+            messagebox.showwarning("Override Reddi", "Ret için gerekçe zorunludur.")
+            return
+        try:
+            reject_override(
+                self._conn(),
+                override_id=int(override_id),
+                rejection_reason=note.strip(),
+                rejected_by=self._current_username("decision_center_admin"),
+            )
+            self._conn().commit()
+            messagebox.showinfo("Override Reddi", f"#{override_id} numaralı talep reddedildi.")
+            self._load_readiness()
+        except ValueError as exc:
+            messagebox.showwarning("Override Reddi", str(exc))
+        except Exception:
+            logger.exception("Override reddedilemedi")
+            messagebox.showerror("Override Reddi", self._friendly_backend_error())
 
     def _load_course_decisions(self, run_id):
         self._clear(self.tree_courses)
@@ -934,7 +1221,7 @@ class DecisionCenterPage(ttk.Frame):
             )
             for item in approvals:
                 iid = str(item.get("id"))
-                self._pool_approval_ids[iid] = int(item.get("id"))
+                self._pool_approval_ids[iid] = int(item.get("id") or 0)
                 self.tree_pool_approvals.insert(
                     "",
                     tk.END,
@@ -980,7 +1267,7 @@ class DecisionCenterPage(ttk.Frame):
         for warning in row.get("warnings") or []:
             lines.append(f"- {warning}")
         try:
-            history = get_course_state_history(self._conn(), int(row.get("course_id")))
+            history = get_course_state_history(self._conn(), int(row.get("course_id") or 0))
             lines.extend(["", "Son durum geçmişi:"])
             for hist in history[:8]:
                 lines.append(
@@ -1246,6 +1533,9 @@ class DecisionCenterPage(ttk.Frame):
 
     def _selected_run_id(self):
         label = self.cb_run.get()
+        # Boş-kapsam placeholder'ı seçili olduğunda run_id yok say.
+        if label == self._RUN_EMPTY_PLACEHOLDER:
+            return None
         if label in self._run_ids:
             return self._run_ids[label]
         selected = self.tree_runs.selection()
@@ -1315,7 +1605,7 @@ class DecisionCenterPage(ttk.Frame):
             gate = can_run_algorithm(
                 self._conn(),
                 year=year,
-                faculty_id=int(faculty_id),
+                faculty_id=int(faculty_id or 0),
                 semester=self.cb_semester.get() or "Guz",
                 scope_type="faculty",
             )
@@ -1330,12 +1620,13 @@ class DecisionCenterPage(ttk.Frame):
                 yil=year,
                 db_path=getattr(self.app, "db_path", None) or "data/adil_secmeli.db",
                 donem=self.cb_semester.get() or "Guz",
-                fakulte_id=int(faculty_id),
+                fakulte_id=int(faculty_id or 0),
             )
             if not result.get("ok"):
                 messagebox.showwarning("Karar Çalıştır", self._friendly_backend_error())
             self.refresh()
         except Exception:
+            logger.exception("Karar çalıştırma başarısız")
             messagebox.showerror("Karar Çalıştır", self._friendly_backend_error())
 
     def _clear(self, tree):

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -25,6 +26,12 @@ from app.services.yearly_workflow import (
     STATUS_PARTIAL,
     ensure_yearly_workflow_schema,
 )
+
+logger = logging.getLogger(__name__)
+
+# Bu serviste kriter tamlığı yalnızca fakülte/bölüm kapsamlarında hesaplanır.
+# (faculty_id=None ise "tüm fakülteler" anlamına gelen geniş kapsam korunur.)
+VALID_SCOPE_TYPES = {"faculty", "department"}
 
 FIELD_DEFINITIONS: dict[str, dict[str, Any]] = {
     "total_students": {
@@ -84,6 +91,7 @@ def _json_loads(value: str | None, default: Any) -> Any:
     try:
         return json.loads(value)
     except Exception:
+        logger.exception("Kriter tamlık JSON alanı ayrıştırılamadı, varsayılana düşülüyor. Ham veri: %r", value)
         return default
 
 
@@ -117,16 +125,50 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def _normalize_semester(value: str | None) -> str | None:
+    """Dönemi 'Güz'/'Bahar' kanonik biçimine indirger; bilinmeyen değeri reddeder.
+
+    Eski davranış 'b ile başlamayan her şeyi Güz say' idi; bu, 'Yaz' gibi geçersiz
+    bir girdinin sessizce yanlış dönem verisiyle karar üretmesine yol açıyordu.
+    """
     if value is None:
         return None
-    raw = str(value or "").strip()
+    raw = str(value).strip().lower()
     if not raw:
         return None
-    return "Bahar" if raw.lower().startswith("b") else "Güz"
+    mapping = {
+        "b": "Bahar",
+        "bahar": "Bahar",
+        "spring": "Bahar",
+        "s": "Bahar",
+        "g": "Güz",
+        "güz": "Güz",
+        "guz": "Güz",
+        "fall": "Güz",
+        "autumn": "Güz",
+    }
+    if raw in mapping:
+        return mapping[raw]
+    raise ValueError(
+        f"Geçersiz dönem (semester) değeri: '{value}'. Sadece 'Güz' veya 'Bahar' kabul edilir."
+    )
+
+
+def _normalize_scope_type(value: str) -> str:
+    """Kapsam türünü doğrular; geçersiz değeri sessizce düzeltmek yerine reddeder.
+
+    (faculty_id/department_id'nin None olması meşru 'tümü' kapsamı sayıldığından
+    burada yalnızca scope_type string'i denetlenir, ID zorunluluğu uygulanmaz.)
+    """
+    scope = str(value or "").strip().lower()
+    if scope not in VALID_SCOPE_TYPES:
+        raise ValueError(
+            f"Geçersiz kapsam türü (scope_type): '{value}'. Beklenen: {sorted(VALID_SCOPE_TYPES)}"
+        )
+    return scope
 
 
 def _legacy_status_from_level(level: str, ratio: float) -> str:
-    if level in {"completed", "completed_with_warnings"}:
+    if level in {"completed", "completed_with_warnings", "not_applicable"}:
         return STATUS_COMPLETED
     if ratio <= 0:
         return STATUS_NOT_STARTED
@@ -137,9 +179,9 @@ def _completion_level(
     ratio: float,
     warning_count: int,
     invalid_required_fields: int,
-    blocking: bool,
+    blocking_issue_count: int,
 ) -> str:
-    if blocking and invalid_required_fields > 0:
+    if blocking_issue_count > 0:
         return "blocked"
     if invalid_required_fields > 0:
         return "invalid"
@@ -210,7 +252,18 @@ def _latest_criteria_row(
     course_id: int,
     year: int,
     semester: str | None,
+    department_id: int | None = None,
 ) -> dict[str, Any] | None:
+    """İlgili ders/yıl/dönem için en uygun kriter kaydını döndürür.
+
+    Dönem filtresi verildiğinde, dönem-spesifik kayıt jenerik (dönemsiz) kayda göre
+    önceliklendirilir; aksi halde sonradan girilen dönemsiz bir kayıt yanlışlıkla
+    dönem-spesifik veriyi gölgeleyebiliyordu.
+
+    Not: `ders_kriterleri` tablosunda bölüm kolonu bulunmadığından (`department_id`
+    yalnızca ileride şema desteklerse kullanılmak üzere imzada tutulur), aynı dersin
+    farklı bölümlerde farklı kritere sahip olması durumu bu sürümde ayrıştırılamaz.
+    """
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ders_kriterleri' LIMIT 1")
     if not cur.fetchone():
@@ -224,7 +277,15 @@ def _latest_criteria_row(
     if semester:
         query += f" AND ({_semester_sql('dk')} OR dk.donem IS NULL OR TRIM(COALESCE(dk.donem, '')) = '')"
         params.append(str(semester))
-    query += " ORDER BY dk.id DESC LIMIT 1"
+        # Önce dönem-spesifik kayıt, sonra dönemsiz jenerik kayıt, sonra en yeni id.
+        query += (
+            f" ORDER BY CASE WHEN {_semester_sql('dk')} THEN 0"
+            " WHEN dk.donem IS NULL OR TRIM(COALESCE(dk.donem, '')) = '' THEN 1"
+            " ELSE 2 END, dk.id DESC LIMIT 1"
+        )
+        params.append(str(semester))
+    else:
+        query += " ORDER BY dk.id DESC LIMIT 1"
     try:
         cur.execute(query, tuple(params))
         return _fetchone_dict(cur)
@@ -317,6 +378,7 @@ def _matrix_row_for_field(
                         "issue_type": "missing_required_value",
                         "message": missing_reason,
                         "suggestion": "Geçmiş yıl kriter verisini tamamlayın veya yeni ders istisnası için override kullanın.",
+                        "is_required": True,
                     }
                 )
         return (
@@ -376,10 +438,13 @@ def _matrix_row_for_field(
                 "issue_type": validation.issue_type,
                 "message": validation.message,
                 "suggestion": validation.suggestion,
+                "is_required": bool(required),
             }
         )
-    source_type = criteria_row.get(definition.get("source_type_column")) if criteria_row else None
-    source_id = criteria_row.get(definition.get("source_id_column")) if criteria_row else None
+    source_type_col = definition.get("source_type_column")
+    source_id_col = definition.get("source_id_column")
+    source_type = criteria_row.get(source_type_col) if (criteria_row and source_type_col) else None
+    source_id = criteria_row.get(source_id_col) if (criteria_row and source_id_col) else None
     return (
         {
             "scope_type": None,
@@ -524,14 +589,20 @@ def _criterion_summary(matrix: list[dict[str, Any]]) -> dict[str, dict[str, Any]
         valid = sum(1 for row in rows if row.get("is_valid"))
         required_total = sum(1 for row in rows if row.get("is_required"))
         required_valid = sum(1 for row in rows if row.get("is_required") and row.get("is_valid"))
+        is_required_attr = required_total > 0
+        completion_ratio = round(valid / total, 4) if total else 0.0
         out[key] = {
             "total": total,
             "present": present,
             "valid": valid,
             "missing": max(0, total - present),
             "invalid": sum(1 for row in rows if row.get("is_present") and not row.get("is_valid")),
-            "completion_ratio": round(valid / total, 4) if total else 0.0,
+            "is_required": is_required_attr,
+            "completion_ratio": completion_ratio,
             "required_completion_ratio": round(required_valid / required_total, 4) if required_total else 1.0,
+            # UI'nin doğru oranı seçmesi için: zorunlu alanda zorunlu-oran, opsiyonelde gerçek doluluk.
+            # (Opsiyonel alanların hep %100 görünmesi sorununu giderir.)
+            "display_ratio": (round(required_valid / required_total, 4) if is_required_attr else completion_ratio),
         }
     return out
 
@@ -561,6 +632,8 @@ def _course_counts(matrix: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _blocking_reason(result: dict[str, Any]) -> str | None:
+    if result.get("completion_level") == "not_applicable":
+        return None
     if result["total_courses"] <= 0:
         return "Bu kapsamda müfredatta seçmeli ders bulunmuyor."
     if result["completion_ratio"] < result["required_completion_ratio"]:
@@ -577,6 +650,73 @@ def _blocking_reason(result: dict[str, Any]) -> str | None:
     return None
 
 
+def _empty_scope_result(
+    scope_type: str,
+    year: int,
+    faculty_id: int | None,
+    department_id: int | None,
+    semester: str | None,
+    policy: dict[str, Any],
+    required_fields: list[str],
+    optional_fields: list[str],
+) -> dict[str, Any]:
+    """Kapsamda hiç seçmeli ders yokken üretilen 'not_applicable' sonucu.
+
+    Tamlık oranı %100 kabul edilir, kapı engellemez; UI'ya uyarı metni döner.
+    """
+    return {
+        "scope_type": scope_type,
+        "faculty_id": faculty_id,
+        "department_id": department_id,
+        "year": int(year),
+        "semester": semester,
+        "policy": policy,
+        "policy_id": policy.get("id"),
+        "policy_name": policy.get("name"),
+        "required_fields": required_fields,
+        "optional_fields": optional_fields,
+        "required_completion_ratio": float(policy.get("required_completion_ratio") or 1.0),
+        "completion_ratio": 1.0,
+        "completion_level": "not_applicable",
+        "criteria_status": STATUS_COMPLETED,
+        "total_required_fields": 0,
+        "completed_required_fields": 0,
+        "missing_required_fields": 0,
+        "invalid_required_fields": 0,
+        "warning_count": 0,
+        "issue_count": 0,
+        "blocking_issue_count": 0,
+        "matrix": [],
+        "validation_issues": [],
+        "criterion_summary": {},
+        "missing_data_risk": {
+            "scope_type": scope_type,
+            "faculty_id": faculty_id,
+            "department_id": department_id,
+            "course_id": None,
+            "year": int(year),
+            "semester": semester,
+            "risk_score": 0.0,
+            "risk_level": "low",
+            "missing_required_fields": [],
+            "missing_optional_fields": [],
+            "affected_weight_sum": 0.0,
+            "explanation": "Seçili kapsamda seçmeli ders bulunmadığı için risk hesaplanmadı.",
+        },
+        "override": None,
+        "override_active": False,
+        "can_run_algorithm": True,
+        "blocking_reason": None,
+        "warning_reason": "Seçili kapsamda müfredatta seçmeli ders bulunmuyor; tamlık kontrolü uygulanmadı.",
+        "total_courses": 0,
+        "completed_courses": 0,
+        "partial_courses": 0,
+        "missing_courses": 0,
+        "invalid_courses": 0,
+        "last_checked_at": _now(),
+    }
+
+
 def calculate_completion(
     conn: sqlite3.Connection,
     scope_type: str,
@@ -585,9 +725,12 @@ def calculate_completion(
     department_id: int | None = None,
     semester: str | None = None,
 ) -> dict[str, Any]:
+    """Salt okunur kriter tamlık analizi yapar; veritabanına kalıcı yazma yapmaz.
+
+    (Snapshot yazımı için `refresh_completion_status` kullanılır.)
+    """
     _ensure_schema(conn)
-    if scope_type not in {"faculty", "department"}:
-        scope_type = "department" if department_id is not None else "faculty"
+    scope_type = _normalize_scope_type(scope_type)
     semester = _normalize_semester(semester)
     policy = resolve_policy(conn, scope_type, int(year), faculty_id, department_id, semester)
     required_fields = [str(item) for item in (policy.get("required_fields") or [])]
@@ -595,10 +738,20 @@ def calculate_completion(
     fields = required_fields + optional_fields
     courses = _course_scope(conn, scope_type, int(year), faculty_id, department_id, semester)
 
+    # Boş kapsam (seçmeli ders yok): tıkanma değil 'not_applicable'. Kapı engellemez.
+    if not courses:
+        return _empty_scope_result(
+            scope_type, int(year), faculty_id, department_id, semester,
+            policy, required_fields, optional_fields,
+        )
+
     matrix: list[dict[str, Any]] = []
     issues: list[dict[str, Any]] = []
     for course in courses:
-        criteria_row = _latest_criteria_row(conn, int(course["course_id"]), int(year), semester)
+        criteria_row = _latest_criteria_row(
+            conn, int(course["course_id"]), int(year), semester,
+            department_id=course.get("department_id"),
+        )
         for field in fields:
             row, row_issues = _matrix_row_for_field(
                 conn=conn,
@@ -621,13 +774,29 @@ def calculate_completion(
     invalid_required_fields = sum(1 for row in required_rows if row.get("is_present") and not row.get("is_valid"))
     completion_ratio = round(completed_required_fields / total_required_fields, 4) if total_required_fields else 0.0
     warning_count = sum(1 for issue in issues if str(issue.get("severity")) == "warning")
-    critical_or_error = sum(1 for issue in issues if str(issue.get("severity")) in {"error", "critical"})
-    blocking_issue_count = critical_or_error if policy.get("block_on_critical_issues") else 0
+    # Engelleyici bulgu sayımı yalnızca ZORUNLU alanlardaki *geçersiz/bozuk* (present
+    # ama valid değil) veriyi sayar. Eksik (missing_required_value) bulgular buraya
+    # dahil edilmez; çünkü eksiklik zaten tamlık oranına yansır ve seviyeyi 'blocked'
+    # değil 'not_started/partial' yapar. Opsiyonel alanlardaki kirlilik kapıyı tıkamaz.
+    # (Kriter Tamlık Yönetişimi belgesiyle uyumlu.)
+    def _is_blocking(issue: dict[str, Any]) -> bool:
+        if not issue.get("is_required"):
+            return False
+        if issue.get("issue_type") == "missing_required_value":
+            return False
+        sev = str(issue.get("severity"))
+        if sev == "critical" and policy.get("block_on_critical_issues"):
+            return True
+        if sev == "error" and policy.get("block_on_invalid_numeric"):
+            return True
+        return False
+
+    blocking_issue_count = sum(1 for issue in issues if _is_blocking(issue))
     level = _completion_level(
         completion_ratio,
         warning_count=warning_count,
         invalid_required_fields=invalid_required_fields,
-        blocking=bool(policy.get("block_on_invalid_numeric") or policy.get("block_on_critical_issues")),
+        blocking_issue_count=blocking_issue_count,
     )
     counts = _course_counts(matrix)
     risk = calculate_missing_data_risk(
@@ -691,6 +860,22 @@ def calculate_completion(
     return result
 
 
+def evaluate_algorithm_readiness(
+    conn: sqlite3.Connection,
+    scope_type: str,
+    year: int,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+    semester: str | None = None,
+) -> dict[str, Any]:
+    """[Salt okunur] Veritabanına hiçbir yan etki üretmeden tamlık/kapı durumunu döndürür.
+
+    `can_run_algorithm(..., refresh=False)` ve hızlı UI kontrolleri için tercih edilir;
+    kalıcı snapshot gerekiyorsa `refresh_completion_status` kullanılmalıdır.
+    """
+    return calculate_completion(conn, scope_type, int(year), faculty_id, department_id, semester)
+
+
 def _status_previous(
     conn: sqlite3.Connection,
     table_name: str,
@@ -707,7 +892,7 @@ def _status_previous(
             WHERE fakulte_id = ? AND bolum_id = ? AND yil = ?
             LIMIT 1
             """,
-            (int(faculty_id), int(department_id), int(year)),
+            (int(faculty_id or 0), int(department_id or 0), int(year)),
         )
     else:
         cur.execute(
@@ -717,7 +902,7 @@ def _status_previous(
             WHERE fakulte_id = ? AND yil = ?
             LIMIT 1
             """,
-            (int(faculty_id), int(year)),
+            (int(faculty_id or 0), int(year)),
         )
     return _fetchone_dict(cur)
 
@@ -752,7 +937,7 @@ def log_completion_change(
             result.get("scope_type"),
             result.get("faculty_id"),
             result.get("department_id"),
-            int(result.get("year")),
+            int(result.get("year") or 0),
             result.get("semester"),
             old_status,
             new_status,
@@ -770,6 +955,9 @@ def log_completion_change(
                     "missing_required_fields": result.get("missing_required_fields"),
                     "invalid_required_fields": result.get("invalid_required_fields"),
                     "blocking_reason": result.get("blocking_reason"),
+                    "risk_level": (result.get("missing_data_risk") or {}).get("risk_level"),
+                    "override_active": result.get("override_active"),
+                    "can_run_algorithm": result.get("can_run_algorithm"),
                 }
             ),
         ),
@@ -847,7 +1035,7 @@ def _upsert_department_status(conn: sqlite3.Connection, result: dict[str, Any], 
         conn,
         result,
         old_status=old.get("criteria_status") if old else None,
-        old_ratio=float(old.get("completion_ratio")) if old and old.get("completion_ratio") is not None else None,
+        old_ratio=float(old.get("completion_ratio") or 0.0) if old and old.get("completion_ratio") is not None else None,
         old_level=old.get("completion_level") if old else None,
     )
 
@@ -922,7 +1110,7 @@ def _upsert_faculty_status(conn: sqlite3.Connection, result: dict[str, Any], old
         conn,
         result,
         old_status=old.get("criteria_status") if old else None,
-        old_ratio=float(old.get("completion_ratio")) if old and old.get("completion_ratio") is not None else None,
+        old_ratio=float(old.get("completion_ratio") or 0.0) if old and old.get("completion_ratio") is not None else None,
         old_level=old.get("completion_level") if old else None,
     )
 
@@ -1009,7 +1197,8 @@ def get_blocking_reason(
     department_id: int | None = None,
     semester: str | None = None,
 ) -> str | None:
-    summary = get_completion_summary(conn, scope_type, int(year), faculty_id, department_id, semester)
+    # Salt sorgu: engel nedenini öğrenmek için kalıcı snapshot yazmaya gerek yok.
+    summary = get_completion_summary(conn, scope_type, int(year), faculty_id, department_id, semester, refresh=False)
     return summary.get("blocking_reason")
 
 
@@ -1020,7 +1209,14 @@ def can_run_algorithm(
     department_id: int | None = None,
     semester: str | None = None,
     scope_type: str | None = None,
+    refresh: bool = True,
 ) -> dict[str, Any]:
+    """Güvenlik kapısı sonucunu döndürür.
+
+    `refresh=True` (varsayılan, geriye dönük uyum): durum tablolarına snapshot yazar.
+    `refresh=False`: salt okunur — hızlı UI kontrolleri için yazma yan etkisi olmadan
+    değerlendirir (bkz. `evaluate_algorithm_readiness`).
+    """
     resolved_scope = scope_type or ("department" if department_id is not None else "faculty")
     summary = get_completion_summary(
         conn,
@@ -1029,7 +1225,7 @@ def can_run_algorithm(
         faculty_id=faculty_id,
         department_id=department_id,
         semester=semester,
-        refresh=True,
+        refresh=refresh,
     )
     return {
         "can_run": bool(summary.get("can_run_algorithm")),

@@ -244,6 +244,7 @@ def test_override_pending_and_approved_gate():
             department_id=10,
             semester="Guz",
             reason="Kurul kararıyla eksik veriyle çalıştırılacak.",
+            requested_by="bolum_baskani",
         )
         conn.commit()
         assert override["approval_status"] == "pending"

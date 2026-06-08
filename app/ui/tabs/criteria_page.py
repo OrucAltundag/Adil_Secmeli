@@ -8,6 +8,7 @@
 # =============================================================================
 
 import csv
+import logging
 import os
 import tkinter as tk
 from datetime import datetime, timezone
@@ -28,9 +29,11 @@ from app.services.criteria_import_service import (
 from app.services.criteria_import_service import (
     normalize_department_scope_name,
 )
-from app.services.criteria_override_service import request_override
+from app.services.criteria_override_service import list_overrides, request_override
 from app.services.criteria_task_service import generate_tasks_for_missing_criteria
 from app.services.yearly_workflow import mark_criteria_status
+
+logger = logging.getLogger(__name__)
 
 
 class CriteriaPage:
@@ -200,6 +203,11 @@ class CriteriaPage:
         # Listele Butonu
         tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
+
+        # Kriter Excel İçe Aktar (fonksiyon vardı ama butonu yoktu → erişilemiyordu)
+        tk.Button(parent, text="📥 Kriter Excel İçe Aktar", bg="#f97316", fg="white",
+                  font=("Segoe UI", 9, "bold"),
+                  command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=5)
 
         # Öğrenci Veri Seti seçici
         tk.Button(parent, text="📂 Öğrenci Veri Seti", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
@@ -430,9 +438,28 @@ class CriteriaPage:
             )
             self._last_completion_summary = summary
             risk = summary.get("missing_data_risk") or {}
-            durum = "Hazır" if summary.get("can_run_algorithm") else "Engellendi"
-            if summary.get("override_active"):
-                durum = "Override ile hazır" if summary.get("can_run_algorithm") else "Override bekliyor"
+            # Bekleyen (pending) override talepleri — override_active yalnızca onaylı override'ı yansıtır.
+            try:
+                pending = list_overrides(
+                    self.db.conn,
+                    scope_type=scope_type,
+                    year=int(year),
+                    faculty_id=int(faculty_id),
+                    department_id=int(department_id) if department_id is not None else None,
+                    semester=semester,
+                    approval_status="pending",
+                )
+            except Exception:
+                logger.exception("Bekleyen override sorgusu başarısız")
+                pending = []
+            if summary.get("override_active") and summary.get("can_run_algorithm"):
+                durum = "Override ile hazır"
+            elif pending:
+                durum = "Override onayı bekliyor"
+            elif summary.get("can_run_algorithm"):
+                durum = "Hazır"
+            else:
+                durum = "Engellendi"
             self.lbl_completion_summary.config(
                 text=(
                     f"Tamlık: %{float(summary.get('completion_ratio') or 0) * 100:.1f} | "
@@ -491,8 +518,9 @@ class CriteriaPage:
                         issue.get("suggestion") or "",
                     ),
                 )
-        except Exception as exc:
-            messagebox.showerror("Tamlık Paneli", f"Tamlık bilgisi yüklenemedi:\n{exc}")
+        except Exception:
+            logger.exception("Tamlık paneli yüklenemedi")
+            self.lbl_completion_summary.config(text="Tamlık bilgisi yüklenemedi.")
 
     def _generate_completion_tasks(self):
         try:
@@ -507,6 +535,10 @@ class CriteriaPage:
         except Exception as exc:
             messagebox.showerror("Görevler", f"Görev oluşturulamadı:\n{exc}")
 
+    def _current_username(self, default: str) -> str:
+        active_user = getattr(self.app, "current_user", None) if self.app else None
+        return getattr(active_user, "username", None) or default
+
     def _request_completion_override(self):
         try:
             if not self._last_completion_summary:
@@ -514,8 +546,9 @@ class CriteriaPage:
             summary = self._last_completion_summary
             if not summary:
                 return
-            reason = simpledialog.askstring("Override Talebi", "Override gerekçesi:")
-            if not reason:
+            # Hazırlık zaten uygunsa override gereksiz.
+            if summary.get("can_run_algorithm") and not summary.get("blocking_reason"):
+                messagebox.showinfo("Override", "Hazırlık zaten uygun; override talebine gerek yok.")
                 return
             missing_fields = sorted(
                 {
@@ -524,22 +557,42 @@ class CriteriaPage:
                     if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
                 }
             )
+            if not missing_fields:
+                messagebox.showinfo("Override", "Override gerektiren eksik/geçersiz zorunlu alan bulunmuyor.")
+                return
+            reason = simpledialog.askstring("Override Talebi", "Override gerekçesi:")
+            if not reason or not reason.strip():
+                return
             override = request_override(
                 self.db.conn,
                 scope_type=str(summary.get("scope_type") or "faculty"),
-                year=int(summary.get("year")),
+                year=int(summary.get("year") or 0),
                 faculty_id=summary.get("faculty_id"),
                 department_id=summary.get("department_id"),
                 semester=summary.get("semester"),
                 missing_fields=missing_fields,
                 validation_issues=summary.get("validation_issues") or [],
-                reason=reason,
-                requested_by="ui",
+                reason=reason.strip(),
+                requested_by=self._current_username("ui"),
             )
             self.db.conn.commit()
-            messagebox.showinfo("Override", f"Override talebi kaydedildi. Durum: {override.get('approval_status')}")
+            status = (override or {}).get("approval_status")
+            if status == "pending":
+                messagebox.showinfo(
+                    "Override",
+                    "Override talebi kaydedildi; ancak algoritma hâlâ çalıştırılamaz. "
+                    "Bu kapsam için yetkili onayı gerekiyor (onay Karar Merkezi'nden verilebilir).",
+                )
+            elif status == "approved":
+                messagebox.showinfo(
+                    "Override",
+                    "Override aktif edildi (politika onay gerektirmiyor). Algoritma override ile çalıştırılabilir.",
+                )
+            else:
+                messagebox.showinfo("Override", f"Override talebi kaydedildi. Durum: {status}")
             self.refresh_completion_panel()
         except Exception as exc:
+            logger.exception("Override talebi oluşturulamadı")
             messagebox.showerror("Override", f"Override talebi oluşturulamadı:\n{exc}")
 
     def _export_completion_matrix(self):
@@ -608,6 +661,14 @@ class CriteriaPage:
         Manuel girisin yerine gecer; mevcut yilki kriterler yenilenir."""
         from tkinter import messagebox as _mb
 
+        # Seçili yıl zorunlu: üretim hangi akademik yıla yazılacaksa o seçilmeli
+        # (eski sürüm yılı 2022'ye hard-code ediyordu; seçilen yıldan bağımsız yazıyordu).
+        year_raw = self.cb_yil.get()
+        if not str(year_raw or "").strip().isdigit():
+            _mb.showwarning("Eksik Kapsam", "Lütfen önce filtre alanından hedef akademik yılı seçiniz.")
+            return
+        target_year = int(year_raw)
+
         # Hangi dosya kullanilacak?
         excel_path = self._student_dataset_path  # kullanici sectiyse
         from pathlib import Path as _Path
@@ -623,9 +684,10 @@ class CriteriaPage:
 
         if not _mb.askyesno(
             "Otomatik Kriter Uretimi",
+            f"Hedef akademik yil: {target_year}\n"
             f"Secilen veri seti: {dosya_adi}\n\n"
             "Bu dosyadan TUM ders kriterleri OTOMATIK uretilecek.\n"
-            "Mevcut kriterleri (varsa) SILINIP yeniden yazilacak.\n\n"
+            "Secili yildaki mevcut kriterleri (varsa) SILINIP yeniden yazilacak.\n\n"
             "Devam edilsin mi?",
         ):
             return
@@ -639,7 +701,7 @@ class CriteriaPage:
                 _mb.showerror("Hata", "Veritabani baglantisi yok.")
                 return
             sonuc = auto_generate_criteria_from_student_dataset(
-                conn, excel_path=excel_path, year=2022, replace=True
+                conn, excel_path=excel_path, year=target_year, replace=True
             )
             mesaj = (
                 f"OTOMATIK URETIM TAMAMLANDI\n\n"
@@ -679,6 +741,7 @@ class CriteriaPage:
             messagebox.showwarning("Uyarı", "Veritabanı bağlantısı yok.")
             return
         faculty_id = self._selected_faculty_id()
+        department_id = self._selected_department_id()  # eksik tanım eklendi (NameError giderildi)
         year_raw = self.cb_yil.get()
         term = self.cb_donem.get() or "Güz"
         if faculty_id is None or not year_raw:
@@ -1051,7 +1114,7 @@ class CriteriaPage:
         summary = None
         if record and record.get("criteria_import_id") is not None:
             try:
-                summary = get_criteria_import_by_id(self.db.conn, int(record.get("criteria_import_id")))
+                summary = get_criteria_import_by_id(self.db.conn, int(record.get("criteria_import_id") or 0))
             except Exception:
                 summary = None
         if summary is None:
@@ -1378,6 +1441,19 @@ class CriteriaPage:
                 ort = float(self.ent_ortalama.get().strip() or 0.0)
                 kont = int(self.ent_kontenjan.get().strip() or 0)
                 kayit = top_ogr
+                # Kayıt öncesi temel iş kuralı doğrulaması (hatalı veri kaydını baştan engelle).
+                if top_ogr < 0 or gecen < 0 or kont < 0:
+                    messagebox.showerror("Geçersiz Veri", "Öğrenci ve kontenjan sayıları negatif olamaz.")
+                    return
+                if gecen > top_ogr:
+                    messagebox.showerror(
+                        "Geçersiz Veri",
+                        "Dersi geçen öğrenci sayısı, dersi alan toplam öğrenciden fazla olamaz.",
+                    )
+                    return
+                if not (0.0 <= ort <= 100.0):
+                    messagebox.showerror("Geçersiz Veri", "Ders not ortalaması 0-100 aralığında olmalıdır.")
+                    return
 
             if survey_locked and existing_record:
                 ank_kat = int(existing_record.get("anket_katilimci") or 0)
@@ -1497,24 +1573,34 @@ class CriteriaPage:
                         criteria_updated_at,
                     ),
                 )
-                cur.execute(
-                    "DELETE FROM performans WHERE ders_id=? AND akademik_yil=? AND donem=?",
-                    (c_id, yil, donem_db)
-                )
-                cur.execute("""
-                    INSERT INTO performans
-                        (ders_id, akademik_yil, donem, ortalama_not, basari_orani)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (c_id, yil, donem_db, ort, basari_orani))
-                cur.execute(
-                    "DELETE FROM populerlik WHERE ders_id=? AND akademik_yil=? AND donem=?",
-                    (c_id, yil, donem_db)
-                )
-                cur.execute("""
-                    INSERT INTO populerlik
-                        (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (c_id, yil, donem_db, kayit, kont, doluluk_orani))
+            # performans + populerlik HER durumda (update VEYA insert) güncellenir.
+            # Eski sürümde bu yazımlar yalnızca insert dalındaydı; mevcut bir kaydı
+            # güncellerken algoritmanın okuduğu performans/populerlik tabloları eski
+            # kalıyor, karar motoru güncel olmayan veriyle çalışabiliyordu.
+            cur.execute(
+                "DELETE FROM performans WHERE ders_id=? AND akademik_yil=? AND donem=?",
+                (c_id, yil, donem_db),
+            )
+            cur.execute(
+                """
+                INSERT INTO performans
+                    (ders_id, akademik_yil, donem, ortalama_not, basari_orani)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (c_id, yil, donem_db, ort, basari_orani),
+            )
+            cur.execute(
+                "DELETE FROM populerlik WHERE ders_id=? AND akademik_yil=? AND donem=?",
+                (c_id, yil, donem_db),
+            )
+            cur.execute(
+                """
+                INSERT INTO populerlik
+                    (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (c_id, yil, donem_db, kayit, kont, doluluk_orani),
+            )
 
             self.db.conn.commit()
             try:

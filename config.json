@@ -1,1 +1,7 @@
-{"db_path": "C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db", "db_url": "sqlite:///C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db"}
+{
+  "db_path": "C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db",
+  "db_url": "sqlite:///C:/Users/dadil/Documents/Yazilimsal_Projeler/BitirmeProje/Adil_Secmeli_Python/data/adil_secmeli.db",
+  "charts": {
+    "bins": 15
+  }
+}

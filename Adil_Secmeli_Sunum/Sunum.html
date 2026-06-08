@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adil Seçmeli Sunumu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+            color: #f8fafc; /* slate-50 */
+            overflow: hidden; /* Prevent scrolling, act like a presentation */
+            margin: 0;
+            padding: 0;
+        }
+
+        .slide {
+            display: none;
+            height: 100vh;
+            width: 100vw;
+            padding: 4rem 8rem;
+            flex-direction: column;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            box-sizing: border-box;
+        }
+
+        .slide.active {
+            display: flex;
+            opacity: 1;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Gradient Text */
+        .text-gradient {
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Slide specific layouts */
+        .slide-header { margin-bottom: 2rem; border-bottom: 1px solid #334155; padding-bottom: 1rem; }
+        .slide-title { font-size: 3rem; font-weight: 800; color: #f8fafc; }
+        .slide-subtitle { font-size: 1.5rem; color: #94a3b8; font-weight: 300; margin-top: 0.5rem; }
+        .slide-content { font-size: 1.5rem; color: #cbd5e1; line-height: 1.8; flex-grow: 1; display: flex; flex-direction: column; justify-content: center;}
+        
+        .bullet-list { list-style: none; padding: 0; margin-top: 1rem; }
+        .bullet-list li { position: relative; padding-left: 2rem; margin-bottom: 1rem; }
+        .bullet-list li::before {
+            content: '▹';
+            position: absolute;
+            left: 0;
+            color: #38bdf8;
+            font-weight: bold;
+        }
+
+        /* Layout utilities for visual structures */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; }
+        .box { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 0.75rem; }
+        .highlight { color: #38bdf8; font-weight: 600; }
+        .warning { color: #fbbf24; }
+
+        /* Progress and Controls */
+        #controls {
+            position: fixed;
+            bottom: 2rem;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 4rem;
+            z-index: 50;
+        }
+
+        #progress-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: #1e293b;
+            z-index: 50;
+        }
+
+        #progress-bar {
+            height: 100%;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .btn {
+            background: #1e293b; border: 1px solid #334155; color: white;
+            padding: 0.5rem 1.5rem; border-radius: 999px; cursor: pointer;
+            transition: all 0.2s; font-weight: 600;
+        }
+        .btn:hover { background: #334155; border-color: #38bdf8; }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .slide-counter { font-size: 1rem; color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums;}
+        
+        .placeholder-img { background: #0f172a; border: 2px dashed #475569; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; color: #64748b; height: 300px; width: 100%; }
+
+    </style>
+</head>
+<body>
+
+    <!-- ================= SLIDES ================= -->
+    <div id="slider">
+
+        <!-- BÖLÜM 1 -->
+        <section class="slide" id="slide-1">
+            <div class="flex flex-col items-center justify-center text-center h-full">
+                <img src="images.png" alt="Üniversite Logosu" class="w-32 h-32 object-contain mx-auto mb-8">
+                <h1 class="text-6xl font-extrabold mb-4 text-gradient">Adil Seçmeli</h1>
+                <h2 class="text-3xl text-slate-300 font-light mb-12">Veri Temelli Akademik Karar Destek Sistemi</h2>
+                <div class="mt-8 text-xl text-slate-400">
+                    <p class="font-semibold text-slate-200">Oruç Altundağ</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Neden Buradayız?</h2>
+                <p class="slide-subtitle">Problemin Anatomisi</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list">
+                        <li><span class="highlight">Sezgisel ve Öznel Kriterler:</span> Kararların matematiksel bir ağırlıklandırmaya dayanmaması; sürecin ölçülebilir verilerden ziyade kişisel inisiyatiflere ve anlık eğilimlere terk edilmesi.</li>
+                        <li><span class="highlight">Denetim İzi (Audit Trail) Eksikliği:</span> Verilen akademik kararların hangi metriklere dayandığının arşivlenememesi. Kararların arkasında, gelecekte incelenebilecek bir sistem günlüğü (log) veya veri anlık görüntüsü (snapshot) bulunmaması.</li>
+                        <li><span class="highlight text-red-400">Kara Kutu (Black-box) Kararlar:</span> Bir dersin neden açıldığına veya havuzda kaldığına dair geriye dönük mantıksal ve şeffaf bir izlenebilirliğin olmaması.</li>
+                    </ul>
+                </div>
+                <div class="box flex items-center justify-center bg-slate-800">
+                    <p class="text-center italic text-xl">"Yönetilemeyen ve ölçülemeyen süreçler, adil kararlar üretemez."</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Veri Entegrasyonu (Import/Export)</h2>
+                <p class="slide-subtitle">GIGO (Garbage In, Garbage Out) Prensibine Karşı Önlem</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list text-xl leading-relaxed">
+                        <li><span class="highlight">Şablon Tabanlı Standartlaştırma:</span> Sistem dışarıdan rastgele formatta veri kabul etmez. 'Şablon İndir' modülleri sayesinde kullanıcıyı doğru formata zorlayarak hataları daha kaynağındayken engeller.</li>
+                        <li><span class="highlight">Modüler Veri Beslemesi:</span> Müfredat, Kriter dosyaları ve Anket sonuçları tek bir hantal excel yerine bağımsız kanallardan yüklenir. Bu sayede sadece değişen veri (örneğin yeni anketler) sisteme hızlıca entegre edilebilir.</li>
+                        <li><span class="highlight">Veri Özgürlüğü (No Data Lock-in):</span> Karar motorundan çıkan sonuçlar, sistemi bir kapalı kutuya hapsetmez. Dinamik dışa aktarım (CSV/Excel) sayesinde üniversitenin diğer yazılımlarına kolayca entegre edilebilir.</li>
+                    </ul>
+                </div>
+                <div class="flex items-center justify-center">
+                    <img src="Import.png" alt="Veri entegrasyonu içe aktarım ekranı" class="w-full max-h-[28rem] object-contain rounded-lg border border-slate-700 bg-slate-900 p-2">
+                </div>
+            </div>
+        </section>
+
+        <!-- BÖLÜM 2.5 — HAZIRLIK KONTROLÜ (GÜVENLİK KAPISI) -->
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Hazırlık Kontrolü — Güvenlik Kapısı</h2>
+                <p class="slide-subtitle">Algoritma Çalışmadan Önce: "Veri Hazır mı?"</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list text-xl leading-relaxed">
+                        <li><span class="highlight">Karar öncesi denetim kapısı:</span> Seçili Yıl / Fakülte / Bölüm / Dönem kapsamı için kriter verilerinin <strong>yeterince dolu ve geçerli</strong> olup olmadığı kontrol edilir.</li>
+                        <li><span class="highlight">Ders × Kriter matrisi:</span> Her ders için her zorunlu alan (toplam/geçen öğrenci, not ortalaması, kontenjan, kayıt) tek tek "var mı / geçerli mi" olarak işaretlenir.</li>
+                        <li><span class="highlight text-amber-400">Tamlık eşiği:</span> Tamlık oranı eşiğin (örn. %100) altındaysa veya kritik/geçersiz bulgu varsa <strong>karar algoritması ÇALIŞTIRILMAZ.</strong></li>
+                        <li><span class="highlight text-green-400">Risk skoru:</span> Eksik verinin kararı ne kadar tehlikeye attığı <span class="font-mono">low / medium / high / critical</span> olarak ölçülür; opsiyonel alanlar (anket, trend) kapıyı kapatmaz, yalnızca uyarı üretir.</li>
+                    </ul>
+                </div>
+                <div class="box bg-slate-800">
+                    <p class="text-sm text-slate-400 mb-3">Hazırlık Kontrolü — Karar Merkezi çıktısı</p>
+                    <div class="font-mono text-sm bg-slate-900 p-4 rounded border border-slate-700 space-y-1">
+                        <p><span class="text-slate-400">Algoritma çalıştırılabilir mi:</span> <span class="text-green-400 font-bold">Evet</span></p>
+                        <p><span class="text-slate-400">Tamlık oranı:</span> <span class="text-white">%100.0</span> &nbsp; | &nbsp; <span class="text-slate-400">Seviye:</span> <span class="text-green-400">completed</span></p>
+                        <p><span class="text-slate-400">Eksik zorunlu alan:</span> <span class="text-white">0</span> &nbsp; <span class="text-slate-400">Geçersiz:</span> <span class="text-white">0</span></p>
+                        <p><span class="text-slate-400">Risk:</span> <span class="text-green-400">low (0.0)</span></p>
+                        <p><span class="text-slate-400">Aktif override:</span> <span class="text-white">Hayır</span></p>
+                        <hr class="border-slate-700 my-2">
+                        <p class="text-slate-400">Kriter bazlı özet:</p>
+                        <p>- average_grade: <span class="text-white">%100</span></p>
+                        <p>- survey_count <span class="text-amber-400">(opsiyonel)</span>: <span class="text-white">%100</span></p>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-3">Veri kaynağı: <span class="text-slate-300">criteria_completion_matrix · criteria_validation_issues · criteria_missing_data_risks</span></p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Override Yönetişimi — Kontrollü İstisna</h2>
+                <p class="slide-subtitle">Talep → Onay → Denetim İzi (Roller Ayrılığı)</p>
+            </div>
+            <div class="slide-content">
+                <div class="box bg-slate-800 p-4 mb-6 text-center">
+                    <p class="text-lg font-mono">
+                        <span class="text-blue-400">Talep (pending)</span> → <span class="text-amber-400">Yetkili Onayı</span> → <span class="text-green-400">approved → kapı açılır</span>
+                        &nbsp;&nbsp;<span class="text-slate-500">| ya da →</span> <span class="text-red-400">rejected</span>
+                    </p>
+                </div>
+                <div class="grid grid-cols-2 gap-8 items-start">
+                    <ul class="bullet-list text-lg leading-relaxed">
+                        <li><span class="highlight">Neden gerekli?</span> Veri eksik olsa bile, kurul gerekçesiyle algoritmanın istisnai çalıştırılması gerekebilir — ama bu <strong>kayıt altında ve denetlenebilir</strong> olmalı.</li>
+                        <li><span class="highlight text-amber-400">Pending kapıyı açmaz:</span> Talep oluşturmak yetmez; yalnızca <strong>onaylı (approved)</strong> ve süresi geçmemiş override kapıyı açar.</li>
+                        <li><span class="highlight text-green-400">Roller Ayrılığı (SoD):</span> Talebi açan kişi <strong>kendi talebini onaylayamaz</strong>; onay farklı bir yetkili tarafından verilir.</li>
+                        <li><span class="highlight">Denetim izi:</span> Kim talep etti, kim onayladı/reddetti, hangi gerekçeyle, hangi eksik alanlar için — hepsi arşivlenir.</li>
+                    </ul>
+                    <div class="box bg-slate-800">
+                        <p class="text-sm text-slate-400 mb-3">Bekleyen Override Talepleri — Yetkili Onayı</p>
+                        <div class="font-mono text-xs bg-slate-900 p-3 rounded border border-slate-700">
+                            <div class="grid grid-cols-4 gap-2 text-slate-500 border-b border-slate-700 pb-1 mb-2">
+                                <span>Talep Eden</span><span>Eksik Alan</span><span>Durum</span><span>İşlem</span>
+                            </div>
+                            <div class="grid grid-cols-4 gap-2 text-slate-300 items-center">
+                                <span>bolum_bsk</span>
+                                <span class="text-amber-300">average_grade</span>
+                                <span class="text-amber-400">pending</span>
+                                <span><span class="text-green-400">Onayla</span> / <span class="text-red-400">Reddet</span></span>
+                            </div>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-3">Onaylandığında: <span class="text-green-400 font-mono">approved → can_run = Evet</span>, sonuç raporuna override dipnotu işlenir.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- BÖLÜM 3 -->
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Karar Mekanizmasının Temeli</h2>
+                <p class="slide-subtitle">Çok Kriterli Karar Verme (MCDA)</p>
+            </div>
+            <div class="slide-content text-center">
+                <h3 class="text-3xl font-bold mb-4 text-white">Neden Tek Bir Metrik Yetmez?</h3>
+                <p class="mb-8">Akademik değer tek boyutlu (sadece not ortalaması) değildir. Güvenlik, yakıt ve hızın bir arabayı tanımlaması gibi, başarı, anket ve trend de dersi tanımlar.</p>
+                <div class="box inline-block mx-auto">
+                    <p class="text-2xl font-bold text-gradient">ÇÖZÜM: AHP + TOPSIS + AI Hibrit Motoru</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Analitik Hiyerarşi Prosesi (AHP)</h2>
+                <p class="slide-subtitle">Stratejiyi Matematiğe Çeviren Terzi</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list text-xl leading-relaxed">
+                        <li><span class="highlight">Kriterlerin Önceliklendirilmesi:</span> Sistemdeki metrikleri değerlendirir. (Örn: "Geçmiş başarı mı daha belirleyici olmalı, yoksa güncel öğrenci talebi mi?")</li>
+                        <li><span class="highlight">İkili Karşılaştırma (Görece Önem):</span> Kriterleri tek başına değil, birbirleriyle eşleştirerek (A, B'den ne kadar önemli?) insan sezgisini net matrislere dönüştürür.</li>
+                        <li><span class="highlight">Kesin Önem Dereceleri (Çıktı):</span> Yapılan karşılaştırmaları matematiksel bir süzgeçten geçirerek, her kritere net bir yüzde (%) ağırlığı atar. (Örn: Başarı: %58.6, Anket: %13.7)</li>
+                    </ul>
+                </div>
+                <div class="flex items-center justify-center">
+                    <img src="matris.png" alt="AHP ikili karşılaştırma matrisi" class="w-full max-h-[28rem] object-contain rounded-lg border border-slate-700 bg-white p-3">
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Tutarlılık Analizi (Consistency Ratio)</h2>
+                <p class="slide-subtitle">İnsan Yargısının Matematiksel Denetimi</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list">
+                        <li>Karar verici çelişkili cevaplar verebilir. (A > B, B > C, ama C > A derse ne olur?)</li>
+                        <li><span class="highlight text-green-400">Kural:</span> Tutarlılık Oranı (CR) < 0.10 olmalıdır.</li>
+                        <li>Eğer oran yüksek çıkarsa, sistem uyarır ve ağırlıkları kabul etmez. Körü körüne kararı engeller.</li>
+                    </ul>
+                </div>
+                <div class="box text-center bg-slate-800">
+                    <div class="text-5xl mb-2 font-bold text-indigo-400">CR < 0.10</div>
+                    <p class="text-slate-400 text-sm">Sistemin Güvenlik Kilidi</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Trend Analizi ve Re-scaling</h2>
+                <p class="slide-subtitle">Zamansal Dinamikler ve Eksik Veri Yönetimi</p>
+            </div>
+            <div class="slide-content">
+                <div class="grid grid-cols-2 gap-8 text-lg leading-relaxed">
+                    <ul class="bullet-list">
+                        <li><span class="highlight">Ağırlıklı Ortalama (Trend):</span> Algoritma yakın geçmişe daha çok değer verir.</li>
+                        <li><span class="highlight">Standart Senaryo:</span> 3 Yıl Önce (%20) + 2 Yıl Önce (%30) + Geçen Yıl (%50) = %100 Hesaplama.</li>
+                        <li><span class="highlight">Problem (Eksik Veri):</span> Bir ders geçen yıl hiç açılmadıysa ne olur?</li>
+                        <li><span class="highlight text-red-400">Hatalı Yaklaşım:</span> Geçen yılın skoru 0 kabul edilir. Dersin %50'lik en büyük puan dilimi kaybolur ve başarılı bir ders haksız yere sistemden elenir.</li>
+                    </ul>
+                    <ul class="bullet-list">
+                        <li><span class="highlight">Çözüm (Re-scaling / Yeniden Ölçekleme):</span> Sistem, kaybolan %50'lik ağırlığı çöpe atmaz; var olan yıllara orantılı olarak geri dağıtır.</li>
+                        <li><span class="highlight text-green-400">Yeni Ölçek:</span> 3 Yıl Önceki %20'lik pay %40'a, 2 Yıl Önceki %30'luk pay ise %60'a genişler. Algoritma adaletini kaybetmeden %100 üzerinden hesap yapmaya devam eder.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">TOPSIS</h2>
+                <p class="slide-subtitle">İdeal Çözüme Uzaklık</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list">
+                        <li>Farklı birimlerdeki verileri (sayı, yüzde) <strong>Normalize</strong> ederek aynı düzleme taşır.</li>
+                        <li>Sanal bir <span class="text-green-400">"Kusursuz Ders"</span> ve <span class="text-red-400">"En Kötü Ders"</span> yaratır.</li>
+                        <li>Adayların bu ideallere olan geometrik (Öklid) mesafesini ölçer.</li>
+                        <li><span class="highlight">Çıktı:</span> 0 ile 100 arası tekil bir 'Kesinleşme Puanı'.</li>
+                    </ul>
+                </div>
+                <div class="box bg-slate-800 text-lg">
+                    <ol class="list-decimal list-inside space-y-2 text-slate-300">
+                        <li>Her sütunu vektör normuyla normalize et.</li>
+                        <li>AHP ağırlıklarıyla çarp.</li>
+                        <li>Pozitif ideal <span class="text-green-400 font-bold">A<sup>+</sup></span> ve negatif ideal <span class="text-red-400 font-bold">A<sup>-</sup></span> belirle.</li>
+                        <li>Her ders için <span class="text-green-400 font-bold">S<sup>+</sup></span> ve <span class="text-red-400 font-bold">S<sup>-</sup></span> uzaklıklarını hesapla.</li>
+                        <li>Yakınlık katsayısı <span class="font-mono text-white">C<sub>i</sub> = S<sup>-</sup> / (S<sup>+</sup> + S<sup>-</sup>)</span> üret.</li>
+                        <li>Bunu 100 ile çarpıp <span class="highlight">Kesinleşme Puanı</span> yap.</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Decision Tree (Karar Ağacı)</h2>
+                <p class="slide-subtitle">Açıklanabilir Yapay Zeka (XAI - Explainable AI)</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <div class="box border-l-4 border-l-indigo-500 mb-6">
+                        <p class="font-bold text-white">Neden Derin Öğrenme (Deep Learning) Kullanmadık?</p>
+                        <p class="text-slate-400 mt-2">Çünkü akademik bir kararın "nedenini" açıklayabilmeliyiz. "Yapay zeka öyle istedi" bir savunma değildir.</p>
+                    </div>
+                    <ul class="bullet-list text-lg">
+                        <li>Karar Ağacı, şeffaf sınıflandırma yapar.</li>
+                        <li>Mantıksal soru-cevap kapılarıyla çalışır (Örn: "Başarı > %60 mı?").</li>
+                        <li>Kararın izini adım adım sürmemizi sağlar.</li>
+                    </ul>
+                </div>
+                <div class="box bg-slate-800 border-l-4 border-l-indigo-500">
+                    <p class="font-bold text-white mb-4">Mini Karar Ağacı Modeli</p>
+                    <div class="space-y-4 text-lg text-slate-300">
+                        <p><span class="highlight">Adım 1 (Kök Düğüm):</span> Algoritma ilk kurala bakar: "Başarı oranı %60'tan büyük mü?" -> <span class="text-green-400 font-bold">Evet</span>. Sağ dala geçer.</p>
+                        <p><span class="highlight">Adım 2 (Alt Düğüm):</span> İkinci kurala bakar: "Anket oranı %10'dan büyük mü?" -> <span class="text-green-400 font-bold">Evet</span>.</p>
+                        <p><span class="highlight text-green-400">Sonuç:</span> Ders, müfredat için güçlü aday olarak işaretlenir.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Random Forest (Rastgele Orman)</h2>
+                <p class="slide-subtitle">Makine Öğrenmesi ile İstatistiksel Destek</p>
+            </div>
+            <div class="slide-content">
+                <ul class="bullet-list text-xl">
+                    <li><span class="highlight">Amacı:</span> Tek bir Karar Ağacının yapabileceği "ezberleme" (overfitting) hatasını önlemek için, yüzlerce farklı Karar Ağacından oluşan sanal bir kurul kurup "çoğunluğun kararına" göre skor üretmek.</li>
+                    <li><span class="highlight text-amber-400">Rol:</span> Karar verici (Patron) değil, <strong>"Denetleyici Danışman".</strong></li>
+                    <li><span class="highlight">Çalışma Mantığı:</span> Geçmiş yıllardaki verileri ve kararları inceleyerek öğrenen yüzlerce karar ağacının (sanal hakem heyetinin) ortak kararı.</li>
+                    <li><span class="highlight">Çıktı:</span> AHP/TOPSIS'in matematiksel sonucunu, istatistiksel bir olasılık skoruyla teyit eder.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Deep Dive: Algoritma Akışı</h2>
+                <p class="slide-subtitle">Çok Kriterli Karar Verme Pipeline</p>
+            </div>
+            <div class="slide-content">
+                <div class="box bg-slate-800 p-4 mb-6 text-center">
+                    <p class="text-lg font-mono text-white">
+                        <span class="text-blue-400">Ham Veri</span> → <span class="text-indigo-400">Kriter Oranları</span> → <span class="text-purple-400">AHP Ağırlıkları</span> → <span class="text-pink-400">Trend</span> → <span class="text-cyan-400">TOPSIS</span> → <span class="text-amber-400">RF/DT</span> → <span class="text-green-400">Nihai Karar</span>
+                    </p>
+                </div>
+                <ul class="bullet-list text-lg space-y-3">
+                    <li><span class="highlight">Ham Veri:</span> Başarı, anket, doluluk, ortalama not — doğrudan veritabanında saklanan sayılar.</li>
+                    <li><span class="highlight">Kriter Oranları:</span> Geçen/Toplam, Kayıtlı/Kontenjan gibi oranlarla ham veriler normalize edilir.</li>
+                    <li><span class="highlight">AHP Ağırlıkları:</span> Her kriterin ne kadar önemli olduğu matematiksel olarak hesaplanır.</li>
+                    <li><span class="highlight">Trend:</span> Geçmiş yıllardaki başarıdan gelecek performansı tahmin ederiz.</li>
+                    <li><span class="highlight">TOPSIS:</span> Bütün dersleri ideal çözüme göre sıralayan kesinleşme puanı.</li>
+                    <li><span class="highlight">RF & DT:</span> Makine öğrenmesi, matematiksel kararı destekleyen istatistiksel bir oy.</li>
+                    <li><span class="highlight">Nihai Karar:</span> Tüm bu işlemlerin sonucu: Müfredat mı, Havuz mu?</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Adım 1: Kriter Oranları Hesaplaması</h2>
+                <p class="slide-subtitle">Ham Veriden Normalleştirme</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list">
+                        <li><span class="highlight">Başarı Oranı:</span> Geçen / Toplam<br><span class="text-slate-400 text-sm">Örnek: 76 / 100 = 0.7600</span></li>
+                        <li><span class="highlight">Doluluk Oranı:</span> Kayıtlı / Kontenjan<br><span class="text-slate-400 text-sm">Örnek: 100 / 120 = 0.8333</span></li>
+                        <li><span class="highlight">Anket Oranı:</span> Dersi Seçen / Katılımcı<br><span class="text-slate-400 text-sm">Örnek: 0.51 / 100 = 0.0051</span></li>
+                        <li><span class="highlight">Ortalama Not:</span> Doğrudan kullanılır<br><span class="text-slate-400 text-sm">Örnek: 56.0</span></li>
+                    </ul>
+                </div>
+                <div class="box bg-slate-800">
+                    <p class="font-bold text-white mb-3">💡 Önemli Not:</p>
+                    <p class="text-slate-400 text-sm">Eğer anket verileri yoksa, sistem varsayılan 0.5 (%50) kullanır. Ancak verinin 0.0051 gibi çok düşük çıkması gerçekten çok az kişinin dersi seçtiği anlamına gelir.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Adım 2: AHP Ağırlıklandırması</h2>
+                <p class="slide-subtitle">Strateji Kararından Matematiksel Ağırlığa</p>
+            </div>
+            <div class="slide-content">
+                <div class="grid grid-cols-2 gap-6 mb-6">
+                    <div class="box border-l-4 border-l-blue-500">
+                        <p class="text-sm text-slate-400 mb-2">İkili Karşılaştırma Matrisi</p>
+                        <div class="font-mono text-xs text-white bg-slate-900 p-2 rounded">
+                            <p>Başarı, Trend'den 3 kat</p>
+                            <p>Başarı, Anketli Popülariteden 9 kat</p>
+                            <p>Popülarite, Anketden 4 kat</p>
+                        </div>
+                    </div>
+                    <div class="box border-l-4 border-l-green-500">
+                        <p class="text-sm text-slate-400 mb-2">Hesaplanan Ağırlıklar</p>
+                        <p><span class="text-blue-300">Başarı:</span> <span class="font-bold text-white">58.59%</span></p>
+                        <p><span class="text-indigo-300">Trend:</span> <span class="font-bold text-white">22.97%</span></p>
+                        <p><span class="text-purple-300">Popülarite:</span> <span class="font-bold text-white">13.71%</span></p>
+                        <p><span class="text-pink-300">Anket:</span> <span class="font-bold text-white">4.73%</span></p>
+                    </div>
+                </div>
+                <div class="box bg-slate-800">
+                    <p class="text-sm mb-2"><span class="text-green-400">Tutarlılık Oranı (CR):</span> <span class="font-bold">0.0269</span> — <span class="text-green-400 font-bold">✓ Tutarlı</span> (< 0.10)</p>
+                    <p class="text-xs text-slate-400">Sistem "başarı daha önemlidir" kararını rastgele değil, matematiksel olarak destekliyor.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Adım 3: Trend Analizi ve Re-scaling</h2>
+                <p class="slide-subtitle">Geçmişin Gelecek Tahminine Etkisi</p>
+            </div>
+            <div class="slide-content grid-2">
+                <ul class="bullet-list">
+                    <li><span class="highlight">Ağırlıklandırılmış Ortalama:</span> En yeni yıl %50, ikinci %30, üçüncü %20 ağırlık alır.</li>
+                    <li><span class="highlight">Eksik Veri Sorunu:</span> Ders sadece 2022'de açılmışsa, diğer yıllara verisi yok. O zaman ne?</li>
+                    <li><span class="highlight text-amber-400">Re-scaling Çözümü:</span> Mevcut yılın ağırlığını 1.00'a ölçeklendiri, diğer yıllar silinir.</li>
+                    <li>Sonuç: <span class="text-white font-bold">2022 Trend = 0.7600 × 1.00 = 0.7600</span></li>
+                </ul>
+                <div class="box bg-slate-800 text-center">
+                    <p class="text-xs text-slate-400 mb-2">Matematiksel Yorum:</p>
+                    <p class="text-white font-bold">76.0% × 100.0%<br/><span class="text-xs text-slate-400">(re-scaled, varsayılan 50%)</span><br/>→ Trend: 0.7600</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Adım 4: TOPSIS ve Kesinleşme Puanı</h2>
+                <p class="slide-subtitle">İdeal Çözüme Uzaklık Ölçümü</p>
+            </div>
+            <div class="slide-content">
+                <ul class="bullet-list text-lg space-y-4">
+                    <li><span class="highlight">Normalize:</span> Tüm adaylardaki aynı metrik birlikte değerlendirilir — karşılaştırma zemini eşitlenir.</li>
+                    <li><span class="highlight">AHP Çarpı:</span> Normalize edilmiş değerler AHP ağırlıklarıyla çarpılır.</li>
+                    <li><span class="highlight">İdeal Çözü Belirleme:</span> Sistem sanal bir "Kusursuz Ders" (her metrikte en iyisi) ve "En Kötü Ders" (her metrikte en kötüsü) yaratır.</li>
+                    <li><span class="highlight">Mesafe Hesaplaması:</span> Her dersin ideal ve kötü çözüme olan öklid mesafesi ölçülür.</li>
+                    <li><span class="highlight text-green-400">Yakınlık Katsayısı:</span> <span class="font-mono text-white">C<sub>i</sub> = S<sup>-</sup> / (S<sup>+</sup> + S<sup>-</sup>)</span> formülüyle 0–1 arasında bir skor türetilir.</li>
+                    <li><span class="highlight text-cyan-400">Kesinleşme Puanı:</span> Bu skor 100 ile çarpılarak <span class="font-bold">0–100 arası nihai puan</span> elde edilir.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Adım 5: RF ve DT — Neden Farklı Sonuç?</h2>
+                <p class="slide-subtitle">Regresyon vs. Sınıflandırma</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div class="box border-l-4 border-l-amber-500">
+                    <h4 class="font-bold text-white mb-3">Random Forest (RF)</h4>
+                    <ul class="text-sm space-y-1 text-slate-300">
+                        <li>📊 <span class="text-amber-300">Regresyon:</span> Sürekli sayı üretir</li>
+                        <li>🎯 Çıktı: <span class="font-bold">39.38</span> puan</li>
+                        <li>📏 Kural: Skor ≥ 40 ise Müfredat</li>
+                        <li>❌ Sonuç: <span class="font-bold">39.38 < 40</span> → <span class="text-red-400">Havuz</span></li>
+                    </ul>
+                </div>
+                <div class="box border-l-4 border-l-indigo-500">
+                    <h4 class="font-bold text-white mb-3">Decision Tree (DT)</h4>
+                    <ul class="text-sm space-y-1 text-slate-300">
+                        <li>🏷️ <span class="text-indigo-300">Sınıflandırma:</span> Kategori etiketleri üretir</li>
+                        <li>🎯 Çıktı: <span class="font-bold">Sınıf 1</span> (Müfredat)</li>
+                        <li>🌳 Mantık: "Bu ders desenlerine benziyor"</li>
+                        <li>✓ Sonuç: Mufredat tahmini → <span class="text-green-400">Müfredat</span></li>
+                    </ul>
+                </div>
+                <div class="col-span-2 text-center mt-4">
+                    <p class="text-slate-300"><strong>🔍 Sezgi:</strong> Aynı veriye bakan iki algoritma, farklı sınır çizgileri öğrenmiş olabilir. Bu <span class="text-green-400">normaldir</span> ve sistemin esnekliğini gösterir.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Vaka Analizi 2 (Karşılaştırma)</h2>
+                <p class="slide-subtitle">Kelebek Etkisi: İçecek Bilgisi Dersi</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div class="box">
+                    <h3 class="font-bold text-xl mb-4 border-b border-slate-700 pb-2">İçecek Bilgisi</h3>
+                    <p>Başarı: <span class="text-white font-bold">%76.8</span></p>
+                    <p>Anket: <span class="text-green-400 font-bold">%27.7</span></p>
+                    <p class="mt-4">TOPSIS: <span class="text-white font-bold">59.90</span> <span class="text-green-400">↑</span></p>
+                    <p>RF Skoru: <span class="text-white font-bold">56.38</span> <span class="text-green-400">↑</span></p>
+                </div>
+                <div>
+                    <ul class="bullet-list">
+                        <li>Her iki dersin başarı oranları (%76 vs %76.8) neredeyse aynı.</li>
+                        <li><span class="highlight">Farkı Yaratan:</span> Öğrenci anketindeki ciddi artış.</li>
+                        <li><span class="highlight text-amber-400">Sistemin Hassasiyeti:</span> Tek bir metrikteki değişim, TOPSIS'te ideal noktaya yakınlığı ikiye katlamış, makine öğrenmesi algısını eşiğin üstüne atmıştır.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- BÖLÜM 5 -->
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Havuzdaki Sessiz Kriz</h2>
+                <p class="slide-subtitle">Soğuk Başlangıç (Cold Start) ve 50 Puan Problemi</p>
+            </div>
+            <div class="slide-content">
+                <ul class="bullet-list">
+                    <li><span class="highlight text-red-400">Problem:</span> Havuzda bekleyen ve geçmiş verisi olmayan yeni dersler, adil kalmak adına varsayılan <strong>50 puanda</strong> sıkışır.</li>
+                    <li>Eğer müfredattan bir ders çıkarsa, yerine 50 puanlı on adet havuz dersinden hangisi alınacak?</li>
+                    <li><span class="highlight text-green-400">Mevcut Çözüm:</span> Öğrenci anketlerinin havuz dersleri üzerinde bir sıçrama tahtası olarak kullanılması ve öne çıkan derslerin parlamasının sağlanması.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-header">
+                <h2 class="slide-title">Gelecek Vizyonu</h2>
+                <p class="slide-subtitle">Sırada Ne Var? Doğal Dil İşleme (NLP)</p>
+            </div>
+            <div class="slide-content grid-2">
+                <div>
+                    <ul class="bullet-list">
+                        <li>Ders içeriklerinin (Syllabus) anlamsal (semantic) olarak AI tarafından analiz edilmesi.</li>
+                        <li><span class="highlight">Senaryo:</span> Müfredattaki 'Yapay Zeka' dersi çok başarılıysa, havuzda bekleyen 'Derin Öğrenme' dersine <span class="text-green-400 font-bold">İçerik/Vizyon Bonusu</span> verilmesi.</li>
+                        <li>Ceza yok, sadece anlamsal akrabalık üzerinden pozitif ayrımcılık.</li>
+                    </ul>
+                </div>
+                <div class="box flex items-center justify-center bg-slate-800 text-5xl">
+                    🧠 🔗 📚
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="flex flex-col items-center justify-center text-center h-full">
+                <h1 class="text-7xl font-extrabold text-gradient leading-tight max-w-5xl">
+                    Beni Dinlediğiniz İçin<br>Teşekkür Ederim
+                </h1>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Controls & Progress -->
+    <div id="controls">
+        <button id="prevBtn" class="btn" onclick="prevSlide()">Geri</button>
+        <span class="slide-counter" id="slideCounter">1 / 22</span>
+        <button id="nextBtn" class="btn" onclick="nextSlide()">İleri</button>
+    </div>
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <!-- Logic -->
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const counter = document.getElementById('slideCounter');
+        const progressBar = document.getElementById('progress-bar');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active');
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                }
+            });
+
+            // Update counter
+            counter.innerText = `${currentSlide + 1} / ${slides.length}`;
+
+            // Update progress bar
+            const progress = ((currentSlide) / (slides.length - 1)) * 100;
+            progressBar.style.width = `${progress}%`;
+
+            // Button states
+            prevBtn.disabled = currentSlide === 0;
+            nextBtn.disabled = currentSlide === slides.length - 1;
+        }
+
+        function nextSlide() {
+            if (currentSlide < slides.length - 1) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                prevSlide();
+            }
+        });
+
+        // Initialize
+        updateSlide();
+    </script>
+</body>
+</html>
