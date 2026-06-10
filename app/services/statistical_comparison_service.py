@@ -43,10 +43,12 @@ def compare_two_models(metric_values_a: Iterable[float], metric_values_b: Iterab
             test = "descriptive"
         elif test_type == "paired_t" or (test_type == "auto" and n >= 20):
             test = "paired_t_test"
-            p_value = float(stats.ttest_rel(a, b).pvalue)
+            # scipy.stats result namedtuple — Pylance stubs `_` placeholder uretiyor,
+            # `.pvalue` runtime'da daima vardir. getattr ile sahte uyari elimine edilir.
+            p_value = float(getattr(stats.ttest_rel(a, b), "pvalue", 1.0))
         else:
             test = "wilcoxon_signed_rank"
-            p_value = float(stats.wilcoxon(a, b, zero_method="zsplit").pvalue)
+            p_value = float(getattr(stats.wilcoxon(a, b, zero_method="zsplit"), "pvalue", 1.0))
         significant = bool(p_value is not None and p_value < 0.05)
         return {
             "test": test,

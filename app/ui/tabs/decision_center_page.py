@@ -24,7 +24,9 @@ from app.services.criteria_override_service import (
 from app.services.decision_policy_service import (
     activate_decision_policy,
     create_decision_policy,
+    deactivate_decision_policy,
     list_decision_policies,
+    update_decision_policy,
 )
 from app.services.decision_run_service import list_course_decisions, list_decision_runs
 from app.services.ml_prediction_service import get_predictions_for_course
@@ -206,14 +208,53 @@ class DecisionCenterPage(ttk.Frame):
             "Listede tutarlı bir profil yoksa 'Yeni Varsayılan Profil' ile oluşturun, "
             "ardından 'Seçileni Aktif Yap' butonuna basın.",
         )
+
+        # Tablo kapsayıcısı — başlık, satır yüksekliği ve renk etiketleriyle görsel iyileştirme.
+        table_box = ttk.LabelFrame(frame, text="Tanımlı AHP Profilleri", padding=(6, 4))
+        table_box.pack(fill=tk.BOTH, expand=True)
+
         columns = ("id", "ad", "kapsam", "yil", "agirliklar", "cr", "tutarlı", "aktif")
-        self.tree_ahp = self._tree(frame, columns)
+        self.tree_ahp = self._tree(table_box, columns)
+
+        # Sütun başlıkları ve daha uygun genişlik/hizalamalar.
+        headings = {
+            "id": ("ID", 50, tk.CENTER),
+            "ad": ("Profil Adı", 180, tk.W),
+            "kapsam": ("Kapsam", 90, tk.CENTER),
+            "yil": ("Yıl", 70, tk.CENTER),
+            "agirliklar": ("Ağırlıklar (başarı • trend • popülerlik • anket)", 420, tk.W),
+            "cr": ("CR (≤ 0.10)", 100, tk.CENTER),
+            "tutarlı": ("Tutarlı?", 90, tk.CENTER),
+            "aktif": ("Aktif?", 90, tk.CENTER),
+        }
+        for col, (text, width, anchor) in headings.items():
+            self.tree_ahp.heading(col, text=text)
+            self.tree_ahp.column(col, width=width, anchor=anchor, stretch=(col == "agirliklar"))
+
+        # Satır yüksekliğini biraz aç + zebra/aktif/tutarsız renk etiketleri.
+        try:
+            style = ttk.Style(self)
+            style.configure("Treeview", rowheight=26)
+        except Exception:
+            pass
+        self.tree_ahp.tag_configure("zebra", background="#F7FAFD")
+        self.tree_ahp.tag_configure("active", background="#E6F4EA", foreground="#1B5E20")
+        self.tree_ahp.tag_configure("inconsistent", background="#FDECEA", foreground="#B71C1C")
+
+        # Aksiyon paneli — buton ve durum etiketi ayrılmış, sağda renkli durum rozeti.
         actions = ttk.Frame(frame)
-        actions.pack(fill=tk.X, pady=6)
-        ttk.Button(actions, text="Yeni Varsayılan Profil", command=self._create_profile).pack(side=tk.LEFT, padx=4)
-        ttk.Button(actions, text="Seçileni Aktif Yap", command=self._activate_profile).pack(side=tk.LEFT, padx=4)
-        self.lbl_ahp_warning = ttk.Label(actions, text="")
-        self.lbl_ahp_warning.pack(side=tk.LEFT, padx=12)
+        actions.pack(fill=tk.X, pady=(8, 0))
+
+        btn_group = ttk.Frame(actions)
+        btn_group.pack(side=tk.LEFT)
+        ttk.Button(btn_group, text="➕ Yeni Varsayılan Profil", command=self._create_profile).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(btn_group, text="✓ Seçileni Aktif Yap", command=self._activate_profile).pack(side=tk.LEFT, padx=(0, 6))
+
+        self.lbl_ahp_warning = tk.Label(
+            actions, text="", anchor=tk.W, padx=10, pady=4,
+            bg="#F4F8FE", fg="#1B5E20", font=("Segoe UI", 9, "bold"),
+        )
+        self.lbl_ahp_warning.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(12, 0))
 
     def _build_readiness_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
@@ -263,19 +304,23 @@ class DecisionCenterPage(ttk.Frame):
             "Karar Politikaları — Eşik Değerleri ve Kurallar",
             "Bir dersin TOPSIS skoruna göre hangi statüye geçeceğini belirleyen eşikleri tutar: "
             "müfredatta kalma eşiği, havuza düşme, dinlenmeye alma, iptal adayı eşiği ve "
-            "iptal için manuel onay gerekip gerekmediği. Karar çalıştırmadan önce AKTİF bir politika olmalıdır.",
+            "iptal için manuel onay gerekip gerekmediği. Skorlar 0-100 aralığındadır ve eşikler "
+            "iptal <= dinlenme < havuz < müfredat sırasını izlemelidir.",
             "decision_policies tablosu. Politikalar bu sekmede oluşturulur (içe aktarma gerekmez); "
             "değerler kurum kurallarınıza göre belirlenir.",
             "Aktif politika yoksa 'Yeni Varsayılan Politika' oluşturun ve 'Seçileni Aktif Yap' deyin. "
-            "Eşikleri kurumunuzun kurallarına göre düzenleyin.",
+            "Seçili politikayı çift tıklayarak veya 'Seçileni Düzenle' ile eşikleri güncelleyin.",
             renk="#6A1B9A",
         )
         columns = ("id", "ad", "kapsam", "yil", "mod", "müfredat", "havuz", "dinlenme", "iptal", "onay", "aktif")
         self.tree_policy = self._tree(frame, columns)
+        self.tree_policy.bind("<Double-1>", lambda _event: self._edit_policy())
         actions = ttk.Frame(frame)
         actions.pack(fill=tk.X, pady=6)
         ttk.Button(actions, text="Yeni Varsayılan Politika", command=self._create_policy).pack(side=tk.LEFT, padx=4)
         ttk.Button(actions, text="Seçileni Aktif Yap", command=self._activate_policy).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Seçileni Düzenle", command=self._edit_policy).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Pasifleştir", command=self._deactivate_policy).pack(side=tk.LEFT, padx=4)
 
     def _build_runs_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
@@ -566,25 +611,54 @@ class DecisionCenterPage(ttk.Frame):
     def _load_ahp(self):
         self._clear(self.tree_ahp)
         rows = list_ahp_profiles(self._conn())
-        inconsistent = []
-        for p in rows:
-            weights = ", ".join(f"{k}:{v:.2f}" for k, v in p["weights"].items())
+        inconsistent: list[str] = []
+        has_active = False
+        for index, p in enumerate(rows):
+            weights = "   •   ".join(f"{k}: {v:.2f}" for k, v in p["weights"].items())
+            is_active = bool(p.get("is_active"))
+            is_consistent = bool(p.get("is_consistent"))
+            tags: list[str] = []
+            if is_active:
+                tags.append("active")
+                has_active = True
+            elif index % 2 == 1:
+                tags.append("zebra")
+            if not is_consistent:
+                tags.append("inconsistent")
+                inconsistent.append(p["name"])
             self.tree_ahp.insert(
                 "",
                 tk.END,
                 iid=str(p["id"]),
                 values=(
-                    p["id"], p["name"], p["scope_type"], p.get("year") or "",
+                    p["id"], p["name"], p["scope_type"], p.get("year") or "—",
                     weights, f"{float(p.get('consistency_ratio') or 0):.3f}",
-                    "Evet" if p.get("is_consistent") else "Hayır",
-                    "Evet" if p.get("is_active") else "Hayır",
+                    "✓ Evet" if is_consistent else "✗ Hayır",
+                    "● AKTİF" if is_active else "○ Pasif",
                 ),
+                tags=tuple(tags),
             )
-            if not p.get("is_consistent"):
-                inconsistent.append(p["name"])
-        self.lbl_ahp_warning.config(
-            text=("Tutarsız profil: " + ", ".join(inconsistent[:3])) if inconsistent else "Aktif profiller tutarlı."
-        )
+
+        if inconsistent:
+            text = "⚠ Tutarsız profil: " + ", ".join(inconsistent[:3])
+            if len(inconsistent) > 3:
+                text += f" (+{len(inconsistent) - 3} daha)"
+            self.lbl_ahp_warning.config(text=text, bg="#FDECEA", fg="#B71C1C")
+        elif not rows:
+            self.lbl_ahp_warning.config(
+                text="ℹ Henüz profil yok — 'Yeni Varsayılan Profil' ile başlayın.",
+                bg="#FFF6DF", fg="#6B4E00",
+            )
+        elif not has_active:
+            self.lbl_ahp_warning.config(
+                text="⚠ Aktif profil yok — karar çalıştırmak için bir profili aktifleştirin.",
+                bg="#FFF6DF", fg="#6B4E00",
+            )
+        else:
+            self.lbl_ahp_warning.config(
+                text="✓ Aktif profil tutarlı — karar çalıştırmaya hazır.",
+                bg="#E6F4EA", fg="#1B5E20",
+            )
 
     def _load_policies(self):
         self._clear(self.tree_policy)
@@ -1592,6 +1666,150 @@ class DecisionCenterPage(ttk.Frame):
             activate_decision_policy(self._conn(), int(selected[0]))
             self._load_policies()
         except Exception:
+            messagebox.showerror("Karar Politikası", self._friendly_backend_error())
+
+    def _selected_policy(self) -> dict | None:
+        selected = self.tree_policy.selection()
+        if not selected:
+            messagebox.showwarning("Karar Politikası", "Lütfen bir politika seçin.")
+            return None
+        policy_id = int(selected[0])
+        try:
+            policy = next(
+                (policy for policy in list_decision_policies(self._conn()) if int(policy["id"]) == policy_id),
+                None,
+            )
+            if not policy:
+                messagebox.showwarning("Karar Politikası", "Seçili politika bulunamadı.")
+            return policy
+        except Exception:
+            logger.exception("Karar politikası okunamadı")
+            messagebox.showerror("Karar Politikası", self._friendly_backend_error())
+            return None
+
+    @staticmethod
+    def _policy_number(raw: str, label: str, *, required: bool = True) -> float | None:
+        value = str(raw or "").strip()
+        if not value:
+            if required:
+                raise ValueError(f"{label} boş olamaz.")
+            return None
+        try:
+            return float(value.replace(",", "."))
+        except ValueError as exc:
+            raise ValueError(f"{label} sayısal olmalıdır.") from exc
+
+    def _edit_policy(self):
+        policy = self._selected_policy()
+        if not policy:
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Karar Politikası Düzenle")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        vars_ = {
+            "name": tk.StringVar(value=str(policy.get("name") or "")),
+            "curriculum": tk.StringVar(value=str(policy.get("curriculum_keep_threshold") or 70.0)),
+            "pool": tk.StringVar(value=str(policy.get("pool_threshold") or 50.0)),
+            "rest": tk.StringVar(value=str(policy.get("rest_threshold") or 40.0)),
+            "cancel": tk.StringVar(
+                value="" if policy.get("cancel_candidate_threshold") is None else str(policy.get("cancel_candidate_threshold"))
+            ),
+            "manual": tk.BooleanVar(value=bool(policy.get("require_manual_approval_for_cancel"))),
+            "notes": tk.StringVar(value=str(policy.get("notes") or "")),
+        }
+
+        body = ttk.Frame(dialog, padding=12)
+        body.grid(row=0, column=0, sticky="nsew")
+
+        scope_text = (
+            f"Kapsam: {policy.get('scope_type') or 'global'}"
+            f" | Yıl: {policy.get('year') or '-'}"
+            f" | Mod: {policy.get('mode') or 'static_threshold'}"
+            f" | Aktif: {'Evet' if policy.get('is_active') else 'Hayır'}"
+        )
+        ttk.Label(body, text=scope_text, foreground="#475569").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 8)
+        )
+
+        fields = [
+            ("Politika adı", "name"),
+            ("Müfredat eşiği", "curriculum"),
+            ("Havuz eşiği", "pool"),
+            ("Dinlenme eşiği", "rest"),
+            ("İptal adayı eşiği", "cancel"),
+            ("Not", "notes"),
+        ]
+        for row, (label, key) in enumerate(fields, start=1):
+            ttk.Label(body, text=label).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+            ttk.Entry(body, textvariable=vars_[key], width=36).grid(row=row, column=1, sticky=tk.EW, pady=4)
+
+        ttk.Checkbutton(
+            body,
+            text="İptal adayı için manuel akademik onay gereksin",
+            variable=vars_["manual"],
+        ).grid(row=len(fields) + 1, column=0, columnspan=2, sticky=tk.W, pady=(6, 4))
+
+        hint = "Kural: 0-100 aralığında iptal <= dinlenme < havuz < müfredat."
+        ttk.Label(body, text=hint, foreground="#6B4E00").grid(
+            row=len(fields) + 2, column=0, columnspan=2, sticky=tk.W, pady=(2, 10)
+        )
+
+        buttons = ttk.Frame(body)
+        buttons.grid(row=len(fields) + 3, column=0, columnspan=2, sticky=tk.E)
+
+        def save():
+            try:
+                name = vars_["name"].get().strip()
+                curriculum = self._policy_number(vars_["curriculum"].get(), "Müfredat eşiği")
+                pool = self._policy_number(vars_["pool"].get(), "Havuz eşiği")
+                rest = self._policy_number(vars_["rest"].get(), "Dinlenme eşiği")
+                cancel = self._policy_number(vars_["cancel"].get(), "İptal adayı eşiği", required=False)
+                update_decision_policy(
+                    self._conn(),
+                    int(policy["id"]),
+                    name=name,
+                    curriculum_keep_threshold=curriculum,
+                    pool_threshold=pool,
+                    rest_threshold=rest,
+                    cancel_candidate_threshold=cancel,
+                    require_manual_approval_for_cancel=vars_["manual"].get(),
+                    notes=vars_["notes"].get().strip() or None,
+                )
+                dialog.destroy()
+                self._load_policies()
+                if self.tree_policy.exists(str(policy["id"])):
+                    self.tree_policy.selection_set(str(policy["id"]))
+                    self.tree_policy.focus(str(policy["id"]))
+            except ValueError as exc:
+                messagebox.showwarning("Karar Politikası", str(exc), parent=dialog)
+            except Exception:
+                logger.exception("Karar politikası güncellenemedi")
+                messagebox.showerror("Karar Politikası", self._friendly_backend_error(), parent=dialog)
+
+        ttk.Button(buttons, text="Kaydet", command=save).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(buttons, text="Vazgeç", command=dialog.destroy).pack(side=tk.LEFT)
+        dialog.bind("<Return>", lambda _event: save())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.wait_window()
+
+    def _deactivate_policy(self):
+        policy = self._selected_policy()
+        if not policy:
+            return
+        if not messagebox.askyesno(
+            "Karar Politikası",
+            f"'{policy.get('name')}' politikasını pasifleştirmek istiyor musunuz?",
+        ):
+            return
+        try:
+            deactivate_decision_policy(self._conn(), int(policy["id"]))
+            self._load_policies()
+        except Exception:
+            logger.exception("Karar politikası pasifleştirilemedi")
             messagebox.showerror("Karar Politikası", self._friendly_backend_error())
 
     def _execute_run(self):

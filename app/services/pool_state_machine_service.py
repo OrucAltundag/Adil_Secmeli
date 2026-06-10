@@ -124,7 +124,7 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 def _status_label(status: int | None) -> str:
     try:
-        return STATUS_TEXT.get(int(status), "belirsiz")
+        return STATUS_TEXT.get(int(status or 0), "belirsiz")
     except (TypeError, ValueError):
         return "belirsiz"
 
@@ -710,7 +710,7 @@ def ensure_pending_approval(conn: sqlite3.Connection, result: dict[str, Any], tr
     course_id = int(result["course_id"])
     year = int(result["year"])
     semester = normalize_semester(result.get("semester"))
-    requested_status = int(result.get("recommended_status"))
+    requested_status = int(result.get("recommended_status") or 0)
     approval_type = _approval_type_for_result(result)
     cur = conn.cursor()
     where = [
@@ -762,7 +762,7 @@ def ensure_pending_approval(conn: sqlite3.Connection, result: dict[str, Any], tr
             now,
         ),
     )
-    approval_id = int(cur.lastrowid)
+    approval_id = int(cur.lastrowid or 0)
     cur.execute("SELECT * FROM course_state_approvals WHERE id = ?", (approval_id,))
     return _fetch_one_dict(cur) or {"id": approval_id}
 
@@ -821,7 +821,7 @@ def save_state_transition(
             now,
         ),
     )
-    transition_id = int(cur.lastrowid)
+    transition_id = int(cur.lastrowid or 0)
     result["transition_id"] = transition_id
     if result.get("approval_required"):
         approval = ensure_pending_approval(conn, result, transition_id=transition_id)

@@ -35,7 +35,20 @@ from app.services.criteria_completion_policy_service import resolve_policy
 logger = logging.getLogger(__name__)
 
 VALID_SCOPE_TYPES = {"global", "faculty", "department"}
-VALID_APPROVAL_STATUSES = {"pending", "approved", "rejected"}
+# P0/P1 düzeltmesi: state machine artık 'used' terminal durumunu da içerir.
+# Daha önce `mark_override_used` yalnızca `used_at` damgalıyor ama `approval_status`
+# 'approved' kalıyordu — bu durumda `get_active_override` aynı override'ı tekrar tekrar
+# aktif görüyordu (bir defalık istisna sürekli açık kapı haline geliyordu).
+VALID_APPROVAL_STATUSES = {"pending", "approved", "rejected", "used"}
+
+# Açıkça hâlâ bypass olarak çalışabilen ("aktif") sayılan durumlar.
+# `used` ve `rejected` BURADA DEĞİL — `get_active_override` bunları görmez.
+ACTIVE_OVERRIDE_STATUSES = {"approved"}
+
+# Override için varsayılan TTL (gün). None = süresiz (geriye uyumlu).
+# Politika seviyesinde ayrı bir alan eklenene kadar burada modül-içi sabit olarak
+# tutuyoruz; gerçek kullanıcı `request_override(default_ttl_days=...)` ile gönderebilir.
+DEFAULT_OVERRIDE_TTL_DAYS: int | None = None
 
 
 def _now() -> str:
@@ -175,9 +188,17 @@ def request_override(
     validation_issues: list[dict[str, Any]] | None = None,
     requested_by: str | None = None,
     expires_at: str | None = None,
+    default_ttl_days: int | None = None,
     commit: bool = True,
 ) -> dict[str, Any]:
-    """Doğrulanmış ve mükerrerlik korumalı yeni bir override talebi oluşturur."""
+    """Doğrulanmış ve mükerrerlik korumalı yeni bir override talebi oluşturur.
+
+    Args:
+        default_ttl_days: `expires_at` verilmediğinde uygulanacak varsayılan süre
+            (gün). None bırakılırsa modül-içi `DEFAULT_OVERRIDE_TTL_DAYS` kullanılır
+            (varsayılan None = süresiz, geriye uyumlu). Üretimde 7-30 gün önerilir
+            ki kalıcı "açık kapı" override'ları oluşmasın.
+    """
     ensure_criteria_completion_governance_schema(conn, commit=False)
 
     # --- Normalizasyon ve giriş doğrulamaları ---
@@ -185,6 +206,14 @@ def request_override(
     faculty_id, department_id = _validate_scope_ids(scope_type, faculty_id, department_id, strict=True)
     semester = _normalize_semester(semester)
     expires_at = _normalize_datetime(expires_at)
+    # P1: expires_at verilmediyse opsiyonel varsayılan TTL uygula. None ise süresiz
+    # (eski davranış); değeri varsa ileriye taşıyıp kanonik ISO'ya çeviriyoruz.
+    if expires_at is None:
+        ttl = default_ttl_days if default_ttl_days is not None else DEFAULT_OVERRIDE_TTL_DAYS
+        if ttl is not None:
+            from datetime import timedelta
+            expires_dt = datetime.now(timezone.utc) + timedelta(days=int(ttl))
+            expires_at = expires_dt.isoformat(timespec="seconds")
     requested_by = str(requested_by or "").strip()
     if not requested_by:
         raise ValueError("Override talebini açan kullanıcı (requested_by) zorunludur; anonim talep kaydedilemez.")
@@ -201,24 +230,38 @@ def request_override(
 
     cur = conn.cursor()
 
-    # --- Mükerrer 'pending' talep koruması ---
+    # P1 düzeltmesi: Mükerrer koruması yalnızca 'pending' değil — aktif (approved
+    # + süresi dolmamış + henüz kullanılmamış) bir override de varsa yeni talep
+    # açılmamalıdır. Aksi halde "approved + pending" karışık durum oluşur ve
+    # operatör hangisinin geçerli olduğunu bilmez.
+    now_str = _now()
     cur.execute(
         """
-        SELECT id FROM criteria_completion_overrides
+        SELECT id, approval_status FROM criteria_completion_overrides
         WHERE scope_type = ?
           AND COALESCE(faculty_id, -1) = COALESCE(?, -1)
           AND COALESCE(department_id, -1) = COALESCE(?, -1)
           AND COALESCE(course_id, -1) = COALESCE(?, -1)
           AND year = ?
           AND COALESCE(semester, '') = COALESCE(?, '')
-          AND approval_status = 'pending'
+          AND (
+              approval_status = 'pending'
+              OR (
+                  approval_status = 'approved'
+                  AND used_at IS NULL
+                  AND (expires_at IS NULL OR expires_at >= ?)
+              )
+          )
         LIMIT 1
         """,
-        (scope_type, faculty_id, department_id, course_id, int(year), semester or ""),
+        (scope_type, faculty_id, department_id, course_id, int(year), semester or "", now_str),
     )
-    if cur.fetchone():
+    existing = cur.fetchone()
+    if existing:
+        existing_status = str(existing[1] if len(existing) > 1 else "")
         raise ValueError(
-            "Bu kapsam/yıl/dönem için zaten onay bekleyen (pending) bir override talebi var; mükerrer talep açılamaz."
+            f"Bu kapsam/yıl/dönem için zaten aktif bir override var (durum: {existing_status!r}). "
+            "Önce mevcut talebi sonuçlandırın veya kullanın."
         )
 
     # Politika onay gerektirmiyorsa talep doğrudan 'approved' başlar.
@@ -297,10 +340,38 @@ def approve_override(
         )
 
     requested_by = str(override.get("requested_by") or "").strip()
-    if requested_by and requested_by == approved_by:
+    # P1: SoD karşılaştırması case-insensitive + boşluk-toleranslı.
+    # (Uzun vadede string user-name yerine user_id kullanılmalı.)
+    if requested_by and requested_by.lower() == approved_by.lower():
         raise ValueError("Roller Ayrılığı: Talebi açan kullanıcı kendi override talebini onaylayamaz.")
     if _is_expired(override.get("expires_at")):
         raise ValueError("Süresi dolmuş override talebi onaylanamaz.")
+
+    # P1: Politika değişmiş olabilir — talep açıldığında allow_override=True
+    # iken onay anında politika kapatılmış olabilir. Onay anında güncel
+    # politika yeniden çözülür ve kapı tekrar kontrol edilir.
+    try:
+        current_policy = resolve_policy(
+            conn,
+            str(override.get("scope_type") or ""),
+            int(override.get("year") or 0),
+            override.get("faculty_id"),
+            override.get("department_id"),
+            override.get("semester"),
+        )
+        if not current_policy.get("allow_override"):
+            raise ValueError(
+                f"Güncel politika ('{current_policy.get('name')}') artık override onayına "
+                "izin vermiyor; talep onaylanamaz."
+            )
+    except ValueError:
+        raise
+    except Exception:
+        # Politika çözümü başarısız olursa onayı bloke etme — log'a düş, devam et.
+        logger.warning(
+            "approve_override: güncel politika doğrulanamadı (id=%s); onay devam ediyor.",
+            override_id, exc_info=True,
+        )
 
     now = _now()
     cur = conn.cursor()
@@ -314,6 +385,12 @@ def approve_override(
             """,
             (approved_by, now, int(override_id)),
         )
+        # P1: rowcount kontrolü — eş zamanlı bir işlem talebi zaten başka duruma
+        # taşımış olabilir (ör. reject); operatöre net hata bildiriyoruz.
+        if cur.rowcount != 1:
+            raise ValueError(
+                f"Override durumu eş zamanlı olarak değişti (id={override_id}); onay uygulanamadı."
+            )
     except Exception:
         if commit:
             conn.rollback()
@@ -364,6 +441,11 @@ def reject_override(
             """,
             (rejected_by, now, rejection_reason, int(override_id)),
         )
+        # P1: rowcount kontrolü.
+        if cur.rowcount != 1:
+            raise ValueError(
+                f"Override durumu eş zamanlı olarak değişti (id={override_id}); red uygulanamadı."
+            )
     except Exception:
         if commit:
             conn.rollback()
@@ -396,6 +478,10 @@ def get_active_override(
 
     cur = conn.cursor()
     now = _now()
+    # P0/P1: `mark_override_used` artık approval_status='used' yapıyor, yani
+    # used kayıtlar `approval_status = 'approved'` filtresi ile zaten elenir.
+    # Defansif olarak `used_at IS NULL` de ekliyoruz — çok eski mark_override_used
+    # damgalarını (sadece used_at set eden) yakalamak için bir savunma katmanı daha.
     cur.execute(
         """
         SELECT *
@@ -407,6 +493,7 @@ def get_active_override(
           AND year = ?
           AND COALESCE(semester, '') = COALESCE(?, '')
           AND approval_status = 'approved'
+          AND used_at IS NULL
           AND (expires_at IS NULL OR expires_at >= ?)
         ORDER BY id DESC
         LIMIT 1
@@ -474,9 +561,16 @@ def mark_override_used(
     run_id: int | None = None,
     commit: bool = True,
 ) -> dict[str, Any]:
-    """Karar algoritması override ile çalıştırıldığında kaydı denetim izi için damgalar.
+    """Karar algoritması override ile çalıştırıldığında kaydı 'used' terminal
+    durumuna geçirir. Bir defalık istisna iddiası ancak bu geçişle anlam kazanır.
 
-    Yalnızca 'approved' bir override 'used' olarak işaretlenebilir.
+    P0/P1 düzeltmesi: Önceki sürüm yalnızca `used_at` damgalıyor, `approval_status`
+    'approved' kalıyordu — `get_active_override` aynı kaydı tekrar tekrar aktif
+    görüyor, override sürekli açık kapı haline geliyordu. Şimdi:
+
+      * `approval_status` -> 'used' (state machine'in `approved -> used` geçişi)
+      * Süresi dolmuş override kullanılamaz (audit izi tutarlı kalır)
+      * `rowcount` ile eşzamanlılık kontrolü
     """
     ensure_criteria_completion_governance_schema(conn, commit=False)
     override = get_override(conn, override_id)
@@ -484,7 +578,12 @@ def mark_override_used(
         raise ValueError(f"Override kaydı bulunamadı: id={override_id}.")
     if override.get("approval_status") != "approved":
         raise ValueError(
-            f"Sadece 'approved' override kullanıldı olarak işaretlenebilir. Mevcut durum: '{override.get('approval_status')}'."
+            f"Sadece 'approved' override kullanıldı olarak işaretlenebilir. "
+            f"Mevcut durum: '{override.get('approval_status')}'."
+        )
+    if _is_expired(override.get("expires_at")):
+        raise ValueError(
+            f"Süresi dolmuş override kullanılamaz (id={override_id}, expires_at={override.get('expires_at')})."
         )
 
     now = _now()
@@ -493,11 +592,20 @@ def mark_override_used(
         cur.execute(
             """
             UPDATE criteria_completion_overrides
-            SET used_at = ?, allowed_for_run_id = COALESCE(?, allowed_for_run_id)
-            WHERE id = ? AND approval_status = 'approved'
+            SET approval_status = 'used',
+                used_at = ?,
+                allowed_for_run_id = COALESCE(?, allowed_for_run_id)
+            WHERE id = ?
+              AND approval_status = 'approved'
+              AND (expires_at IS NULL OR expires_at >= ?)
             """,
-            (now, None if run_id is None else int(run_id), int(override_id)),
+            (now, None if run_id is None else int(run_id), int(override_id), now),
         )
+        if cur.rowcount != 1:
+            raise ValueError(
+                f"Override kullanıldı olarak işaretlenemedi (id={override_id}); "
+                "durum eş zamanlı değişmiş veya süresi dolmuş olabilir."
+            )
     except Exception:
         if commit:
             conn.rollback()

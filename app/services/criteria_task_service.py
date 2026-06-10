@@ -58,7 +58,7 @@ def generate_tasks_for_missing_criteria(
     scope_type = completion_result.get("scope_type") or "faculty"
     faculty_id = completion_result.get("faculty_id")
     department_id = completion_result.get("department_id")
-    year = int(completion_result.get("year"))
+    year = int(completion_result.get("year") or 0)
     semester = completion_result.get("semester")
     cur = conn.cursor()
     by_course: dict[int, dict[str, Any]] = {}
@@ -117,7 +117,7 @@ def generate_tasks_for_missing_criteria(
                 _now(),
             ),
         )
-        created.append(get_task(conn, int(cur.lastrowid)) or {})
+        created.append(get_task(conn, int(cur.lastrowid or 0)) or {})
     return created
 
 
@@ -202,7 +202,7 @@ def close_completed_tasks(conn: sqlite3.Connection, completion_result: dict[str,
         for row in completion_result.get("matrix") or []
         if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
     }
-    year = int(completion_result.get("year"))
+    year = int(completion_result.get("year") or 0)
     semester = completion_result.get("semester")
     cur = conn.cursor()
     cur.execute(

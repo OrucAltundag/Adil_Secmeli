@@ -233,4 +233,4 @@ def save_data_confidence(
             str(confidence.get("explanation") or ""),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)

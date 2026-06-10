@@ -177,7 +177,7 @@ def _is_summary_row(ders_kodu: str | None, ders_adi: str | None) -> bool:
 
 
 def _read_meta_sheet(xls: pd.ExcelFile) -> dict[str, Any]:
-    meta_sheet = next((name for name in xls.sheet_names if normalize_course_text(name) == "meta"), None)
+    meta_sheet = next((name for name in xls.sheet_names if normalize_course_text(str(name)) == "meta"), None)
     if not meta_sheet:
         return {}
     df = xls.parse(sheet_name=meta_sheet)
@@ -204,12 +204,12 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
         (
             name
             for name in xls.sheet_names
-            if normalize_course_text(name) in {"kriter", "kriterler", "criteria", "criterion"}
+            if normalize_course_text(str(name)) in {"kriter", "kriterler", "criteria", "criterion"}
         ),
         None,
     )
     if data_sheet is None:
-        non_meta = [name for name in xls.sheet_names if normalize_course_text(name) != "meta"]
+        non_meta = [name for name in xls.sheet_names if normalize_course_text(str(name)) != "meta"]
         if not non_meta:
             raise ValueError("Kriter veri sayfasi bulunamadi.")
         data_sheet = non_meta[0]
@@ -256,7 +256,7 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
             kayitli = toplam
 
         criteria_row = CriteriaRow(
-            row_no=int(idx) + 2,
+            row_no=int(str(idx)) + 2,
             ders_kodu=ders_kodu,
             ders_adi=ders_adi,
             toplam_ogrenci=toplam,
@@ -1019,7 +1019,7 @@ def apply_criteria_import(
             int(version),
         ),
     )
-    import_id = int(cur.lastrowid)
+    import_id = int(cur.lastrowid or 0)
     if import_batch_id is not None:
         cur.execute(
             """
@@ -1064,7 +1064,7 @@ def apply_criteria_import(
                 row.raw_donem,
             ),
         )
-        import_row_id = int(cur.lastrowid)
+        import_row_id = int(cur.lastrowid or 0)
         if import_batch_id is not None:
             normalized_row = asdict(row)
             cur.execute(

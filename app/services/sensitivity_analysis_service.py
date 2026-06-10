@@ -21,7 +21,7 @@ def _thresholds(policy: dict[str, Any]) -> list[tuple[str, float]]:
         ("rest_threshold", float(policy.get("rest_threshold", 40.0))),
     ]
     if policy.get("cancel_candidate_threshold") is not None:
-        out.append(("cancel_candidate_threshold", float(policy.get("cancel_candidate_threshold"))))
+        out.append(("cancel_candidate_threshold", float(policy.get("cancel_candidate_threshold") or 0.0)))
     return out
 
 
@@ -123,4 +123,4 @@ def save_sensitivity_result(
             str(sensitivity.get("explanation") or ""),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)

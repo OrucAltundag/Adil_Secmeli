@@ -130,7 +130,7 @@ def get_shap_explanation(
             explainer = shap.Explainer(
                 est.predict, shap.sample(bg, min(50, len(bg)))
             )
-            sv = explainer(X_df).values
+            sv = explainer(X_df).values  # type: ignore[attr-defined]  # shap.Explanation
         arr = np.asarray(sv)
         # Cok sinifli: (n_classes, n_samples, n_features) -> ortalama |.|
         if arr.ndim == 3:
@@ -285,7 +285,7 @@ def save_prediction_explanation(conn: sqlite3.Connection, prediction_id: int, ex
             _now(),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def get_prediction_explanation(conn: sqlite3.Connection, prediction_id: int) -> dict | None:

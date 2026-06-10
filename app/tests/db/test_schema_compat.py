@@ -65,6 +65,55 @@ class TestSchemaCompat:
         result = ensure_decision_governance_schema(empty_db, commit=True)
         assert isinstance(result, dict)
 
+    def test_ensure_decision_governance_schema_adds_legacy_columns(self):
+        from app.db.schema_compat import ensure_decision_governance_schema
+
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE decision_runs (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+
+        result = ensure_decision_governance_schema(conn, commit=True)
+
+        cur.execute("PRAGMA table_info(decision_runs)")
+        columns = {row[1] for row in cur.fetchall()}
+        assert result["columns_added"] > 0
+        assert {
+            "decision_policy_snapshot_json",
+            "decision_policy_version",
+            "decision_policy_mode",
+            "status",
+        }.issubset(columns)
+
+    def test_ensure_decision_governance_schema_enforces_single_active_policy_per_scope(self):
+        from app.db.schema_compat import ensure_decision_governance_schema
+
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE decision_policies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type TEXT,
+                faculty_id INTEGER,
+                department_id INTEGER,
+                year INTEGER,
+                is_active INTEGER
+            )
+            """
+        )
+        cur.execute("INSERT INTO decision_policies (scope_type, is_active) VALUES ('global', 1)")
+        cur.execute("INSERT INTO decision_policies (scope_type, is_active) VALUES ('global', 1)")
+
+        ensure_decision_governance_schema(conn, commit=True)
+
+        cur.execute("SELECT id FROM decision_policies WHERE is_active = 1")
+        assert [row[0] for row in cur.fetchall()] == [2]
+        cur.execute("PRAGMA index_list(decision_policies)")
+        indexes = {row[1] for row in cur.fetchall()}
+        assert "ux_decision_policies_active_scope" in indexes
+        with pytest.raises(sqlite3.IntegrityError):
+            cur.execute("INSERT INTO decision_policies (scope_type, is_active) VALUES ('global', 1)")
+
 
 class TestTransactionRollback:
     """Hata durumunda transaction rollback ediyor mu."""

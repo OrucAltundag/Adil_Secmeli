@@ -358,6 +358,6 @@ def save_data_coverage_report(
                 _now(),
             ),
         )
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
     except sqlite3.OperationalError:
         return 0

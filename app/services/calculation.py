@@ -13,6 +13,7 @@ import os
 import random
 import sqlite3
 import traceback
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -108,7 +109,7 @@ class KararMotoru:
 
         # Perron-Frobenius teoremi geregi pozitif reciproqual AHP matrisinde
         # en buyuk ozdegere karsilik gelen ozvektor asil agirlik vektorudur.
-        principal_index = int(np.argmax(eigenvalues.real))
+        principal_index = int(np.argmax(np.real(eigenvalues)))
         principal_vector = np.real_if_close(eigenvectors[:, principal_index]).astype(float)
         principal_vector = np.abs(principal_vector)
 
@@ -989,10 +990,32 @@ def _pool_course_score_anket_only(anket):
     return POOL_DEFAULT_SCORE + (ratio - 0.5) * 2.0 * POOL_ANKET_SCORE_SPREAD
 
 
-def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", include_course_ids=None):
+def get_faculty_year_topsis_results(
+    cur,
+    fakulte_id,
+    akademik_yil,
+    donem="G",
+    include_course_ids=None,
+    strict_ahp: bool = False,
+):
     """
-    Bir fakulte+yil icin tum adaylarin TOPSIS skorlarini hesaplar. Mufredattaki dersler TOPSIS pipeline'ina girer;
-    mufredat disi dersler yalnizca anket-bazli sabit puanlanir.
+    Bir fakulte+yil icin tum adaylarin TOPSIS skorlarini hesaplar.
+
+    UYARI — Skor anlamlari farklilik gosterir:
+      * Mufredattaki dersler **TOPSIS pipeline'ina girer** (AHP agirliklarinin
+        uygulandigi tam algoritma). Donen `score_methods[id] == "topsis"`.
+      * Mufredat **disi** (havuz) dersleri TOPSIS'e girmez; yalnizca anket
+        bazli sabit puan alir (~50+-10). Donen `score_methods[id] ==
+        "pool_anket_only"`. Bu skor TOPSIS gibi yorumlanmamali.
+
+    AHP cozumu:
+      * `strict_ahp=False` (varsayilan): aktif profil cozumlenemezse Saaty
+        legacy matrisine **uyari logu** ile dusulur. `ahp_fallback_used=True`
+        donus dict'inde bildirilir; caller bunu UI'da gosterip kullaniciyi
+        uyarmali.
+      * `strict_ahp=True`: aktif tutarli profil yoksa `RuntimeError` firlatir.
+        Karar Merkezi'nden tetiklenen calistirmalarda bunu True yapin ki karar
+        kullanicinin secmedigi agirliklarla uretilmesin.
     """
     fakulte_id = int(fakulte_id)
     akademik_yil = int(akademik_yil)
@@ -1074,7 +1097,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
         FROM havuz h
         WHERE h.fakulte_id = ? AND h.yil = ?
     """
-    havuz_params = [fakulte_id, akademik_yil]
+    havuz_params: list[Any] = [fakulte_id, akademik_yil]
     if _havuz_has_donem_col(cur):
         havuz_query += " AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?"
         havuz_params.append(_normalize_term_key(donem))
@@ -1117,6 +1140,8 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
 
     motor = KararMotoru()
     ahp_profile = None
+    ahp_fallback_used = False
+    ahp_fallback_reason: str | None = None
     try:
         from app.services.ahp_profile_service import (
             DEFAULT_CRITERIA_KEYS,
@@ -1136,9 +1161,27 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
         if set(profile_keys) >= {"basari", "trend", "populerlik", "anket"}:
             agirliklar = [float(profile_weights.get(key, 0.0)) for key in ["basari", "trend", "populerlik", "anket"]]
         else:
+            ahp_fallback_used = True
+            ahp_fallback_reason = "Profil kriter anahtarlari beklenen 4 kriteri kapsamiyor."
             agirliklar = motor.ahp_calistir()
+        # Strict modda tutarsiz profili kabul etme (kullanici aksini istemediyse).
+        if strict_ahp and ahp_profile and not bool(ahp_profile.get("is_consistent", True)):
+            raise RuntimeError(
+                "Aktif AHP profili tutarsiz (CR > 0.10). Strict modda karar uretilemez."
+            )
     except Exception as ahp_exc:
-        logger.warning("AHP profili cozumlenemedi, legacy agirliklar kullaniliyor: %s", ahp_exc)
+        ahp_fallback_used = True
+        ahp_fallback_reason = str(ahp_exc)
+        if strict_ahp:
+            # Karar Merkezi'nden gelen cagri: legacy agirliklara sessizce dusmek
+            # akademik karar acisindan tehlikeli. Acik hata firlat.
+            raise RuntimeError(
+                f"Aktif AHP profili cozumlenemedi (strict_ahp=True): {ahp_exc}"
+            ) from ahp_exc
+        logger.warning(
+            "AHP profili cozumlenemedi, legacy Saaty agirliklari kullaniliyor "
+            "(strict_ahp=False): %s", ahp_exc,
+        )
         agirliklar = motor.ahp_calistir()
         ahp_profile = None
         benefit_map = {"basari": True, "trend": True, "populerlik": True, "anket": True}
@@ -1157,6 +1200,10 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     pool_courses = sorted(d for d in aday_dersler if d not in curriculum_course_ids)
 
     skor_map = {}
+    # score_methods: hangi dersin skoru hangi yontemle uretildi (audit/UI icin).
+    # Onceki surumde curriculum/pool skorlari ayni `topsis_score` kolonuna yaziliyordu
+    # ve UI'da ayni gibi gosteriliyordu; bu kullaniciyi yaniltiyordu.
+    score_methods: dict[int, str] = {}
     df_sonuc = pd.DataFrame()
     meta = {}
 
@@ -1182,6 +1229,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
                     if kp is None or (isinstance(kp, float) and math.isnan(kp)):
                         kp = _safe_float2(r.get("AHP_TOPSIS_Skor"), 0.0) * 100.0
                     skor_map[d_id] = round(_safe_float2(kp, 0.0), 2)
+                    score_methods[d_id] = "topsis"
     else:
         # Fallback: bu fakulte+yil icin mufredatta hic aday ders yok; TOPSIS calismaz,
         # tum adaylar havuz mantigi (anket-only) ile puanlanir.
@@ -1197,6 +1245,7 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     for d_id in pool_courses:
         anket_val = (metric_map.get(d_id) or {}).get("anket")
         skor_map[d_id] = round(_pool_course_score_anket_only(anket_val), 2)
+        score_methods[d_id] = "pool_anket_only"
 
     logger.debug(
         "get_faculty_year_topsis_results: TOPSIS=%s ders, pool_anket=%s ders (fakulte_id=%s yil=%s)",
@@ -1218,11 +1267,16 @@ def get_faculty_year_topsis_results(cur, fakulte_id, akademik_yil, donem="G", in
     return {
         "ok": True,
         "scores": skor_map,
+        "score_methods": score_methods,  # {ders_id: "topsis"|"pool_anket_only"}
         "metric_map": metric_map,
         "ders_meta": ders_meta,
         "df_sonuc": df_sonuc,
         "meta": meta,
         "ahp_profile": ahp_profile,
+        "ahp_fallback_used": ahp_fallback_used,
+        "ahp_fallback_reason": ahp_fallback_reason,
+        "topsis_course_count": len(curriculum_courses),
+        "pool_only_course_count": len(pool_courses),
     }
 
 def _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem="G"):
@@ -1334,7 +1388,7 @@ def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, 
                 AND {elective_predicate}
           )
     """.format(elective_predicate=elective_predicate)
-    clear_params = [fakulte_id, akademik_yil]
+    clear_params: list[Any] = [fakulte_id, akademik_yil]
     if havuz_term_scoped:
         clear_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
         clear_params.append(term_key)
@@ -1429,7 +1483,7 @@ def ensure_pool_visibility_for_curriculum(cur, fakulte_id, akademik_yil, donem="
             WHERE fakulte_id = ? AND yil = ?
               AND CAST(ders_id AS INTEGER) IN ({placeholders})
         """
-        update_params = [fakulte_id, akademik_yil, *chunk]
+        update_params: list[Any] = [fakulte_id, akademik_yil, *chunk]
         if havuz_term_scoped:
             update_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             update_params.append(term_key)
@@ -1446,7 +1500,7 @@ def ensure_pool_visibility_for_curriculum(cur, fakulte_id, akademik_yil, donem="
                     WHERE h.fakulte_id = ? AND h.yil = ?
                       AND CAST(h.ders_id AS INTEGER) = d.ders_id
         """
-        missing_params = [*chunk, fakulte_id, akademik_yil]
+        missing_params: list[Any] = [*chunk, fakulte_id, akademik_yil]
         if havuz_term_scoped:
             missing_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?"
             missing_params.append(term_key)
@@ -1501,6 +1555,7 @@ def generate_next_year_curricula(
     donem="G",
     drop_score_threshold=DROP_SCORE_THRESHOLD,
     drop_average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
+    require_decision_governance: bool = False,
 ):
     """
     Faculty + year + term icin bolum bazli sonraki yil mufredati olusturur.
@@ -1510,6 +1565,13 @@ def generate_next_year_curricula(
       yerine kesinlesme puani en yuksek adaylar eklenir.
     - Duser yoksa mufredat aynen bir sonraki yila tasinir.
     - Havuz statu/sayac guncellemesi calculate_next_status ile yapilir.
+
+    Args:
+        require_decision_governance: True ise decision_run kaydi basarisiz olursa
+            ana sonuc `ok=False` doner ve transaction rollback edilir. Karar
+            Merkezi'nden tetiklenen calistirmada kullanin — kullanici "yeni
+            karar calistir" derken sessiz governance hatasi gormesin. Otomatik
+            arka plan uretiminde False kalmasi guvenli (default).
     """
     if fakulte_id is None or akademik_yil is None:
         return {
@@ -1656,7 +1718,7 @@ def generate_next_year_curricula(
             FROM havuz
             WHERE yil = ? AND fakulte_id = ?
         """
-        prev_havuz_params = [akademik_yil, fakulte_id]
+        prev_havuz_params: list[Any] = [akademik_yil, fakulte_id]
         if havuz_term_scoped:
             prev_havuz_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             prev_havuz_params.append(term_key)
@@ -2021,7 +2083,7 @@ def generate_next_year_curricula(
                     """,
                     (fakulte_id, bolum_id, sonraki_yil, donem, "Otomatik", max_ver + 1),
                 )
-                hedef_muf_id = int(cur.lastrowid)
+                hedef_muf_id = int(cur.lastrowid or 0)
 
             for d_id in dersler:
                 cur.execute(
@@ -2101,7 +2163,7 @@ def generate_next_year_curricula(
                     AND {elective_predicate}
               )
         """.format(elective_predicate=elective_predicate)
-        cleanup_params = [fakulte_id, sonraki_yil]
+        cleanup_params: list[Any] = [fakulte_id, sonraki_yil]
         if havuz_term_scoped:
             cleanup_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             cleanup_params.append(term_key)
@@ -2331,6 +2393,21 @@ def generate_next_year_curricula(
                 akademik_yil,
                 governance_exc,
             )
+
+        # Karar Merkezi'nden tetiklendigimizde governance hatasini sessizce
+        # yutmayalim — kullanici "karar calistirildi" sanip Ders Kararlari'ni
+        # bos bulmasin. require_decision_governance=False (default) ise eski
+        # gevsek davranis korunur.
+        if require_decision_governance and not decision_governance_result.get("ok"):
+            conn.rollback()
+            return {
+                "ok": False,
+                "error": (
+                    decision_governance_result.get("error")
+                    or "Karar governance kaydi olusturulamadi."
+                ),
+                "decision_governance": decision_governance_result,
+            }
 
         conn.commit()
 

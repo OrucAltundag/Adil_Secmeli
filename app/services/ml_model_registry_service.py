@@ -80,7 +80,7 @@ def create_model_run(
             notes,
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def mark_trained(

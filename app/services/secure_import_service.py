@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false
+# NOT: SQLAlchemy 1.4 stilinde Column[X] descriptor'lari Pylance tarafindan
+# X plain tipiyle uyumsuz gorulur. Runtime'da descriptor __get__/set__
+# uzerinden plain X dondurur — gercek uyumsuzluk yoktur. Pragma'lar yalnizca
+# bu sahte uyarılari susturur, davranisi degistirmez.
 import json
 import uuid
 from datetime import datetime, timezone
@@ -20,7 +25,7 @@ class SecureImportService:
         self.upload_security = upload_security
         self.audit_service = audit_service
 
-    async def create_import_job(self, import_type: str, file: UploadFile, user: UserContext, faculty_id: int = None, year: int = None) -> SecureImportJob:
+    async def create_import_job(self, import_type: str, file: UploadFile, user: UserContext, faculty_id: int | None = None, year: int | None = None) -> SecureImportJob:
         file_hash, size_bytes = await self.upload_security.validate_upload(file)
 
         job_id = f"import_{uuid.uuid4().hex}"
@@ -28,7 +33,7 @@ class SecureImportService:
         job = SecureImportJob(
             id=job_id,
             import_type=import_type,
-            original_filename=self.upload_security.sanitize_filename(file.filename),
+            original_filename=self.upload_security.sanitize_filename(file.filename or ""),
             file_hash=file_hash,
             file_size_bytes=size_bytes,
             mime_type=file.content_type,

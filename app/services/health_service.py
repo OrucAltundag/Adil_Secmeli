@@ -69,7 +69,7 @@ class HealthService:
         with _LOCK:
             return _LAST_REPORT
 
-    def list_available_checks(self) -> list[dict[str, str]]:
+    def list_available_checks(self) -> list[dict[str, Any]]:
         """Kayıtlı tüm kontrolleri (ad/kategori/quick) listeler."""
 
         from app.health.health_registry import all_checks
@@ -84,7 +84,7 @@ class HealthService:
             for check in all_checks()
         ]
 
-    def list_algorithm_catalog(self) -> list[dict[str, str]]:
+    def list_algorithm_catalog(self) -> list[dict[str, Any]]:
         return algorithm_catalog()
 
     # -- Dışa aktarma ------------------------------------------------------------

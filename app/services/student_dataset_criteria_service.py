@@ -57,11 +57,14 @@ def auto_generate_criteria_from_student_dataset(
     j = {k: i for i, k in enumerate(hdr)}
     gerekli = {"ders_kodu", "donem", "kayit_sayisi", "gecme_orani_%",
                "ort_agirlikli", "ort_katilim_yuzde"}
-    if not gerekli.issubset(set(hdr)):
+    # openpyxl cell value tipi cok genis (Decimal, datetime, formula vb.);
+    # set diff'i str-onlu yapacak şekilde normalize edelim.
+    hdr_str = {str(h) for h in hdr}
+    if not gerekli.issubset(hdr_str):
         wb.close()
         raise ValueError(
             "Excel 'Ders Analizi' sekmesinde gerekli sutunlar eksik: "
-            f"{gerekli - set(hdr)}"
+            f"{gerekli - hdr_str}"
         )
 
     kayitlar = []
@@ -69,10 +72,10 @@ def auto_generate_criteria_from_student_dataset(
         kayitlar.append({
             "kod": str(r[j["ders_kodu"]]).strip(),
             "donem": str(r[j["donem"]]).strip(),
-            "kayit": int(r[j["kayit_sayisi"]] or 0),
-            "gecme": float(r[j["gecme_orani_%"]] or 0),
-            "agir": float(r[j["ort_agirlikli"]] or 0),
-            "katilim": float(r[j["ort_katilim_yuzde"]] or 0),
+            "kayit": int(r[j["kayit_sayisi"]] or 0),  # type: ignore[arg-type]
+            "gecme": float(r[j["gecme_orani_%"]] or 0),  # type: ignore[arg-type]
+            "agir": float(r[j["ort_agirlikli"]] or 0),  # type: ignore[arg-type]
+            "katilim": float(r[j["ort_katilim_yuzde"]] or 0),  # type: ignore[arg-type]
         })
     wb.close()
 

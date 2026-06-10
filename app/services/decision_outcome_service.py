@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false
+# NOT: SQLAlchemy 1.4 stilinde Column[X] descriptor'lari Pylance tarafindan
+# X plain tipiyle uyumsuz gorulur. Runtime'da descriptor __get__/set__
+# uzerinden plain X dondurur — gercek uyumsuzluk yoktur. Pragma'lar yalnizca
+# bu sahte uyarılari susturur, davranisi degistirmez.
 """
 Post-Decision Outcome Tracking Service
 
@@ -59,7 +64,7 @@ def record_post_decision_outcome(
             outcome_year=outcome_year,
             actual_enrollment=actual_enrollment,
             actual_capacity=actual_capacity,
-            actual_fill_rate=(actual_enrollment / actual_capacity) if actual_capacity and actual_capacity > 0 else None,
+            actual_fill_rate=(actual_enrollment / actual_capacity) if (actual_capacity and actual_capacity > 0 and actual_enrollment is not None) else None,
             actual_success_rate=actual_success_rate,
             actual_average_grade=actual_average_grade,
             actual_survey_demand=actual_survey_demand,
@@ -127,7 +132,9 @@ def evaluate_decision_effectiveness(
             }
 
         # Compare with decision and calculate effectiveness
-        cd.topsis_score or 0
+        # NOT: Asagidaki satir tarihsel olarak kullanilmiyor (muhtemelen yarim kalmis
+        # bir hesaplamanin kalintisi). Davranis korunarak yalnizca uyari susturuluyor.
+        _ = cd.topsis_score or 0
         fill_rate = outcome.actual_fill_rate or 0
         success_rate = outcome.actual_success_rate or 0
 
@@ -170,9 +177,9 @@ def evaluate_decision_effectiveness(
             'decision_year': cd.year,
             'outcome_year': outcome.outcome_year,
             'effectiveness_label': label,
-            'effectiveness_score': round(effectiveness_score, 2),
-            'fill_rate': round(fill_rate, 2),
-            'success_rate': round(success_rate, 2),
+            'effectiveness_score': round(float(effectiveness_score or 0), 2),
+            'fill_rate': round(float(fill_rate or 0), 2),
+            'success_rate': round(float(success_rate or 0), 2),
             'explanation': explanation,
         }
     finally:
@@ -288,9 +295,9 @@ def generate_outcome_report(
             'effective_count': effective,
             'ineffective_count': ineffective,
             'unknown_count': unknown,
-            'effectiveness_ratio': round(effective / total, 2) if total > 0 else 0,
-            'average_fill_rate': round(avg_fill_rate, 2),
-            'average_success_rate': round(avg_success_rate, 2),
+            'effectiveness_ratio': round(float(effective) / float(total), 2) if total > 0 else 0,
+            'average_fill_rate': round(float(avg_fill_rate or 0), 2),
+            'average_success_rate': round(float(avg_success_rate or 0), 2),
         }
     finally:
         if close_session:

@@ -91,8 +91,8 @@ def _cosine_benzerlik_boost(
         tfidf = vektorizer.fit_transform(tum_metinler)
 
         n_aktif = len(aktif_metni)
-        aktif_vek = tfidf[:n_aktif]
-        aday_vek  = tfidf[n_aktif:]
+        aktif_vek = tfidf[:n_aktif]  # type: ignore[index]  # scipy sparse matrix slicing destekler
+        aday_vek  = tfidf[n_aktif:]   # type: ignore[index]
 
         # Her aday icin en yuksek aktif benzerligini al
         sim_matrix = cosine_similarity(aday_vek, aktif_vek)

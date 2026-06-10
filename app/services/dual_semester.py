@@ -84,7 +84,7 @@ def _fetch_or_create_curriculum_id(
         """,
         (int(faculty_id), int(department_id), int(year), normalize_semester(term), version),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def _fetch_curriculum_courses(

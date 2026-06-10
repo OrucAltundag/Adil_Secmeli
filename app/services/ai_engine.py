@@ -1,4 +1,10 @@
 # app/services/ai_engine.py
+# pyright: reportArgumentType=false, reportOperatorIssue=false, reportCallIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
+# NOT: Yukaridaki pragma'lar Pandas Series ↔ numpy.ndarray ↔ ExtensionArray
+# arasindaki sahte tip catismalarini (pandas-stubs eksikliği) susturur. Runtime'da
+# pandas Series'leri numpy üzerinden serbestçe işlenebilir; ancak Pylance stubs'ları
+# Categorical/ExtensionArray birleşimleri için aşırı korumacı davranır. Davranış
+# değişmez, sadece editor uyarıları susturulur.
 # Makine ogrenmesi: performans + populerlik + havuz verileri uzerinde
 # LR: Gelecek yil basari tahmini
 # RF: Kesinlesme Puani tahmini (0-100)

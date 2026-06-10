@@ -80,7 +80,7 @@ def execute_governed_benchmark_run(conn: sqlite3.Connection, payload: dict[str, 
             _json(strategy.warnings),
         ),
     )
-    run_id = int(cur.lastrowid)
+    run_id = int(cur.lastrowid or 0)
     warnings: list[str] = [
         "Bu benchmark nihai müfredat kararını doğrudan üretmez. Nihai karar AHP/TOPSIS + kurallar + state machine hattıyla verilir."
     ]
@@ -134,7 +134,7 @@ def execute_governed_benchmark_run(conn: sqlite3.Connection, payload: dict[str, 
             elif y_pred is not None and y_true:
                 metrics = calculate_metrics(task_type, y_true=y_true, y_pred=y_pred, y_score=payload.get("y_score"))
             elif governance.get("usage_role") == BASELINE and task_type in {"classification", "decision_rule"} and payload.get("scores"):
-                y_pred = RuleBasedBaseline().predict(payload.get("scores"))
+                y_pred = RuleBasedBaseline().predict(payload.get("scores") or [])
                 metrics = calculate_metrics("classification", y_true=y_true, y_pred=y_pred)
             else:
                 algo_warnings.append("Tahmin üretilmedi; payload içinde y_pred/predictions_by_algorithm verilirse metrik hesaplanır.")

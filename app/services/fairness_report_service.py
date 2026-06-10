@@ -161,4 +161,4 @@ def save_fairness_report(
             str(report_pack.get("summary_text") or ""),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)

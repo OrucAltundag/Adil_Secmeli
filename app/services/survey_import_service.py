@@ -138,7 +138,7 @@ def _is_summary_row(ders_kodu: str | None, ders_adi: str | None) -> bool:
 
 
 def _read_meta_sheet(xls: pd.ExcelFile) -> dict[str, Any]:
-    meta_sheet = next((name for name in xls.sheet_names if _normalize_text(name) == "meta"), None)
+    meta_sheet = next((name for name in xls.sheet_names if _normalize_text(str(name)) == "meta"), None)
     if not meta_sheet:
         return {}
     df = xls.parse(sheet_name=meta_sheet)
@@ -164,12 +164,12 @@ def parse_survey_excel(excel_path: str) -> dict[str, Any]:
         (
             name
             for name in xls.sheet_names
-            if _normalize_text(name) in {"anketsonuclari", "anket_sonuclari", "anket", "survey"}
+            if _normalize_text(str(name)) in {"anketsonuclari", "anket_sonuclari", "anket", "survey"}
         ),
         None,
     )
     if data_sheet is None:
-        non_meta_sheets = [name for name in xls.sheet_names if _normalize_text(name) != "meta"]
+        non_meta_sheets = [name for name in xls.sheet_names if _normalize_text(str(name)) != "meta"]
         if not non_meta_sheets:
             raise ValueError("Anket veri sayfasi bulunamadi.")
         data_sheet = non_meta_sheets[0]
@@ -222,12 +222,12 @@ def parse_survey_excel(excel_path: str) -> dict[str, Any]:
             continue
 
         if tercih_sayisi is None:
-            warnings.append(f"Satir {idx + 2}: tercih_sayisi/oy_miktari bos veya gecersiz.")
+            warnings.append(f"Satir {int(str(idx)) + 2}: tercih_sayisi/oy_miktari bos veya gecersiz.")
             tercih_sayisi = -1
 
         rows.append(
             SurveyRow(
-                row_no=int(idx) + 2,
+                row_no=int(str(idx)) + 2,
                 ders_kodu=ders_kodu,
                 ders_adi=ders_adi,
                 tercih_sayisi=int(tercih_sayisi),
@@ -619,7 +619,7 @@ def apply_survey_to_criteria(
             now,
         ),
     )
-    import_id = int(cur.lastrowid)
+    import_id = int(cur.lastrowid or 0)
     if import_batch_id is not None:
         cur.execute(
             "UPDATE survey_import SET import_batch_id = ? WHERE import_id = ?",
@@ -654,7 +654,7 @@ def apply_survey_to_criteria(
                 row.raw_yil,
             ),
         )
-        import_row_id = int(cur.lastrowid)
+        import_row_id = int(cur.lastrowid or 0)
         row_id_by_course[int(row.matched_ders_id)] = import_row_id
         if import_batch_id is not None:
             normalized_row = asdict(row)

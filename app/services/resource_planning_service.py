@@ -52,7 +52,7 @@ def create_resource(
         """,
         (resource_name, resource_type, faculty_id, department_id, capacity, 1 if available_fall else 0, 1 if available_spring else 0, now, now, notes),
     )
-    cur.execute("SELECT * FROM teaching_resources WHERE id = ?", (int(cur.lastrowid),))
+    cur.execute("SELECT * FROM teaching_resources WHERE id = ?", (int(cur.lastrowid or 0),))
     return _row_to_dict(cur.fetchone(), [d[0] for d in cur.description]) or {}
 
 
@@ -88,7 +88,7 @@ def create_resource_requirement(
         """,
         (int(course_id), resource_type, required_capacity, required_hours, 1 if hard_requirement else 0, now, now, notes),
     )
-    cur.execute("SELECT * FROM course_resource_requirements WHERE id = ?", (int(cur.lastrowid),))
+    cur.execute("SELECT * FROM course_resource_requirements WHERE id = ?", (int(cur.lastrowid or 0),))
     return _row_to_dict(cur.fetchone(), [d[0] for d in cur.description]) or {}
 
 

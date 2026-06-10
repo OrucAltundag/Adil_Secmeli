@@ -263,14 +263,14 @@ def update_algorithm_role(
 
 
 def get_user_facing_algorithm_label(conn: sqlite3.Connection, algorithm_key: str) -> str:
-    role = get_algorithm_governance(conn, algorithm_key)["usage_role"]
+    role = get_algorithm_governance(conn, algorithm_key)["usage_role"] or ""
     return {
         PRODUCTION_DECISION: "Ana karar motoru",
         ADVISORY_ML: "Destekleyici ML",
         BENCHMARK_ONLY: "Sadece benchmark",
         EXPERIMENTAL: "Deneysel",
         BASELINE: "Baseline",
-    }.get(role, role)
+    }.get(role, role) or ""
 
 
 def get_allowed_algorithms_for_task(conn: sqlite3.Connection, task_key: str) -> list[dict]:

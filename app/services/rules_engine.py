@@ -11,7 +11,7 @@ def is_course_eligible_for_student(
     ders_id: int,
     secilen_dersler: list,
     db,
-    yil: int = None,
+    yil: int | None = None,
 ) -> tuple:
     """
     Öğrencinin bir dersi alıp alamayacağını kurallara göre kontrol eder.

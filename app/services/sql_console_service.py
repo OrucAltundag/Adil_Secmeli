@@ -67,13 +67,13 @@ class SqlConsoleService:
             error_msg = "SQL console is read-only in production."
 
         if not allowed:
-            self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=False, allowed=False, error_msg=error_msg)
+            self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=False, allowed=False, error_msg=error_msg or "")
             return {"success": False, "error": error_msg}
 
         try:
             result = self.db.execute(text(sql_text))
 
-            if read_only or result.returns_rows:
+            if read_only or result.returns_rows:  # type: ignore[attr-defined]  # SQLAlchemy CursorResult has returns_rows
                 rows = result.fetchall()
                 data = [dict(row._mapping) for row in rows]
                 row_count = len(data)
@@ -83,7 +83,7 @@ class SqlConsoleService:
                 self.db.commit()
                 return {"success": True, "data": data, "row_count": row_count}
             else:
-                row_count = result.rowcount
+                row_count = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy CursorResult has rowcount
                 self.db.commit()
                 self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=True, allowed=True, row_count=row_count)
                 return {"success": True, "data": [], "row_count": row_count, "message": "Query executed successfully."}
@@ -93,7 +93,7 @@ class SqlConsoleService:
             self._log_audit(user, sql_text, dangerous=dangerous, read_only=read_only, success=False, allowed=True, error_msg=str(e))
             return {"success": False, "error": str(e)}
 
-    def _log_audit(self, user: UserContext, sql_text: str, dangerous: bool = False, read_only: bool = True, success: bool = False, allowed: bool = False, error_msg: str = None, row_count: int = None):
+    def _log_audit(self, user: UserContext, sql_text: str, dangerous: bool = False, read_only: bool = True, success: bool = False, allowed: bool = False, error_msg: str | None = None, row_count: int | None = None):
         log_entry = SqlConsoleAuditLog(
             user_id=user.user_id,
             client_id=user.client_id,

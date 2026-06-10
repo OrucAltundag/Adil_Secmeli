@@ -104,7 +104,7 @@ def create_default_policy(conn: sqlite3.Connection) -> dict[str, Any]:
         """,
         (now, now),
     )
-    return get_policy(conn, int(cur.lastrowid)) or {}
+    return get_policy(conn, int(cur.lastrowid or 0)) or {}
 
 
 def create_pool_state_policy(
@@ -221,7 +221,7 @@ def create_pool_state_policy(
             notes,
         ),
     )
-    return get_policy(conn, int(cur.lastrowid)) or {}
+    return get_policy(conn, int(cur.lastrowid or 0)) or {}
 
 
 def resolve_policy(

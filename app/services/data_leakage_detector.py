@@ -77,7 +77,7 @@ def generate_leakage_report(
     for report in reports:
         warnings.extend(report.get("warnings", []))
         blocked = blocked or bool(report.get("blocked"))
-        if level_order.get(report.get("leakage_level"), 0) > level_order[max_level]:
+        if level_order.get(str(report.get("leakage_level") or ""), 0) > level_order[max_level]:
             max_level = report["leakage_level"]
     detected = bool(warnings)
     summary = (

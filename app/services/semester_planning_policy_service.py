@@ -165,7 +165,7 @@ def seed_default_policy(conn: sqlite3.Connection) -> dict[str, Any]:
         """,
         (_json(DEFAULT_SOFT_WEIGHTS), now, now),
     )
-    return get_policy(conn, int(cur.lastrowid)) or {}
+    return get_policy(conn, int(cur.lastrowid or 0)) or {}
 
 
 def create_policy(
@@ -264,7 +264,7 @@ def create_policy(
             notes,
         ),
     )
-    return get_policy(conn, int(cur.lastrowid)) or {}
+    return get_policy(conn, int(cur.lastrowid or 0)) or {}
 
 
 def _deactivate_same_scope(

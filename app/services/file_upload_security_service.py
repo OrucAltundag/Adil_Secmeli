@@ -56,6 +56,6 @@ class FileUploadSecurityService:
 
     async def validate_upload(self, file: UploadFile) -> tuple[str, int]:
         """Perform all file security validations and return hash + byte size."""
-        self.validate_extension(file.filename)
-        self.validate_mime_type(file.content_type)
+        self.validate_extension(file.filename or "")
+        self.validate_mime_type(file.content_type or "")
         return await self.validate_size_and_hash(file)

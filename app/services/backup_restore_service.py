@@ -12,14 +12,19 @@ from app.core.config import AppConfig, resolve_sqlite_db_path
 from app.db.models import DataSnapshot
 
 
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportCallIssue=false
+# NOT: SQLAlchemy ORM Column[X] descriptor'ları dosya yolu argümanı olarak Pylance
+# tarafından reddedilir; runtime'da str döner. Sahte uyarılar susturulur.
+
+
 class BackupRestoreService:
     def __init__(self, db: Session, config: AppConfig):
         self.db = db
         self.config = config
 
     def create_sqlite_backup(self, snapshot_type: str, scope_type: str = "global",
-                           faculty_id: int = None, department_id: int = None, year: int = None,
-                           related_import_job_id: str = None, related_decision_run_id: int = None,
+                           faculty_id: int | None = None, department_id: int | None = None, year: int | None = None,
+                           related_import_job_id: str | None = None, related_decision_run_id: int | None = None,
                            created_by: str = "system") -> DataSnapshot:
 
         db_path = resolve_sqlite_db_path(self.config.sqlite_db_path)
@@ -65,7 +70,7 @@ class BackupRestoreService:
         self.db.refresh(snapshot)
         return snapshot
 
-    def create_pre_import_backup(self, import_job_id: str, created_by: str) -> DataSnapshot:
+    def create_pre_import_backup(self, import_job_id: str, created_by: str) -> DataSnapshot | None:
         if not self.config.backup_before_import:
             return None
         return self.create_sqlite_backup("import_pre_apply", related_import_job_id=import_job_id, created_by=created_by)

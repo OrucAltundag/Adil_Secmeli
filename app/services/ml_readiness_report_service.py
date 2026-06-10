@@ -111,7 +111,7 @@ def save_readiness_report(conn: sqlite3.Connection, report: dict) -> int:
             _now(),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def list_readiness_reports(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:

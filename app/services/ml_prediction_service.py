@@ -323,7 +323,7 @@ def save_prediction(
             _now(),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def get_prediction(conn: sqlite3.Connection, prediction_id: int) -> dict:

@@ -48,7 +48,7 @@ def create_prerequisite(
         """,
         (int(course_id), int(prerequisite_course_id), prerequisite_type, relation_note, now, now),
     )
-    cur.execute("SELECT * FROM course_prerequisites WHERE id = ?", (int(cur.lastrowid),))
+    cur.execute("SELECT * FROM course_prerequisites WHERE id = ?", (int(cur.lastrowid or 0),))
     return _row_to_dict(cur.fetchone(), [d[0] for d in cur.description]) or {}
 
 
@@ -71,8 +71,8 @@ def check_prerequisite_order(assignments: list[dict[str, Any]], prerequisites: l
             assignment_map[int(item["course_id"])] = normalize_semester(str(item.get("assigned_semester")))
     violations: list[dict[str, Any]] = []
     for prereq in prerequisites or []:
-        course_id = int(prereq.get("course_id"))
-        pre_id = int(prereq.get("prerequisite_course_id"))
+        course_id = int(prereq.get("course_id") or 0)
+        pre_id = int(prereq.get("prerequisite_course_id") or 0)
         if course_id not in assignment_map or pre_id not in assignment_map:
             continue
         c_sem = assignment_map[course_id]
@@ -98,7 +98,7 @@ def calculate_prerequisite_penalty(assignments: list[dict[str, Any]], prerequisi
 
 
 def explain_prerequisite_decision(course_id: int, semester: str, prerequisites: list[dict[str, Any]]) -> str | None:
-    related = [p for p in prerequisites if int(p.get("course_id")) == int(course_id)]
+    related = [p for p in prerequisites if int(p.get("course_id") or 0) == int(course_id)]
     if not related:
         return None
     return f"{course_id} dersi {semester} dönemine yerleştirilirken ön koşul ilişkileri kontrol edildi."

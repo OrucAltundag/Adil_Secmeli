@@ -172,8 +172,8 @@ def parse_curriculum_excel(excel_path: str) -> tuple[list[dict[str, Any]], list[
     all_rows: list[dict[str, Any]] = []
     warnings: list[str] = []
     for sheet in xls.sheet_names:
-        df = xls.parse(sheet_name=sheet)
-        rows, warns = _extract_rows_from_df(df, sheet_name=sheet)
+        df = xls.parse(sheet_name=str(sheet))
+        rows, warns = _extract_rows_from_df(df, sheet_name=str(sheet))
         all_rows.extend(rows)
         warnings.extend(warns)
     return all_rows, warnings
@@ -289,7 +289,7 @@ def _get_or_create_scope_mufredat_id(
         """,
         (int(faculty_id), int(department_id), int(year), term, int(version)),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def _fetch_scope_courses(cur: sqlite3.Cursor, mufredat_id: int) -> set[int]:

@@ -46,7 +46,7 @@ def create_instructor(
         """,
         (name, email, faculty_id, department_id, 1 if is_active else 0, now, now),
     )
-    cur.execute("SELECT * FROM instructors WHERE id = ?", (int(cur.lastrowid),))
+    cur.execute("SELECT * FROM instructors WHERE id = ?", (int(cur.lastrowid or 0),))
     return _row_to_dict(cur.fetchone(), [d[0] for d in cur.description]) or {}
 
 
@@ -85,7 +85,7 @@ def assign_course_instructor(
         """,
         (int(course_id), int(instructor_id), int(priority), 1 if can_teach else 0, 1 if preferred else 0, now, now, notes),
     )
-    cur.execute("SELECT * FROM course_instructor_assignments WHERE id = ?", (int(cur.lastrowid),))
+    cur.execute("SELECT * FROM course_instructor_assignments WHERE id = ?", (int(cur.lastrowid or 0),))
     return _row_to_dict(cur.fetchone(), [d[0] for d in cur.description]) or {}
 
 
@@ -125,7 +125,7 @@ def upsert_instructor_availability(
             notes,
         ),
     )
-    cur.execute("SELECT * FROM instructor_semester_availability WHERE id = ?", (int(cur.lastrowid),))
+    cur.execute("SELECT * FROM instructor_semester_availability WHERE id = ?", (int(cur.lastrowid or 0),))
     return _row_to_dict(cur.fetchone(), [d[0] for d in cur.description]) or {}
 
 

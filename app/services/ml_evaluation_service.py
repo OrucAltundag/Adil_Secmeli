@@ -197,7 +197,7 @@ def run_significance_test(
             fold_scores = cross_val_score(model, X_df, y_series, cv=cv, scoring=scoring)
             if _scipy_stats is not None and len(fold_scores) >= 2:
                 _, t_p = _scipy_stats.ttest_1samp(fold_scores, sans_seviyesi)
-                t_p = float(t_p)
+                t_p = float(t_p)  # type: ignore[arg-type]
         except Exception:
             t_p = None
 

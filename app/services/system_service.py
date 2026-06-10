@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# pyright: reportArgumentType=false, reportOptionalMemberAccess=false, reportAttributeAccessIssue=false
+# NOT: SQLAlchemy bagimliliklari (Engine/Connection Optional, text() ↔ str)
+# Pylance stubs'larinda asiri korumacidir; runtime'da sorunsuz calisir.
 """Sistem sağlığı ve mimari denetim servisi."""
 
 from __future__ import annotations

@@ -112,7 +112,7 @@ def run_weight_sensitivity_analysis(
             _now(),
         ),
     )
-    result_id = int(cur.lastrowid)
+    result_id = int(cur.lastrowid or 0)
     for item in items:
         cur.execute(
             """

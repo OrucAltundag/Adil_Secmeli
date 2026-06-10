@@ -203,7 +203,7 @@ def _prepare_candidates(
         raw_by_id: dict[int, dict[str, Any]] = {}
         for item in candidate_courses:
             if isinstance(item, dict):
-                cid = int(item.get("course_id") or item.get("ders_id"))
+                cid = int(item.get("course_id") or item.get("ders_id") or 0)
                 raw_by_id[cid] = dict(item)
             else:
                 cid = int(item)
@@ -250,7 +250,7 @@ def _choose_semester(candidate: dict[str, Any], assignments: list[dict[str, Any]
 
 
 def _can_repeat(course_id: int, candidate: dict[str, Any], assignments: list[dict[str, Any]], policy: dict[str, Any]) -> tuple[bool, str | None]:
-    already = [a for a in assignments if int(a.get("course_id")) == int(course_id) and a.get("assigned_semester") in {"fall", "spring"}]
+    already = [a for a in assignments if int(a.get("course_id") or 0) == int(course_id) and a.get("assigned_semester") in {"fall", "spring"}]
     if not already:
         return True, None
     repeat_policy = str(policy.get("same_course_repeat_policy") or "disallow")
@@ -499,7 +499,7 @@ def _repair_prerequisites(assignments: list[dict[str, Any]], violations: list[di
     for violation in violations:
         if violation.get("severity") != "error":
             continue
-        course_id = int(violation.get("course_id"))
+        course_id = int(violation.get("course_id") or 0)
         item = by_id.get(course_id)
         if item and item.get("assigned_semester") == "fall" and int(policy.get("spring_max", 0) or 0) > len([a for a in assignments if a.get("assigned_semester") == "spring"]):
             item["assigned_semester"] = "spring"
@@ -554,7 +554,7 @@ def _persist_plan(
             created_by,
         ),
     )
-    run_id = int(cur.lastrowid)
+    run_id = int(cur.lastrowid or 0)
     for item in assignments:
         cur.execute(
             """

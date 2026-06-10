@@ -531,7 +531,7 @@ def _run_trend_lr(gecmis_list: list) -> dict:
                 lr = LinearRegression()
                 lr.fit(years, rates)
                 next_year = max(g["yil"] for g in valid_gecmis) + 1
-                lr_pred = float(np.clip(lr.predict([[next_year]])[0], 0, 1))
+                lr_pred = float(np.clip(lr.predict(np.array([[next_year]]))[0], 0, 1))
                 coef = float(lr.coef_[0])
                 trend_dir = "yukselis" if coef > 0.005 else ("dusus" if coef < -0.005 else "stabil")
                 return {
@@ -566,7 +566,7 @@ def _run_trend_lr(gecmis_list: list) -> dict:
 _run_trend = _run_trend_lr
 
 
-def _run_rf(criteria: dict, prev_pool: dict, db_path: str = None) -> dict:
+def _run_rf(criteria: dict, prev_pool: dict, db_path: str | None = None) -> dict:
     """
     RF tahmini: yeterli havuz verisi varsa sklearn RandomForest,
     yoksa kural tabanli fallback.
@@ -881,7 +881,7 @@ def analyze_single_course(
     }
 
     with db_session(path) as conn:
-        cur = conn.cursor()
+        cur = conn.cursor()  # type: ignore[attr-defined]  # db_session context manager type kaybediliyor
 
         # ------------------------------------------------------------------
         # 1. Ders meta verisi
@@ -1090,7 +1090,7 @@ def analyze_single_course(
         # 12. Karar paketi
         # ------------------------------------------------------------------
         result["decision"] = {
-            "score_final": round(skor_final, 2) if score_available else None,
+            "score_final": round(skor_final or 0.0, 2) if score_available else None,
             "in_mufredat_this_year": in_mufredat,
             "is_ground_truth": is_ground_truth,
             "criteria_missing": criteria_missing,

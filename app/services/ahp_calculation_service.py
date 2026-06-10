@@ -193,7 +193,7 @@ def _eigenvector_weights(matrix: list[list[float]], criteria_keys: list[str]) ->
 
         arr = np.array(matrix, dtype=float)
         eigenvalues, eigenvectors = np.linalg.eig(arr)
-        idx = int(np.argmax(eigenvalues.real))
+        idx = int(np.argmax(np.real(eigenvalues)))
         vector = np.abs(np.real_if_close(eigenvectors[:, idx]).astype(float))
         total = float(vector.sum()) or 1.0
         weights = {key: float(vector[i] / total) for i, key in enumerate(criteria_keys)}

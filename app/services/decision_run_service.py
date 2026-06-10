@@ -1,14 +1,41 @@
 # -*- coding: utf-8 -*-
-"""Decision run persistence and governance integration."""
+"""Decision run persistence and governance integration.
+
+Karar calistirmasinin ana orkestrasyon servisi. Aktif AHP profili ve aktif karar
+politikasini cozer, hazirlik kapisini gecirir, TOPSIS skorlarini ders kararlarina
+cevirir; governance / explanation / sensitivity / fairness kayitlarini yazar.
+
+Onemli tasarim notlari:
+
+* **SAVEPOINT tabanli atomiklik:** `record_decision_run_for_faculty_year`,
+  `calculation.generate_next_year_curricula` icinden (acik bir transaction
+  icinde) cagrilabildigi icin `BEGIN` yerine **savepoint** kullanir.
+  Savepoint hem standalone hem nested transaction durumunda calisir; hata
+  halinde sadece bu fonksiyonun yazdiklari geri alinir, disardaki ana islem
+  korunur.
+* **Hazirlik kapisi gercek sema ile uyumlu:** `assess_data_readiness_cursor`
+  `can_run` alani DONDURMEZ; `readiness_level` ve `readiness_score` doner.
+  `_readiness_gate()` bu gercek soylesmeyi kullanir.
+* **Policy snapshot `summary_json` icinde tasinir.** `decision_runs` tablosuna
+  yeni kolon eklemek (Gemini'nin onerisi) mevcut DB'leri kirar; bunun yerine
+  audit gerekli bilgiyi summary'de saklariz. AHP snapshot zaten ayri kolonda
+  saklaniyor — onu degistirmedik.
+* **`STATUS_SEVERITY` hiyerarsisi:** governance yumusatmasi artik sayisal
+  buyukluk degil, acik bir siddet siralamasiyla calisir.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import traceback
+import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from app.db.schema_compat import (
     ensure_ahp_governance_schema,
@@ -34,7 +61,12 @@ from app.services.fairness_report_service import (
     generate_fairness_report,
     save_fairness_report,
 )
-from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL
+from app.services.havuz_karar import (
+    STATU_DINLENMEDE,
+    STATU_HAVUZDA,
+    STATU_IPTAL,
+    STATU_MUFREDATTA,
+)
 from app.services.sensitivity_analysis_service import (
     analyze_decision_sensitivity,
     save_sensitivity_result,
@@ -49,6 +81,89 @@ from app.services.trend_analysis_service import (
 )
 
 ALGORITHM_VERSION = "ahp-topsis-trend-governance-v1"
+
+# Statu siddet hiyerarsisi — `max()` yerine acik, surdurulebilir bir siralama.
+# Yumusatma kurali: "asagiya inebilir, fakat asla limit_status'tan agir olamaz".
+STATUS_SEVERITY: dict[int, int] = {
+    STATU_MUFREDATTA: 0,
+    STATU_HAVUZDA: 1,
+    STATU_DINLENMEDE: 2,
+    STATU_IPTAL: 3,
+}
+
+# Hazirlik kapisinin sert blokladigi seviyeler. `not_ready` di$indaki seviyeler
+# (low/medium/good/decision_ready) calistirmaya izin verir; UI ayrica
+# `can_run_algorithm` ile farkli bir kapi kullaniyor — burada veri-yetersiz
+# durumunu kesinlikle engellemekle yetiniyoruz.
+_BLOCKING_READINESS_LEVELS = {"not_ready"}
+
+
+def _readiness_gate(readiness: dict[str, Any]) -> tuple[bool, str | None]:
+    """Hazirlik sonucundan (can_run, blocking_reason) ikilisi uretir.
+
+    `assess_data_readiness_cursor` cikisinin gercek sozlesmesini kullanir:
+    `readiness_level` ve `readiness_score`. Yokluk durumunda guvenli tarafta
+    kalir (calistirmaya izin verme).
+    """
+    if not isinstance(readiness, dict):
+        return False, "Hazirlik degerlendirmesi bos veya gecersiz."
+    if readiness.get("error"):
+        return False, f"Hazirlik degerlendirilemedi: {readiness.get('error')}"
+    level = str(readiness.get("readiness_level") or "").strip().lower()
+    if not level:
+        return False, "Hazirlik seviyesi belirlenemedi."
+    if level in _BLOCKING_READINESS_LEVELS:
+        score = readiness.get("readiness_score")
+        return False, (
+            f"Veri hazirligi yetersiz (level={level}, score={score}). "
+            "Eksik kriter verilerini tamamlayin veya override talep edin."
+        )
+    return True, None
+
+
+def _begin_savepoint(cur: sqlite3.Cursor) -> str | None:
+    """Nested-safe transaction baslat. `BEGIN`'in aksine baska transaction
+    icinde de calisir. Best-effort: bazi alt servisler kendi `conn.commit()`
+    cagrilarini yapabildigi icin savepoint'in basta sonuna kadar yasadigi
+    garanti edilemez. Bu yuzden release/rollback HATALARI sessizce yutulur."""
+    try:
+        name = f"decision_run_sp_{uuid.uuid4().hex[:12]}"
+        cur.execute(f"SAVEPOINT {name}")
+        return name
+    except Exception:
+        logger.warning("Savepoint acilamadi — atomiklik garantisi yok", exc_info=True)
+        return None
+
+
+def _release_savepoint(cur: sqlite3.Cursor, name: str | None) -> None:
+    if not name:
+        return
+    # Alt servisler commit'lediyse savepoint zaten silinmis olabilir; bu OK.
+    try:
+        cur.execute(f"RELEASE SAVEPOINT {name}")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _rollback_savepoint(cur: sqlite3.Cursor, name: str | None) -> None:
+    if not name:
+        return
+    try:
+        cur.execute(f"ROLLBACK TO SAVEPOINT {name}")
+        cur.execute(f"RELEASE SAVEPOINT {name}")
+    except sqlite3.OperationalError:
+        # Savepoint commit ile yok olduysa rollback edemeyiz — log + devam.
+        logger.warning(
+            "Savepoint rollback yapilamadi (muhtemelen alt servis commit'ledi): %s",
+            name,
+        )
+
+
+def _soften_to(current: int, limit: int) -> int:
+    """Karari `limit` siddetine kadar yumusatir; daha hafifse aynen birakir."""
+    cur_sev = STATUS_SEVERITY.get(int(current), 99)
+    lim_sev = STATUS_SEVERITY.get(int(limit), 99)
+    return int(current) if cur_sev < lim_sev else int(limit)
 
 
 def _now() -> str:
@@ -82,9 +197,10 @@ def _term_key(value: str | None) -> str:
 
 
 def _row_to_dict(row: sqlite3.Row | tuple[Any, ...], columns: list[str] | None = None) -> dict[str, Any]:
-    if hasattr(row, "keys"):
+    if isinstance(row, sqlite3.Row):
         return {key: row[key] for key in row.keys()}
-    return {columns[idx]: row[idx] for idx in range(len(columns or []))}
+    cols = columns or []
+    return {cols[idx]: row[idx] for idx in range(len(cols))}
 
 
 def _fetch_governance_flags(cur: sqlite3.Cursor, course_id: int) -> dict[str, Any]:
@@ -209,33 +325,39 @@ def _apply_governance(
         and int(year) - int(first_seen_year) < int(policy.get("new_course_grace_period_years", 2) or 2)
     )
 
+    # NOT: Onceki surumde stratejik/akreditasyon/koruma dallari `old_status`'a geri
+    # donmeye calisiyordu ve sayisal karsilatirma (>) ile siddet sirasini varsayiyordu.
+    # `STATUS_SEVERITY` hiyerarsisi ile bunu yumusatma kuralina cevirdik:
+    # "asla HAVUZDA'dan daha agir cikamasin".
     if governance.get("strategic_flag") and hard_decision:
         approval_required = True
         approval_reason_parts.append("Stratejik ders korumasi")
-        final_status = old_status if old_status is not None and int(old_status) > STATU_DINLENMEDE else STATU_HAVUZDA
+        final_status = _soften_to(final_status, STATU_HAVUZDA)
     if governance.get("accreditation_flag") and hard_decision:
         approval_required = True
         approval_reason_parts.append("Akreditasyon korumasi")
-        final_status = old_status if old_status is not None and int(old_status) > STATU_DINLENMEDE else STATU_HAVUZDA
+        final_status = _soften_to(final_status, STATU_HAVUZDA)
     if is_protected and hard_decision:
         approval_required = True
         approval_reason_parts.append(f"{protected_until} yilina kadar korumali")
-        final_status = old_status if old_status is not None and int(old_status) > STATU_DINLENMEDE else STATU_HAVUZDA
+        final_status = _soften_to(final_status, STATU_HAVUZDA)
     if is_new and hard_decision:
         approval_required = True
         approval_reason_parts.append("Yeni ders grace period kapsaminda")
-        final_status = max(final_status, STATU_DINLENMEDE)
+        final_status = _soften_to(final_status, STATU_DINLENMEDE)
 
     low_conf_threshold = float(policy.get("low_data_confidence_threshold", 0.50) or 0.50)
     if float(confidence.get("score") or 0.0) < low_conf_threshold and hard_decision:
         approval_required = True
         approval_reason_parts.append("Veri guveni dusuk")
-        final_status = max(final_status, STATU_DINLENMEDE)
+        final_status = _soften_to(final_status, STATU_DINLENMEDE)
 
     if int(recommended_status) == STATU_IPTAL and policy.get("require_manual_approval_for_cancel", True):
         approval_required = True
-        approval_reason_parts.append("Kalici iptal icin akademik onay gerekli")
-        final_status = max(final_status, STATU_DINLENMEDE)
+        # Terminoloji: STATU_IPTAL aslinda "iptal adayi"dir; kalici iptal kurul
+        # karariyla olusur. Onceki "Kalici iptal" ifadesi UI'da yanilticiydi.
+        approval_reason_parts.append("Iptal adayi karari icin akademik onay gerekli")
+        final_status = _soften_to(final_status, STATU_DINLENMEDE)
 
     if sensitivity and sensitivity.get("stability_level") == "low" and hard_decision:
         approval_required = True
@@ -301,7 +423,7 @@ def create_decision_run(
             created_by,
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def mark_decision_run_completed(cur: sqlite3.Cursor, run_id: int, summary: dict[str, Any]) -> None:
@@ -334,14 +456,30 @@ def record_decision_run_for_faculty_year(
     department_id: int | None = None,
     generation_result: dict[str, Any] | None = None,
     created_by: str | None = None,
+    enforce_readiness_gate: bool = True,
 ) -> dict[str, Any]:
+    """Bir karar calistirmasini atomik olarak DB'ye yazar.
+
+    Args:
+        conn: SQLite baglantisi. Cagiranda acik bir transaction OLABILIR — bu
+            fonksiyon savepoint kullandigi icin nested calisir.
+        enforce_readiness_gate: True ise `readiness_level == "not_ready"`
+            durumunda `RuntimeError` firlatir. Test/migration senaryolari icin
+            False'a alinabilir.
+
+    Raises:
+        RuntimeError: hazirlik yetersizse, TOPSIS skorlari uretilemezse veya
+            yazma sirasinda DB hatasi olursa.
+    """
     ensure_ahp_governance_schema(conn, commit=False)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     ahp_profile = resolve_ahp_profile(conn, faculty_id=faculty_id, department_id=department_id, year=year)
     policy = resolve_decision_policy(conn, faculty_id=faculty_id, department_id=department_id, year=year)
 
-    # PHASE 1: Veri olgunluğunu değerlendir
+    # PHASE 1: Veri olgunlugunu degerlendir — VE SONUCU GERCEKTEN KULLAN.
+    # Onceki surumde sonuc hesaplaniyor ama hicbir karar uretmiyordu; bu da
+    # hazirlik kapisini sadece UI uyarisina dusurmustu.
     readiness_result = assess_data_readiness_cursor(
         cur=cur,
         year=int(year),
@@ -349,6 +487,10 @@ def record_decision_run_for_faculty_year(
         department_id=department_id,
         semester=semester,
     )
+    if enforce_readiness_gate:
+        can_run, blocking_reason = _readiness_gate(readiness_result)
+        if not can_run:
+            raise RuntimeError(blocking_reason or "Veri hazirligi yetersiz.")
 
     from app.services.calculation import get_faculty_year_topsis_results
 
@@ -356,16 +498,61 @@ def record_decision_run_for_faculty_year(
         cur=cur,
         fakulte_id=int(faculty_id) if faculty_id is not None else 0,
         akademik_yil=int(year),
-        donem=semester,
+        donem=semester or "Guz",
     )
     if not score_pack.get("ok"):
         raise RuntimeError(score_pack.get("error", "TOPSIS skorlari uretilemedi."))
 
-    skor_map = {int(k): float(v or 0.0) for k, v in dict(score_pack.get("scores", {})).items()}
+    # Skorlari None birakmadan, None/NaN olanlari `valid_scores` icine almadan al.
+    # Onceki surum eksik skoru sessizce 0.0'a duruyordu → bazi dersler iptal/dinlenme
+    # adayi olarak yanlis sinifland riliyordu.
+    raw_scores: dict[int, Any] = dict(score_pack.get("scores", {}))
+    skor_map: dict[int, float] = {}
+    skipped_no_score: list[int] = []
+    for key, raw in raw_scores.items():
+        try:
+            course_id_int = int(key)
+        except (TypeError, ValueError):
+            continue
+        if raw is None:
+            skipped_no_score.append(course_id_int)
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            skipped_no_score.append(course_id_int)
+            continue
+        # NaN guvenligi — `classify_score` zaten reddedecek ama burada da temizleyelim.
+        if value != value or value < 0.0 or value > 100.0:
+            skipped_no_score.append(course_id_int)
+            continue
+        skor_map[course_id_int] = value
+
     metric_map = {int(k): dict(v) for k, v in dict(score_pack.get("metric_map", {})).items()}
     course_ids = sorted(metric_map.keys())
     meta_map = _course_meta(cur, course_ids)
 
+    # Policy snapshot: yeni kolon eklemek mevcut DB'leri kirar; bunun yerine
+    # input_hash'e ve summary_json'a politikanin tam halini gomeruz. Boylece
+    # ileride politika esikleri degisse bile bu run hangi esiklerle karar verdiyse
+    # geri donulup goruntulenebilir.
+    policy_snapshot = {
+        "id": policy.get("id"),
+        "name": policy.get("name"),
+        "mode": policy.get("mode"),
+        "scope_type": policy.get("scope_type"),
+        "faculty_id": policy.get("faculty_id"),
+        "department_id": policy.get("department_id"),
+        "year": policy.get("year"),
+        "curriculum_keep_threshold": policy.get("curriculum_keep_threshold"),
+        "pool_threshold": policy.get("pool_threshold"),
+        "rest_threshold": policy.get("rest_threshold"),
+        "cancel_candidate_threshold": policy.get("cancel_candidate_threshold"),
+        "require_manual_approval_for_cancel": policy.get("require_manual_approval_for_cancel"),
+        "low_data_confidence_threshold": policy.get("low_data_confidence_threshold"),
+        "sensitivity_margin": policy.get("sensitivity_margin"),
+        "new_course_grace_period_years": policy.get("new_course_grace_period_years"),
+    }
     input_hash = _hash_payload(
         {
             "year": int(year),
@@ -375,190 +562,237 @@ def record_decision_run_for_faculty_year(
             "scores": skor_map,
             "metrics": metric_map,
             "ahp_profile_id": ahp_profile["id"],
-            "policy_id": policy["id"],
+            "policy_snapshot": policy_snapshot,
         }
     )
-    run_id = create_decision_run(
-        cur=cur,
-        run_name=f"{year} {faculty_id or 'genel'} {_normalize_semester(semester)} karar calismasi",
-        year=int(year),
-        faculty_id=faculty_id,
-        department_id=department_id,
-        semester=semester,
-        ahp_profile_id=int(ahp_profile["id"]),
-        decision_policy_id=int(policy["id"]),
-        input_data_hash=input_hash,
-        created_by=created_by,
-        ahp_profile_version=int(ahp_profile.get("version") or 1),
-        ahp_weights_snapshot=dict(ahp_profile.get("weights") or {}),
-        ahp_consistency_ratio=ahp_profile.get("consistency_ratio"),
-        ahp_profile_status_at_run=str(ahp_profile.get("status") or ""),
-        ahp_profile_source=str(ahp_profile.get("source") or ""),
-    )
-
-    criteria_keys = [key for key in ahp_profile.get("criteria_keys", DEFAULT_CRITERIA_KEYS) if key in DEFAULT_CRITERIA_KEYS]
-    if not criteria_keys:
-        criteria_keys = list(DEFAULT_CRITERIA_KEYS)
-    weights = {key: float(ahp_profile["weights"].get(key, 0.0)) for key in criteria_keys}
-    course_rows = []
-    for course_id in course_ids:
-        row = {"course_id": course_id, "ders_id": course_id}
-        row.update(metric_map.get(course_id, {}))
-        course_rows.append(row)
-    breakdowns = calculate_topsis_breakdowns(course_rows, weights=weights, criteria_keys=criteria_keys)
-
-    # PHASE 1: Veri kapsama raporunu hesapla
-    coverage_report = generate_coverage_report_cursor(
-        cur=cur,
-        year=int(year),
-        faculty_id=faculty_id,
-        department_id=department_id,
-        semester=semester,
-    )
-    save_data_coverage_report(cur, int(year), faculty_id, department_id, semester, coverage_report)
-
-    inserted = 0
-    approval_count = 0
-    low_confidence_count = 0
-    sensitive_count = 0
-    status_counts: dict[str, int] = {}
-
-    for course_id in course_ids:
-        meta = meta_map.get(course_id, {})
-        department = meta.get("department_id")
-        score = float(skor_map.get(course_id, 0.0))
-        classification = classify_score(score, policy)
-        old_status = _old_status(cur, course_id, int(year), faculty_id, semester)
-        governance = _fetch_governance_flags(cur, course_id)
-        first_seen = _first_seen_year(cur, course_id)
-        confidence = calculate_course_data_confidence(cur, course_id, int(year), semester, policy=policy)
-        trend = analyze_course_trend(cur, course_id, int(year))
-        breakdown = breakdowns.get(course_id, {})
-        if breakdown:
-            breakdown["final_score"] = score
-        sensitivity = analyze_decision_sensitivity(
-            score=score,
-            policy=policy,
-            weights=dict(breakdown.get("weights") or weights),
-            raw_values=dict(breakdown.get("raw_values") or metric_map.get(course_id, {})),
-        )
-        governance_result = _apply_governance(
-            recommended_status=int(classification["recommended_status"]),
-            old_status=old_status,
+    # === ATOMIK BLOK BASLANGICI ===
+    # Savepoint ile sarmalandi: hata olursa run/course_decisions/explanations/...
+    # hepsi geri alinir; ana caller'in transaction'i bozulmaz. `BEGIN` kullanmadik
+    # cunku bu fonksiyon `generate_next_year_curricula` icinden de cagriliyor.
+    sp_name = _begin_savepoint(cur)
+    run_id: int | None = None
+    try:
+        run_id = create_decision_run(
+            cur=cur,
+            run_name=f"{year} {faculty_id or 'genel'} {_normalize_semester(semester)} karar calismasi",
             year=int(year),
-            policy=policy,
-            governance=governance,
-            confidence=confidence,
-            first_seen_year=first_seen,
-            sensitivity=sensitivity,
+            faculty_id=faculty_id,
+            department_id=department_id,
+            semester=semester,
+            ahp_profile_id=int(ahp_profile["id"]),
+            decision_policy_id=int(policy["id"]),
+            input_data_hash=input_hash,
+            created_by=created_by,
+            ahp_profile_version=int(ahp_profile.get("version") or 1),
+            ahp_weights_snapshot=dict(ahp_profile.get("weights") or {}),
+            ahp_consistency_ratio=ahp_profile.get("consistency_ratio"),
+            ahp_profile_status_at_run=str(ahp_profile.get("status") or ""),
+            ahp_profile_source=str(ahp_profile.get("source") or ""),
         )
-        if confidence["level"] == "low":
-            low_confidence_count += 1
-        if sensitivity["stability_level"] == "low":
-            sensitive_count += 1
-        if governance_result["approval_required"]:
-            approval_count += 1
 
-        decision_payload = {
-            "course_id": course_id,
-            "recommended_status": int(classification["recommended_status"]),
-            "final_status": int(governance_result["final_status"]),
-            "topsis_score": score,
-            "trend_score": float(trend.get("trend_score") or 0.0),
-            "trend_label": str(trend.get("trend_label") or ""),
-            "data_confidence_score": float(confidence.get("score") or 0.0),
-            "decision_stability": str(sensitivity.get("stability_level") or "medium"),
-            "approval_required": bool(governance_result["approval_required"]),
-            "approval_reason": governance_result["approval_reason"],
-            "main_reason": classification["reason"],
-            "rule_triggered": classification["rule_triggered"],
+        criteria_keys = [key for key in ahp_profile.get("criteria_keys", DEFAULT_CRITERIA_KEYS) if key in DEFAULT_CRITERIA_KEYS]
+        if not criteria_keys:
+            criteria_keys = list(DEFAULT_CRITERIA_KEYS)
+        weights = {key: float(ahp_profile["weights"].get(key, 0.0)) for key in criteria_keys}
+        course_rows = []
+        for course_id in course_ids:
+            row = {"course_id": course_id, "ders_id": course_id}
+            row.update(metric_map.get(course_id, {}))
+            course_rows.append(row)
+        breakdowns = calculate_topsis_breakdowns(course_rows, weights=weights, criteria_keys=criteria_keys)
+
+        # Veri kapsama raporu — coverage_report sadece ozet amacli, blokleyici degil.
+        coverage_report = generate_coverage_report_cursor(
+            cur=cur,
+            year=int(year),
+            faculty_id=faculty_id,
+            department_id=department_id,
+            semester=semester,
+        )
+        save_data_coverage_report(cur, int(year), faculty_id, department_id, semester, coverage_report)
+
+        inserted = 0
+        approval_count = 0
+        low_confidence_count = 0
+        sensitive_count = 0
+        status_counts: dict[str, int] = {}
+
+        for course_id in course_ids:
+            meta = meta_map.get(course_id, {})
+            department = meta.get("department_id")
+            # SKOR YOKSA ATLA — sessizce 0.0 yapip iptal/dinlenmeye sokmayalim.
+            # Atlanan dersler summary'de raporlanir; UI bunlari "veri eksik" olarak
+            # gosterebilir. Onceki davranis akademik karar acisindan tehlikeliydi.
+            if course_id not in skor_map:
+                skipped_no_score.append(course_id)
+                continue
+            score = skor_map[course_id]
+            classification = classify_score(score, policy)
+            old_status = _old_status(cur, course_id, int(year), faculty_id, semester)
+            governance = _fetch_governance_flags(cur, course_id)
+            first_seen = _first_seen_year(cur, course_id)
+            confidence = calculate_course_data_confidence(cur, course_id, int(year), semester, policy=policy)
+            trend = analyze_course_trend(cur, course_id, int(year))
+            breakdown = breakdowns.get(course_id, {})
+            if breakdown:
+                breakdown["final_score"] = score
+            sensitivity = analyze_decision_sensitivity(
+                score=score,
+                policy=policy,
+                weights=dict(breakdown.get("weights") or weights),
+                raw_values=dict(breakdown.get("raw_values") or metric_map.get(course_id, {})),
+            )
+            governance_result = _apply_governance(
+                recommended_status=int(classification["recommended_status"]),
+                old_status=old_status,
+                year=int(year),
+                policy=policy,
+                governance=governance,
+                confidence=confidence,
+                first_seen_year=first_seen,
+                sensitivity=sensitivity,
+            )
+            if confidence["level"] == "low":
+                low_confidence_count += 1
+            if sensitivity["stability_level"] == "low":
+                sensitive_count += 1
+            if governance_result["approval_required"]:
+                approval_count += 1
+
+            decision_payload = {
+                "course_id": course_id,
+                "recommended_status": int(classification["recommended_status"]),
+                "final_status": int(governance_result["final_status"]),
+                "topsis_score": score,
+                "trend_score": float(trend.get("trend_score") or 0.0),
+                "trend_label": str(trend.get("trend_label") or ""),
+                "data_confidence_score": float(confidence.get("score") or 0.0),
+                "decision_stability": str(sensitivity.get("stability_level") or "medium"),
+                "approval_required": bool(governance_result["approval_required"]),
+                "approval_reason": governance_result["approval_reason"],
+                "main_reason": classification["reason"],
+                "rule_triggered": classification["rule_triggered"],
+            }
+            explanation = build_decision_explanation(
+                course_code=meta.get("code"),
+                course_name=meta.get("name"),
+                decision=decision_payload,
+                breakdown=breakdown,
+                trend=trend,
+                confidence=confidence,
+                governance=governance,
+            )
+            main_reason = explanation.get("main_reason") or classification["reason"]
+            cur.execute(
+                """
+                INSERT INTO course_decisions (
+                    decision_run_id, course_id, year, faculty_id, department_id, semester,
+                    old_status, recommended_status, final_status, topsis_score,
+                    trend_score, trend_label, data_confidence_score, decision_stability,
+                    approval_required, approval_status, approval_reason,
+                    override_applied, override_reason, main_reason, rule_triggered
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(run_id),
+                    int(course_id),
+                    int(year),
+                    faculty_id,
+                    department,
+                    _normalize_semester(semester),
+                    old_status,
+                    int(classification["recommended_status"]),
+                    int(governance_result["final_status"]),
+                    score,
+                    float(trend.get("trend_score") or 0.0),
+                    str(trend.get("trend_label") or ""),
+                    float(confidence.get("score") or 0.0),
+                    str(sensitivity.get("stability_level") or "medium"),
+                    1 if governance_result["approval_required"] else 0,
+                    governance_result["approval_status"],
+                    governance_result["approval_reason"],
+                    1 if int(governance_result["final_status"]) != int(classification["recommended_status"]) else 0,
+                    governance_result["approval_reason"],
+                    str(main_reason),
+                    str(classification["rule_triggered"]),
+                ),
+            )
+            decision_id = int(cur.lastrowid or 0)
+
+            if breakdown:
+                save_score_breakdown(
+                    cur,
+                    run_id,
+                    course_id,
+                    int(year),
+                    faculty_id,
+                    department,
+                    breakdown,
+                    ahp_profile_id=int(ahp_profile["id"]),
+                )
+            save_trend_analysis(cur, run_id, course_id, int(year), trend)
+            save_data_confidence(cur, run_id, course_id, int(year), confidence)
+            save_sensitivity_result(cur, run_id, course_id, sensitivity)
+            save_decision_explanation(cur, decision_id, explanation)
+
+            inserted += 1
+            status_key = str(governance_result["final_status"])
+            status_counts[status_key] = status_counts.get(status_key, 0) + 1
+
+        fairness = generate_fairness_report(cur, run_id, int(year), faculty_id, department_id)
+        save_fairness_report(cur, run_id, faculty_id, department_id, int(year), fairness)
+        summary = {
+            "course_count": inserted,
+            "approval_required_count": approval_count,
+            "low_data_confidence_count": low_confidence_count,
+            "sensitive_decision_count": sensitive_count,
+            "status_counts": status_counts,
+            "skipped_no_score_count": len(skipped_no_score),
+            "skipped_no_score_course_ids": skipped_no_score[:50],  # uzun listeyi kirpalim
+            "generation_result": generation_result or {},
+            "fairness_summary": fairness.get("summary_text"),
+            # Audit/aciklanabilirlik icin policy ve readiness snapshot'i.
+            "policy_snapshot": policy_snapshot,
+            "readiness_snapshot": readiness_result,
         }
-        explanation = build_decision_explanation(
-            course_code=meta.get("code"),
-            course_name=meta.get("name"),
-            decision=decision_payload,
-            breakdown=breakdown,
-            trend=trend,
-            confidence=confidence,
-            governance=governance,
+        mark_decision_run_completed(cur, run_id, summary)
+
+        # === ATOMIK BLOK BASARILI BITTI — savepoint'i serbest birak ===
+        _release_savepoint(cur, sp_name)
+        return {
+            "ok": True,
+            "decision_run_id": int(run_id),
+            "summary": summary,
+            "ahp_profile": ahp_profile,
+            "decision_policy": policy,
+        }
+    except Exception as exc:
+        # Yarim yazilanlari geri al — caller'in disardaki transaction'ini bozma.
+        logger.exception(
+            "Karar calistirmasi yazimi basarisiz (year=%s, faculty_id=%s, sp=%s)",
+            year, faculty_id, sp_name,
         )
-        main_reason = explanation.get("main_reason") or classification["reason"]
-        cur.execute(
-            """
-            INSERT INTO course_decisions (
-                decision_run_id, course_id, year, faculty_id, department_id, semester,
-                old_status, recommended_status, final_status, topsis_score,
-                trend_score, trend_label, data_confidence_score, decision_stability,
-                approval_required, approval_status, approval_reason,
-                override_applied, override_reason, main_reason, rule_triggered
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(run_id),
-                int(course_id),
-                int(year),
-                faculty_id,
-                department,
-                _normalize_semester(semester),
-                old_status,
-                int(classification["recommended_status"]),
-                int(governance_result["final_status"]),
-                score,
-                float(trend.get("trend_score") or 0.0),
-                str(trend.get("trend_label") or ""),
-                float(confidence.get("score") or 0.0),
-                str(sensitivity.get("stability_level") or "medium"),
-                1 if governance_result["approval_required"] else 0,
-                governance_result["approval_status"],
-                governance_result["approval_reason"],
-                1 if int(governance_result["final_status"]) != int(classification["recommended_status"]) else 0,
-                governance_result["approval_reason"],
-                str(main_reason),
-                str(classification["rule_triggered"]),
-            ),
-        )
-        decision_id = int(cur.lastrowid)
-
-        if breakdown:
-            save_score_breakdown(
-                cur,
-                run_id,
-                course_id,
-                int(year),
-                faculty_id,
-                department,
-                breakdown,
-                ahp_profile_id=int(ahp_profile["id"]),
-            )
-        save_trend_analysis(cur, run_id, course_id, int(year), trend)
-        save_data_confidence(cur, run_id, course_id, int(year), confidence)
-        save_sensitivity_result(cur, run_id, course_id, sensitivity)
-        save_decision_explanation(cur, decision_id, explanation)
-
-        inserted += 1
-        status_key = str(governance_result["final_status"])
-        status_counts[status_key] = status_counts.get(status_key, 0) + 1
-
-    fairness = generate_fairness_report(cur, run_id, int(year), faculty_id, department_id)
-    save_fairness_report(cur, run_id, faculty_id, department_id, int(year), fairness)
-    summary = {
-        "course_count": inserted,
-        "approval_required_count": approval_count,
-        "low_data_confidence_count": low_confidence_count,
-        "sensitive_decision_count": sensitive_count,
-        "status_counts": status_counts,
-        "generation_result": generation_result or {},
-        "fairness_summary": fairness.get("summary_text"),
-    }
-    mark_decision_run_completed(cur, run_id, summary)
-    return {
-        "ok": True,
-        "decision_run_id": int(run_id),
-        "summary": summary,
-        "ahp_profile": ahp_profile,
-        "decision_policy": policy,
-    }
+        _rollback_savepoint(cur, sp_name)
+        # `failed` run kaydini ayri/yeni bir savepoint icinde olusturmaya calis ki
+        # 'started' durumunda asili karar kalmasin. Bu girisim de basarisiz olursa
+        # ana exception'i yutmadan tekrar firlatiriz.
+        try:
+            sp_fail = _begin_savepoint(cur)
+            try:
+                if run_id is not None:
+                    mark_decision_run_failed(cur, int(run_id), str(exc))
+                else:
+                    # Run id olmadan failed kaydi acmiyoruz — schema disinda bos
+                    # bir failed satiri yararsizdir; loga zaten yazildi.
+                    pass
+                _release_savepoint(cur, sp_fail)
+            except Exception:
+                logger.exception("failed run isaretleme savepoint'i basarisiz")
+                _rollback_savepoint(cur, sp_fail)
+        except Exception:
+            logger.exception("failed run isaretleme acilisi basarisiz")
+        raise
 
 
 def record_failed_decision_run(
@@ -596,6 +830,14 @@ def record_failed_decision_run(
         mark_decision_run_failed(cur, run_id, error_message)
         conn.commit()
         return {"ok": False, "decision_run_id": int(run_id), "error": str(error_message)}
+    except Exception as exc:
+        # Failed run yazimi kendi hatasini ana akisi bozmadan donmeli.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.exception("record_failed_decision_run yazilamadi: %s", exc)
+        return {"ok": False, "error": str(error_message), "log_write_error": str(exc)}
     finally:
         conn.close()
 
@@ -669,7 +911,18 @@ def execute_decision_run(
     year: int,
     faculty_id: int,
     semester: str | None = "Guz",
+    department_id: int | None = None,
+    created_by: str | None = None,
 ) -> dict[str, Any]:
+    """API/UI tarafindan tetiklenen tek karar calistirma giris noktasi.
+
+    Geriye uyumluluk: imza orijinal (db_path, year, faculty_id, semester) kalan
+    cagilara dokunmadi; yeni parametreler `department_id` ve `created_by`
+    opsiyoneldir. Davranis acisindan halen `generate_next_year_curricula`
+    cagrilir cunku UI/karar paneli bu yolla pool guncellemeleri ve karar
+    kaydini birlikte alir. Hata olusursa failed run yazma denemesi yapilir
+    fakat orijinal sonuc kaybolmadan caller'a doner.
+    """
     from app.services.calculation import generate_next_year_curricula
 
     result = generate_next_year_curricula(
@@ -679,8 +932,20 @@ def execute_decision_run(
         donem=semester or "Guz",
     )
     if not result.get("ok"):
-        record_failed_decision_run(db_path, year, faculty_id, semester, result.get("error", "Bilinmeyen hata"))
-        return result
+        try:
+            record_failed_decision_run(
+                db_path,
+                year,
+                faculty_id,
+                semester,
+                result.get("error", "Bilinmeyen hata"),
+                department_id=department_id,
+            )
+        except Exception:
+            logger.exception(
+                "execute_decision_run: failed run kaydi acilamadi (fakulte=%s yil=%s)",
+                faculty_id, year,
+            )
     return result
 
 

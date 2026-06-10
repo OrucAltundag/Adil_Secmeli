@@ -147,7 +147,7 @@ def save_score_breakdown(
             """,
             payload,
         )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def short_score_explanation(breakdown: dict[str, Any]) -> str:

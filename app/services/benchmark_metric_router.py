@@ -262,9 +262,9 @@ def _binary_scores(y_score: Sequence[Any]) -> list[float]:
     values = []
     for item in y_score:
         if isinstance(item, (list, tuple)) and len(item) >= 2:
-            values.append(float(item[-1]))
+            values.append(float(item[-1]))  # type: ignore[arg-type]
         else:
-            values.append(float(item))
+            values.append(float(item))  # type: ignore[arg-type]
     return values
 
 

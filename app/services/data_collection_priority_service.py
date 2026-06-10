@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false
+# NOT: SQLAlchemy 1.4 stilinde Column[X] descriptor'lari Pylance tarafindan
+# X plain tipiyle uyumsuz gorulur. Runtime'da descriptor __get__/set__
+# uzerinden plain X dondurur — gercek uyumsuzluk yoktur. Pragma'lar yalnizca
+# bu sahte uyarılari susturur, davranisi degistirmez.
 """
 Data Collection Priority Service
 
@@ -237,7 +242,7 @@ def get_open_priorities(
                 'priority_rank': p.priority_rank,
                 'target_type': p.target_entity_type,
                 'course_id': p.course_id,
-                'course_name': session.query(Ders).filter(Ders.ders_id == p.course_id).first().ad if p.course_id else None,
+                'course_name': (session.query(Ders).filter(Ders.ders_id == p.course_id).first().ad if p.course_id else None),  # type: ignore[union-attr]  # .first() Optional; pratikte FK ile garanti
                 'missing_field': p.missing_field,
                 'reason': p.priority_reason,
                 'expected_impact': p.expected_impact,

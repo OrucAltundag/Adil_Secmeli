@@ -70,7 +70,7 @@ def record_value_source(
             _now(),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def apply_manual_override(

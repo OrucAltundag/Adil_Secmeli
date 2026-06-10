@@ -223,7 +223,7 @@ def recalculate_import_diff(
             _now(),
         ),
     )
-    diff_id = int(cur.lastrowid)
+    diff_id = int(cur.lastrowid or 0)
     for item in items:
         cur.execute(
             """

@@ -239,6 +239,13 @@ def create_default_policy(conn: sqlite3.Connection, commit: bool = True) -> dict
 
     Zaten varsa onu döndürür (yazma yapmaz). `commit` davranışı için modül
     docstring'indeki transaction sözleşmesine bakın.
+
+    P1 düzeltmesi: önceki sürüm yalnızca `scope_type='global' AND is_active=1`
+    arıyordu. Eğer DB'de `scope='global', year=2026, semester='Güz', is_active=1`
+    gibi yıl/dönem özel bir global politika varsa onu *varsayılan global*
+    sanıp gereksiz INSERT atlanıyordu; daha kötüsü, `resolve_policy` bunu
+    "varsayılan" olarak döndürebiliyordu. Sorguya `year IS NULL AND semester IS NULL`
+    eklenerek "gerçek varsayılan global"a daraltıldı.
     """
     ensure_criteria_completion_governance_schema(conn, commit=False)
     cur = conn.cursor()
@@ -248,6 +255,7 @@ def create_default_policy(conn: sqlite3.Connection, commit: bool = True) -> dict
         FROM criteria_completion_policies
         WHERE scope_type = 'global' AND is_active = 1
           AND faculty_id IS NULL AND department_id IS NULL
+          AND year IS NULL AND semester IS NULL
         ORDER BY id DESC
         LIMIT 1
         """
@@ -339,6 +347,23 @@ def create_completion_policy(
     if min_survey_response_count is not None and int(min_survey_response_count) < 0:
         raise ValueError("min_survey_response_count değeri negatif olamaz.")
 
+    # P1: Üretim-tehlikeli politikalar için sesli uyarı. Kabul ediyoruz (test/demo
+    # senaryolarını bozmamak için) ama log'a kritik düzeyde yazıyoruz ki
+    # kullanıcı/operatör fark etsin. Burası hata değil çünkü politika sahibi
+    # bilinçli olarak gevşek bir politika isteyebilir (örn. pilot/sandbox).
+    if float(required_completion_ratio) < 0.50:
+        logger.warning(
+            "GEVSEK POLITIKA: name=%r required_completion_ratio=%.2f (<0.50) — "
+            "hazirlik kapisini neredeyse devre disi birakir; uretimde tehlikelidir.",
+            name, required_completion_ratio,
+        )
+    if not required_fields:
+        logger.warning(
+            "GEVSEK POLITIKA: name=%r required_fields BOS — zorunlu kriter yok, "
+            "tamlik orani anlamsiz; uretimde tehlikelidir.",
+            name,
+        )
+
     now = _now()
     cur = conn.cursor()
     try:
@@ -406,6 +431,81 @@ def create_completion_policy(
     return get_policy(conn, last_id) or {}
 
 
+def _policy_candidates(
+    scope_type: str,
+    faculty_id: int | None,
+    department_id: int | None,
+    year: int | None,
+    semester: str | None,
+) -> list[tuple[str, int | None, int | None, int | None, str | None]]:
+    """Politika hiyerarşisini SİSTEMATİK olarak inşa eder.
+
+    Önceki sürüm aday listesini elle yazıyordu ve şu adaylar **eksikti**:
+
+      * `global + year + semester` → yıl+dönem özel global politika çözülmüyordu (P1)
+      * `global + semester` (year=None) → "her yıl Güz" politikası çözülmüyordu
+      * `department + semester` / `faculty + semester` (year=None) → aynı
+
+    Çözüm: iki boyutlu kartezyen üretim
+      kapsam katmanı  ∈ {department, faculty, global}  (talep edilen scope'a göre)
+      zaman varyantı  ∈ {(year, semester), (year, None), (None, semester), (None, None)}
+
+    İçten dışa: en spesifik kapsam + en spesifik zaman → en gevşek.
+    """
+    levels: list[tuple[str, int | None, int | None]] = []
+    if scope_type == "department":
+        levels.append(("department", faculty_id, department_id))
+        levels.append(("faculty", faculty_id, None))
+    elif scope_type == "faculty":
+        levels.append(("faculty", faculty_id, None))
+    # Global katman daima en sonda — son koruma bariyeri.
+    levels.append(("global", None, None))
+
+    time_variants: list[tuple[int | None, str | None]] = [
+        (year, semester),
+        (year, None),
+        (None, semester),
+        (None, None),
+    ]
+    # Aynı (scope, ids, time) tekrar üretmesin diye set ile dedupe ederiz.
+    seen: set[tuple[str, int | None, int | None, int | None, str | None]] = set()
+    out: list[tuple[str, int | None, int | None, int | None, str | None]] = []
+    for scope, fid, did in levels:
+        for y, sem in time_variants:
+            key = (scope, fid, did, y, sem)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+# Hiç kayıt bulunmadığında DB'ye yazmadan döndürülen "in-memory" varsayılan politika.
+# `auto_create_default=False` çağrılarında kullanılır; politika gerçekten oluşturulmaz.
+_IN_MEMORY_DEFAULT_POLICY: dict[str, Any] = {
+    "id": None,
+    "name": "Varsayılan Kriter Tamlık Politikası (in-memory)",
+    "scope_type": "global",
+    "faculty_id": None,
+    "department_id": None,
+    "year": None,
+    "semester": None,
+    "required_completion_ratio": 1.0,
+    "required_fields": list(DEFAULT_REQUIRED_FIELDS),
+    "optional_fields": list(DEFAULT_OPTIONAL_FIELDS),
+    "allow_new_course_missing_history": True,
+    "new_course_grace_period_years": 2,
+    "min_survey_response_count": None,
+    "block_on_invalid_numeric": True,
+    "block_on_critical_issues": True,
+    "allow_override": True,
+    "override_requires_reason": True,
+    "override_requires_approval": True,
+    "is_active": True,
+    "notes": "DB'de politika kaydı bulunamadığı için bellekte üretildi (kalıcı değil).",
+}
+
+
 def resolve_policy(
     conn: sqlite3.Connection,
     scope_type: str,
@@ -413,12 +513,24 @@ def resolve_policy(
     faculty_id: int | None = None,
     department_id: int | None = None,
     semester: str | None = None,
+    auto_create_default: bool = True,
 ) -> dict[str, Any]:
     """Seçili kapsama göre en uygun aktif tamlık politikasını hiyerarşik çözer.
 
     Kapsam İzolasyonu: `scope_type="faculty"` iken bölüm politikaları aranmaz;
     aday listesi parametredeki `scope_type` değerine göre kurulur. Böylece yanlışlıkla
     dolu gelmiş bir `department_id`, fakülte kapsamında bölüm politikasını uygulamaz.
+
+    Args:
+        auto_create_default: True (varsayılan, geriye dönük uyum) hiç eşleşme
+            yoksa global varsayılan politikayı `commit=False` ile DB'ye yazar.
+            False ise yalnızca bellek-içi varsayılan dict döner — DB'ye DOKUNMAZ.
+            Salt-okuma tarafları (UI hızlı kontrolleri, log/audit) için False
+            kullanın; "yazmıyorum" sözüne kesin uymak istiyorsanız.
+
+    P1 düzeltmesi: aday listesi `_policy_candidates` ile sistematikleştirildi —
+    global+year+semester, scope+semester(year=None) gibi eksik kombinasyonlar
+    artık doğru sırayla aranıyor.
     """
     ensure_criteria_completion_governance_schema(conn, commit=False)
     # Okuma yolu: ilgisiz ID'ler kapsama göre NULL'a indirgenir (kanma yok), reddetme yok.
@@ -427,33 +539,7 @@ def resolve_policy(
     )
     semester = _normalize_semester(semester)
 
-    candidates: list[tuple[str, int | None, int | None, int | None, str | None]] = []
-    if scope_type == "department":
-        candidates.extend(
-            [
-                ("department", faculty_id, department_id, year, semester),
-                ("department", faculty_id, department_id, year, None),
-                ("faculty", faculty_id, None, year, semester),
-                ("faculty", faculty_id, None, year, None),
-                ("department", faculty_id, department_id, None, None),
-                ("faculty", faculty_id, None, None, None),
-            ]
-        )
-    elif scope_type == "faculty":
-        candidates.extend(
-            [
-                ("faculty", faculty_id, None, year, semester),
-                ("faculty", faculty_id, None, year, None),
-                ("faculty", faculty_id, None, None, None),
-            ]
-        )
-    # Global katman her zaman son koruma bariyeri olarak eklenir.
-    candidates.extend(
-        [
-            ("global", None, None, year, None),
-            ("global", None, None, None, None),
-        ]
-    )
+    candidates = _policy_candidates(scope_type, faculty_id, department_id, year, semester)
 
     cur = conn.cursor()
     for cand_scope, cand_faculty, cand_department, cand_year, cand_semester in candidates:
@@ -478,22 +564,96 @@ def resolve_policy(
         if row:
             return _row_to_dict(row) or {}
 
-    # Hiç eşleşme yoksa: varsayılan politikayı salt-okuma yolunda commit etmeden üret.
-    return create_default_policy(conn, commit=False)
+    # Hiç eşleşme yoksa:
+    if auto_create_default:
+        # Geriye dönük uyum: varsayılan politikayı `commit=False` ile DB'ye yazıyoruz.
+        # Çağıran katman commit etmezse kayıt kalıcı olmaz; ama olası yan etkiden
+        # rahatsızsanız `auto_create_default=False` kullanın.
+        return create_default_policy(conn, commit=False)
+    return dict(_IN_MEMORY_DEFAULT_POLICY)
 
 
-def list_completion_policies(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def list_completion_policies(
+    conn: sqlite3.Connection,
+    *,
+    scope_type: str | None = None,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+    year: int | None = None,
+    semester: str | None = None,
+    active_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Politikaları listele. Tüm filtreler opsiyonel, additive — eski çağrı
+    sözleşmesi (`list_completion_policies(conn)`) aynen çalışır."""
     ensure_criteria_completion_governance_schema(conn, commit=False)
+    where: list[str] = ["1=1"]
+    params: list[Any] = []
+    if scope_type is not None:
+        scope_norm = str(scope_type).strip().lower()
+        if scope_norm not in VALID_SCOPE_TYPES:
+            raise ValueError(f"Gecersiz scope_type filtresi: {scope_type!r}")
+        where.append("scope_type = ?")
+        params.append(scope_norm)
+    if faculty_id is not None:
+        where.append("faculty_id = ?")
+        params.append(int(faculty_id))
+    if department_id is not None:
+        where.append("department_id = ?")
+        params.append(int(department_id))
+    if year is not None:
+        where.append("year = ?")
+        params.append(int(year))
+    if semester is not None:
+        sem = _normalize_semester(semester)
+        where.append("semester = ?")
+        params.append(sem)
+    if active_only:
+        where.append("is_active = 1")
     cur = conn.cursor()
-    cur.execute("SELECT * FROM criteria_completion_policies ORDER BY is_active DESC, id DESC")
+    cur.execute(
+        f"SELECT * FROM criteria_completion_policies WHERE {' AND '.join(where)} "
+        f"ORDER BY is_active DESC, id DESC",
+        tuple(params),
+    )
     return [_row_to_dict(row) or {} for row in cur.fetchall()]
 
 
 def activate_completion_policy(conn: sqlite3.Connection, policy_id: int, commit: bool = True) -> dict[str, Any]:
-    """Bir politikayı aktif yapar ve aynı kapsamdaki diğerlerini atomik olarak kapatır."""
+    """Bir politikayı aktif yapar ve aynı kapsamdaki diğerlerini atomik olarak kapatır.
+
+    P1: Aktivasyon öncesi mevcut kayıt YENİDEN doğrulanır. Migration ya da elle
+    DB müdahalesiyle bozuk kayıt oluşmuşsa (geçersiz scope/ID kombinasyonu,
+    bilinmeyen kriter alanı, geçersiz dönem) aktivasyon reddedilir; bozuk bir
+    politikayı sessizce aktif yapmak hazırlık kapısını yanlış kararla çalıştırır.
+    """
     policy = get_policy(conn, policy_id)
     if not policy:
         raise ValueError(f"Aktivasyon hatası: {policy_id} ID'li kriter tamlık politikası bulunamadı.")
+    # Re-validation: bozuk bir politikayi aktive etmeyelim.
+    try:
+        _validate_scope_and_ids(
+            str(policy.get("scope_type") or "global"),
+            policy.get("faculty_id"),
+            policy.get("department_id"),
+            strict=True,
+        )
+        _validate_policy_fields(
+            policy.get("required_fields"),
+            policy.get("optional_fields"),
+        )
+        # Eger semester saklanmis ise dogrula; None ise sorun yok.
+        if policy.get("semester") is not None:
+            _normalize_semester(policy.get("semester"))
+        ratio = policy.get("required_completion_ratio")
+        if ratio is not None and not (0.0 <= float(ratio) <= 1.0):
+            raise ValueError(
+                f"required_completion_ratio (DB'deki) gecersiz: {ratio}"
+            )
+    except ValueError as exc:
+        raise ValueError(
+            f"Aktivasyon reddedildi: {policy_id} ID'li politika dogrulamayi gecemedi: {exc}"
+        ) from exc
+
     now = _now()
     cur = conn.cursor()
     where = ["scope_type = ?"]

@@ -117,7 +117,7 @@ def seed_default_profile(conn: sqlite3.Connection) -> dict[str, Any]:
             now,
         ),
     )
-    profile_id = int(cur.lastrowid)
+    profile_id = int(cur.lastrowid or 0)
     _log_profile_action(cur, profile_id, "created", None, "active", "system", "Varsayılan profil oluşturuldu.")
     conn.commit()
     return get_profile(conn, profile_id) or {}
@@ -216,7 +216,7 @@ def create_profile(
             parent_profile_id,
         ),
     )
-    profile_id = int(cur.lastrowid)
+    profile_id = int(cur.lastrowid or 0)
     _log_profile_action(cur, profile_id, "created", None, final_status, created_by, "AHP profili oluşturuldu.")
     conn.commit()
     if activate:
@@ -331,7 +331,8 @@ def update_profile(conn: sqlite3.Connection, profile_id: int, **updates: Any) ->
     params.append(_now())
     params.append(int(profile_id))
     conn.execute(f"UPDATE ahp_weight_profiles SET {', '.join(assignments)} WHERE id=?", tuple(params))
-    _log_profile_action(conn.cursor(), profile_id, "updated", profile.get("status"), get_profile(conn, profile_id).get("status") if get_profile(conn, profile_id) else None, updates.get("actor"), "AHP profili güncellendi.")
+    _refreshed_profile = get_profile(conn, profile_id) or {}
+    _log_profile_action(conn.cursor(), profile_id, "updated", profile.get("status"), _refreshed_profile.get("status"), updates.get("actor"), "AHP profili güncellendi.")
     conn.commit()
     return get_profile(conn, profile_id) or {}
 
@@ -831,7 +832,7 @@ def _row_to_profile(row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
 def _row_dict(row: sqlite3.Row | tuple[Any, ...] | None) -> dict[str, Any]:
     if row is None:
         return {}
-    if hasattr(row, "keys"):
+    if isinstance(row, sqlite3.Row):
         return {key: row[key] for key in row.keys()}
     return {str(idx): value for idx, value in enumerate(row)}
 

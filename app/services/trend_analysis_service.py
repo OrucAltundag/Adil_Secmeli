@@ -193,4 +193,4 @@ def save_trend_analysis(
             str(trend.get("explanation") or ""),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)

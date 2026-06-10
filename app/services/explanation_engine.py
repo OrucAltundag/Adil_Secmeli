@@ -128,4 +128,4 @@ def save_decision_explanation(
             explanation.get("human_readable_text"),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)

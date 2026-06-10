@@ -47,7 +47,7 @@ def link_decision_run_import_source(
             _now(),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def _decision_map(cur: sqlite3.Cursor, run_id: int | None) -> dict[int, dict[str, Any]]:
@@ -187,7 +187,7 @@ def recalculate_import_impact(
             _now(),
         ),
     )
-    return {**summary, "id": int(cur.lastrowid)}
+    return {**summary, "id": int(cur.lastrowid or 0)}
 
 
 def get_import_impact(conn: sqlite3.Connection, import_batch_id: int) -> dict[str, Any] | None:

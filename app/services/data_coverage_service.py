@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false
+# NOT: SQLAlchemy 1.4 stilinde Column[X] descriptor'lari Pylance tarafindan
+# X plain tipiyle uyumsuz gorulur. Runtime'da descriptor __get__/set__
+# uzerinden plain X dondurur — gercek uyumsuzluk yoktur. Pragma'lar yalnizca
+# bu sahte uyarılari susturur, davranisi degistirmez.
 """
 Data Coverage Reporting Service
 
@@ -91,8 +96,9 @@ def calculate_coverage_ratios(
 
         # Criteria (manuel SQL sorgusu - ders_kriterleri tablosu)
         try:
+            from sqlalchemy import text as _sa_text
             courses_with_criteria = session.execute(
-                "SELECT COUNT(DISTINCT ders_id) FROM ders_kriterleri"
+                _sa_text("SELECT COUNT(DISTINCT ders_id) FROM ders_kriterleri")
             ).scalar() or 0
         except Exception:
             courses_with_criteria = 0

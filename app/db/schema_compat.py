@@ -1057,11 +1057,11 @@ def ensure_decision_governance_schema(conn: sqlite3.Connection, commit: bool = T
     Karar yonetisimi ve aciklanabilirlik tablolarini hazirlar.
 
     Bu sema Alembic migration hattini tamamlar; migration calismamis legacy
-    SQLite dosyalarinda da uygulama acilirken idempotent olarak tablo ve
-    indeksleri olusturur.
+    SQLite dosyalarinda da uygulama acilirken idempotent olarak tablo, kolon
+    ve indeksleri olusturur.
     """
     cur = conn.cursor()
-    changed = {"tables_created": 0, "indexes_created": 0}
+    changed = {"tables_created": 0, "indexes_created": 0, "columns_added": 0}
 
     table_ddls = {
         "ahp_weight_profiles": """
@@ -1112,7 +1112,21 @@ def ensure_decision_governance_schema(conn: sqlite3.Connection, commit: bool = T
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                notes TEXT
+                notes TEXT,
+                CHECK (scope_type IN ('global', 'faculty', 'department')),
+                CHECK (mode IN ('static_threshold')),
+                CHECK (curriculum_keep_threshold BETWEEN 0 AND 100),
+                CHECK (pool_threshold BETWEEN 0 AND 100),
+                CHECK (rest_threshold BETWEEN 0 AND 100),
+                CHECK (cancel_candidate_threshold IS NULL OR cancel_candidate_threshold BETWEEN 0 AND 100),
+                CHECK (cancel_candidate_threshold IS NULL OR cancel_candidate_threshold <= rest_threshold),
+                CHECK (rest_threshold < pool_threshold),
+                CHECK (pool_threshold < curriculum_keep_threshold),
+                CHECK (
+                    (scope_type = 'global' AND faculty_id IS NULL AND department_id IS NULL)
+                    OR (scope_type = 'faculty' AND faculty_id IS NOT NULL AND department_id IS NULL)
+                    OR (scope_type = 'department' AND faculty_id IS NOT NULL AND department_id IS NOT NULL)
+                )
             )
         """,
         "decision_runs": """
@@ -1126,13 +1140,17 @@ def ensure_decision_governance_schema(conn: sqlite3.Connection, commit: bool = T
                 algorithm_version TEXT NOT NULL,
                 ahp_profile_id INTEGER,
                 decision_policy_id INTEGER,
+                decision_policy_snapshot_json TEXT,
+                decision_policy_version INTEGER,
+                decision_policy_mode TEXT,
                 input_data_hash TEXT,
                 status TEXT NOT NULL DEFAULT 'started',
                 started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 completed_at TEXT,
                 created_by TEXT,
                 summary_json TEXT,
-                error_message TEXT
+                error_message TEXT,
+                CHECK (status IN ('started', 'completed', 'failed', 'cancelled'))
             )
         """,
         "course_decisions": """
@@ -1161,7 +1179,11 @@ def ensure_decision_governance_schema(conn: sqlite3.Connection, commit: bool = T
                 override_reason TEXT,
                 main_reason TEXT,
                 rule_triggered TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CHECK (
+                    approval_status IS NULL
+                    OR approval_status IN ('pending', 'approved', 'rejected', 'returned')
+                )
             )
         """,
         "course_score_breakdowns": """
@@ -1282,6 +1304,121 @@ def ensure_decision_governance_schema(conn: sqlite3.Connection, commit: bool = T
             cur.execute(ddl)
             changed["tables_created"] += 1
 
+    columns_to_ensure = {
+        "decision_policies": [
+            ("name", "TEXT"),
+            ("scope_type", "TEXT NOT NULL DEFAULT 'global'"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("mode", "TEXT NOT NULL DEFAULT 'static_threshold'"),
+            ("curriculum_keep_threshold", "REAL NOT NULL DEFAULT 70"),
+            ("pool_threshold", "REAL NOT NULL DEFAULT 50"),
+            ("rest_threshold", "REAL NOT NULL DEFAULT 40"),
+            ("cancel_candidate_threshold", "REAL DEFAULT 30"),
+            ("min_success_rate", "REAL"),
+            ("min_survey_count", "INTEGER"),
+            ("min_enrollment_rate", "REAL"),
+            ("new_course_grace_period_years", "INTEGER NOT NULL DEFAULT 2"),
+            ("low_data_confidence_threshold", "REAL NOT NULL DEFAULT 0.50"),
+            ("sensitivity_margin", "REAL NOT NULL DEFAULT 3.0"),
+            ("top_percent_curriculum", "REAL"),
+            ("middle_percent_pool", "REAL"),
+            ("bottom_percent_rest", "REAL"),
+            ("require_manual_approval_for_cancel", "INTEGER NOT NULL DEFAULT 1"),
+            ("is_active", "INTEGER NOT NULL DEFAULT 1"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT"),
+            ("notes", "TEXT"),
+        ],
+        "decision_runs": [
+            ("run_name", "TEXT"),
+            ("year", "INTEGER"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("semester", "TEXT"),
+            ("algorithm_version", "TEXT"),
+            ("ahp_profile_id", "INTEGER"),
+            ("decision_policy_id", "INTEGER"),
+            ("decision_policy_snapshot_json", "TEXT"),
+            ("decision_policy_version", "INTEGER"),
+            ("decision_policy_mode", "TEXT"),
+            ("input_data_hash", "TEXT"),
+            ("status", "TEXT NOT NULL DEFAULT 'started'"),
+            ("started_at", "TEXT"),
+            ("completed_at", "TEXT"),
+            ("created_by", "TEXT"),
+            ("summary_json", "TEXT"),
+            ("error_message", "TEXT"),
+        ],
+        "course_decisions": [
+            ("decision_run_id", "INTEGER"),
+            ("course_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("semester", "TEXT"),
+            ("old_status", "INTEGER"),
+            ("recommended_status", "INTEGER"),
+            ("final_status", "INTEGER"),
+            ("topsis_score", "REAL"),
+            ("trend_score", "REAL"),
+            ("trend_label", "TEXT"),
+            ("data_confidence_score", "REAL"),
+            ("decision_stability", "TEXT"),
+            ("approval_required", "INTEGER NOT NULL DEFAULT 0"),
+            ("approval_status", "TEXT"),
+            ("approval_by", "TEXT"),
+            ("approval_at", "TEXT"),
+            ("approval_reason", "TEXT"),
+            ("override_applied", "INTEGER NOT NULL DEFAULT 0"),
+            ("override_reason", "TEXT"),
+            ("main_reason", "TEXT"),
+            ("rule_triggered", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+        "course_score_breakdowns": [
+            ("decision_run_id", "INTEGER"),
+            ("course_id", "INTEGER"),
+            ("year", "INTEGER"),
+            ("faculty_id", "INTEGER"),
+            ("department_id", "INTEGER"),
+            ("raw_values_json", "TEXT"),
+            ("normalized_values_json", "TEXT"),
+            ("weighted_values_json", "TEXT"),
+            ("weights_json", "TEXT"),
+            ("positive_distance", "REAL"),
+            ("negative_distance", "REAL"),
+            ("closeness_coefficient", "REAL"),
+            ("final_score", "REAL"),
+            ("contribution_json", "TEXT"),
+            ("created_at", "TEXT"),
+        ],
+    }
+    for table_name, columns in columns_to_ensure.items():
+        changed["columns_added"] += _ensure_columns(cur, table_name, columns)
+
+    # Legacy veride ayni kapsamta birden fazla aktif policy varsa son kaydi
+    # koru; aksi halde partial unique index kurulumu mevcut DB'lerde kirilir.
+    if _table_exists(cur, "decision_policies"):
+        cur.execute(
+            """
+            UPDATE decision_policies
+            SET is_active = 0
+            WHERE is_active = 1
+              AND id NOT IN (
+                  SELECT MAX(id)
+                  FROM decision_policies
+                  WHERE is_active = 1
+                  GROUP BY
+                      scope_type,
+                      COALESCE(faculty_id, -1),
+                      COALESCE(department_id, -1),
+                      COALESCE(year, -1)
+              )
+            """
+        )
+
     index_ddls = [
         """
         CREATE INDEX IF NOT EXISTS ix_ahp_profiles_scope
@@ -1318,6 +1455,26 @@ def ensure_decision_governance_schema(conn: sqlite3.Connection, commit: bool = T
         """
         CREATE INDEX IF NOT EXISTS ix_fairness_run
         ON decision_fairness_reports (decision_run_id)
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_decision_policies_active_scope
+        ON decision_policies (
+            scope_type,
+            COALESCE(faculty_id, -1),
+            COALESCE(department_id, -1),
+            COALESCE(year, -1)
+        )
+        WHERE is_active = 1
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_course_decisions_run_course
+        ON course_decisions (decision_run_id, course_id)
+        WHERE decision_run_id IS NOT NULL AND course_id IS NOT NULL
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_course_score_breakdowns_run_course
+        ON course_score_breakdowns (decision_run_id, course_id)
+        WHERE decision_run_id IS NOT NULL AND course_id IS NOT NULL
         """,
     ]
     for ddl in index_ddls:

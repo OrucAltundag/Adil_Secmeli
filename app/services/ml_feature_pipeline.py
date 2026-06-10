@@ -387,7 +387,7 @@ def save_feature_snapshot(
             _now(),
         ),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def extract_features_for_course(conn: sqlite3.Connection, course_id: int, year: int) -> dict:

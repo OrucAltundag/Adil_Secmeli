@@ -184,7 +184,7 @@ def run_ml_analysis(
               f"{params.get('ccp_alpha')} n_estimators="
               f"{params.get('n_estimators')}   [Faz2-D]")
         else:
-            mlp = model.named_steps["mlp"]
+            mlp = model.named_steps["mlp"]  # type: ignore[union-attr]  # Pipeline runtime'da named_steps'e sahip
             A(f"Model: MLP DERIN OGRENME  katmanlar="
               f"{mlp.hidden_layer_sizes} early_stopping="
               f"{mlp.early_stopping} (StandardScaler+MLP)   [Faz3-H]")

@@ -1,8 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Decision policy resolution and threshold classification."""
+"""Decision policy resolution and threshold classification.
+
+Karar politikasi servisi — iki ayri sorumlulugu yonetir:
+
+1) **Politika yonetimi (CRUD + kapsam cozumu):**
+   - `create_decision_policy` / `activate_decision_policy` / `deactivate_decision_policy`
+   - `list_decision_policies` (saf okuma — CQS: yan etki uretmez)
+   - `resolve_decision_policy` (department > faculty > global seklinde cozulur)
+
+2) **TOPSIS skoru -> ders statusu cevrimi:**
+   - `classify_score` — politikada tanimli esiklere gore statu uretir.
+
+Sinif kuralilari (varsayilan esiklerle: cancel=30, rest=40, pool=50, keep=70):
+
+| Skor araligi              | Statu        | Aciklama                                  |
+|---------------------------|--------------|-------------------------------------------|
+| score < cancel_threshold  | IPTAL ADAYI  | Manuel onay (policy'de tanimliysa)        |
+| cancel <= score < pool    | DINLENMEDE   | rest altinda ise reason'da "derin" notu   |
+| pool <= score < keep      | HAVUZDA      | Esik komsulugu icin hassas analiz onerilir|
+| score >= keep             | MUFREDATTA   | Kararli sekilde tutulur                   |
+
+NOT: rest_threshold artik sadece DINLENMEDE icinde "derin dinlenme" alt esigi
+olarak kullaniliyor (statu degistirmez, yalnizca aciklamada belirir). Daha onceki
+surumde 40-50 araligi yanlislikla HAVUZDA donuyordu — bu sessizce yanlis karar
+uretimine yol aciyordu; iptal edildi.
+"""
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -29,44 +55,72 @@ DEFAULT_POLICY = {
     "require_manual_approval_for_cancel": True,
 }
 
+VALID_POLICY_MODES = {"static_threshold"}
+VALID_SCOPE_TYPES = {"global", "faculty", "department"}
+
+
+# ---------------------------------------------------------------------------
+# Kucuk yardimcilar
+# ---------------------------------------------------------------------------
 
 def _now() -> str:
+    # NOT: Format projedeki diger _now() helperlari ile ayni — string siralamasinin
+    # bozulmamasi icin bilerek `YYYY-MM-DD HH:MM:SS` bicimde tutuldu.
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _bool(value: Any) -> bool:
-    return bool(int(value or 0)) if not isinstance(value, bool) else value
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        return bool(value)
+
+
+def _default_if_none(raw: Any, default: Any) -> Any:
+    """`None` -> default. Diger truthy/falsy degerleri (ornegin 0) korur.
+
+    Onceki surumde `value or default` kullanildigi icin DB'deki gercek 0
+    degerleri sessizce default ile degistiriliyordu (P1 hata).
+    """
+    return default if raw is None else raw
 
 
 def _row_to_policy(row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
-    keys = row.keys() if hasattr(row, "keys") else []
+    # isinstance ile narrow yapıyoruz; Pylance'e Row vs tuple ayrımı net görünür.
+    if isinstance(row, sqlite3.Row):
+        keys: list[str] = list(row.keys())
+    else:
+        keys = []
     get = row.__getitem__
 
     def value(name: str, idx: int) -> Any:
-        return get(name) if keys and name in keys else get(idx)
+        if keys and name in keys:
+            return row[name]  # type: ignore[index]  # sqlite3.Row str index destekler
+        return get(idx)
 
+    cancel_raw = value("cancel_candidate_threshold", 10)
     return {
-        "id": int(value("id", 0)),
-        "name": str(value("name", 1) or ""),
-        "scope_type": str(value("scope_type", 2) or "global"),
+        "id": int(_default_if_none(value("id", 0), 0)),
+        "name": str(_default_if_none(value("name", 1), "")),
+        "scope_type": str(_default_if_none(value("scope_type", 2), "global")),
         "faculty_id": value("faculty_id", 3),
         "department_id": value("department_id", 4),
         "year": value("year", 5),
-        "mode": str(value("mode", 6) or "static_threshold"),
-        "curriculum_keep_threshold": float(value("curriculum_keep_threshold", 7) or 70.0),
-        "pool_threshold": float(value("pool_threshold", 8) or 50.0),
-        "rest_threshold": float(value("rest_threshold", 9) or 40.0),
-        "cancel_candidate_threshold": (
-            float(value("cancel_candidate_threshold", 10))
-            if value("cancel_candidate_threshold", 10) is not None
-            else None
-        ),
+        "mode": str(_default_if_none(value("mode", 6), "static_threshold")),
+        "curriculum_keep_threshold": float(_default_if_none(value("curriculum_keep_threshold", 7), 70.0)),
+        "pool_threshold": float(_default_if_none(value("pool_threshold", 8), 50.0)),
+        "rest_threshold": float(_default_if_none(value("rest_threshold", 9), 40.0)),
+        "cancel_candidate_threshold": float(cancel_raw) if cancel_raw is not None else None,
         "min_success_rate": value("min_success_rate", 11),
         "min_survey_count": value("min_survey_count", 12),
         "min_enrollment_rate": value("min_enrollment_rate", 13),
-        "new_course_grace_period_years": int(value("new_course_grace_period_years", 14) or 2),
-        "low_data_confidence_threshold": float(value("low_data_confidence_threshold", 15) or 0.50),
-        "sensitivity_margin": float(value("sensitivity_margin", 16) or 3.0),
+        "new_course_grace_period_years": int(_default_if_none(value("new_course_grace_period_years", 14), 2)),
+        "low_data_confidence_threshold": float(_default_if_none(value("low_data_confidence_threshold", 15), 0.50)),
+        "sensitivity_margin": float(_default_if_none(value("sensitivity_margin", 16), 3.0)),
         "top_percent_curriculum": value("top_percent_curriculum", 17),
         "middle_percent_pool": value("middle_percent_pool", 18),
         "bottom_percent_rest": value("bottom_percent_rest", 19),
@@ -98,17 +152,166 @@ def _deactivate_same_scope(
     )
 
 
+# ---------------------------------------------------------------------------
+# Dogrulayicilar (validators)
+# ---------------------------------------------------------------------------
+
+def _validate_scope(
+    scope_type: str,
+    faculty_id: int | None,
+    department_id: int | None,
+) -> None:
+    if scope_type not in VALID_SCOPE_TYPES:
+        raise ValueError(f"Gecersiz politika kapsami: {scope_type!r}")
+    if scope_type == "global" and (faculty_id is not None or department_id is not None):
+        raise ValueError("Global politika faculty_id veya department_id alamaz.")
+    if scope_type == "faculty":
+        if faculty_id is None:
+            raise ValueError("Faculty politikasi icin faculty_id zorunludur.")
+        if department_id is not None:
+            raise ValueError("Faculty politikasi department_id alamaz.")
+    if scope_type == "department" and (faculty_id is None or department_id is None):
+        raise ValueError(
+            "Department politikasi icin faculty_id ve department_id birlikte zorunludur."
+        )
+
+
+def validate_decision_policy_values(
+    *,
+    name: str,
+    scope_type: str,
+    mode: str,
+    curriculum_keep_threshold: float,
+    pool_threshold: float,
+    rest_threshold: float,
+    cancel_candidate_threshold: float | None,
+    new_course_grace_period_years: int,
+    low_data_confidence_threshold: float,
+    sensitivity_margin: float,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> None:
+    """Politika alanlarinin iz kurallari acisindan tutarli oldugunu garanti eder.
+
+    Hata bulundugunda `ValueError` firlatir. UI tarafindaki dogrulama disinda servis
+    katmaninda da uygulanir; cunku servis baska girisli (API, script) cagrilirsa
+    UI dogrulamasini atlatabilir.
+    """
+    if not str(name or "").strip():
+        raise ValueError("Politika adi bos olamaz.")
+    _validate_scope(scope_type, faculty_id, department_id)
+
+    if mode not in VALID_POLICY_MODES:
+        raise ValueError(
+            f"Su anda yalnizca {sorted(VALID_POLICY_MODES)!r} modlari destekleniyor."
+        )
+
+    thresholds = [
+        ("curriculum_keep_threshold", float(curriculum_keep_threshold)),
+        ("pool_threshold", float(pool_threshold)),
+        ("rest_threshold", float(rest_threshold)),
+    ]
+    if cancel_candidate_threshold is not None:
+        thresholds.append(("cancel_candidate_threshold", float(cancel_candidate_threshold)))
+    for key, val in thresholds:
+        if not math.isfinite(val):
+            raise ValueError(f"{key} sayisal ve sonlu olmalidir.")
+        if val < 0 or val > 100:
+            raise ValueError(f"{key} 0-100 araliginda olmalidir (gelen: {val}).")
+
+    # Esik siralamasi: cancel <= rest < pool < curriculum_keep
+    if cancel_candidate_threshold is not None:
+        if not (
+            float(cancel_candidate_threshold)
+            <= float(rest_threshold)
+            < float(pool_threshold)
+            < float(curriculum_keep_threshold)
+        ):
+            raise ValueError(
+                "Esikler su sirada olmalidir: iptal <= dinlenme < havuz < mufredat. "
+                f"(gelen: iptal={cancel_candidate_threshold}, dinlenme={rest_threshold}, "
+                f"havuz={pool_threshold}, mufredat={curriculum_keep_threshold})"
+            )
+    else:
+        if not (float(rest_threshold) < float(pool_threshold) < float(curriculum_keep_threshold)):
+            raise ValueError(
+                "Esikler su sirada olmalidir: dinlenme < havuz < mufredat."
+            )
+
+    if int(new_course_grace_period_years) < 0:
+        raise ValueError("Yeni ders koruma suresi negatif olamaz.")
+    if not 0.0 <= float(low_data_confidence_threshold) <= 1.0:
+        raise ValueError("Dusuk veri guveni esigi 0-1 araliginda olmalidir.")
+    if float(sensitivity_margin) < 0:
+        raise ValueError("Hassasiyet marji negatif olamaz.")
+
+
+def _validate_score(score: float | None) -> float:
+    """TOPSIS skorunun guvenli ve hesaplanabilir oldugunu dogrular.
+
+    Karar sistemlerinde "skor yoktu ama 0 sayalim" davranisi sessiz hatalara
+    yol acar (eksik veri = en kotu skor = iptal adayi sonucu). Bu yuzden
+    `None`, `NaN`, sonsuz veya 0-100 araligi disindaki degerler reddedilir.
+    """
+    if score is None:
+        raise ValueError(
+            "TOPSIS skoru bos (None) olamaz. Eksik veriyi 0 olarak yorumlamayin; "
+            "dersin skoru hesaplanamadiysa karar uretilmemelidir."
+        )
+    try:
+        safe_score = float(score)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"TOPSIS skoru sayisal degil: {score!r}") from exc
+    if not math.isfinite(safe_score):
+        raise ValueError("TOPSIS skoru gecersiz: NaN veya sonsuz deger.")
+    if safe_score < 0.0 or safe_score > 100.0:
+        raise ValueError(f"TOPSIS skoru 0-100 araliginda olmalidir (gelen: {safe_score}).")
+    return safe_score
+
+
+# ---------------------------------------------------------------------------
+# Politika CRUD + cozumu
+# ---------------------------------------------------------------------------
+
 def ensure_default_decision_policy(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Global aktif bir politika oldugunu garanti eder. Mevcut aktif politikayi BOZMAZ.
+
+    Onceki surumde yalnizca "Varsayilan Karar Politikasi" adli aktif kayit
+    aranıyordu; kullanici farkli isimli ozel politikayi aktif yapinca, bu
+    fonksiyon bunu gormezden gelip yeni bir varsayilan olusturarak kullanicinin
+    politikasini sessizce pasifsiklestiriyordu (P0 hata).
+    """
     ensure_decision_governance_schema(conn, commit=False)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+
+    # 1) Herhangi bir aktif global politika varsa, ona dokunma.
     cur.execute(
         """
         SELECT *
         FROM decision_policies
         WHERE scope_type = 'global'
+          AND faculty_id IS NULL
+          AND department_id IS NULL
           AND year IS NULL
           AND is_active = 1
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if row:
+        return _row_to_policy(row)
+
+    # 2) Aktif yok ama varsayilan isimde pasif kayit varsa onu aktiflestir.
+    cur.execute(
+        """
+        SELECT *
+        FROM decision_policies
+        WHERE scope_type = 'global'
+          AND faculty_id IS NULL
+          AND department_id IS NULL
+          AND year IS NULL
           AND name = ?
         ORDER BY id DESC
         LIMIT 1
@@ -117,7 +320,10 @@ def ensure_default_decision_policy(conn: sqlite3.Connection) -> dict[str, Any]:
     )
     row = cur.fetchone()
     if row:
-        return _row_to_policy(row)
+        policy = _row_to_policy(row)
+        return activate_decision_policy(conn, policy["id"])
+
+    # 3) Hicbir kayit yoksa yeni varsayilan olustur.
     return create_decision_policy(conn, **DEFAULT_POLICY, activate=True)
 
 
@@ -147,6 +353,23 @@ def create_decision_policy(
     activate: bool = True,
 ) -> dict[str, Any]:
     ensure_decision_governance_schema(conn, commit=False)
+
+    # DB'ye yazmadan once is kurallari dogrulansin (P0/P1 onlem).
+    validate_decision_policy_values(
+        name=name,
+        scope_type=scope_type,
+        mode=mode,
+        curriculum_keep_threshold=curriculum_keep_threshold,
+        pool_threshold=pool_threshold,
+        rest_threshold=rest_threshold,
+        cancel_candidate_threshold=cancel_candidate_threshold,
+        new_course_grace_period_years=new_course_grace_period_years,
+        low_data_confidence_threshold=low_data_confidence_threshold,
+        sensitivity_margin=sensitivity_margin,
+        faculty_id=faculty_id,
+        department_id=department_id,
+    )
+
     cur = conn.cursor()
     if activate:
         _deactivate_same_scope(cur, scope_type, faculty_id, department_id, year)
@@ -190,7 +413,7 @@ def create_decision_policy(
             notes,
         ),
     )
-    policy_id = int(cur.lastrowid)
+    policy_id = int(cur.lastrowid or 0)
     conn.commit()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -204,6 +427,11 @@ def resolve_decision_policy(
     department_id: int | None = None,
     year: int | None = None,
 ) -> dict[str, Any]:
+    """Karar calistirmasinda kullanilacak en spesifik aktif politikayi bulur.
+
+    Sirayla: department(yil) > faculty(yil) > department > faculty > global(yil) > global.
+    Hicbiri yoksa varsayilan global olusturulur.
+    """
     ensure_default_decision_policy(conn)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -241,10 +469,20 @@ def resolve_decision_policy(
 
 
 def list_decision_policies(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    ensure_default_decision_policy(conn)
+    """Politikalari yalnizca okur — yan etki uretmez (CQS: Command/Query Separation).
+
+    Onceki surum, listeleme sirasinda `ensure_default_decision_policy` cagirir,
+    bu da kullanicinin aktif politikasini pasiflestirebilirdi. Boyle bir
+    "okuma yapayim derken yazi yazma" davranisi servis acisindan tehlikeli.
+    Sema kontrolu zararsiz oldugu icin tutuldu; varsayilan politika olusumu ise
+    yalnizca acik yazma yollarina (resolve / create / activate / ensure) birakildi.
+    """
+    ensure_decision_governance_schema(conn, commit=False)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM decision_policies ORDER BY is_active DESC, scope_type, year DESC, id DESC")
+    cur.execute(
+        "SELECT * FROM decision_policies ORDER BY is_active DESC, scope_type, year DESC, id DESC"
+    )
     return [_row_to_policy(row) for row in cur.fetchall()]
 
 
@@ -273,45 +511,225 @@ def activate_decision_policy(conn: sqlite3.Connection, policy_id: int) -> dict[s
     return _row_to_policy(cur.fetchone())
 
 
+def update_decision_policy(conn: sqlite3.Connection, policy_id: int, **values: Any) -> dict[str, Any]:
+    """Mevcut karar politikasini servis kurallariyla dogrulayarak gunceller."""
+    ensure_decision_governance_schema(conn, commit=False)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM decision_policies WHERE id = ?", (int(policy_id),))
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"Karar politikasi bulunamadi: {policy_id}")
+
+    current = _row_to_policy(row)
+    allowed = {
+        "name",
+        "scope_type",
+        "faculty_id",
+        "department_id",
+        "year",
+        "mode",
+        "curriculum_keep_threshold",
+        "pool_threshold",
+        "rest_threshold",
+        "cancel_candidate_threshold",
+        "min_success_rate",
+        "min_survey_count",
+        "min_enrollment_rate",
+        "new_course_grace_period_years",
+        "low_data_confidence_threshold",
+        "sensitivity_margin",
+        "top_percent_curriculum",
+        "middle_percent_pool",
+        "bottom_percent_rest",
+        "require_manual_approval_for_cancel",
+        "notes",
+    }
+    updates = {key: value for key, value in values.items() if key in allowed}
+    if not updates:
+        return current
+
+    merged = dict(current)
+    merged.update(updates)
+
+    validate_decision_policy_values(
+        name=str(merged.get("name") or ""),
+        scope_type=str(merged.get("scope_type") or "global"),
+        mode=str(merged.get("mode") or "static_threshold"),
+        curriculum_keep_threshold=float(merged.get("curriculum_keep_threshold") or 0),
+        pool_threshold=float(merged.get("pool_threshold") or 0),
+        rest_threshold=float(merged.get("rest_threshold") or 0),
+        cancel_candidate_threshold=(
+            None
+            if merged.get("cancel_candidate_threshold") is None
+            else float(merged.get("cancel_candidate_threshold") or 0.0)
+        ),
+        new_course_grace_period_years=int(merged.get("new_course_grace_period_years") or 0),
+        low_data_confidence_threshold=float(merged.get("low_data_confidence_threshold") or 0),
+        sensitivity_margin=float(merged.get("sensitivity_margin") or 0),
+        faculty_id=merged.get("faculty_id"),
+        department_id=merged.get("department_id"),
+    )
+
+    if "name" in updates:
+        updates["name"] = str(updates["name"] or "").strip()
+    if "mode" in updates:
+        updates["mode"] = str(updates["mode"] or "static_threshold")
+    if "scope_type" in updates:
+        updates["scope_type"] = str(updates["scope_type"] or "global")
+    if "require_manual_approval_for_cancel" in updates:
+        updates["require_manual_approval_for_cancel"] = (
+            1 if _bool(updates["require_manual_approval_for_cancel"]) else 0
+        )
+
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    params = list(updates.values()) + [_now(), int(policy_id)]
+    cur.execute(
+        f"UPDATE decision_policies SET {assignments}, updated_at = ? WHERE id = ?",
+        params,
+    )
+    conn.commit()
+    cur.execute("SELECT * FROM decision_policies WHERE id = ?", (int(policy_id),))
+    return _row_to_policy(cur.fetchone())
+
+
+def deactivate_decision_policy(conn: sqlite3.Connection, policy_id: int) -> dict[str, Any]:
+    """Bir politikayi pasiflestirir. Ayni kapsamda baska aktif politika brakmaz;
+    UI/cagrian taraf gerekirse yeni bir politika aktiflestirmelidir."""
+    ensure_decision_governance_schema(conn, commit=False)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM decision_policies WHERE id = ?", (int(policy_id),))
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"Karar politikasi bulunamadi: {policy_id}")
+    cur.execute(
+        "UPDATE decision_policies SET is_active = 0, updated_at = ? WHERE id = ?",
+        (_now(), int(policy_id)),
+    )
+    conn.commit()
+    cur.execute("SELECT * FROM decision_policies WHERE id = ?", (int(policy_id),))
+    return _row_to_policy(cur.fetchone())
+
+
+# ---------------------------------------------------------------------------
+# Skor -> statu donusumu
+# ---------------------------------------------------------------------------
+
 def classify_score(score: float | None, policy: dict[str, Any]) -> dict[str, Any]:
-    safe_score = float(score or 0.0)
-    cancel_threshold = policy.get("cancel_candidate_threshold")
-    if cancel_threshold is not None and safe_score < float(cancel_threshold):
+    """TOPSIS skorunu politika esiklerine gore karar dict'ine donusturur.
+
+    Returns:
+        dict: en az asagidaki anahtarlari icerir (geri uyumlu):
+            - recommended_status (int)
+            - rule_triggered (str)
+            - reason (str)
+        Eklenen yeni alanlar (additive):
+            - score (float)
+            - requires_manual_approval (bool)
+            - severity (str: "info" | "warning" | "critical")
+            - thresholds (dict): degerlendirmede kullanilan esikler
+
+    Raises:
+        ValueError: skor None / NaN / sonsuz / 0-100 araligi disinda ise.
+    """
+    safe_score = _validate_score(score)
+
+    # Su an yalnizca static_threshold destekleniyor; ileride yuzdelik mod eklenecekse
+    # buradan dispatch yapilabilir. Bilinmeyen mod gelirse acik hata verilir.
+    mode = str(policy.get("mode") or "static_threshold")
+    if mode != "static_threshold":
+        raise ValueError(
+            f"Desteklenmeyen politika modu: {mode!r}. "
+            f"Su an yalnizca {sorted(VALID_POLICY_MODES)!r} destekleniyor."
+        )
+
+    cancel_t = policy.get("cancel_candidate_threshold")
+    rest_t = float(policy.get("rest_threshold", 40.0))
+    pool_t = float(policy.get("pool_threshold", 50.0))
+    keep_t = float(policy.get("curriculum_keep_threshold", 70.0))
+    sensitivity_margin = float(policy.get("sensitivity_margin", 3.0) or 0.0)
+    require_manual_cancel = _bool(policy.get("require_manual_approval_for_cancel", True))
+
+    thresholds_used = {
+        "cancel_candidate_threshold": float(cancel_t) if cancel_t is not None else None,
+        "rest_threshold": rest_t,
+        "pool_threshold": pool_t,
+        "curriculum_keep_threshold": keep_t,
+    }
+
+    base = {
+        "score": safe_score,
+        "thresholds": thresholds_used,
+        "requires_manual_approval": False,
+    }
+
+    # 1) IPTAL ADAYI — yalnizca politikada cancel_threshold acikca tanimliysa.
+    if cancel_t is not None and safe_score < float(cancel_t):
         return {
+            **base,
             "recommended_status": STATU_IPTAL,
             "rule_triggered": "cancel_candidate_threshold",
-            "reason": f"Skor {float(cancel_threshold):.1f} iptal aday esiginin altinda.",
+            "requires_manual_approval": require_manual_cancel,
+            "severity": "critical",
+            "reason": (
+                f"Skor {safe_score:.1f}, iptal adayi esiginin ({float(cancel_t):.1f}) altinda."
+            ),
         }
-    if safe_score < float(policy.get("rest_threshold", 40.0)):
+
+    # 2) DINLENMEDE — havuz esigi altindaki tum skorlar.
+    if safe_score < pool_t:
+        deep = safe_score < rest_t
+        rule = "rest_threshold" if deep else "pool_threshold"
+        note = " (rest esiginin altinda — derin dinlenme)" if deep else ""
         return {
+            **base,
             "recommended_status": STATU_DINLENMEDE,
-            "rule_triggered": "rest_threshold",
-            "reason": f"Skor {float(policy.get('rest_threshold', 40.0)):.1f} dinlenme esiginin altinda.",
+            "rule_triggered": rule,
+            "severity": "warning",
+            "reason": (
+                f"Skor {safe_score:.1f}, havuz esiginin ({pool_t:.1f}) altinda{note}."
+            ),
         }
-    if safe_score < float(policy.get("pool_threshold", 50.0)):
+
+    # 3) HAVUZDA — mufredatta kalmaya yetmiyor.
+    if safe_score < keep_t:
+        # Esige cok yakinsa downstream icin uyari isareti olarak severity yukseltilir.
+        sensitive = abs(safe_score - keep_t) <= sensitivity_margin or abs(safe_score - pool_t) <= sensitivity_margin
         return {
-            "recommended_status": STATU_HAVUZDA,
-            "rule_triggered": "pool_threshold",
-            "reason": "Skor havuz esigi altinda, ancak dinlenme esiginin ustunde.",
-        }
-    if safe_score < float(policy.get("curriculum_keep_threshold", 70.0)):
-        return {
+            **base,
             "recommended_status": STATU_HAVUZDA,
             "rule_triggered": "curriculum_keep_threshold",
-            "reason": "Skor mufredatta kalma esiginin altinda.",
+            "severity": "warning" if sensitive else "info",
+            "reason": (
+                f"Skor {safe_score:.1f}, mufredatta kalma esiginin ({keep_t:.1f}) altinda."
+            ),
         }
+
+    # 4) MUFREDATTA — esik karsilaniyor.
+    sensitive = abs(safe_score - keep_t) <= sensitivity_margin
     return {
+        **base,
         "recommended_status": STATU_MUFREDATTA,
         "rule_triggered": "curriculum_keep_threshold",
-        "reason": "Skor mufredatta kalma esigini karsiliyor.",
+        "severity": "warning" if sensitive else "info",
+        "reason": (
+            f"Skor {safe_score:.1f}, mufredatta kalma esigini ({keep_t:.1f}) karsiliyor."
+        ),
     }
 
 
 def status_label(status: int | None) -> str:
+    """Kullanici arayuzunde gosterilecek Turkce statu etiketi."""
     labels = {
-        STATU_MUFREDATTA: "mufredatta",
-        STATU_HAVUZDA: "havuzda",
-        STATU_DINLENMEDE: "dinlenmede",
-        STATU_IPTAL: "iptal adayi",
+        STATU_MUFREDATTA: "Müfredatta",
+        STATU_HAVUZDA: "Havuzda",
+        STATU_DINLENMEDE: "Dinlenmede",
+        STATU_IPTAL: "İptal Adayı",
     }
-    return labels.get(int(status) if status is not None else 0, "belirsiz")
+    if status is None:
+        return "Belirsiz"
+    try:
+        return labels.get(int(status), "Belirsiz")
+    except (TypeError, ValueError):
+        return "Belirsiz"

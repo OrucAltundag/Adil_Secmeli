@@ -129,6 +129,15 @@ def _normalize_semester(value: str | None) -> str | None:
 
     Eski davranış 'b ile başlamayan her şeyi Güz say' idi; bu, 'Yaz' gibi geçersiz
     bir girdinin sessizce yanlış dönem verisiyle karar üretmesine yol açıyordu.
+
+    KARARLI TUTARSIZLIK NOTU — Bu servis kanonik biçim olarak ASCII-dışı 'Güz'
+    döndürür; oysa `decision_run_service`, `calculation.py`, `schema_compat`
+    gibi servisler 'Guz' (ASCII) saklar. Pratikte tüm SQL karşılaştırmaları
+    `LOWER(SUBSTR(..., 1, 1))` ile yalnızca ilk harfe bakar — yani filtre eşleşmesi
+    bozulmaz. Ancak stringler birebir karşılaştırılırsa (ör. JOIN'siz audit log
+    eşleştirmesi) farklı tablolarda 'Güz' ve 'Guz' yan yana görülebilir. Bunu
+    tek standarda indirmek tüm projeyi etkileyen ayrı bir migration işidir; bu
+    dosyada davranış geriye-uyumlu bırakıldı.
     """
     if value is None:
         return None
@@ -662,7 +671,13 @@ def _empty_scope_result(
 ) -> dict[str, Any]:
     """Kapsamda hiç seçmeli ders yokken üretilen 'not_applicable' sonucu.
 
-    Tamlık oranı %100 kabul edilir, kapı engellemez; UI'ya uyarı metni döner.
+    UI gosterimi: tamlik orani %100 kabul edilir ve 'not_applicable' seviyesinde
+    raporlanir; bu kullaniciya "eksik veri yok" mesajini iletir.
+
+    Algoritma kapisi: AYRI degerlendirilir — degerlendirilecek ders olmadigi icin
+    `can_run_algorithm=False` doner; aksi halde kullanici "Yeni Karar Calistir"
+    der ve TOPSIS evreni bos cikar (sessiz basarisizlik). Onceki surumde
+    `True` doniyordu — bu, yanlis donem/kapsam secimini gizliyordu (P1 hata).
     """
     return {
         "scope_type": scope_type,
@@ -705,8 +720,14 @@ def _empty_scope_result(
         },
         "override": None,
         "override_active": False,
-        "can_run_algorithm": True,
-        "blocking_reason": None,
+        # P1 düzeltmesi: boş kapsamda algoritma çalıştırılamaz — UI seviyesi
+        # 'not_applicable' kalır ama kapı kapanır ki kullanıcı yanlış kapsam
+        # ile TOPSIS evreni boş çalıştırmasın.
+        "can_run_algorithm": False,
+        "blocking_reason": (
+            "Seçili kapsamda müfredatta seçmeli ders bulunmuyor; "
+            "değerlendirilecek ders olmadığı için karar algoritması çalıştırılamaz."
+        ),
         "warning_reason": "Seçili kapsamda müfredatta seçmeli ders bulunmuyor; tamlık kontrolü uygulanmadı.",
         "total_courses": 0,
         "completed_courses": 0,
@@ -1202,6 +1223,27 @@ def get_blocking_reason(
     return summary.get("blocking_reason")
 
 
+def validate_scope_for_algorithm_run(
+    scope_type: str,
+    faculty_id: int | None,
+    department_id: int | None,
+) -> None:
+    """Algoritma çalıştırması için scope ID zorunluluklarını uygular.
+
+    Raporlama amaçlı çağrılarda `faculty_id=None` "tüm fakülteler" anlamında
+    serbest bırakılır (bkz. `_normalize_scope_type` notu). Karar Merkezi'nden
+    tetiklenen calistirmalar icin scope net olmalı; bu helper o sözleşmeyi
+    açıkça uygular.
+    """
+    if scope_type == "faculty" and faculty_id is None:
+        raise ValueError("Algoritma çalıştırmak için faculty_id zorunludur (scope='faculty').")
+    if scope_type == "department" and (faculty_id is None or department_id is None):
+        raise ValueError(
+            "Bölüm kapsamı için faculty_id ve department_id birlikte zorunludur "
+            "(scope='department')."
+        )
+
+
 def can_run_algorithm(
     conn: sqlite3.Connection,
     year: int,
@@ -1210,14 +1252,28 @@ def can_run_algorithm(
     semester: str | None = None,
     scope_type: str | None = None,
     refresh: bool = True,
+    strict_scope: bool = False,
 ) -> dict[str, Any]:
     """Güvenlik kapısı sonucunu döndürür.
 
-    `refresh=True` (varsayılan, geriye dönük uyum): durum tablolarına snapshot yazar.
-    `refresh=False`: salt okunur — hızlı UI kontrolleri için yazma yan etkisi olmadan
-    değerlendirir (bkz. `evaluate_algorithm_readiness`).
+    Args:
+        refresh: True (varsayılan, geriye dönük uyum) durum tablolarına snapshot yazar.
+            False ise salt okunur — hızlı UI kontrolleri için yazma yan etkisi olmadan
+            değerlendirir (bkz. `evaluate_algorithm_readiness`).
+        strict_scope: True ise `validate_scope_for_algorithm_run` ile ID zorunlulukları
+            uygulanır (faculty/department çağrılarında ilgili ID'ler zorunludur).
+            Karar Merkezi'nden tetiklenen çağrılarda True kullanın.
+
+    Returns:
+        Tüm tüketenler için aynı sözleşme:
+            * `can_run` (bool) — birincil anahtar.
+            * `can_run_algorithm` (bool) — defansif alias; bazı UI/yearly_workflow
+              kodu `summary.get("can_run_algorithm")` üzerinden bekliyordu. İki
+              anahtarı da garanti altına alıyoruz ki sözleşme bir kez daha kayıp olmasın.
     """
     resolved_scope = scope_type or ("department" if department_id is not None else "faculty")
+    if strict_scope:
+        validate_scope_for_algorithm_run(resolved_scope, faculty_id, department_id)
     summary = get_completion_summary(
         conn,
         resolved_scope,
@@ -1227,8 +1283,12 @@ def can_run_algorithm(
         semester=semester,
         refresh=refresh,
     )
+    can_run = bool(summary.get("can_run_algorithm"))
     return {
-        "can_run": bool(summary.get("can_run_algorithm")),
+        "can_run": can_run,
+        # Defansif alias — `summary.get("can_run_algorithm")` bekleyen tüketenler
+        # bu wrapper'ı yanlışlıkla `summary` gibi kullanırsa da doğru cevap alsın.
+        "can_run_algorithm": can_run,
         "blocking_reason": summary.get("blocking_reason"),
         "completion_ratio": summary.get("completion_ratio"),
         "completion_level": summary.get("completion_level"),
@@ -1240,6 +1300,11 @@ def can_run_algorithm(
         "override": summary.get("override"),
         "risk": summary.get("missing_data_risk"),
         "policy": summary.get("policy"),
+        "scope_type": resolved_scope,
+        "faculty_id": faculty_id,
+        "department_id": department_id,
+        "semester": summary.get("semester"),
+        "total_courses": summary.get("total_courses"),
         "summary": summary,
     }
 

@@ -60,7 +60,7 @@ def build_dummy_classifier(strategy: str = "most_frequent", random_state: int = 
     try:
         from sklearn.dummy import DummyClassifier
 
-        return DummyClassifier(strategy=strategy, random_state=random_state)
+        return DummyClassifier(strategy=strategy, random_state=random_state)  # type: ignore[arg-type]
     except Exception:
         return MajorityClassPredictor()
 
@@ -69,7 +69,7 @@ def build_dummy_regressor(strategy: str = "mean"):
     try:
         from sklearn.dummy import DummyRegressor
 
-        return DummyRegressor(strategy=strategy)
+        return DummyRegressor(strategy=strategy)  # type: ignore[arg-type]
     except Exception:
         return None
 

@@ -31,7 +31,7 @@ def seed_default_policy(conn: sqlite3.Connection) -> dict[str, Any]:
         """,
         (now, now),
     )
-    cur = conn.execute("SELECT * FROM ahp_profile_policies WHERE id=?", (int(cur.lastrowid),))
+    cur = conn.execute("SELECT * FROM ahp_profile_policies WHERE id=?", (int(cur.lastrowid or 0),))
     return _row_dict(cur.fetchone())
 
 

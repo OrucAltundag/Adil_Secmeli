@@ -16,6 +16,7 @@ from app.services.decision_policy_service import (
     create_decision_policy,
     ensure_default_decision_policy,
     resolve_decision_policy,
+    update_decision_policy,
 )
 from app.services.decision_run_service import (
     _apply_governance,
@@ -184,6 +185,44 @@ def test_decision_policy_defaults_and_scope_resolution():
         resolved = resolve_decision_policy(conn, faculty_id=1, department_id=10, year=2026)
         assert resolved["id"] == faculty_policy["id"]
         assert classify_score(20.0, resolved)["recommended_status"] == STATU_IPTAL
+    finally:
+        conn.close()
+        os.unlink(path)
+
+
+def test_decision_policy_update_validates_and_persists():
+    path, conn = _tmp_conn()
+    try:
+        policy = create_decision_policy(conn, name="Duzenlenecek", scope_type="global")
+        updated = update_decision_policy(
+            conn,
+            int(policy["id"]),
+            name="Guncel Politika",
+            curriculum_keep_threshold=75.0,
+            pool_threshold=55.0,
+            rest_threshold=45.0,
+            cancel_candidate_threshold=35.0,
+            require_manual_approval_for_cancel=False,
+            notes="UI uzerinden duzenlendi",
+        )
+        assert updated["name"] == "Guncel Politika"
+        assert updated["curriculum_keep_threshold"] == 75.0
+        assert updated["require_manual_approval_for_cancel"] is False
+        assert classify_score(34.0, updated)["recommended_status"] == STATU_IPTAL
+
+        try:
+            update_decision_policy(
+                conn,
+                int(policy["id"]),
+                curriculum_keep_threshold=30.0,
+                pool_threshold=60.0,
+                rest_threshold=45.0,
+                cancel_candidate_threshold=35.0,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Gecersiz esik siralamasi reddedilmeliydi")
     finally:
         conn.close()
         os.unlink(path)

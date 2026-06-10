@@ -34,7 +34,7 @@ def estimate_conflict_risk(conn: sqlite3.Connection, plan: list[dict[str, Any]])
     constraints = {int(row["course_id"]): row for row in get_time_constraints(conn) if row.get("course_id") is not None}
     groups: dict[tuple[str, str], int] = {}
     for item in plan:
-        c = constraints.get(int(item.get("course_id")))
+        c = constraints.get(int(item.get("course_id") or 0))
         if not c or not c.get("conflict_group"):
             continue
         key = (str(c["conflict_group"]), str(item.get("assigned_semester")))

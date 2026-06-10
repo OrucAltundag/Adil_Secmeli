@@ -314,7 +314,7 @@ def create_import_batch(
             now,
         ),
     )
-    batch_id = int(cur.lastrowid)
+    batch_id = int(cur.lastrowid or 0)
     return {
         "id": batch_id,
         "import_batch_id": batch_id,
@@ -564,7 +564,7 @@ def record_import_issue(
             _now(),
         ),
     )
-    issue_id = int(cur.lastrowid)
+    issue_id = int(cur.lastrowid or 0)
     return {"id": issue_id, "severity": severity, "issue_type": issue_type, "suggestion": suggestion}
 
 
