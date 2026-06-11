@@ -52,7 +52,8 @@ class BackupCreateCheck(_BackupCheck):
     default_severity = HealthSeverity.MEDIUM
 
     def run(self, context: HealthContext) -> HealthCheckResult:
-        if not context.database.is_sqlite():
+        database = context.require_database()
+        if not database.is_sqlite():
             return self.skipped(
                 "SQLite dışı backend; dosya yedeği atlandı.",
                 detail=f"database_url={context.app_config.database_url}",
@@ -68,7 +69,7 @@ class BackupCreateCheck(_BackupCheck):
         tmp_dir = tempfile.mkdtemp(prefix="health_backup_")
         target = Path(tmp_dir) / "probe_backup.db"
         try:
-            with context.database.connection() as source:
+            with database.connection() as source:
                 dest = sqlite3.connect(str(target))
                 try:
                     source.backup(dest)

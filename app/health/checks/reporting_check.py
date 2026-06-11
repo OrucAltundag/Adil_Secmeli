@@ -118,6 +118,8 @@ class ExcelExportCheck(_ReportingCheck):
 
             wb = openpyxl.Workbook()
             ws = wb.active
+            if ws is None:
+                raise RuntimeError("Workbook aktif sayfası alınamadı.")
             ws["A1"] = "health"
             fd, tmp = tempfile.mkstemp(suffix=".xlsx")
             os.close(fd)

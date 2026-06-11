@@ -172,7 +172,7 @@ def parse_curriculum_excel(excel_path: str) -> tuple[list[dict[str, Any]], list[
     all_rows: list[dict[str, Any]] = []
     warnings: list[str] = []
     for sheet in xls.sheet_names:
-        df = xls.parse(sheet_name=str(sheet))
+        df = pd.read_excel(xls, sheet_name=str(sheet))
         rows, warns = _extract_rows_from_df(df, sheet_name=str(sheet))
         all_rows.extend(rows)
         warnings.extend(warns)

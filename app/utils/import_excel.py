@@ -5,6 +5,11 @@ Excel'den veri aktarım modülü.
 - Fakülte/Bölüm standart eşleştirme
 - Hata loglama
 """
+# SQLAlchemy ORM `Column[T]` stub'ları ile runtime `T` ataması arasındaki
+# uyumsuzluk + pandas DataFrame indexleme tipleri burada çok sayıda yanlış
+# pozitif üretiyor. Runtime davranışı doğru — modülü pyright düzeyinde sadece
+# ilgili kuralları gevşetiyoruz.
+# pyright: reportAttributeAccessIssue=false, reportAssignmentType=false, reportArgumentType=false, reportOperatorIssue=false
 import logging
 import os
 import sys

@@ -57,7 +57,7 @@ def _safe_float(val, default=0.0):
         return default
 
 
-def _find_ders_id(cur, ders_adi: str = None, ders_id: int = None, kod: str = None):
+def _find_ders_id(cur, ders_adi: str | None = None, ders_id: int | None = None, kod: str | None = None):
     """Ders adı, ID veya kod ile ders_id bulur."""
     if ders_id is not None and ders_id > 0:
         cur.execute("SELECT ders_id FROM ders WHERE ders_id = ?", (ders_id,))
@@ -87,7 +87,7 @@ def _clean_year(val):
     return int(m.group()) if m else None
 
 
-def run_import(excel_path: str, db_path: str = None):
+def run_import(excel_path: str, db_path: str | None = None):
     """
     Excel'den ders kriterlerini toplu yükler.
     Returns: (ok: bool, msg: str, counts: dict)

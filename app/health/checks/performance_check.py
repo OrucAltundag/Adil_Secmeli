@@ -21,12 +21,13 @@ class DatabaseConnectionTimeCheck(_PerfCheck):
     default_severity = HealthSeverity.MEDIUM
 
     def run(self, context: HealthContext) -> HealthCheckResult:
-        if not context.database.is_sqlite():
+        database = context.require_database()
+        if not database.is_sqlite():
             return self.skipped(
                 "SQLite dışı backend; bağlantı süre testi atlandı.",
                 detail=f"database_url={context.app_config.database_url}",
             )
-        elapsed = context.database.measure_connection_ms()
+        elapsed = database.measure_connection_ms()
         th = context.health_config.thresholds
         meta = {"connect_ms": round(elapsed, 1)}
         if elapsed <= th.connection_ok_ms:

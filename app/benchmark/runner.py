@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 import numpy as np
@@ -110,7 +111,10 @@ class ExperimentRunner:
         X = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
         X = pd.get_dummies(X, dummy_na=True).fillna(0.0)
         stratify = y if y.nunique() > 1 else None
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=stratify)
+        split_result = train_test_split(X, y, test_size=0.2, random_state=42, stratify=stratify)
+        X_train, X_test, y_train, y_test = split_result  # type: ignore[misc]
+        y_train = pd.Series(y_train)
+        y_test = pd.Series(y_test)
 
         with PerformanceTracker(workload_size=len(X_test)) as tracker:
             algorithm.fit(X_train, y_train)
@@ -120,7 +124,7 @@ class ExperimentRunner:
 
         y_pred = output.predictions
         y_proba = np.array(algorithm.predict_proba(X_test), dtype=float) if isinstance(algorithm, IPredictor) else None
-        cls_metrics = classification_metrics(y_true=y_test.tolist(), y_pred=y_pred, y_proba=y_proba)
+        cls_metrics: dict[str, Any] = dict(classification_metrics(y_true=y_test.tolist(), y_pred=y_pred, y_proba=y_proba))
         correct = [1.0 if t == p else 0.0 for t, p in zip(y_test.tolist(), y_pred)]
         _ci = bootstrap_confidence_interval(correct)
         if _ci.get("lower") is not None and _ci["lower"] != _ci["upper"]:

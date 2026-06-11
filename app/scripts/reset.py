@@ -9,6 +9,7 @@ import sqlite3
 
 
 def reset_database_stats(db_path='proje_veritabani.db'):
+    conn: sqlite3.Connection | None = None
     try:
         # Veritabanına bağlan
         conn = sqlite3.connect(db_path)

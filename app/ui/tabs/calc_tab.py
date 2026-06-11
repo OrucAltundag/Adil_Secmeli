@@ -950,24 +950,27 @@ class CalcTab(ttk.Frame):
 
                         if algo_id == "lr":
                             sonuc_metni += "\n--- Ders Bazli LR Tahminleri ---\n"
-                            show = pred_df[["ders_ad", "basari_orani", "lr_tahmin"]].copy()
-                            show.columns = ["Ders", "Gercek(%)", "LR_Tahmin(%)"]
+                            show = pred_df[["ders_ad", "basari_orani", "lr_tahmin"]].rename(  # type: ignore[call-overload]
+                                columns={"ders_ad": "Ders", "basari_orani": "Gercek(%)", "lr_tahmin": "LR_Tahmin(%)"}
+                            )
                             show["Gercek(%)"] = (show["Gercek(%)"] * 100).round(1)
-                            show = show.sort_values("LR_Tahmin(%)", ascending=False)
+                            show = show.sort_values(by="LR_Tahmin(%)", ascending=False)
                             sonuc_metni += show.head(25).to_string(index=False, float_format="%.1f")
                         elif algo_id == "rf":
                             sonuc_metni += "\n--- Ders Bazli RF Tahminleri ---\n"
-                            show = pred_df[["ders_ad", "skor", "rf_tahmin"]].copy()
-                            show.columns = ["Ders", "Gercek_Skor", "RF_Tahmin"]
-                            show = show.sort_values("RF_Tahmin", ascending=False)
+                            show = pred_df[["ders_ad", "skor", "rf_tahmin"]].rename(  # type: ignore[call-overload]
+                                columns={"ders_ad": "Ders", "skor": "Gercek_Skor", "rf_tahmin": "RF_Tahmin"}
+                            )
+                            show = show.sort_values(by="RF_Tahmin", ascending=False)
                             sonuc_metni += show.head(25).to_string(index=False, float_format="%.1f")
                         elif algo_id == "dt":
                             statu_map = {1: "Mufredat", 0: "Havuz", -1: "Dinlenme", -2: "Iptal"}
                             sonuc_metni += "\n--- Ders Bazli DT Tahminleri ---\n"
-                            show = pred_df[["ders_ad", "statu", "dt_tahmin"]].copy()
-                            show.columns = ["Ders", "Gercek", "DT_Tahmin"]
-                            show["Gercek_Lbl"] = show["Gercek"].map(statu_map).fillna("?")
-                            show["Tahmin_Lbl"] = show["DT_Tahmin"].map(statu_map).fillna("?")
+                            show = pred_df[["ders_ad", "statu", "dt_tahmin"]].rename(  # type: ignore[call-overload]
+                                columns={"ders_ad": "Ders", "statu": "Gercek", "dt_tahmin": "DT_Tahmin"}
+                            )
+                            show["Gercek_Lbl"] = show["Gercek"].map(statu_map).fillna("?")  # type: ignore[arg-type]
+                            show["Tahmin_Lbl"] = show["DT_Tahmin"].map(statu_map).fillna("?")  # type: ignore[arg-type]
                             show["Eslesme"] = show["Gercek"] == show["DT_Tahmin"]
                             acc = show["Eslesme"].mean() * 100
                             sonuc_metni += f"Tahmin dogrulugu: %{acc:.1f}\n\n"

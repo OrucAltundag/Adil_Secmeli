@@ -119,14 +119,16 @@ def predict_course(
                 raise ValueError("Regresyon hedef değişkeni yetersiz.")
             evaluation = evaluate_regression_model(model, X, target)
             model.fit(X, target)
-            predicted_numeric = float(model.predict(X_row)[0])
+            reg_predictions: Any = model.predict(X_row)
+            predicted_numeric = float(reg_predictions[0])
             predicted_text = f"{predicted_numeric:.2f}"
         else:
             if y is None or pd.Series(y).nunique() < 2:
                 raise ValueError("Sınıflandırma hedef değişkeni yetersiz.")
             evaluation = evaluate_classification_model(model, X, y)
             model.fit(X, y)
-            pred = model.predict(X_row)[0]
+            cls_predictions: Any = model.predict(X_row)
+            pred = cls_predictions[0]
             predicted_numeric = float(pred) if str(pred).lstrip("-").isdigit() else None
             predicted_text = str(pred)
 

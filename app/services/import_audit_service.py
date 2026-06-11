@@ -111,7 +111,7 @@ def extract_excel_metadata(excel_path: str) -> dict[str, Any]:
     xls = pd.ExcelFile(excel_path)
     sheet_names = list(xls.sheet_names)
     data_sheet = next((name for name in sheet_names if str(name).strip().lower() != "meta"), sheet_names[0])
-    df = xls.parse(sheet_name=data_sheet)
+    df = pd.read_excel(xls, sheet_name=data_sheet)
     df.columns = [str(col).strip() for col in df.columns]
     return {
         "sheet_names": sheet_names,

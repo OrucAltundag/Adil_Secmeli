@@ -311,6 +311,9 @@ def build_report_snapshot(
     cancelled_count = 0
 
     for ders_id, ders_adi, skor, sayac, statu, row_year in pool_rows_raw:
+        if ders_id is None:
+            continue
+        ders_id_int = int(ders_id)
         status = int(statu) if statu is not None else 0
         if status == -1:
             rest_count += 1
@@ -319,15 +322,15 @@ def build_report_snapshot(
         elif status == -2:
             cancelled_count += 1
 
-        source_score = score_map.get(int(ders_id)) if ders_id is not None else None
+        source_score = score_map.get(ders_id_int)
         score_value = source_score if source_score is not None else (float(skor) if skor is not None else None)
         if score_value is not None:
             scores.append(score_value)
 
-        source = "TOPSIS" if int(ders_id) in curriculum_ids else f"Anket ({POOL_DEFAULT_SCORE:.0f}+-{POOL_ANKET_SCORE_SPREAD:.0f})"
+        source = "TOPSIS" if ders_id_int in curriculum_ids else f"Anket ({POOL_DEFAULT_SCORE:.0f}+-{POOL_ANKET_SCORE_SPREAD:.0f})"
         pool_rows.append(
             {
-                "ders_id": int(ders_id),
+                "ders_id": ders_id_int,
                 "ders_adi": ders_adi,
                 "skor": score_value,
                 "sayac": int(sayac or 0),

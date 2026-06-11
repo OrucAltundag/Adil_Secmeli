@@ -154,7 +154,8 @@ class BenchmarkPanel(ttk.Frame):
 
     def refresh(self) -> None:
         page = self.pages.get(self.active_page)
-        if hasattr(page, "load_runs"):
-            page.load_runs()
-        elif hasattr(page, "load_data"):
-            page.load_data()
+        if page is None:
+            return
+        loader = getattr(page, "load_runs", None) or getattr(page, "load_data", None)
+        if callable(loader):
+            loader()

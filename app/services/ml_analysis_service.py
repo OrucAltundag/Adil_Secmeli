@@ -147,6 +147,7 @@ def run_ml_analysis(
     ev = evaluate_classification_model(model, X, y)
 
     # Aciklanabilirlik: ilk satir icin SHAP+LIME (model yeniden fit)
+    exp_err: str | None = None
     try:
         model_fit = _build_model(secim_key, n_samples=n)
         model_fit.fit(X, y)
@@ -219,7 +220,7 @@ def run_ml_analysis(
     A("-" * 60)
     A("3) ACIKLANABILIRLIK — SHAP & LIME   [Faz2-E]")
     if exp is None:
-        A(f"   Uretilemedi: {exp_err if 'exp_err' in dir() else 'bilinmiyor'}")
+        A(f"   Uretilemedi: {exp_err or 'bilinmiyor'}")
     else:
         sh = exp.shap_json or {}
         if sh.get("top"):

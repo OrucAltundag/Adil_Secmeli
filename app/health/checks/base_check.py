@@ -33,7 +33,7 @@ class HealthContext:
     user_context: UserContext | None
     mode: str = "full"  # "quick" | "full"
     developer_mode: bool = False
-    database: DatabaseService = None
+    database: DatabaseService | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -62,9 +62,15 @@ class HealthContext:
     def root(self) -> Path:
         return self.health_config.project_root
 
+    def require_database(self) -> DatabaseService:
+        """Optional `database` alanını çağrı bölgelerinde tipsel olarak daraltır."""
+        if self.database is None:
+            raise RuntimeError("HealthContext.database henüz başlatılmadı.")
+        return self.database
+
     @contextmanager
     def repository(self) -> Iterator[SqliteRepository]:
-        with self.database.repository() as repo:
+        with self.require_database().repository() as repo:
             yield repo
 
 

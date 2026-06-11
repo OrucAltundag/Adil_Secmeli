@@ -126,14 +126,17 @@ def _classification_metrics(y_true: Sequence[Any] | None, y_pred: Sequence[Any] 
             roc_auc_score,
         )
 
+        # sklearn `zero_division` runtime'da numeric (0) kabul eder; stub yalnız str
+        # tanımladığı için `Any` ile tipi gevşetiyoruz.
+        _zd: Any = 0
         metrics = {
             "accuracy": float(accuracy_score(yt, yp)),
-            "precision_macro": float(precision_score(yt, yp, average="macro", zero_division=0)),
-            "precision_weighted": float(precision_score(yt, yp, average="weighted", zero_division=0)),
-            "recall_macro": float(recall_score(yt, yp, average="macro", zero_division=0)),
-            "recall_weighted": float(recall_score(yt, yp, average="weighted", zero_division=0)),
-            "f1_macro": float(f1_score(yt, yp, average="macro", zero_division=0)),
-            "f1_weighted": float(f1_score(yt, yp, average="weighted", zero_division=0)),
+            "precision_macro": float(precision_score(yt, yp, average="macro", zero_division=_zd)),
+            "precision_weighted": float(precision_score(yt, yp, average="weighted", zero_division=_zd)),
+            "recall_macro": float(recall_score(yt, yp, average="macro", zero_division=_zd)),
+            "recall_weighted": float(recall_score(yt, yp, average="weighted", zero_division=_zd)),
+            "f1_macro": float(f1_score(yt, yp, average="macro", zero_division=_zd)),
+            "f1_weighted": float(f1_score(yt, yp, average="weighted", zero_division=_zd)),
             "balanced_accuracy": float(balanced_accuracy_score(yt, yp)),
             "confusion_matrix": confusion_matrix(yt, yp).tolist(),
         }

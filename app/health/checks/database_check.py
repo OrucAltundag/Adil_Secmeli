@@ -15,7 +15,7 @@ class _DatabaseCheck(BaseHealthCheck):
     score_bucket = "database"
 
     def _skip_if_not_sqlite(self, context: HealthContext) -> HealthCheckResult | None:
-        if not context.database.is_sqlite():
+        if not context.require_database().is_sqlite():
             return self.skipped(
                 "SQLite dışı backend; bu kontrol atlandı.",
                 detail=f"database_url={context.app_config.database_url}",
@@ -151,7 +151,7 @@ class SQLiteWritePermissionCheck(_DatabaseCheck):
         if skip:
             return skip
         # Gerçek veriyi bozmamak için TEMP tablo kullanılır; commit edilmez.
-        with context.database.connection() as conn:
+        with context.require_database().connection() as conn:
             try:
                 conn.execute(
                     "CREATE TEMP TABLE _health_write_probe (id INTEGER PRIMARY KEY, v TEXT)"

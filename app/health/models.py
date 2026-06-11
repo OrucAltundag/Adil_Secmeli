@@ -30,7 +30,7 @@ class HealthStatus(str, Enum):
     FIXED = "FIXED"
 
     @classmethod
-    def coerce(cls, value: Any, default: "HealthStatus" = None) -> "HealthStatus":
+    def coerce(cls, value: Any, default: "HealthStatus | None" = None) -> "HealthStatus":
         if isinstance(value, cls):
             return value
         try:
@@ -48,7 +48,7 @@ class HealthSeverity(str, Enum):
     CRITICAL = "CRITICAL"
 
     @classmethod
-    def coerce(cls, value: Any, default: "HealthSeverity" = None) -> "HealthSeverity":
+    def coerce(cls, value: Any, default: "HealthSeverity | None" = None) -> "HealthSeverity":
         if isinstance(value, cls):
             return value
         try:

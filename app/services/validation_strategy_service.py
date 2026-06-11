@@ -87,7 +87,7 @@ def run_validation_strategy(model: Any, X: Any, y: Iterable[Any] | None, strateg
     warnings = list(strategy.warnings)
     for fold_idx, (train_idx, test_idx) in enumerate(splits, start=1):
         try:
-            estimator = clone(model)
+            estimator: Any = clone(model)
             estimator.fit(X_arr[train_idx], y_arr[train_idx])
             pred = estimator.predict(X_arr[test_idx])
             if _is_numeric(y_arr):

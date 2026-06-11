@@ -320,7 +320,8 @@ class RunHistoryPage(ttk.Frame):
         summary = detail.get("summary") or {}
         self.summary_table.set_rows([{"Alan": key, "Deger": value} for key, value in summary.items()])
         self._set_metrics_rows(detail.get("comparison_table") or [])
-        details = detail.get("details") if isinstance(detail.get("details"), dict) else {}
+        raw_details = detail.get("details")
+        details: dict = raw_details if isinstance(raw_details, dict) else {}
         self._set_text(self.validation_text, details.get("validation") or "Validation detayı bu run kaydında bulunamadı.")
         self._set_text(self.diagnostics_text, details.get("diagnostics") or "Diagnostics detayı bu run kaydında bulunamadı.")
         self._set_text(self.leakage_text, details.get("leakage") or "Leakage detayı bu run kaydında bulunamadı.")

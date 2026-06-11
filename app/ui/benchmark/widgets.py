@@ -36,8 +36,9 @@ def run_async(root: tk.Misc, worker: Callable[[], Any], on_success: Callable[[An
             result = worker()
             _schedule(lambda result=result: on_success(result))
         except Exception as exc:
-            if on_error:
-                _schedule(lambda exc=exc: on_error(exc))
+            handler = on_error
+            if handler is not None:
+                _schedule(lambda exc=exc, handler=handler: handler(exc))
 
     threading.Thread(target=_target, daemon=True).start()
 

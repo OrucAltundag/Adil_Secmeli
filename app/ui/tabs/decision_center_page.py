@@ -217,19 +217,21 @@ class DecisionCenterPage(ttk.Frame):
         self.tree_ahp = self._tree(table_box, columns)
 
         # Sütun başlıkları ve daha uygun genişlik/hizalamalar.
-        headings = {
-            "id": ("ID", 50, tk.CENTER),
-            "ad": ("Profil Adı", 180, tk.W),
-            "kapsam": ("Kapsam", 90, tk.CENTER),
-            "yil": ("Yıl", 70, tk.CENTER),
-            "agirliklar": ("Ağırlıklar (başarı • trend • popülerlik • anket)", 420, tk.W),
-            "cr": ("CR (≤ 0.10)", 100, tk.CENTER),
-            "tutarlı": ("Tutarlı?", 90, tk.CENTER),
-            "aktif": ("Aktif?", 90, tk.CENTER),
+        # `tk.W` / `tk.CENTER` çalışma zamanında string literal'dır; pyright Literal
+        # daraltması için string sabitlerini doğrudan kullanıyoruz.
+        headings: dict[str, tuple[str, int, str]] = {
+            "id": ("ID", 50, "center"),
+            "ad": ("Profil Adı", 180, "w"),
+            "kapsam": ("Kapsam", 90, "center"),
+            "yil": ("Yıl", 70, "center"),
+            "agirliklar": ("Ağırlıklar (başarı • trend • popülerlik • anket)", 420, "w"),
+            "cr": ("CR (≤ 0.10)", 100, "center"),
+            "tutarlı": ("Tutarlı?", 90, "center"),
+            "aktif": ("Aktif?", 90, "center"),
         }
         for col, (text, width, anchor) in headings.items():
             self.tree_ahp.heading(col, text=text)
-            self.tree_ahp.column(col, width=width, anchor=anchor, stretch=(col == "agirliklar"))
+            self.tree_ahp.column(col, width=width, anchor=anchor, stretch=(col == "agirliklar"))  # type: ignore[arg-type]
 
         # Satır yüksekliğini biraz aç + zebra/aktif/tutarsız renk etiketleri.
         try:

@@ -870,7 +870,7 @@ class CourseAnalysisTab(ttk.Frame):
     # =========================================================
     #  KRITERLER PANEL
     # =========================================================
-    def _fill_criteria(self, criteria: dict, criteria_status: dict = None):
+    def _fill_criteria(self, criteria: dict, criteria_status: dict | None = None):
         self.tree_krit.delete(*self.tree_krit.get_children())
         criteria_status = criteria_status or {}
 
@@ -1075,7 +1075,7 @@ class CourseAnalysisTab(ttk.Frame):
     # =========================================================
     #  NIHAI KARAR PANEL
     # =========================================================
-    def _fill_decision(self, decision: dict, course: dict, steps: dict = None):
+    def _fill_decision(self, decision: dict, course: dict, steps: dict | None = None):
         steps = steps or {}
         statu  = decision.get("next", {}).get("statu", 0)
         sayac  = decision.get("next", {}).get("sayac", 0)
@@ -1093,7 +1093,7 @@ class CourseAnalysisTab(ttk.Frame):
         # Renk
         colors = _STATU_COLORS.get(statu, _DEFAULT_COLOR)
         self.lbl_statu_big.config(
-            text=_STATU_LABELS.get(statu, label),
+            text=str(_STATU_LABELS.get(statu, label) or label),
             bg=colors["bg"], fg=colors["fg"]
         )
 

@@ -23,11 +23,12 @@ def classification_metrics(
 ) -> dict[str, float]:
     y_true_arr = np.asarray(y_true)
     y_pred_arr = np.asarray(y_pred)
+    _zd: Any = 0  # sklearn stub yalnız str kabul ediyor; runtime int destekler
     result = {
         "accuracy": float(accuracy_score(y_true_arr, y_pred_arr)),
-        "precision": float(precision_score(y_true_arr, y_pred_arr, average=average, zero_division=0)),
-        "recall": float(recall_score(y_true_arr, y_pred_arr, average=average, zero_division=0)),
-        "f1": float(f1_score(y_true_arr, y_pred_arr, average=average, zero_division=0)),
+        "precision": float(precision_score(y_true_arr, y_pred_arr, average=average, zero_division=_zd)),
+        "recall": float(recall_score(y_true_arr, y_pred_arr, average=average, zero_division=_zd)),
+        "f1": float(f1_score(y_true_arr, y_pred_arr, average=average, zero_division=_zd)),
     }
     if y_proba is not None:
         try:

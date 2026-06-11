@@ -29,7 +29,8 @@ def envy_score(assignments: pd.DataFrame) -> float:
     if assignments.empty or "allocated" not in assignments.columns:
         return 0.0
     ranked = assignments.copy()
-    ranked["rank_received"] = pd.to_numeric(ranked.get("rank_received"), errors="coerce")
+    rank_col = ranked["rank_received"] if "rank_received" in ranked.columns else pd.Series(dtype=float, index=ranked.index)
+    ranked["rank_received"] = pd.to_numeric(rank_col, errors="coerce")
     unassigned = ranked[~ranked["allocated"]]
     assigned = ranked[ranked["allocated"]]
     if assigned.empty or unassigned.empty:

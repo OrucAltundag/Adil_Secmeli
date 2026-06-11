@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.core.config import AppConfig, load_app_config, resolve_sqlite_db_path
@@ -131,7 +132,7 @@ def get_alembic_head(config_path: str = "alembic.ini") -> str | None:
         return None
 
 
-def stamp_database_head(engine_obj: object, config_path: str = "alembic.ini") -> str | None:
+def stamp_database_head(engine_obj: Engine, config_path: str = "alembic.ini") -> str | None:
     head = get_alembic_head(config_path=config_path)
     if not head:
         return None

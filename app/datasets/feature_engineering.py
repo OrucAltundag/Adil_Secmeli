@@ -162,16 +162,17 @@ class FeatureEngineer:
     def _add_composite_scores(self, df: pd.DataFrame) -> pd.DataFrame:
         out = df.copy()
 
-        out["academic_preparedness"] = out.get("gpa", 0.0).fillna(0.0)
-        out["preference_strength"] = (
-            0.6 * out.get("preference_rank", 0.0).fillna(0.0) + 0.4 * out.get("preference_score", 0.0).fillna(0.0)
-        )
+        def _col(name: str) -> pd.Series:
+            if name in out.columns:
+                return out[name].fillna(0.0)
+            return pd.Series(0.0, index=out.index)
+
+        out["academic_preparedness"] = _col("gpa")
+        out["preference_strength"] = 0.6 * _col("preference_rank") + 0.4 * _col("preference_score")
         out["satisfaction_signal"] = (
-            out.get("satisfaction", 0.0).fillna(0.0)
-            + out.get("contribution", 0.0).fillna(0.0)
-            + out.get("general_sentiment", 0.0).fillna(0.0)
+            _col("satisfaction") + _col("contribution") + _col("general_sentiment")
         ) / 3.0
-        out["course_capacity_signal"] = out.get("capacity", 0.0).fillna(0.0)
+        out["course_capacity_signal"] = _col("capacity")
 
         weights = self.config.composite_weights
         out["composite_score"] = (

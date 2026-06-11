@@ -180,7 +180,7 @@ def _read_meta_sheet(xls: pd.ExcelFile) -> dict[str, Any]:
     meta_sheet = next((name for name in xls.sheet_names if normalize_course_text(str(name)) == "meta"), None)
     if not meta_sheet:
         return {}
-    df = xls.parse(sheet_name=meta_sheet)
+    df = pd.read_excel(xls, sheet_name=meta_sheet)
     if df.empty:
         return {}
     df.columns = [str(col).strip() for col in df.columns]
@@ -214,7 +214,7 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
             raise ValueError("Kriter veri sayfasi bulunamadi.")
         data_sheet = non_meta[0]
 
-    df = xls.parse(sheet_name=data_sheet)
+    df = pd.read_excel(xls, sheet_name=data_sheet)
     df.columns = [str(col).strip() for col in df.columns]
     columns = list(df.columns)
 

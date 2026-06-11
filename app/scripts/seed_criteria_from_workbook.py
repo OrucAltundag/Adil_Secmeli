@@ -76,11 +76,11 @@ def main():
             did = int(float(row[c_id]))
             yil = int(float(row[c_yil]))
         except (ValueError, TypeError):
-            plan.append({"satir": int(i), "aksiyon": "ATLA", "neden": "ders_id/yil"})
+            plan.append({"satir": int(i), "aksiyon": "ATLA", "neden": "ders_id/yil"})  # type: ignore[arg-type]
             continue
         cur.execute("SELECT id FROM ders_kriterleri WHERE ders_id=? AND yil=?", (did, yil))
         if cur.fetchone() and not args.force:
-            plan.append({"satir": int(i), "ders_id": did, "yil": yil, "aksiyon": "ATLA", "neden": "mevcut kayit"})
+            plan.append({"satir": int(i), "ders_id": did, "yil": yil, "aksiyon": "ATLA", "neden": "mevcut kayit"})  # type: ignore[arg-type]
             continue
 
         def gi(col, default):
@@ -112,7 +112,7 @@ def main():
         doluluk = min(kayit / kont, 1.0) if kont > 0 else 0.0
         plan.append(
             {
-                "satir": int(i),
+                "satir": int(i),  # type: ignore[arg-type]
                 "ders_id": did,
                 "yil": yil,
                 "aksiyon": "YAZ",

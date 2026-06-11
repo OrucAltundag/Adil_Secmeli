@@ -670,10 +670,11 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
+        db_path = self.db_path
         try:
             result = self._run_external_db_operation(
                 lambda: run_criteria_import(
-                    db_path=self.db_path,
+                    db_path=db_path,
                     excel_path=excel_path,
                     faculty_id=faculty_id,
                     year=year,
@@ -799,10 +800,11 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
+        db_path = self.db_path
         try:
             result = self._run_external_db_operation(
                 lambda: run_curriculum_import(
-                    db_path=self.db_path,
+                    db_path=db_path,
                     excel_path=excel_path,
                     target_year=target_year,
                 )
@@ -856,10 +858,11 @@ class ToolsTab(ttk.Frame):
         if not excel_path:
             return
 
+        db_path = self.db_path
         try:
             result = self._run_external_db_operation(
                 lambda: run_survey_import(
-                    db_path=self.db_path,
+                    db_path=db_path,
                     excel_path=excel_path,
                     faculty_id=faculty_id,
                     year=year,

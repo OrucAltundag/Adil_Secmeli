@@ -118,6 +118,8 @@ def get_engine():
 def get_session():
     """Thread-safe session döndürür."""
     _ensure_engine()
+    if SessionLocal is None:
+        raise RuntimeError("SessionLocal başlatılamadı.")
     return SessionLocal()
 
 

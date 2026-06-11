@@ -108,7 +108,7 @@ def get_or_create_faculty(cur: sqlite3.Cursor, name: str, stats: dict[str, int])
         return faculty_map[normalized]
     cur.execute("INSERT INTO fakulte (ad) VALUES (?)", (name.strip(),))
     stats["faculties_created"] += 1
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def get_or_create_department(cur: sqlite3.Cursor, faculty_id: int, name: str, stats: dict[str, int]) -> int:
@@ -118,7 +118,7 @@ def get_or_create_department(cur: sqlite3.Cursor, faculty_id: int, name: str, st
         return dept_map[normalized]
     cur.execute("INSERT INTO bolum (fakulte_id, ad) VALUES (?, ?)", (faculty_id, name.strip()))
     stats["departments_created"] += 1
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def find_course_id(cur: sqlite3.Cursor, code: str | None = None, name: str | None = None, department_id: int | None = None) -> int | None:
@@ -197,7 +197,7 @@ def upsert_course(
             ),
         )
         stats["courses_created"] += 1
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
 
     cur.execute(
         """
@@ -320,7 +320,7 @@ def replace_curriculum_scope(
             """,
             (faculty_id, department_id, year, term, "dataset_bundle", 1),
         )
-        keep_id = int(cur.lastrowid)
+        keep_id = int(cur.lastrowid or 0)
 
     linked = 0
     for course_id in dict.fromkeys(course_ids):
@@ -594,7 +594,7 @@ def get_or_create_survey_form(cur: sqlite3.Cursor, faculty_id: int, year: int) -
         """,
         (name, year, "Genel", faculty_id, 1, "files.zip anket_tercih_veri_seti.xlsx aktarımı"),
     )
-    return int(cur.lastrowid)
+    return int(cur.lastrowid or 0)
 
 
 def load_survey_summary(cur: sqlite3.Cursor, source_dir: Path, stats: dict[str, int]) -> None:

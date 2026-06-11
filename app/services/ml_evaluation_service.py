@@ -266,12 +266,13 @@ def _regression_metrics(y_true, y_pred) -> dict:
 def _classification_metrics(y_true, y_pred, y_proba=None) -> dict:
     y_true = pd.Series(y_true)
     labels = sorted(y_true.dropna().unique().tolist())
+    _zd: Any = 0  # sklearn stub yalnız str kabul ediyor, runtime int destekler
     out = {
         "sample_count": int(len(y_true)),
         "accuracy": float(accuracy_score(y_true, y_pred)) if len(y_true) else 0.0,
-        "precision": float(precision_score(y_true, y_pred, average="weighted", zero_division=0)),
-        "recall": float(recall_score(y_true, y_pred, average="weighted", zero_division=0)),
-        "f1": float(f1_score(y_true, y_pred, average="weighted", zero_division=0)),
+        "precision": float(precision_score(y_true, y_pred, average="weighted", zero_division=_zd)),
+        "recall": float(recall_score(y_true, y_pred, average="weighted", zero_division=_zd)),
+        "f1": float(f1_score(y_true, y_pred, average="weighted", zero_division=_zd)),
         "confusion_matrix": confusion_matrix(y_true, y_pred, labels=labels).tolist() if labels else [],
         "class_distribution": {str(k): int(v) for k, v in y_true.value_counts().sort_index().items()},
     }

@@ -125,6 +125,11 @@ class AnalysisTab(ttk.Frame):
         from matplotlib.figure import Figure
         return Figure, FigureCanvasTkAgg
 
+    @staticmethod
+    def _seaborn():
+        import seaborn as sns  # opsiyonel bağımlılık, _check_analysis_dependencies ile doğrulanıyor
+        return sns
+
     # ----------------------------
     # Internals
     # ----------------------------
@@ -211,6 +216,7 @@ class AnalysisTab(ttk.Frame):
 
             df_top["basari_orani"] = df_top["basari_orani"] * 100
 
+            sns = self._seaborn()
             sns.barplot(
                 x="basari_orani",
                 y="ad",
@@ -252,6 +258,7 @@ class AnalysisTab(ttk.Frame):
                 ax.axis("off")
                 return
 
+            sns = self._seaborn()
             ax.pie(
                 df_pop["talep_sayisi"],
                 labels=df_pop["ad"],

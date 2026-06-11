@@ -76,7 +76,7 @@ class KMeansClusterer(_ClustererBase):
     def __init__(self, n_clusters: int = 5, random_seed: int = 42) -> None:
         super().__init__(
             name="KMeans",
-            estimator=KMeans(n_clusters=n_clusters, n_init=10, random_state=random_seed),
+            estimator=KMeans(n_clusters=n_clusters, n_init=10, random_state=random_seed),  # type: ignore[arg-type]
             parameters={"n_clusters": n_clusters, "random_seed": random_seed},
         )
 

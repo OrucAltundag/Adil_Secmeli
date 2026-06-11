@@ -61,8 +61,8 @@ def execute_sql(
 @router.post("/imports/upload")
 async def upload_secure_import(
     import_type: str,
-    faculty_id: int = None,
-    year: int = None,
+    faculty_id: int | None = None,
+    year: int | None = None,
     file: UploadFile = File(...),
     user: UserContext = Depends(require_action("import_data")),
     db: Session = Depends(get_session)

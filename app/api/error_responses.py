@@ -23,7 +23,7 @@ class ApiErrorResponse(BaseModel):
     message: str = Field(..., description="Main error message (Turkish/English)")
     details: list[ErrorDetail] = Field(default_factory=list, description="Detailed error information")
     timestamp: str = Field(..., description="ISO8601 timestamp when error occurred")
-    request_path: str | None = Field(None, description="API endpoint path that caused error")
+    request_path: str | None = Field(default=None, description="API endpoint path that caused error")
 
 
 class ValidationErrorResponse(BaseModel):

@@ -240,6 +240,16 @@ def _normalize_comparison_row(item: dict) -> dict:
     return row
 
 
+def _safe_float(value: object) -> float | None:
+    """`None` veya dönüştürülemez değerleri sessizce `None`'a indirger."""
+    if value is None:
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 def _infer_group(algorithm: str) -> str:
     name = str(algorithm or "").lower()
     if name in {"ahp", "topsis", "vikor", "promethee_ii"}:
@@ -260,10 +270,7 @@ def _with_baseline_fields(
 ) -> dict:
     out = dict(row)
     baseline = _baseline_value(rows, metric)
-    try:
-        metric_value = float(out.get(metric))
-    except (TypeError, ValueError):
-        metric_value = None
+    metric_value = _safe_float(out.get(metric))
     if baseline is not None and metric_value is not None:
         out["baseline_diff"] = round(metric_value - baseline, 4)
     else:
@@ -280,10 +287,7 @@ def _baseline_value(rows: list[dict], metric: str) -> float | None:
         algorithm = str(row.get("algorithm", "")).lower()
         if not any(token in algorithm for token in baseline_names):
             continue
-        try:
-            return float(row.get(metric))
-        except (TypeError, ValueError):
-            return None
+        return _safe_float(row.get(metric))
     return None
 
 
@@ -296,9 +300,8 @@ def _compute_significance_map(rows: list[dict], metric: str) -> dict[str, str]:
     baseline_values: list[float] = []
     for row in rows:
         key = str(row.get("algorithm", "")).lower()
-        try:
-            val = float(row.get(metric))
-        except (TypeError, ValueError):
+        val = _safe_float(row.get(metric))
+        if val is None:
             continue
         if any(t in key for t in _BASELINE_TOKENS):
             baseline_values.append(val)
@@ -331,9 +334,8 @@ def _compute_ci_map(rows: list[dict], metric: str) -> dict[str, str]:
     algo_values: dict[str, list[float]] = {}
     for row in rows:
         key = str(row.get("algorithm", "")).lower()
-        try:
-            val = float(row.get(metric))
-        except (TypeError, ValueError):
+        val = _safe_float(row.get(metric))
+        if val is None:
             continue
         algo_values.setdefault(key, []).append(val)
 

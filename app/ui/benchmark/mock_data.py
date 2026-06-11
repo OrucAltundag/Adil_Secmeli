@@ -596,23 +596,25 @@ def get_mock_execute_run(payload=None):
     }
 
 
-def get_mock_recommendation(problem_type="prediction"):
+def get_mock_recommendation(problem_type: "str | dict" = "prediction"):
     explainability_priority = False
     data_size = 5000
     if isinstance(problem_type, dict):
         payload = problem_type
         explainability_priority = bool(payload.get("explainability_priority"))
         data_size = int(payload.get("data_size") or data_size)
-        problem_type = payload.get("problem_type", "prediction")
+        problem_key: str = str(payload.get("problem_type") or "prediction")
+    else:
+        problem_key = problem_type
     mapping = {
         "prediction": ("RandomForest", 0.884, "Gecmis benchmarklerde F1 ve ROC-AUC dengesi en guclu."),
         "ranking": ("AHP", 0.780, "Kucuk ve aciklanabilir siralama senaryosu icin kriter agirliklari seffaf."),
         "allocation": ("GaleShapley", 0.850, "Kontenjan ve tercih uyumu icin stabil eslesme en uygun baslangic."),
         "clustering": ("KMeans", 0.800, "Buyuk veri kesif senaryosunda en olceklenebilir kumeleme secenegi."),
     }
-    if problem_type == "prediction" and explainability_priority and data_size < 10000:
+    if problem_key == "prediction" and explainability_priority and data_size < 10000:
         mapping["prediction"] = ("LogisticRegression", 0.790, "Küçük ve açıklanabilir tahmin senaryosunda lineer baseline önerilir.")
-    algorithm, confidence, reason = mapping.get(problem_type, mapping["prediction"])
+    algorithm, confidence, reason = mapping.get(problem_key, mapping["prediction"])
     return {
         "algorithm": algorithm,
         "confidence": confidence,

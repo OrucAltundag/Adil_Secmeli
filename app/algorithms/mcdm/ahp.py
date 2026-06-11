@@ -69,7 +69,7 @@ class AHPRanker(IRanker):
         self._validate_pairwise_matrix()
         
         eigenvalues, eigenvectors = np.linalg.eig(matrix)
-        idx = int(np.argmax(eigenvalues.real))
+        idx = int(np.argmax(np.real(eigenvalues)))
         principal = np.real_if_close(eigenvectors[:, idx]).astype(float)
         principal = np.abs(principal)
         weights = principal / (principal.sum() or 1.0)
@@ -102,19 +102,22 @@ class AHPRanker(IRanker):
 
         norm = np.linalg.norm(df[criteria_cols].to_numpy(dtype=float), axis=0)
         norm = np.where(norm <= 1e-10, 1.0, norm)
-        normalized = df[criteria_cols] / norm
+        normalized: pd.DataFrame = df[criteria_cols] / norm  # type: ignore[assignment]
         scores = normalized.to_numpy() @ self.state.weights
         df["ahp_score"] = scores
         ranked = df.sort_values("ahp_score", ascending=False).head(top_k)
         item_key = "item_id" if "item_id" in ranked.columns else ranked.index.name or "index"
-        recommendations = [
-            {
-                "item_id": int(row[item_key]) if item_key in row and pd.notna(row[item_key]) else str(idx),
-                "score": float(row["ahp_score"]),
-                "rank": rank + 1,
-            }
-            for rank, (idx, row) in enumerate(ranked.iterrows())
-        ]
+        recommendations = []
+        for rank, (idx, row) in enumerate(ranked.iterrows()):
+            raw_key = row.get(item_key) if item_key in row.index else None
+            item_id_val = int(raw_key) if raw_key is not None and pd.notna(raw_key) else str(idx)
+            recommendations.append(
+                {
+                    "item_id": item_id_val,
+                    "score": float(row["ahp_score"]),
+                    "rank": rank + 1,
+                }
+            )
         explanation = (
             f"AHP weights={self.state.weights.round(4).tolist()}, "
             f"CR={self.state.consistency_ratio:.4f} (acceptable < 0.10)"

@@ -298,8 +298,10 @@ class DashboardPage(ttk.Frame):
             card.set_value(value)
 
     def _run_from_response(self, data: dict) -> dict:
-        details_run = data.get("details", {}).get("run") if isinstance(data.get("details"), dict) else None
-        summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+        raw_details = data.get("details")
+        details_run = raw_details.get("run") if isinstance(raw_details, dict) else None
+        raw_summary = data.get("summary")
+        summary: dict = raw_summary if isinstance(raw_summary, dict) else {}
         run = dict(mock_data.SAMPLE_RUN)
         if isinstance(details_run, dict):
             run.update(

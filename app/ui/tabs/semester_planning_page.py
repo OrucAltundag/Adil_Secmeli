@@ -609,8 +609,11 @@ class SemesterPlanningPage(ttk.Frame):
                 self.run_tree.insert("", tk.END, values=("", "", "", "", "", "", "", "Henüz plan yok"))
                 return
             for row in rows:
-                iid = str(row.get("id"))
-                self._run_rows[iid] = int(row.get("id"))
+                raw_id = row.get("id")
+                if raw_id is None:
+                    continue
+                iid = str(raw_id)
+                self._run_rows[iid] = int(raw_id)
                 self.run_tree.insert(
                     "",
                     tk.END,

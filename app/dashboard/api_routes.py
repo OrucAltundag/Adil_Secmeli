@@ -225,14 +225,16 @@ def _quality_summary(dataset, target_column: str = "course_id") -> dict[str, Any
 def _json_safe(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
-    if hasattr(value, "item"):
+    item_fn = getattr(value, "item", None)
+    if callable(item_fn):
         try:
-            return value.item()
+            return item_fn()
         except Exception:
             pass
-    if hasattr(value, "isoformat"):
+    iso_fn = getattr(value, "isoformat", None)
+    if callable(iso_fn):
         try:
-            return value.isoformat()
+            return iso_fn()
         except Exception:
             pass
     return value

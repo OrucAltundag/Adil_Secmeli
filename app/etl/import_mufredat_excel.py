@@ -88,7 +88,7 @@ def get_bolum_id(cur, bol_adi, fakulte_id):
         print(f"⚠️ Bölüm bulunamadı: {bol_adi} - Fakülte ID: {fakulte_id}")
         return None
 
-def find_course_id(cur, ders_adi: str):
+def find_course_id(cur, ders_adi: str | None):
     """
     Ders adını daha toleranslı eşleştirir:
     1) lower(trim(ad)) == lower(trim(?))

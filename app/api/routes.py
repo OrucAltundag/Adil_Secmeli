@@ -1642,6 +1642,8 @@ def havuz_evaluate(payload: CourseOrYearRequest):
                 update_havuz_lifecycle(conn, result, transition_id)
                 conn.commit()
             return result
+        if payload.year is None:
+            raise HTTPException(status_code=400, detail="year (yil) parametresi gereklidir.")
         result = evaluate_scope_transitions(
             conn,
             year=int(payload.year),
@@ -1730,7 +1732,7 @@ def havuz_override_create(payload: OverrideCreateRequest):
             year=int(payload.year),
             semester=payload.semester,
             overridden_final_status=int(payload.overridden_final_status),
-            recommended_status=payload.recommended_status,
+            recommended_status=int(payload.recommended_status) if payload.recommended_status not in (None, "") else None,
             reason=payload.reason,
             requested_by=payload.requested_by,
             approved_by=payload.approved_by,
@@ -2961,7 +2963,7 @@ def data_confidence(
             ORDER BY cdc.score ASC, d.ad
             LIMIT ?
             """,
-            params + [limit],
+            tuple(params) + (limit,),
         )
     except sqlite3.OperationalError:
         return {"data": [], "count": 0}
@@ -3040,7 +3042,7 @@ def data_missing(
         ORDER BY severity DESC, detected_at DESC
         LIMIT ?
         """,
-        params + [limit],
+        tuple(params) + (limit,),
     )
 
     data = []
@@ -3106,7 +3108,7 @@ def data_validation_issues(
         ORDER BY severity DESC, created_at DESC
         LIMIT ?
         """,
-        params + [limit],
+        tuple(params) + (limit,),
     )
 
     data = []
@@ -3173,7 +3175,7 @@ def data_collection_priorities(
         ORDER BY priority_rank ASC, course_id
         LIMIT ?
         """,
-        params + [limit],
+        tuple(params) + (limit,),
     )
 
     data = []
@@ -3247,7 +3249,7 @@ def decisions_outcomes(
             ORDER BY cd.data_confidence_score ASC, cd.topsis_score DESC
             LIMIT ?
             """,
-            params + [limit],
+            tuple(params) + (limit,),
         )
 
         data = []

@@ -54,11 +54,13 @@ class BaseAllocator(IAllocator):
 
         students_df["student_id"] = pd.to_numeric(students_df["student_id"], errors="coerce").astype("Int64")
         courses_df["course_id"] = pd.to_numeric(courses_df["course_id"], errors="coerce").astype("Int64")
-        courses_df["capacity"] = pd.to_numeric(courses_df.get("capacity", 0), errors="coerce").fillna(0).astype(int)
+        courses_df["capacity"] = pd.to_numeric(courses_df.get("capacity", 0), errors="coerce")
+        courses_df["capacity"] = courses_df["capacity"].fillna(0).astype(int)
 
         prefs_df["student_id"] = pd.to_numeric(prefs_df["student_id"], errors="coerce").astype("Int64")
         prefs_df["course_id"] = pd.to_numeric(prefs_df["course_id"], errors="coerce").astype("Int64")
-        prefs_df["rank"] = pd.to_numeric(prefs_df.get("rank", 999), errors="coerce").fillna(999).astype(int)
+        prefs_df["rank"] = pd.to_numeric(prefs_df.get("rank", 999), errors="coerce")
+        prefs_df["rank"] = prefs_df["rank"].fillna(999).astype(int)
 
         student_ids = students_df["student_id"].dropna().astype(int).tolist()
         capacities = {
@@ -131,8 +133,8 @@ class FCFSAllocator(BaseAllocator):
     def allocate(self, students: pd.DataFrame, courses: pd.DataFrame, preferences: pd.DataFrame) -> AlgorithmOutput:
         started = self._start_timer()
         student_ids, capacities, pref_map = self._prepare(students, courses, preferences)
-        assigned = {sid: None for sid in student_ids}
-        rank_received = {sid: None for sid in student_ids}
+        assigned: dict[int, int | None] = {sid: None for sid in student_ids}
+        rank_received: dict[int, int | None] = {sid: None for sid in student_ids}
 
         for sid in student_ids:
             for cid, rank in pref_map.get(sid, []):
@@ -153,8 +155,8 @@ class GreedyAllocator(BaseAllocator):
     def allocate(self, students: pd.DataFrame, courses: pd.DataFrame, preferences: pd.DataFrame) -> AlgorithmOutput:
         started = self._start_timer()
         student_ids, capacities, pref_map = self._prepare(students, courses, preferences)
-        assigned = {sid: None for sid in student_ids}
-        rank_received = {sid: None for sid in student_ids}
+        assigned: dict[int, int | None] = {sid: None for sid in student_ids}
+        rank_received: dict[int, int | None] = {sid: None for sid in student_ids}
 
         for sid in student_ids:
             candidates = [(cid, rank, 1.0 / max(rank, 1)) for cid, rank in pref_map.get(sid, []) if capacities.get(cid, 0) > 0]
@@ -176,8 +178,8 @@ class MinimumRegretAllocator(BaseAllocator):
     def allocate(self, students: pd.DataFrame, courses: pd.DataFrame, preferences: pd.DataFrame) -> AlgorithmOutput:
         started = self._start_timer()
         student_ids, capacities, pref_map = self._prepare(students, courses, preferences)
-        assigned = {sid: None for sid in student_ids}
-        rank_received = {sid: None for sid in student_ids}
+        assigned: dict[int, int | None] = {sid: None for sid in student_ids}
+        rank_received: dict[int, int | None] = {sid: None for sid in student_ids}
 
         all_pairs = []
         for sid, pref_list in pref_map.items():

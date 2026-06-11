@@ -103,7 +103,7 @@ class Database:
         row_factory'yi driver baglantisina da yaziyoruz (aksi halde
         `data.get("id")` None donup profil id=0 oluyor ve satirlar eleniyor).
         """
-        self.ensure()
+        engine = self._engine_ready()
         existing = self._raw_conn
         if existing is not None:
             try:
@@ -112,7 +112,7 @@ class Database:
                 return existing
             except Exception:
                 self._discard_cached_conn()
-        proxy = self._engine.raw_connection()
+        proxy = engine.raw_connection()
         driver_conn = getattr(proxy, "driver_connection", None) or getattr(
             proxy, "connection", None
         )
@@ -142,31 +142,37 @@ class Database:
                 "Veritabanı motoru başlatılamadı. Config.json'daki db_path ve db_url değerlerini kontrol edin."
             )
 
-    def tables(self) -> list[str]:
+    def _engine_ready(self):
+        """`ensure()` sonrası non-Optional engine handle döndürür (tip darlığı için)."""
         self.ensure()
-        insp = inspect(self._engine)
+        assert self._engine is not None
+        return self._engine
+
+    def tables(self) -> list[str]:
+        engine = self._engine_ready()
+        insp = inspect(engine)
         all_tables = insp.get_table_names()
         return sorted([t for t in all_tables if not t.startswith("sqlite_")])
 
     def get_columns(self, table: str) -> set[str]:
         """Tablonun kolon isimlerini döndürür."""
-        self.ensure()
-        insp = inspect(self._engine)
+        engine = self._engine_ready()
+        insp = inspect(engine)
         if not insp.has_table(table):
             return set()
         return {col["name"] for col in insp.get_columns(table)}
 
     def head(self, table: str, limit: int = 1000) -> tuple[list[str], list[Any]]:
-        self.ensure()
-        with self._engine.connect() as conn:
+        engine = self._engine_ready()
+        with engine.connect() as conn:
             result = conn.execute(text(f'SELECT * FROM "{table}" LIMIT :lim'), {"lim": int(limit)})
             cols = list(result.keys())
             rows = [tuple(row) for row in result.fetchall()]
         return cols, rows
 
     def read_df(self, query: str, params=None):
-        self.ensure()
-        with self._engine.connect() as conn:
+        engine = self._engine_ready()
+        with engine.connect() as conn:
             if params is None:
                 return pd.read_sql_query(text(query), conn)
             return pd.read_sql_query(text(query), conn, params=params)
@@ -180,11 +186,11 @@ class Database:
         SELECT => (cols, rows)
         Diğer => commit ve ([], [])
         """
-        self.ensure()
+        engine = self._engine_ready()
         # Parametreleri ? yerine :param formatına dönüştür
         processed_query, processed_params = self._adapt_params(query, params)
 
-        with self._engine.connect() as conn:
+        with engine.connect() as conn:
             if processed_params:
                 result = conn.execute(text(processed_query), processed_params)
             else:
