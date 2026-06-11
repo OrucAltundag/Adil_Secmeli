@@ -41,6 +41,10 @@ from app.db.schema_compat import (
     ensure_ahp_governance_schema,
     ensure_decision_governance_schema,
 )
+from app.services.acilabilirlik_service import (
+    compute_acilabilirlik_score,
+    derive_talep_score,
+)
 from app.services.ahp_profile_service import DEFAULT_CRITERIA_KEYS, resolve_ahp_profile
 from app.services.data_confidence_service import (
     calculate_course_data_confidence,
@@ -659,6 +663,16 @@ def record_decision_run_for_faculty_year(
             if governance_result["approval_required"]:
                 approval_count += 1
 
+            # Açılabilirlik skoru (Faz 3): dersin akademik gucu (TOPSIS) yani
+            # sira o donem gercekten acilabilir olup olmadigini olcer. Talep +
+            # veri guveni + (varsayilan) donem/kaynak uygunlugunu harmanlar.
+            talep_score = derive_talep_score(metric_map.get(course_id, {}))
+            acilabilirlik_score = compute_acilabilirlik_score(
+                topsis_score=score,
+                talep_score=talep_score,
+                veri_guveni=float(confidence.get("score") or 0.0) * 100.0,
+            )
+
             decision_payload = {
                 "course_id": course_id,
                 "recommended_status": int(classification["recommended_status"]),
@@ -688,11 +702,12 @@ def record_decision_run_for_faculty_year(
                 INSERT INTO course_decisions (
                     decision_run_id, course_id, year, faculty_id, department_id, semester,
                     old_status, recommended_status, final_status, topsis_score,
-                    trend_score, trend_label, data_confidence_score, decision_stability,
+                    trend_score, trend_label, data_confidence_score, acilabilirlik_score,
+                    decision_stability,
                     approval_required, approval_status, approval_reason,
                     override_applied, override_reason, main_reason, rule_triggered
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(run_id),
@@ -708,6 +723,7 @@ def record_decision_run_for_faculty_year(
                     float(trend.get("trend_score") or 0.0),
                     str(trend.get("trend_label") or ""),
                     float(confidence.get("score") or 0.0),
+                    float(acilabilirlik_score),
                     str(sensitivity.get("stability_level") or "medium"),
                     1 if governance_result["approval_required"] else 0,
                     governance_result["approval_status"],

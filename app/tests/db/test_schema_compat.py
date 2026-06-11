@@ -84,6 +84,32 @@ class TestSchemaCompat:
             "status",
         }.issubset(columns)
 
+    def test_course_decisions_has_acilabilirlik_score_column(self, empty_db):
+        from app.db.schema_compat import ensure_decision_governance_schema
+
+        ensure_decision_governance_schema(empty_db, commit=True)
+        cur = empty_db.cursor()
+        cur.execute("PRAGMA table_info(course_decisions)")
+        columns = {row[1] for row in cur.fetchall()}
+        assert "acilabilirlik_score" in columns
+
+    def test_course_decisions_acilabilirlik_score_added_to_legacy_table(self):
+        from app.db.schema_compat import ensure_decision_governance_schema
+
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.execute(
+            "CREATE TABLE course_decisions ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "course_id INTEGER, year INTEGER, topsis_score REAL)"
+        )
+
+        ensure_decision_governance_schema(conn, commit=True)
+
+        cur.execute("PRAGMA table_info(course_decisions)")
+        columns = {row[1] for row in cur.fetchall()}
+        assert "acilabilirlik_score" in columns
+
     def test_ensure_decision_governance_schema_enforces_single_active_policy_per_scope(self):
         from app.db.schema_compat import ensure_decision_governance_schema
 

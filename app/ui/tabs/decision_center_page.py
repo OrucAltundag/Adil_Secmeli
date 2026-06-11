@@ -28,6 +28,7 @@ from app.services.decision_policy_service import (
     list_decision_policies,
     update_decision_policy,
 )
+from app.services.acilabilirlik_service import list_recommended_courses
 from app.services.decision_run_service import list_course_decisions, list_decision_runs
 from app.services.ml_prediction_service import get_predictions_for_course
 from app.services.pool_state_machine_service import (
@@ -97,6 +98,7 @@ class DecisionCenterPage(ttk.Frame):
         self._build_policy_tab()
         self._build_runs_tab()
         self._build_course_tab()
+        self._build_recommended_tab()
         self._build_pool_lifecycle_tab()
         self._build_sensitivity_tab()
         self._build_approvals_tab()
@@ -378,6 +380,28 @@ class DecisionCenterPage(ttk.Frame):
         self.tree_courses.bind("<<TreeviewSelect>>", lambda _e: self._show_course_detail())
         self.txt_course_detail = tk.Text(bottom, height=10, wrap=tk.WORD)
         self.txt_course_detail.pack(fill=tk.BOTH, expand=True)
+
+    def _build_recommended_tab(self):
+        frame = ttk.Frame(self.sub_nb, padding=8)
+        self.sub_nb.add(frame, text="Önerilen Dersler")
+        self._tab_info(
+            frame,
+            "Önerilen Dersler — Açılabilirlik Skoruna Göre Sıralı",
+            "Seçili karar çalıştırmasının çıktısını, dersin o dönem GERÇEKTEN açılabilir "
+            "olup olmadığını ölçen Açılabilirlik skoruna göre sıralar. Açılabilirlik = "
+            "%45 TOPSIS + %25 talep + %15 veri güveni + %10 dönem uygunluğu + %5 kaynak "
+            "uygunluğu. Kategori final statüye göre belirlenir: güçlü öneri, şartlı öneri "
+            "(kurul onayı gerekli), havuzda kalma, dinlenme, iptal adayı.",
+            "course_decisions tablosundaki acilabilirlik_score kolonu (karar çalıştırması "
+            "sırasında hesaplanır). Eski çalıştırmalarda kolon boşsa anlık hesaplanır.",
+            "Üstteki 'Run' filtresinden bir çalıştırma seçin. Boşsa önce 'Çalıştırmalar' "
+            "sekmesinde karar çalıştırın.",
+            renk="#6D28D9",
+        )
+        self.tree_recommended = self._tree(
+            frame,
+            ("kod", "ders", "kategori", "açılabilirlik", "topsis", "trend", "güven", "final", "onay"),
+        )
 
     def _build_pool_lifecycle_tab(self):
         frame = ttk.PanedWindow(self.sub_nb, orient=tk.VERTICAL)
@@ -801,6 +825,7 @@ class DecisionCenterPage(ttk.Frame):
     def _load_run_related(self):
         run_id = self._selected_run_id()
         self._load_course_decisions(run_id)
+        self._load_recommended(run_id)
         self._load_sensitivity(run_id)
         self._load_approvals(run_id)
         self._load_fairness(run_id)
@@ -1047,6 +1072,29 @@ class DecisionCenterPage(ttk.Frame):
                     row.get("trend_label") or "", f"{float(row.get('data_confidence_score') or 0):.2f}",
                     row.get("decision_stability") or "", "Evet" if row.get("approval_required") else "Hayır",
                     row.get("main_reason") or "",
+                ),
+            )
+
+    def _load_recommended(self, run_id):
+        if getattr(self, "tree_recommended", None) is None:
+            return
+        self._clear(self.tree_recommended)
+        if not run_id:
+            return
+        for row in list_recommended_courses(self._conn(), int(run_id)):
+            self.tree_recommended.insert(
+                "",
+                tk.END,
+                values=(
+                    row.get("course_code") or "",
+                    row.get("course_name") or row.get("course_id"),
+                    row.get("oneri_kategori") or "",
+                    f"{float(row.get('acilabilirlik') or 0):.1f}",
+                    f"{float(row.get('topsis_score') or 0):.1f}",
+                    row.get("trend_label") or "",
+                    f"{float(row.get('data_confidence_score') or 0):.2f}",
+                    _status_text(row.get("final_status")),
+                    "Evet" if row.get("approval_required") else "Hayır",
                 ),
             )
 

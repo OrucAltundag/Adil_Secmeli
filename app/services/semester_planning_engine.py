@@ -140,6 +140,10 @@ def _fetch_candidate_courses(
         tuple(params + [int(department_id or -1)]),
     )
     rows = _fetch_all_dicts(cur)
+    # Faz 4: Önerilen Dersler (Karar Merkezi) çıktısı dönem planlamayı beslesin.
+    # Açılabilirlik skoru kapsamdaki en güncel karar çalıştırmasından okunur;
+    # yoksa eski davranışa (skor tablosu) geri düşülür.
+    acil_map = _latest_acilabilirlik_scores(conn, year, faculty_id, department_id)
     score_map = _latest_scores(conn, year)
     out = []
     for row in rows:
@@ -151,9 +155,61 @@ def _fetch_candidate_courses(
                 "course_name": row.get("ad") or str(cid),
                 "department_id": row.get("bolum_id"),
                 "faculty_id": row.get("fakulte_id"),
-                "score": score_map.get(cid, 0.0),
+                "score": acil_map.get(cid, score_map.get(cid, 0.0)),
+                "score_source": "acilabilirlik" if cid in acil_map else "skor",
             }
         )
+    return out
+
+
+def _latest_acilabilirlik_scores(
+    conn: sqlite3.Connection,
+    year: int,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> dict[int, float]:
+    """Kapsamdaki en güncel karar çalıştırmasından açılabilirlik skorlarını okur.
+
+    course_decisions.acilabilirlik_score (Faz 3) -> {course_id: skor}. İlgili
+    yıl/fakülte/bölüm için en son `decision_run` esas alınır. Tablo, kolon ya da
+    karar çalıştırması yoksa boş döner (planlama eski skor kaynağına döner).
+    """
+    tables = _existing_tables(conn)
+    if "course_decisions" not in tables or "decision_runs" not in tables:
+        return {}
+    if "acilabilirlik_score" not in _table_columns(conn, "course_decisions"):
+        return {}
+    where = ["dr.year = ?"]
+    params: list[Any] = [int(year)]
+    if faculty_id is not None:
+        where.append("dr.faculty_id = ?")
+        params.append(int(faculty_id))
+    if department_id is not None:
+        where.append("dr.department_id = ?")
+        params.append(int(department_id))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT cd.course_id, cd.acilabilirlik_score
+            FROM course_decisions cd
+            JOIN decision_runs dr ON dr.id = cd.decision_run_id
+            WHERE cd.decision_run_id = (
+                SELECT dr2.id FROM decision_runs dr2
+                WHERE {' AND '.join(where)}
+                ORDER BY dr2.id DESC LIMIT 1
+            )
+            """,
+            tuple(params),
+        )
+        rows = cur.fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[int, float] = {}
+    for row in rows:
+        if row is None or row[0] is None or row[1] is None:
+            continue
+        out[int(row[0])] = _float(row[1])
     return out
 
 

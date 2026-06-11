@@ -290,6 +290,14 @@ def test_decision_run_integration_writes_core_records():
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM course_decisions WHERE decision_run_id = ?", (run_id,))
         assert cur.fetchone()[0] == 1
+        # Faz 3: acilabilirlik_score karar hattinda hesaplanip yazilmali (NULL degil).
+        cur.execute(
+            "SELECT acilabilirlik_score FROM course_decisions WHERE decision_run_id = ?",
+            (run_id,),
+        )
+        acilabilirlik = cur.fetchone()[0]
+        assert acilabilirlik is not None
+        assert 0.0 <= float(acilabilirlik) <= 100.0
         cur.execute("SELECT COUNT(*) FROM course_decision_explanations")
         assert cur.fetchone()[0] == 1
         cur.execute("SELECT COUNT(*) FROM decision_fairness_reports WHERE decision_run_id = ?", (run_id,))
