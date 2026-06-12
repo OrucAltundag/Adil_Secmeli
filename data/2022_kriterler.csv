@@ -1,0 +1,29 @@
+﻿course_id,course_code,course_name,criterion_key,is_required,is_present,is_valid,missing_reason,invalid_reason,source_type
+29,OZD061,Girisimcilik,total_students,True,True,True,,,ogrenci_veri_seti
+29,OZD061,Girisimcilik,passed_students,True,True,True,,,ogrenci_veri_seti
+29,OZD061,Girisimcilik,average_grade,True,True,True,,,ogrenci_veri_seti
+29,OZD061,Girisimcilik,capacity,True,True,True,,,ogrenci_veri_seti
+29,OZD061,Girisimcilik,enrolled_students,True,True,True,,,ogrenci_veri_seti
+29,OZD061,Girisimcilik,survey_count,False,True,True,,,ogrenci_veri_seti
+29,OZD061,Girisimcilik,trend,False,True,True,Yeni ders geçmiş veri istisnası,,computed
+768,TIP101S,Klinik Anatomi Secmeli,total_students,True,True,True,,,ogrenci_veri_seti
+768,TIP101S,Klinik Anatomi Secmeli,passed_students,True,True,True,,,ogrenci_veri_seti
+768,TIP101S,Klinik Anatomi Secmeli,average_grade,True,True,True,,,ogrenci_veri_seti
+768,TIP101S,Klinik Anatomi Secmeli,capacity,True,True,True,,,ogrenci_veri_seti
+768,TIP101S,Klinik Anatomi Secmeli,enrolled_students,True,True,True,,,ogrenci_veri_seti
+768,TIP101S,Klinik Anatomi Secmeli,survey_count,False,True,True,,,ogrenci_veri_seti
+768,TIP101S,Klinik Anatomi Secmeli,trend,False,True,True,Yeni ders geçmiş veri istisnası,,computed
+769,TIP102S,Tibbi Etik Secmeli,total_students,True,True,True,,,ogrenci_veri_seti
+769,TIP102S,Tibbi Etik Secmeli,passed_students,True,True,True,,,ogrenci_veri_seti
+769,TIP102S,Tibbi Etik Secmeli,average_grade,True,True,True,,,ogrenci_veri_seti
+769,TIP102S,Tibbi Etik Secmeli,capacity,True,True,True,,,ogrenci_veri_seti
+769,TIP102S,Tibbi Etik Secmeli,enrolled_students,True,True,True,,,ogrenci_veri_seti
+769,TIP102S,Tibbi Etik Secmeli,survey_count,False,True,True,,,ogrenci_veri_seti
+769,TIP102S,Tibbi Etik Secmeli,trend,False,True,True,Yeni ders geçmiş veri istisnası,,computed
+30,OZD063,Toplum Projesi,total_students,True,True,True,,,ogrenci_veri_seti
+30,OZD063,Toplum Projesi,passed_students,True,True,True,,,ogrenci_veri_seti
+30,OZD063,Toplum Projesi,average_grade,True,True,True,,,ogrenci_veri_seti
+30,OZD063,Toplum Projesi,capacity,True,True,True,,,ogrenci_veri_seti
+30,OZD063,Toplum Projesi,enrolled_students,True,True,True,,,ogrenci_veri_seti
+30,OZD063,Toplum Projesi,survey_count,False,True,True,,,ogrenci_veri_seti
+30,OZD063,Toplum Projesi,trend,False,True,True,Yeni ders geçmiş veri istisnası,,computed

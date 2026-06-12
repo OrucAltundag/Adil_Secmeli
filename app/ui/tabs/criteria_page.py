@@ -712,6 +712,8 @@ class CriteriaPage:
                 f"OTOMATIK URETIM TAMAMLANDI\n\n"
                 f"  Kaynak dosya: {_os.path.basename(sonuc['excel_path'])}\n"
                 f"  Eklenen kriter satiri: {sonuc['eklenen']}\n"
+                f"  Yazilan performans satiri: {sonuc.get('performans_yazilan', 0)}\n"
+                f"  Yazilan populerlik satiri: {sonuc.get('populerlik_yazilan', 0)}\n"
                 f"  Veri setindeki toplam ders: {sonuc['toplam']}\n"
                 f"  Eslesmeyen ders kodu: {len(sonuc['eslesmeyen'])}\n"
             )
