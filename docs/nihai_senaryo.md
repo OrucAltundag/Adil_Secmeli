@@ -230,6 +230,31 @@ mevcut, DB bağımlı API smoke). Faz 0–5 boyunca hiçbir regresyon yok.
 - `generate_human_readable_plan_report(conn, run_id)` — insan-okur rapor.
 - Raporlama & Analiz sayfasından havuz/müfredat CSV/Excel dışa aktarımı.
 
+## 5.5. Nihai Cila — Yapılanlar (özet)
+
+**Genel Bakış / Algoritma Rehberi sayfası** (`app/ui/tabs/overview_page.py`):
+Ana pencerenin **ilk sekmesi** (🏠 Genel Bakış). Tek ekranda:
+- Sistemin ne iş yaptığı (1 paragraf).
+- 7 adımlık karar boru hattı (Kriter → AHP → TOPSIS → Trend+Güven →
+  Politika → Açılabilirlik → Plan), her adımın UI konumuyla.
+- Her algoritma: **neden** kullanıldığı + **formülü** + **çıktının nerede**
+  görüleceği (AHP, TOPSIS, Trend, Veri Güveni, Politika, Açılabilirlik, Plan).
+- Sıralı hızlı başlangıç.
+
+**Çok yıllı veri setleri** (`scripts/generate_not_veri_seti.py` yıl-parametreli):
+- `data/2021_ogrenci_not_veri_seti.xlsx`, `data/2023_ogrenci_not_veri_seti.xlsx`
+  üretildi (2022 birebir korundu).
+- Bölüm bazlı trend kayması: tek-id bölümler yükselen, çift-id düşen eğilim
+  → trend analizi gerçek çok-yıllı sinyalle çalışır.
+- `python -m scripts.generate_not_veri_seti --tum-yillar` ile 2021–2023 üretir.
+
+**data/ temizliği:** Git'te izlenen ~88 MB yedek DB (`*.db.bak_*` ve
+`data/backups/*.db`, 12 dosya) izlemeden çıkarıldı; `.gitignore`'a koruma
+kuralı eklendi. Canlı `data/adil_secmeli.db` korunur.
+
+**Testler:** `test_overview_page.py` + Karar Merkezi UI smoke. Tüm paket
+**514 passed, 1 skipped**.
+
 ## 6. Faz 0 — Yapılanlar (özet)
 
 - `app/ui/tabs/criteria_page.py` HEAD'e geri alındı (Codex'in `MANUAL_CRITERIA_ENTRY_ENABLED=False` değişikliği iptal).

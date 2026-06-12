@@ -15,3 +15,6 @@ exports/*.xlsx
 *.db-journal
 *.db-wal
 *.db-shm
+# Yedek veritabanlari git'te tutulmaz (canli data/adil_secmeli.db izlenir)
+*.db.bak_*
+data/backups/

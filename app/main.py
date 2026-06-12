@@ -284,6 +284,7 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.data_management_page import DataManagementPage
         from app.ui.tabs.data_quality_page import DataQualityPage
         from app.ui.tabs.decision_center_page import DecisionCenterPage
+        from app.ui.tabs.overview_page import OverviewPage
         from app.ui.tabs.security_readiness_page import SecurityReadinessPage
         from app.ui.tabs.semester_planning_page import SemesterPlanningPage
         from app.ui.tabs.system_health_page import SystemHealthPage
@@ -339,6 +340,10 @@ class AdilSecmeliApp(tk.Tk):
 
         # 🔔 Dış notebook tab değişim event'i
         self.nb.bind("<<NotebookTabChanged>>", self.on_tab_change)
+
+        # ── GRUP 0: GENEL BAKIŞ (sistemin tek-bakışta özeti + algoritma rehberi)
+        self.tab_overview = OverviewPage(self.nb, app=self)
+        self.nb.add(self.tab_overview, text="🏠 Genel Bakış")
 
         # ── GRUP 1: SİSTEM ────────────────────────────────────────────
         _g_sistem = ttk.Frame(self.nb)

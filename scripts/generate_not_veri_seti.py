@@ -1,18 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-2022-2023 ogrenci not veri seti uretici
+Ogrenci not veri seti uretici (yil-parametreli)
 9 bolum x 50 ogrenci x 8 ders = 3600 satir
-Cikti: data/2022_ogrenci_not_veri_seti.xlsx  (4 sekme)
+Cikti: data/<yil>_ogrenci_not_veri_seti.xlsx  (4 sekme)
+
+Kullanim:
+    python -m scripts.generate_not_veri_seti                # 2022 (varsayilan)
+    python -m scripts.generate_not_veri_seti --yil 2021
+    python -m scripts.generate_not_veri_seti --yil 2023
+    python -m scripts.generate_not_veri_seti --tum-yillar   # 2021, 2022, 2023
+
+Not: 2022 uretimi seed=42 ile birebir korunur (mevcut dosyayla ayni).
+Diger yillarda seed=yil ve bolum bazli trend kaymasi uygulanir; boylece
+trend analizi algoritmasi gercek cok-yilli sinyalle calisir.
 """
+import argparse
 import random
-import os
 from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-random.seed(42)
+# Trend referans yili — bu yilda kayma 0'dir.
+TREND_REFERANS_YIL = 2022
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
 
@@ -201,6 +212,23 @@ def gauss_clamp(mean: float, std: float, lo: float = 0.0, hi: float = 100.0) -> 
     return round(clamp(random.gauss(mean, std), lo, hi), 1)
 
 
+def bolum_yil_drift(bolum_id: int, yil: int) -> float:
+    """Bolum bazli yillik performans kaymasi (trend sinyali).
+
+    Referans yil (2022) icin 0 doner. Bazi bolumler yukari (yukselen ders
+    talebi/basari), bazilari asagi trend ile ayrisir; boylece trend analizi
+    algoritmasi farkli etiketler (yukselen/dusen/sabit) uretebilir.
+    """
+    yil_farki = yil - TREND_REFERANS_YIL
+    if yil_farki == 0:
+        return 0.0
+    # Bolum id'ye gore yon: tek id'ler yukselen, cift id'ler dusen egilim.
+    yon = 1.0 if (bolum_id % 2 == 1) else -1.0
+    # Bolum bazli buyukluk (1.0–2.2 puan/yil), deterministik.
+    buyukluk = 1.0 + ((bolum_id * 7) % 13) / 10.0
+    return round(yon * buyukluk * yil_farki, 2)
+
+
 def harf_not(agirlikli):
     for esik, harf, gano in HARF_ESIK:
         if agirlikli >= esik:
@@ -213,6 +241,7 @@ def uret_satir(
     bolum_id, bolum_adi, fakulte_adi,
     donem, ders_id, ders_kodu, ders_adi, kredi,
     perf, bolum_zorluk, ders_varyasyon,
+    akademik_yil="2022-2023",
 ):
     eff = clamp(perf * bolum_zorluk * ders_varyasyon, 30, 97)
 
@@ -253,7 +282,7 @@ def uret_satir(
         "cinsiyet": cinsiyet, "dogum_yili": dogum_yili, "sinif": sinif,
         "burslu_mu": "Evet" if burslu else "Hayir",
         "bolum_id": bolum_id, "bolum_adi": bolum_adi, "fakulte_adi": fakulte_adi,
-        "akademik_yil": "2022-2023", "donem": donem,
+        "akademik_yil": akademik_yil, "donem": donem,
         "ders_id": ders_id, "ders_kodu": ders_kodu, "ders_adi": ders_adi, "kredi": kredi,
         "vize_notu": vize, "proje_notu": proje, "final_notu": final,
         "agirlikli_not": agirlik, "gecme_esigi": gecme_esigi,
@@ -270,10 +299,12 @@ def uret_satir(
     }
 
 
-def ana_veri_uret():
+def ana_veri_uret(yil: int = 2022):
+    akademik_yil = f"{yil}-{yil + 1}"
     rows = []
     counter = 1
     for bolum_id, b in BOLUMLER.items():
+        drift = bolum_yil_drift(bolum_id, yil)
         tum_dersler = []
         for idx, (kod, ad, kr) in enumerate(b["dersler_guz"]):
             tum_dersler.append(("Guz",   f"D{bolum_id:02d}{idx+1:02d}", kod, ad, kr))
@@ -290,7 +321,7 @@ def ana_veri_uret():
             ono   = f"20{bolum_id:02d}{counter:04d}"
             counter += 1
 
-            perf_base = clamp(random.gauss(72, 10) + (5 if burslu else 0), 42, 96)
+            perf_base = clamp(random.gauss(72, 10) + (5 if burslu else 0) + drift, 42, 96)
 
             for donem, ders_id, ders_kodu, ders_adi, kredi in tum_dersler:
                 varyasyon = clamp(random.gauss(1.0, 0.08), 0.82, 1.18)
@@ -300,6 +331,7 @@ def ana_veri_uret():
                     bolum_id, b["adi"], b["fakulte"],
                     donem, ders_id, ders_kodu, ders_adi, kredi,
                     perf, b["zorluk"], varyasyon,
+                    akademik_yil=akademik_yil,
                 )
                 rows.append(satir)
     return rows
@@ -510,31 +542,46 @@ def yaz_ogrenci_ozeti(wb, rows):
 
 # ─── Ana ─────────────────────────────────────────────────────────────────────
 
-def main():
+def uret_yil(yil: int) -> Path:
+    """Tek bir yil icin veri setini uretir ve dosya yolunu doner."""
+    # 2022 birebir korunsun diye orijinal seed (42); diger yillar seed=yil.
+    random.seed(42 if yil == 2022 else yil)
+
     proje_kok = Path(__file__).parent.parent
-    cikti = proje_kok / "data" / "2022_ogrenci_not_veri_seti.xlsx"
+    cikti = proje_kok / "data" / f"{yil}_ogrenci_not_veri_seti.xlsx"
     cikti.parent.mkdir(parents=True, exist_ok=True)
 
-    print("Veri uretiliyor...")
-    rows = ana_veri_uret()
+    print(f"[{yil}] Veri uretiliyor...")
+    rows = ana_veri_uret(yil)
     print(f"  {len(rows)} satir uretildi.")
 
     wb = Workbook()
     if wb.active is not None:
         wb.remove(wb.active)  # bos sekmeyi sil
 
-    print("Ana Veri sekmesi yaziliyor...")
     yaz_ana_veri(wb, rows)
-    print("Bolum Ozeti sekmesi yaziliyor...")
     yaz_bolum_ozeti(wb, rows)
-    print("Ders Analizi sekmesi yaziliyor...")
     yaz_ders_analizi(wb, rows)
-    print("Ogrenci Ozeti sekmesi yaziliyor...")
     yaz_ogrenci_ozeti(wb, rows)
 
     wb.save(str(cikti))
-    print(f"Kaydedildi: {cikti}")
-    print(f"Sekmeler: {wb.sheetnames}")
+    print(f"  Kaydedildi: {cikti}  (sekmeler: {wb.sheetnames})")
+    return cikti
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Ogrenci not veri seti uretici")
+    parser.add_argument("--yil", type=int, default=2022)
+    parser.add_argument(
+        "--tum-yillar",
+        action="store_true",
+        help="2021, 2022 ve 2023 veri setlerini birlikte uretir.",
+    )
+    args = parser.parse_args()
+
+    yillar = [2021, 2022, 2023] if args.tum_yillar else [args.yil]
+    for yil in yillar:
+        uret_yil(yil)
 
 
 if __name__ == "__main__":

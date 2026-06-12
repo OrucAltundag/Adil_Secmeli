@@ -305,3 +305,45 @@ def test_decision_run_integration_writes_core_records():
     finally:
         conn.close()
         os.unlink(path)
+
+
+def test_decision_center_recommended_tab_smoke():
+    """Faz 3 + arayüz denetimi: Karar Merkezi 'Önerilen Dersler' sekmesi gerçek
+    bir karar çalıştırması verisiyle çöküp çökmeden yükleniyor mu."""
+    import pytest
+
+    try:
+        import tkinter as tk
+    except Exception:  # pragma: no cover - tkinter yok
+        pytest.skip("tkinter yok; UI smoke testi atlandı.")
+
+    path, conn = _create_integration_db()
+    root = None
+    try:
+        result = record_decision_run_for_faculty_year(conn, year=2025, faculty_id=1, semester="Guz")
+        conn.commit()
+        run_id = result["decision_run_id"]
+
+        from app.ui.tabs.decision_center_page import DecisionCenterPage
+
+        try:
+            root = tk.Tk()
+        except tk.TclError:
+            pytest.skip("Tk display yok; UI smoke testi atlandı.")
+        root.withdraw()
+        app_stub = type(
+            "App",
+            (),
+            {"db": type("DB", (), {"conn": conn})(), "db_path": path, "app_config": None},
+        )()
+        page = DecisionCenterPage(root, app=app_stub)
+        # Önerilen Dersler sekmesi kuruldu mu?
+        assert getattr(page, "tree_recommended", None) is not None
+        # Gerçek run ile yükleme yolu çökmemeli ve satır üretmeli.
+        page._load_recommended(run_id)
+        assert len(page.tree_recommended.get_children()) >= 1
+    finally:
+        if root is not None:
+            root.destroy()
+        conn.close()
+        os.unlink(path)
