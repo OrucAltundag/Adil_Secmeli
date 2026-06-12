@@ -251,29 +251,112 @@ def generate_evaluation_report(result: EvaluationResult) -> dict:
     return result.as_dict()
 
 
+def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float | None:
+    """Ortalama Mutlak Yuzde Hata (MAPE, %). Sifir gercek deger atlanir."""
+    mask = y_true != 0
+    if not mask.any():
+        return None
+    return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100.0)
+
+
+def _white_test(y_true: np.ndarray, y_pred: np.ndarray) -> dict | None:
+    """White heteroskedasite testi (fitted-value varyanti).
+
+    X tasarim matrisi elde olmadigindan kalintilarin karesini [1, y_pred,
+    y_pred^2] uzerine regresleyen standart varyant kullanilir.
+    LM = n * R^2 ~ chi-kare(df=2). p<0.05 -> heteroskedasite (sabit-olmayan
+    varyans) var; regresyon hatalari homojen degil demektir.
+
+    Yetersiz/tekil veride None doner (cagiran taraf guvenle atlar).
+    """
+    n = int(len(y_true))
+    if n < 8:
+        return None
+    try:
+        from scipy import stats  # scipy zaten projede mevcut
+
+        resid = y_true - y_pred
+        e2 = resid ** 2
+        z = np.column_stack([np.ones(n), y_pred, y_pred ** 2])
+        beta, *_ = np.linalg.lstsq(z, e2, rcond=None)
+        pred_e2 = z @ beta
+        ss_res = float(np.sum((e2 - pred_e2) ** 2))
+        ss_tot = float(np.sum((e2 - e2.mean()) ** 2))
+        if ss_tot <= 0:
+            return None
+        r2_aux = 1.0 - ss_res / ss_tot
+        lm_stat = n * r2_aux
+        df = 2
+        p_value = float(stats.chi2.sf(lm_stat, df))
+        return {
+            "lm_statistic": float(lm_stat),
+            "df": df,
+            "p_value": p_value,
+            "heteroskedastic": bool(p_value < 0.05),
+            "yorum": (
+                "Heteroskedasite var (hata varyansı sabit değil)"
+                if p_value < 0.05
+                else "Homoskedasite (hata varyansı makul ölçüde sabit)"
+            ),
+        }
+    except Exception:
+        return None
+
+
 def _regression_metrics(y_true, y_pred) -> dict:
     y_true = pd.Series(y_true).astype(float)
     y_pred = np.asarray(y_pred, dtype=float)
     rmse = math.sqrt(mean_squared_error(y_true, y_pred)) if len(y_true) else 0.0
-    return {
+    yt = np.asarray(y_true, dtype=float)
+    out = {
         "sample_count": int(len(y_true)),
         "mae": float(mean_absolute_error(y_true, y_pred)) if len(y_true) else 0.0,
         "rmse": float(rmse),
         "r2": float(r2_score(y_true, y_pred)) if len(y_true) > 1 else 0.0,
+        "mape": _mape(yt, y_pred) if len(yt) else None,
+        "white_test": _white_test(yt, y_pred) if len(yt) else None,
     }
+    return out
+
+
+def _false_error_rate(cm) -> float | None:
+    """Yanlis Hata Orani (FER) = makro ortalama Yanlis Pozitif Orani.
+
+    Confusion matrix'ten her sinif icin FP/(FP+TN) hesaplanir ve ortalamasi
+    alinir (ikili sinifta standart YP oranina indirgenir). 0 = hic yanlis
+    alarm yok, 1 = tum negatifler yanlis pozitif.
+    """
+    cm = np.asarray(cm)
+    if cm.size == 0 or cm.ndim != 2 or cm.shape[0] != cm.shape[1]:
+        return None
+    total = cm.sum()
+    if total <= 0:
+        return None
+    fprs = []
+    for c in range(cm.shape[0]):
+        tp = cm[c, c]
+        fp = cm[:, c].sum() - tp
+        fn = cm[c, :].sum() - tp
+        tn = total - tp - fp - fn
+        denom = fp + tn
+        if denom > 0:
+            fprs.append(fp / denom)
+    return float(np.mean(fprs)) if fprs else None
 
 
 def _classification_metrics(y_true, y_pred, y_proba=None) -> dict:
     y_true = pd.Series(y_true)
     labels = sorted(y_true.dropna().unique().tolist())
     _zd: Any = 0  # sklearn stub yalnız str kabul ediyor, runtime int destekler
+    cm = confusion_matrix(y_true, y_pred, labels=labels).tolist() if labels else []
     out = {
         "sample_count": int(len(y_true)),
         "accuracy": float(accuracy_score(y_true, y_pred)) if len(y_true) else 0.0,
         "precision": float(precision_score(y_true, y_pred, average="weighted", zero_division=_zd)),
         "recall": float(recall_score(y_true, y_pred, average="weighted", zero_division=_zd)),
         "f1": float(f1_score(y_true, y_pred, average="weighted", zero_division=_zd)),
-        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=labels).tolist() if labels else [],
+        "false_error_rate": _false_error_rate(cm),
+        "confusion_matrix": cm,
         "class_distribution": {str(k): int(v) for k, v in y_true.value_counts().sort_index().items()},
     }
     if y_proba is not None and len(labels) == 2:
