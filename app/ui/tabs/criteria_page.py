@@ -228,6 +228,11 @@ class CriteriaPage:
                   bg="#7c3aed", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.auto_generate_from_dataset).pack(side=tk.LEFT, padx=5)
 
+        # Anket belge girişi (Excel anket/tercih veri setinden popülerlik/anket üretir)
+        tk.Button(parent, text="📋 Anket Belge Girişi",
+                  bg="#0891b2", fg="white", font=("Segoe UI", 9, "bold"),
+                  command=self.import_anket_excel).pack(side=tk.LEFT, padx=5)
+
     def create_form_ui(self, parent):
         tk.Label(parent, text="KRİTER VERİ GİRİŞİ", bg="#1e293b", fg="white",
                  font=("Segoe UI", 11, "bold"), pady=10).pack(fill=tk.X)
@@ -727,6 +732,57 @@ class CriteriaPage:
                 pass
         except Exception as exc:
             _mb.showerror("Otomatik Uretim Hatasi", str(exc))
+
+    def import_anket_excel(self):
+        """Secili kapsam icin anket/tercih Excel dosyasini uygular.
+
+        Ogrenci notlarindan kriter uretmeye benzer sekilde; anket dosyasindaki
+        ders bazli tercih sayilarini okuyup popülerlik/anket verisine yansitir.
+        Anket HICBIR ders icin zorunlu degildir (olgunlugu dusurmez), ancak
+        girildiginde karar kalitesini artirir.
+        """
+        path = filedialog.askopenfilename(
+            title="Anket / Tercih Excel Seç",
+            filetypes=[("Excel", "*.xlsx *.xls"), ("Tümü", "*.*")],
+        )
+        if not path:
+            return
+        db_path = getattr(self.app, "db_path", None) if self.app else None
+        if not db_path or not os.path.exists(db_path):
+            messagebox.showwarning("Uyarı", "Veritabanı bağlantısı yok.")
+            return
+        faculty_id = self._selected_faculty_id()
+        year_raw = self.cb_yil.get()
+        if faculty_id is None or not year_raw:
+            messagebox.showwarning("Uyarı", "Lütfen önce fakülte ve yıl seçiniz.")
+            return
+        try:
+            from app.services.survey_import_service import import_survey_excel
+
+            result = import_survey_excel(
+                db_path=str(db_path),
+                excel_path=path,
+                faculty_id=int(faculty_id),
+                year=int(year_raw),
+                source_filename=os.path.basename(path),
+                uploaded_by="kriter-sayfasi",
+            )
+            if result.get("ok"):
+                applied = result.get("applied") or result.get("applied_count")
+                detay = f"\nUygulanan satır: {applied}" if applied is not None else ""
+                messagebox.showinfo(
+                    "Anket Belge Girişi",
+                    (result.get("message") or "Anket verisi içe aktarıldı.") + detay
+                    + "\n\nNot: Anket hiçbir ders için zorunlu değildir; olgunluk "
+                    "skorunu düşürmez ama karar kalitesini artırır.",
+                )
+                self.load_courses()
+                self._refresh_related_views()
+            else:
+                messagebox.showerror("Hata", result.get("message", "Anket dosyası yüklenemedi."))
+        except Exception as e:
+            print(f"[CriteriaPage] Anket import hatası: {e}")
+            messagebox.showerror("Hata", self._friendly_backend_error())
 
     def import_kriterler_excel(self):
         """Secili kapsam icin kriter dosyasini uygular."""

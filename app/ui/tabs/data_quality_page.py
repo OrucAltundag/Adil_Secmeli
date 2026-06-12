@@ -419,19 +419,22 @@ VERİ KALITESI ÖZETİ
 ==================
 
 Genel Durum:
-- Olgunluk Skoru: {readiness.get('readiness_score', 0):.1f}/100
+- Olgunluk Skoru: {readiness.get('readiness_score', 0):.1f}/100  (formül v{readiness.get('formula_version', 2)})
 - Hazırlık Seviyesi: {readiness.get('readiness_level', 'Bilinmeyen')}
 
-Kapsama Oranları:
-- Toplam Ders: {coverage.get('total_courses', 0)}
-- Kriter Verili: {coverage.get('courses_with_criteria', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_criteria', 0) / coverage.get('total_courses', 1) * 100:.1f}%)
-- Performans: {coverage.get('courses_with_performance', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_performance', 0) / coverage.get('total_courses', 1) * 100:.1f}%)
-- Populerlik: {coverage.get('courses_with_popularity', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_popularity', 0) / coverage.get('total_courses', 1) * 100:.1f}%)
-- Anket: {coverage.get('courses_with_survey', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_survey', 0) / coverage.get('total_courses', 1) * 100:.1f}%)
+ZORUNLU veri yalnızca MÜFREDATTAKİ dersler için beklenir.
+- Müfredat (zorunlu) ders sayısı: {coverage.get('required_courses', coverage.get('total_courses', 0))}
+- Fakültedeki toplam ders: {coverage.get('total_all_courses', coverage.get('total_courses', 0))}
 
-Genel Kapsama: {coverage.get('coverage_percentage', 0):.1f}%
+Kapsama Oranları (payda = müfredat dersi):
+- Kriter Verili: {coverage.get('courses_with_criteria', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_criteria', 0) / coverage.get('total_courses', 1) * 100:.1f}%)  [ZORUNLU]
+- Performans: {coverage.get('courses_with_performance', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_performance', 0) / coverage.get('total_courses', 1) * 100:.1f}%)  [ZORUNLU]
+- Populerlik: {coverage.get('courses_with_popularity', 0)} ({coverage.get('total_courses', 1) and coverage.get('courses_with_popularity', 0) / coverage.get('total_courses', 1) * 100:.1f}%)  [ZORUNLU]
+- Anket: {coverage.get('courses_with_survey', 0)} ders  [BİLGİ AMAÇLI — zorunlu değil, olgunluğu düşürmez]
 
-Sonuç: {'VERİ HAZIR - Karar alınabilir' if readiness.get('readiness_level') in ['good', 'decision_ready'] else 'VERİ EKSİK - Lütfen veri tamamlayın'}
+Genel Kapsama (zorunlu veri): {coverage.get('coverage_percentage', 0):.1f}%
+
+Sonuç: {'VERİ HAZIR - Karar alınabilir' if readiness.get('readiness_level') in ['good', 'decision_ready'] else 'VERİ EKSİK - Müfredat derslerinin kriterlerini tamamlayın'}
 """,
         )
 
@@ -453,15 +456,19 @@ Sonuç: {'VERİ HAZIR - Karar alınabilir' if readiness.get('readiness_level') i
             f"""KAPSAMA RAPORU
 ================
 
-Toplam Ders: {coverage.get("total_courses", 0)}
+Müfredat (zorunlu) ders: {coverage.get("required_courses", total)}   |   Fakülte toplam ders: {coverage.get("total_all_courses", total)}
+Not: Kriter/Performans/Popülerlik yalnızca MÜFREDATTAKİ dersler için zorunludur.
+Müfredat dışı (havuz) dersler eksik veri yüzünden olgunluğu DÜŞÜRMEZ.
 
-Detaylı Kapsama:
-- Kriter Verisi: {coverage.get("courses_with_criteria", 0)} / {total} ({coverage.get("total_courses", 1) and coverage.get("courses_with_criteria", 0) / total * 100:.1f}%)
-- Performans Verisi: {coverage.get("courses_with_performance", 0)} / {total} ({coverage.get("total_courses", 1) and coverage.get("courses_with_performance", 0) / total * 100:.1f}%)
-- Populerlik Verisi: {coverage.get("courses_with_popularity", 0)} / {total} ({coverage.get("total_courses", 1) and coverage.get("courses_with_popularity", 0) / total * 100:.1f}%)
-- Anket Verisi: {coverage.get("courses_with_survey", 0)} / {total} ({coverage.get("total_courses", 1) and coverage.get("courses_with_survey", 0) / total * 100:.1f}%)
+Zorunlu Veri Kapsaması (payda = müfredat dersi = {total}):
+- Kriter Verisi: {coverage.get("courses_with_criteria", 0)} / {total} ({total and coverage.get("courses_with_criteria", 0) / total * 100:.1f}%)
+- Performans Verisi: {coverage.get("courses_with_performance", 0)} / {total} ({total and coverage.get("courses_with_performance", 0) / total * 100:.1f}%)
+- Populerlik Verisi: {coverage.get("courses_with_popularity", 0)} / {total} ({total and coverage.get("courses_with_popularity", 0) / total * 100:.1f}%)
 
-Genel Kapsama Oranı: {coverage.get("coverage_percentage", 0):.1f}%
+Anket Verisi (BİLGİ AMAÇLI — zorunlu değil): {coverage.get("courses_with_survey", 0)} ders
+  Bir ders hiç seçilmemiş olabilir; anket eksikliği olgunluğu düşürmez.
+
+Genel Kapsama Oranı (zorunlu veri): {coverage.get("coverage_percentage", 0):.1f}%
 
 Eksik Veri Alanları:
 """,

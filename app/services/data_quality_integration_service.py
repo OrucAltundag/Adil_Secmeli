@@ -57,6 +57,90 @@ def _json_dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
+def _curriculum_course_ids(
+    cur: sqlite3.Cursor,
+    year: int,
+    faculty_id: Optional[int],
+    department_id: Optional[int],
+) -> set[int]:
+    """Kapsam (fakulte/bolum) + yil icin MUFREDATTA bulunan ders_id kumesi.
+
+    Kriter/performans/populerlik verisi YALNIZCA bu (zorunlu) kume icin
+    beklenir. Once bolum uzerinden (canonical), basarisizsa mufredat.fakulte_id
+    (legacy sema) ile dener; ikisinin birlesimini doner. Mufredat tanimli
+    degilse bos kume doner (cagiran tarafta fallback uygulanir).
+    """
+    ids: set[int] = set()
+
+    # 1) Canonical: bolum -> fakulte uzerinden
+    try:
+        where = ["m.akademik_yil = ?"]
+        params: list[Any] = [int(year)]
+        if faculty_id is not None:
+            where.append("b.fakulte_id = ?")
+            params.append(int(faculty_id))
+        if department_id is not None:
+            where.append("m.bolum_id = ?")
+            params.append(int(department_id))
+        cur.execute(
+            f"""
+            SELECT DISTINCT md.ders_id
+            FROM mufredat m
+            JOIN bolum b ON b.bolum_id = m.bolum_id
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            WHERE {' AND '.join(where)}
+            """,
+            tuple(params),
+        )
+        ids |= {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
+    except sqlite3.OperationalError:
+        pass
+
+    # 2) Legacy: mufredat.fakulte_id uzerinden (bolum yoksa)
+    try:
+        where = ["m.akademik_yil = ?"]
+        params = [int(year)]
+        if faculty_id is not None:
+            where.append("m.fakulte_id = ?")
+            params.append(int(faculty_id))
+        cur.execute(
+            f"""
+            SELECT DISTINCT md.ders_id
+            FROM mufredat m
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            WHERE {' AND '.join(where)}
+            """,
+            tuple(params),
+        )
+        ids |= {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
+    except sqlite3.OperationalError:
+        pass
+
+    return ids
+
+
+def _count_courses_in_set(
+    cur: sqlite3.Cursor,
+    table: str,
+    course_ids: set[int],
+    extra_where: str = "",
+) -> int:
+    """Verilen ders_id kumesi icinde, `table` tablosunda extra_where kosulunu
+    saglayan distinct ders sayisi. Kume bossa 0 doner."""
+    if not course_ids:
+        return 0
+    placeholders = ",".join("?" for _ in course_ids)
+    sql = (
+        f"SELECT COUNT(DISTINCT t.ders_id) FROM {table} t "
+        f"WHERE t.ders_id IN ({placeholders}) {extra_where}"
+    )
+    try:
+        cur.execute(sql, tuple(int(i) for i in course_ids))
+        return int(cur.fetchone()[0] or 0)
+    except sqlite3.OperationalError:
+        return 0
+
+
 def assess_data_readiness_cursor(
     cur: sqlite3.Cursor,
     year: int,
@@ -80,7 +164,7 @@ def assess_data_readiness_cursor(
         }
     """
     try:
-        # Toplam ders sayısı
+        # Toplam ders sayısı (baglam icin; ZORUNLU kume degil)
         where_fac = f"AND d.fakulte_id = {int(faculty_id)}" if faculty_id else ""
         where_dept = f"AND d.bolum_id = {int(department_id)}" if department_id else ""
 
@@ -92,38 +176,54 @@ def assess_data_readiness_cursor(
                 'readiness_score': 0.0,
                 'readiness_level': 'not_ready',
                 'total_courses': 0,
+                'required_courses': 0,
+                'curriculum_defined': False,
                 'criteria_score': 0.0,
                 'performance_score': 0.0,
                 'popularity_score': 0.0,
                 'survey_score': 0.0,
+                'survey_required': False,
                 'validation_score': 100.0,  # No issues means good score
+                'formula_version': 2,
             }
 
-        # Criteria coverage — yil + fakulte/bolum filtreli
-        criteria_count = _count_distinct_courses(
-            cur, "ders_kriterleri", faculty_id, department_id,
-            extra_where=f"AND t.yil = {int(year)}",
-        )
+        # ZORUNLU KUME = mufredattaki dersler. Kriter/performans/populerlik
+        # YALNIZCA bu dersler icin beklenir; mufredat disi (havuz) dersleri
+        # eksik perf/pop yuzunden olgunlugu DUSURMEZ.
+        curriculum_ids = _curriculum_course_ids(cur, year, faculty_id, department_id)
+        curriculum_defined = bool(curriculum_ids)
+        required = len(curriculum_ids)
 
-        # Performance coverage — yil + fakulte/bolum filtreli
-        perf_count = _count_distinct_courses(
-            cur, "performans", faculty_id, department_id,
-            extra_where=f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL",
-        )
+        if curriculum_defined:
+            criteria_count = _count_courses_in_set(
+                cur, "ders_kriterleri", curriculum_ids, f"AND t.yil = {int(year)}")
+            perf_count = _count_courses_in_set(
+                cur, "performans", curriculum_ids,
+                f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL")
+            pop_count = _count_courses_in_set(
+                cur, "populerlik", curriculum_ids,
+                f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL")
+        else:
+            # Mufredat tanimli degil -> eski (tum ders) paydasina geri dus.
+            required = total_courses
+            criteria_count = _count_distinct_courses(
+                cur, "ders_kriterleri", faculty_id, department_id,
+                extra_where=f"AND t.yil = {int(year)}")
+            perf_count = _count_distinct_courses(
+                cur, "performans", faculty_id, department_id,
+                extra_where=f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL")
+            pop_count = _count_distinct_courses(
+                cur, "populerlik", faculty_id, department_id,
+                extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL")
 
-        # Popularity coverage — yil + fakulte/bolum filtreli (tutarli: doluluk_orani)
-        pop_count = _count_distinct_courses(
-            cur, "populerlik", faculty_id, department_id,
-            extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL",
-        )
-
-        # Survey coverage — anket_sonuclari'nda yil yok; fakulte/bolum filtreli
+        # Anket: HICBIR ders icin zorunlu degil -> yalnizca bilgi amacli (informatif).
+        # Olgunluk skoruna GIRMEZ. Bir ders hic secilmemis olabilir.
         survey_count = _count_distinct_courses(
             cur, "anket_sonuclari", faculty_id, department_id,
             extra_where="AND t.oy_sayisi > 0",
         )
 
-        # Validation issues — once dolu olan criteria_validation_issues, sonra fallback
+        # Validation issues — once criteria_validation_issues, sonra fallback
         blocking_issues = 0
         try:
             cur.execute(
@@ -146,20 +246,21 @@ def assess_data_readiness_cursor(
             except sqlite3.OperationalError:
                 blocking_issues = 0
 
-        # Calculate ratios
-        criteria_score = (criteria_count / total_courses * 100) if total_courses > 0 else 0
-        performance_score = (perf_count / total_courses * 100) if total_courses > 0 else 0
-        popularity_score = (pop_count / total_courses * 100) if total_courses > 0 else 0
+        denom = required if required > 0 else 1
+        criteria_score = criteria_count / denom * 100
+        performance_score = perf_count / denom * 100
+        popularity_score = pop_count / denom * 100
+        # Anket skoru bilgi amacli (tum ders paydasina gore) — gate'e girmez.
         survey_score = (survey_count / total_courses * 100) if total_courses > 0 else 0
         validation_score = max(0, 100 - (blocking_issues * 25))  # -25 per blocking issue
 
-        # Composite readiness score (weighting)
+        # === YENI FORMUL (v2) — anket HARIC, mufredat-tabanli ===
+        # Agirliklar 1.0'a normalize (eski anket payi kriter/perf/pop'a dagitildi):
         readiness_score = (
-            criteria_score * 0.40 +
-            performance_score * 0.15 +
-            popularity_score * 0.15 +
-            survey_score * 0.15 +
-            validation_score * 0.15
+            criteria_score * 0.50 +
+            performance_score * 0.20 +
+            popularity_score * 0.20 +
+            validation_score * 0.10
         )
 
         # Determine level
@@ -178,22 +279,30 @@ def assess_data_readiness_cursor(
             'readiness_score': round(readiness_score, 1),
             'readiness_level': level,
             'total_courses': total_courses,
+            'required_courses': required,
+            'curriculum_defined': curriculum_defined,
             'criteria_score': round(criteria_score, 1),
             'performance_score': round(performance_score, 1),
             'popularity_score': round(popularity_score, 1),
             'survey_score': round(survey_score, 1),
+            'survey_required': False,
             'validation_score': round(validation_score, 1),
+            'formula_version': 2,
         }
     except Exception as e:
         return {
             'readiness_score': 0.0,
             'readiness_level': 'not_ready',
             'total_courses': 0,
+            'required_courses': 0,
+            'curriculum_defined': False,
             'criteria_score': 0.0,
             'performance_score': 0.0,
             'popularity_score': 0.0,
             'survey_score': 0.0,
+            'survey_required': False,
             'validation_score': 0.0,
+            'formula_version': 2,
             'error': str(e),
         }
 
@@ -225,60 +334,86 @@ def generate_coverage_report_cursor(
         where_dept = f"AND d.bolum_id = {int(department_id)}" if department_id else ""
 
         cur.execute(f"SELECT COUNT(*) FROM ders d WHERE 1=1 {where_fac} {where_dept}")
-        total_courses = int(cur.fetchone()[0] or 0)
+        total_all_courses = int(cur.fetchone()[0] or 0)
 
-        if total_courses == 0:
+        if total_all_courses == 0:
             return {
                 'total_courses': 0,
+                'total_all_courses': 0,
+                'required_courses': 0,
+                'curriculum_defined': False,
                 'courses_with_criteria': 0,
                 'courses_with_performance': 0,
                 'courses_with_popularity': 0,
                 'courses_with_survey': 0,
+                'survey_required': False,
                 'coverage_percentage': 0.0,
             }
 
-        # Count courses with each data type — hepsi yil + fakulte/bolum filtreli
-        # (readiness ile birebir tutarli olmasi icin ayni filtreler)
-        with_criteria = _count_distinct_courses(
-            cur, "ders_kriterleri", faculty_id, department_id,
-            extra_where=f"AND t.yil = {int(year)}",
-        )
-        with_perf = _count_distinct_courses(
-            cur, "performans", faculty_id, department_id,
-            extra_where=f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL",
-        )
-        with_pop = _count_distinct_courses(
-            cur, "populerlik", faculty_id, department_id,
-            extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL",
-        )
+        # ZORUNLU kume = mufredattaki dersler (kriter/perf/pop yalniz bunlar icin).
+        curriculum_ids = _curriculum_course_ids(cur, year, faculty_id, department_id)
+        curriculum_defined = bool(curriculum_ids)
+        required = len(curriculum_ids)
+
+        if curriculum_defined:
+            with_criteria = _count_courses_in_set(
+                cur, "ders_kriterleri", curriculum_ids, f"AND t.yil = {int(year)}")
+            with_perf = _count_courses_in_set(
+                cur, "performans", curriculum_ids,
+                f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL")
+            with_pop = _count_courses_in_set(
+                cur, "populerlik", curriculum_ids,
+                f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL")
+        else:
+            required = total_all_courses
+            with_criteria = _count_distinct_courses(
+                cur, "ders_kriterleri", faculty_id, department_id,
+                extra_where=f"AND t.yil = {int(year)}")
+            with_perf = _count_distinct_courses(
+                cur, "performans", faculty_id, department_id,
+                extra_where=f"AND t.akademik_yil = {int(year)} AND t.basari_orani IS NOT NULL")
+            with_pop = _count_distinct_courses(
+                cur, "populerlik", faculty_id, department_id,
+                extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL")
+
+        # Anket: informatif (tum ders paydasi), kapsama yuzdesine GIRMEZ.
         with_survey = _count_distinct_courses(
             cur, "anket_sonuclari", faculty_id, department_id,
             extra_where="AND t.oy_sayisi > 0",
         )
 
-        # Coverage percentage: weighted average
+        # Kapsama yuzdesi: yalniz ZORUNLU veri tipleri (kriter/perf/pop), mufredat paydasi.
+        denom = required if required > 0 else 1
         coverage = (
-            (with_criteria / total_courses * 0.40 if total_courses > 0 else 0) +
-            (with_perf / total_courses * 0.25 if total_courses > 0 else 0) +
-            (with_pop / total_courses * 0.20 if total_courses > 0 else 0) +
-            (with_survey / total_courses * 0.15 if total_courses > 0 else 0)
+            (with_criteria / denom * 0.50) +
+            (with_perf / denom * 0.25) +
+            (with_pop / denom * 0.25)
         ) * 100
 
         return {
-            'total_courses': total_courses,
+            # 'total_courses' = ZORUNLU payda (UI yuzdeleri bununla dogru cikar).
+            'total_courses': required,
+            'total_all_courses': total_all_courses,
+            'required_courses': required,
+            'curriculum_defined': curriculum_defined,
             'courses_with_criteria': with_criteria,
             'courses_with_performance': with_perf,
             'courses_with_popularity': with_pop,
             'courses_with_survey': with_survey,
+            'survey_required': False,
             'coverage_percentage': round(coverage, 1),
         }
     except Exception as e:
         return {
             'total_courses': 0,
+            'total_all_courses': 0,
+            'required_courses': 0,
+            'curriculum_defined': False,
             'courses_with_criteria': 0,
             'courses_with_performance': 0,
             'courses_with_popularity': 0,
             'courses_with_survey': 0,
+            'survey_required': False,
             'coverage_percentage': 0.0,
             'error': str(e),
         }
