@@ -126,19 +126,19 @@ class ViewTab(ttk.Frame):
         info.pack(fill=tk.X, padx=2, pady=(2, 0))
         self._lbl_table_title = tk.Label(
             info, text="Bir tablo seçin", bg="#1e3a5f", fg="white",
-            font=("Segoe UI", 11, "bold"), anchor="w", padx=10, pady=(6, 0),
+            font=("Segoe UI", 11, "bold"), anchor="w",
         )
-        self._lbl_table_title.pack(fill=tk.X)
+        self._lbl_table_title.pack(fill=tk.X, padx=10, pady=(6, 0))
         self._lbl_table_desc = tk.Label(
             info, text="", bg="#1e3a5f", fg="#dbeafe", font=("Segoe UI", 9),
-            anchor="w", justify="left", wraplength=900, padx=10,
+            anchor="w", justify="left", wraplength=900,
         )
-        self._lbl_table_desc.pack(fill=tk.X)
+        self._lbl_table_desc.pack(fill=tk.X, padx=10)
         self._lbl_table_usage = tk.Label(
             info, text="", bg="#1e3a5f", fg="#93c5fd", font=("Segoe UI", 9, "italic"),
-            anchor="w", justify="left", wraplength=900, padx=10, pady=(0, 6),
+            anchor="w", justify="left", wraplength=900,
         )
-        self._lbl_table_usage.pack(fill=tk.X)
+        self._lbl_table_usage.pack(fill=tk.X, padx=10, pady=(0, 6))
 
         # Kolon filtre satirlari
         self._filter_frame = tk.Frame(right, bg="#f1f5f9")

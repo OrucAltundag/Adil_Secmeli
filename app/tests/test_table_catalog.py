@@ -42,3 +42,39 @@ def test_unknown_table_has_safe_fallback():
 def test_turkish_names_are_distinct_for_core():
     adlar = [get_table_info(t)["tr"] for t in CEKIRDEK]
     assert len(set(adlar)) == len(adlar)  # çekirdek adlar benzersiz
+
+
+def test_view_tab_builds_without_crash():
+    """ViewTab _build_ui çökmeden kurulmalı (bilgi kutusu pady tuple regresyonu).
+
+    Bu test, GUI'nin açılışta 'bad screen distance' ile çökmesini engeller.
+    """
+    import sqlite3
+
+    import pytest
+
+    try:
+        import tkinter as tk
+    except Exception:  # pragma: no cover
+        pytest.skip("tkinter yok.")
+
+    from app.ui.tabs.view_tab import ViewTab
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tk display yok.")
+    try:
+        root.withdraw()
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE ders (ders_id INTEGER PRIMARY KEY, kod TEXT)")
+        db = type("DB", (), {"conn": conn})()
+        app = type("App", (), {"db": db, "db_path": ":memory:",
+                               "app_config": None, "user_context": None})()
+        page = ViewTab(root, app=app)
+        assert page.winfo_children()
+        # Bilgi paneli etiketleri kuruldu mu?
+        assert hasattr(page, "_lbl_table_title")
+        page._update_table_info("performans")
+    finally:
+        root.destroy()
