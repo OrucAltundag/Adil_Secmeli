@@ -16,6 +16,7 @@ from tkinter import messagebox, ttk
 from app.core.config import load_app_config
 from app.core.permissions import UserContext, can
 from app.services.report_table_service import ReportTableService
+from app.ui.table_catalog import display_name, get_table_info, physical_from_display
 
 PAGE_SIZE = 100
 
@@ -120,6 +121,25 @@ class ViewTab(ttk.Frame):
                   font=("Segoe UI", 8), relief="flat", width=3,
                   command=lambda: self._change_page(-1)).pack(side=tk.RIGHT, padx=2)
 
+        # Tablo bilgi kutusu — secili tablonun ne tuttugu ve nerede kullanildigi
+        info = tk.Frame(right, bg="#1e3a5f")
+        info.pack(fill=tk.X, padx=2, pady=(2, 0))
+        self._lbl_table_title = tk.Label(
+            info, text="Bir tablo seçin", bg="#1e3a5f", fg="white",
+            font=("Segoe UI", 11, "bold"), anchor="w", padx=10, pady=(6, 0),
+        )
+        self._lbl_table_title.pack(fill=tk.X)
+        self._lbl_table_desc = tk.Label(
+            info, text="", bg="#1e3a5f", fg="#dbeafe", font=("Segoe UI", 9),
+            anchor="w", justify="left", wraplength=900, padx=10,
+        )
+        self._lbl_table_desc.pack(fill=tk.X)
+        self._lbl_table_usage = tk.Label(
+            info, text="", bg="#1e3a5f", fg="#93c5fd", font=("Segoe UI", 9, "italic"),
+            anchor="w", justify="left", wraplength=900, padx=10, pady=(0, 6),
+        )
+        self._lbl_table_usage.pack(fill=tk.X)
+
         # Kolon filtre satirlari
         self._filter_frame = tk.Frame(right, bg="#f1f5f9")
         self._filter_frame.pack(fill=tk.X, padx=2)
@@ -174,13 +194,20 @@ class ViewTab(ttk.Frame):
         except Exception:
             messagebox.showerror("DB Hatasi", self._friendly_backend_error())
             return
-        for t in tables:
-            self.lst_tables.insert(tk.END, t)
-        if tables:
+        # Turkce gorunen ad ile listele; etiket -> fiziksel ad eslemesi tut.
+        # Fiziksel SQL adlari DEGISMEZ; yalnizca gorunum Turkcelesir.
+        self._table_label_map = {}
+        labeled = sorted(((display_name(t), t) for t in tables), key=lambda x: x[0].lower())
+        for label, physical in labeled:
+            self.lst_tables.insert(tk.END, label)
+            self._table_label_map[label] = physical
+        if labeled:
+            first_physical = labeled[0][1]
             self.lst_tables.selection_clear(0, tk.END)
             self.lst_tables.selection_set(0)
-            self.current_table = tables[0]
-            self._load_table(tables[0])
+            self.current_table = first_physical
+            self._update_table_info(first_physical)
+            self._load_table(first_physical)
 
     # =========================================================
     #  TABLE LOADING
@@ -189,9 +216,21 @@ class ViewTab(ttk.Frame):
         sel = self.lst_tables.curselection()
         if not sel:
             return
-        table = self.lst_tables.get(sel[0])
+        label = self.lst_tables.get(sel[0])
+        # Etiketten fiziksel tablo adini coz (eslemede yoksa metinden ayikla).
+        table = getattr(self, "_table_label_map", {}).get(label) or physical_from_display(label)
         self.current_table = table
+        self._update_table_info(table)
         self._load_table(table)
+
+    def _update_table_info(self, table: str) -> None:
+        """Secili tablonun Turkce ad/aciklama/kullanim bilgisini bilgi kutusuna yazar."""
+        if not hasattr(self, "_lbl_table_title"):
+            return
+        info = get_table_info(table)
+        self._lbl_table_title.config(text=f"{info['tr']}  ·  {table}  ·  [{info['grup']}]")
+        self._lbl_table_desc.config(text=f"📋 Ne tutar:  {info['desc']}")
+        self._lbl_table_usage.config(text=f"📍 Nerede kullanılır:  {info['usage']}")
 
     def _load_table(self, table: str):
         """Secilen tabloyu veritabanindan okuyup filtreleme/siralama icin hafizaya alir."""
