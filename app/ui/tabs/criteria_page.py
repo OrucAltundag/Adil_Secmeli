@@ -162,58 +162,71 @@ class CriteriaPage:
         # Stil
         lbl_style = {"bg": "#f1f5f9", "font": ("Segoe UI", 9, "bold")}
 
+        # Üst çubuk iki satıra ayrildi: SATIR 1 = filtreler, SATIR 2 = veri/aktarma
+        # butonlari. Eskiden hepsi tek satirdaydi ve son butonlar (Anket Belge
+        # Girisi dahil) ekranin sagina tasip gorunmuyordu.
+        row1 = tk.Frame(parent, bg="#f1f5f9")
+        row1.pack(fill=tk.X)
+        row2 = tk.Frame(parent, bg="#f1f5f9")
+        row2.pack(fill=tk.X, pady=(8, 0))
+
+        # --- SATIR 1: FİLTRELER ---
         # Fakülte
-        tk.Label(parent, text="Fakülte:", **lbl_style).pack(side=tk.LEFT, padx=5)
-        self.cb_fakulte = ttk.Combobox(parent, state="readonly", width=25)
+        tk.Label(row1, text="Fakülte:", **lbl_style).pack(side=tk.LEFT, padx=5)
+        self.cb_fakulte = ttk.Combobox(row1, state="readonly", width=25)
         self.cb_fakulte.pack(side=tk.LEFT, padx=5)
         self.cb_fakulte.bind("<<ComboboxSelected>>", self.on_faculty_change)
 
         # Bölüm
-        tk.Label(parent, text="Bölüm:", **lbl_style).pack(side=tk.LEFT, padx=10)
-        self.cb_bolum = ttk.Combobox(parent, state="readonly", width=25)
+        tk.Label(row1, text="Bölüm:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_bolum = ttk.Combobox(row1, state="readonly", width=25)
         self.cb_bolum.pack(side=tk.LEFT, padx=5)
         # Bölüm değişince yıl listesini güncelle
         self.cb_bolum.bind("<<ComboboxSelected>>", self._on_department_change)
 
         # Yıl - artık hard-coded değil, veritabanından dinamik yükleniyor
-        tk.Label(parent, text="Yıl:", **lbl_style).pack(side=tk.LEFT, padx=10)
-        self.cb_yil = ttk.Combobox(parent, state="readonly", width=10, values=[])
+        tk.Label(row1, text="Yıl:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_yil = ttk.Combobox(row1, state="readonly", width=10, values=[])
         self.cb_yil.pack(side=tk.LEFT, padx=5)
 
         # Dönem
-        tk.Label(parent, text="Dönem:", **lbl_style).pack(side=tk.LEFT, padx=10)
-        self.cb_donem = ttk.Combobox(parent, state="readonly", width=10, values=["Güz", "Bahar"])
+        tk.Label(row1, text="Dönem:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_donem = ttk.Combobox(row1, state="readonly", width=10, values=["Güz", "Bahar"])
         self.cb_donem.current(0)
         self.cb_donem.pack(side=tk.LEFT, padx=5)
 
         # Kriter durumu filtresi
-        tk.Label(parent, text="Kriter:", **lbl_style).pack(side=tk.LEFT, padx=10)
-        self.cb_kriter_filtre = ttk.Combobox(parent, state="readonly", width=12,
+        tk.Label(row1, text="Kriter:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_kriter_filtre = ttk.Combobox(row1, state="readonly", width=12,
                                             values=["Tümü", "Girildi", "Girilmedi"])
         self.cb_kriter_filtre.current(0)
         self.cb_kriter_filtre.pack(side=tk.LEFT, padx=5)
 
         # Müfredat filtresi
-        tk.Label(parent, text="Müfredat:", **lbl_style).pack(side=tk.LEFT, padx=10)
-        self.cb_mufredat_filtre = ttk.Combobox(parent, state="readonly", width=14,
+        tk.Label(row1, text="Müfredat:", **lbl_style).pack(side=tk.LEFT, padx=10)
+        self.cb_mufredat_filtre = ttk.Combobox(row1, state="readonly", width=14,
                                               values=["Tümü", "Müfredattakiler"])
         self.cb_mufredat_filtre.current(0)
         self.cb_mufredat_filtre.pack(side=tk.LEFT, padx=5)
 
         # Listele Butonu
-        tk.Button(parent, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
+        tk.Button(row1, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
 
+        # --- SATIR 2: VERİ / İÇE AKTARMA ---
+        tk.Label(row2, text="Veri Aktarma:", bg="#f1f5f9",
+                 font=("Segoe UI", 9, "bold"), fg="#334155").pack(side=tk.LEFT, padx=(5, 8))
+
         # Kriter Excel İçe Aktar (fonksiyon vardı ama butonu yoktu → erişilemiyordu)
-        tk.Button(parent, text="📥 Kriter Excel İçe Aktar", bg="#f97316", fg="white",
+        tk.Button(row2, text="📥 Kriter Excel İçe Aktar", bg="#f97316", fg="white",
                   font=("Segoe UI", 9, "bold"),
                   command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=5)
 
         # Öğrenci Veri Seti seçici
-        tk.Button(parent, text="📂 Öğrenci Veri Seti", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
+        tk.Button(row2, text="📂 Öğrenci Veri Seti", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self._select_student_dataset).pack(side=tk.LEFT, padx=(10, 2))
         self.lbl_dataset_name = tk.Label(
-            parent,
+            row2,
             text="seçilmedi",
             bg="#f1f5f9",
             fg="#64748b",
@@ -224,12 +237,12 @@ class CriteriaPage:
         self.lbl_dataset_name.pack(side=tk.LEFT, padx=(0, 10))
 
         # Otomatik kriter üretimi (seçilen veri setini kullanır)
-        tk.Button(parent, text="🎓 Otomatik Kriter Girdi İşlemleri",
+        tk.Button(row2, text="🎓 Otomatik Kriter Girdi İşlemleri",
                   bg="#7c3aed", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.auto_generate_from_dataset).pack(side=tk.LEFT, padx=5)
 
         # Anket belge girişi (Excel anket/tercih veri setinden popülerlik/anket üretir)
-        tk.Button(parent, text="📋 Anket Belge Girişi",
+        tk.Button(row2, text="📋 Anket Belge Girişi (Anket/Tercih Excel)",
                   bg="#0891b2", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.import_anket_excel).pack(side=tk.LEFT, padx=5)
 

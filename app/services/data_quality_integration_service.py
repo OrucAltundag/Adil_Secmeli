@@ -223,17 +223,29 @@ def assess_data_readiness_cursor(
             extra_where="AND t.oy_sayisi > 0",
         )
 
-        # Validation issues — once criteria_validation_issues, sonra fallback
-        blocking_issues = 0
+        # Validation issues — KAPSAM + MUFREDAT filtreli, DERS BAZINDA sayilir.
+        # Onceki surum yil genelindeki TUM kritik satirlari sayiyordu; bu yuzden
+        # (1) baska fakultelerin sorunlari da Tip'in skorunu dusuruyordu,
+        # (2) tek bir dersin 5 bos alani 5 sorun = -125 ile skoru sifirliyordu.
+        # Artik yalnizca SECILI kapsamdaki (ve mufredat tanimliysa mufredat)
+        # derslerden, kritik sorunu OLAN farkli ders sayisi dikkate alinir.
+        blocking_courses = 0
         try:
+            where = ["severity = 'critical'", "year = ?"]
+            params: list[Any] = [int(year)]
+            if faculty_id is not None:
+                where.append("(faculty_id = ? OR faculty_id IS NULL)")
+                params.append(int(faculty_id))
+            if curriculum_defined:
+                ph = ",".join("?" for _ in curriculum_ids)
+                where.append(f"course_id IN ({ph})")
+                params.extend(int(i) for i in curriculum_ids)
             cur.execute(
-                """
-                SELECT COUNT(*) FROM criteria_validation_issues
-                WHERE severity = 'critical' AND year = ?
-                """,
-                (int(year),),
+                f"SELECT COUNT(DISTINCT course_id) FROM criteria_validation_issues "
+                f"WHERE {' AND '.join(where)}",
+                tuple(params),
             )
-            blocking_issues = int(cur.fetchone()[0] or 0)
+            blocking_courses = int(cur.fetchone()[0] or 0)
         except sqlite3.OperationalError:
             try:
                 cur.execute(
@@ -242,9 +254,9 @@ def assess_data_readiness_cursor(
                     WHERE severity = 'critical' AND is_resolved = 0
                     """
                 )
-                blocking_issues = int(cur.fetchone()[0] or 0)
+                blocking_courses = int(cur.fetchone()[0] or 0)
             except sqlite3.OperationalError:
-                blocking_issues = 0
+                blocking_courses = 0
 
         denom = required if required > 0 else 1
         criteria_score = criteria_count / denom * 100
@@ -252,7 +264,11 @@ def assess_data_readiness_cursor(
         popularity_score = pop_count / denom * 100
         # Anket skoru bilgi amacli (tum ders paydasina gore) — gate'e girmez.
         survey_score = (survey_count / total_courses * 100) if total_courses > 0 else 0
-        validation_score = max(0, 100 - (blocking_issues * 25))  # -25 per blocking issue
+        # Sorunlu ders orani kadar dus; mufredat tanimliysa orana, degilse -25/ders.
+        if curriculum_defined and required > 0:
+            validation_score = max(0.0, (required - blocking_courses) / required * 100)
+        else:
+            validation_score = max(0, 100 - (blocking_courses * 25))
 
         # === YENI FORMUL (v2) — anket HARIC, mufredat-tabanli ===
         # Agirliklar 1.0'a normalize (eski anket payi kriter/perf/pop'a dagitildi):

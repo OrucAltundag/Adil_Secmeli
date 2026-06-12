@@ -100,6 +100,7 @@ def auto_generate_criteria_from_student_dataset(
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     KONTENJAN = 60  # veri setinde kontenjan yok; manuel kayitla ayni varsayilan
     eklenen, perf_yazilan, pop_yazilan, eslesmeyen = 0, 0, 0, []
+    yazilan_ders_ids: list[int] = []
     for s in kayitlar:
         if not s["kod"]:
             continue
@@ -109,6 +110,7 @@ def auto_generate_criteria_from_student_dataset(
             eslesmeyen.append(s["kod"])
             continue
         did = int(row[0])
+        yazilan_ders_ids.append(did)
         donem = s["donem"]
         gecen = round(s["kayit"] * s["gecme"] / 100.0)
         anket_kat = round(s["kayit"] * s["katilim"] / 100.0)
@@ -152,6 +154,20 @@ def auto_generate_criteria_from_student_dataset(
             (did, int(year), donem, s["kayit"], KONTENJAN, doluluk_orani),
         )
         pop_yazilan += 1
+
+    # Kriter yazilan dersler artik DOLU; bu derslere ait BAYAT "zorunlu alan
+    # bos" kritik dogrulama uyarilarini temizle (olgunluk skorunu haksizca
+    # dusurmesin). Tablo yoksa sessizce gec.
+    if yazilan_ders_ids:
+        try:
+            ph = ",".join("?" for _ in yazilan_ders_ids)
+            cur.execute(
+                f"DELETE FROM criteria_validation_issues "
+                f"WHERE year = ? AND course_id IN ({ph})",
+                (int(year), *[int(i) for i in yazilan_ders_ids]),
+            )
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return {
         "eklenen": eklenen,
