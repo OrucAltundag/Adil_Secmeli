@@ -53,6 +53,8 @@ class DashboardPage(ttk.Frame):
         self.scenario_cb.grid(row=0, column=1, sticky="ew", padx=(0, 14))
         self.scenario_cb.set(mock_data.SCENARIOS[0]["name"])
         self.scenario_cb.bind("<<ComboboxSelected>>", lambda _e: self._on_scenario_change())
+        # display_name <-> name eslemesi (UI Turkce ad gosterir, backend ingilizce key bekler).
+        self._scenario_label_to_key: dict[str, str] = {}
 
         ttk.Label(controls, text="Veri seti").grid(row=0, column=2, sticky="w", padx=(0, 6))
         self.dataset_cb = ttk.Combobox(controls, state="readonly", values=["Yüklü dataset yok"])
@@ -65,6 +67,23 @@ class DashboardPage(ttk.Frame):
         self.run_btn.pack(side=tk.LEFT, padx=3)
         ttk.Button(btns, text="Temizle", command=self.clear_selection).pack(side=tk.LEFT, padx=3)
         ttk.Button(btns, text="Sonuçları Yenile", command=self.refresh_results).pack(side=tk.LEFT, padx=3)
+        # API'yi GUI thread'inden ayri bir thread'de baslat: kullanici CLI'ya
+        # gitmek zorunda kalmadan benchmark'i gercek backend ile calistirsin.
+        self.start_api_btn = ttk.Button(btns, text="API Başlat", command=self.start_api_background)
+        self.start_api_btn.pack(side=tk.LEFT, padx=3)
+
+        # Senaryo aciklama paneli: amac ve sisteme etkisi (Turkce).
+        desc_frame = ttk.LabelFrame(controls, text="Senaryo Açıklaması", padding=6)
+        desc_frame.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(8, 0))
+        self.scenario_purpose_lbl = ttk.Label(
+            desc_frame, text="Amaç: -", wraplength=900, justify=tk.LEFT,
+        )
+        self.scenario_purpose_lbl.pack(anchor="w")
+        self.scenario_impact_lbl = ttk.Label(
+            desc_frame, text="Sisteme etkisi: -", wraplength=900, justify=tk.LEFT,
+            foreground="#0f5132",
+        )
+        self.scenario_impact_lbl.pack(anchor="w", pady=(4, 0))
 
         readiness_frame = ttk.LabelFrame(self, text="Benchmark Readiness", padding=10)
         readiness_frame.pack(fill=tk.X, pady=(0, 10))
@@ -131,12 +150,25 @@ class DashboardPage(ttk.Frame):
             self.backend_ready = not (algos_result.used_mock or scenarios_result.used_mock)
             self.source_badge.set_source(not self.backend_ready)
             if algos_result.used_mock or scenarios_result.used_mock:
-                self.banner.show("Backend API erişilemiyor; örnek veri gösteriliyor.", level="warning")
+                self.banner.show(
+                    "Backend API erişilemiyor (örnek veri gösteriliyor). "
+                    "Çalıştırmak için terminalden: "
+                    "python -m app.main --mode api --host 127.0.0.1 --port 8000",
+                    level="warning",
+                )
             self.algorithms = algos_result.data.get("algorithms", mock_data.ALGORITHMS)
             self.scenarios = scenarios_result.data.get("scenarios", mock_data.SCENARIOS)
-            self.scenario_cb["values"] = [s.get("name", "") for s in self.scenarios]
-            if not self.scenario_cb.get() and self.scenarios:
-                self.scenario_cb.set(self.scenarios[0].get("name", ""))
+            # display_name varsa onu goster, geri yola map'le; yoksa eski davranis.
+            self._scenario_label_to_key = {
+                (s.get("display_name") or s.get("name") or ""): (s.get("name") or "")
+                for s in self.scenarios
+            }
+            self.scenario_cb["values"] = list(self._scenario_label_to_key.keys())
+            current_label = self.scenario_cb.get()
+            if (not current_label or current_label not in self._scenario_label_to_key) and self.scenarios:
+                first_label = next(iter(self._scenario_label_to_key.keys()))
+                self.scenario_cb.set(first_label)
+            self._update_scenario_description()
             self._sync_dataset_choices()
             self._render_algorithm_checks(self.algorithms)
             self._update_from_run(mock_data.SAMPLE_RUN)
@@ -180,15 +212,87 @@ class DashboardPage(ttk.Frame):
         self._sync_readiness()
         self._update_from_run(mock_data.SAMPLE_RUN)
 
+    def start_api_background(self) -> None:
+        """uvicorn ile arka planda FastAPI'yi baslatir.
+
+        Tek seferlik: daha onceki bir tetikleme zaten calisiyorsa tekrar
+        denemez. GUI thread'ini bloklamamak icin daemon thread'de calistirir.
+        Baslatildiktan sonra ~2sn icinde load_initial_data() tetiklenir, badge
+        ve banner gercek API durumunu yansitir.
+        """
+        if getattr(self, "_api_thread", None) and self._api_thread.is_alive():
+            self.banner.show("API zaten çalışıyor.", level="info")
+            return
+        try:
+            import uvicorn  # noqa: F401
+        except ImportError:
+            self.banner.show(
+                "uvicorn yüklü değil. Terminalden: pip install -r requirements.txt",
+                level="error",
+            )
+            return
+        import threading
+        import urllib.parse
+
+        host = "127.0.0.1"
+        port = 8000
+        base = getattr(self.api, "base_url", "")
+        if base:
+            parsed = urllib.parse.urlparse(base)
+            host = parsed.hostname or host
+            port = parsed.port or port
+
+        def _run():
+            try:
+                import uvicorn as _uv
+                _uv.run("app.api.main:app", host=host, port=port, reload=False, log_level="warning")
+            except Exception as exc:  # noqa: BLE001
+                # GUI thread'ine geri donus yok; sadece log yaz.
+                print(f"[Benchmark API] Baslatma hatasi: {exc}")
+
+        self._api_thread = threading.Thread(target=_run, daemon=True, name="BenchmarkAPI")
+        self._api_thread.start()
+        self.banner.show(
+            f"API başlatılıyor: http://{host}:{port}/docs ... 2-3 saniye sonra 'Sonuçları Yenile' deyin.",
+            level="info",
+        )
+        self.start_api_btn.configure(state=tk.DISABLED, text="API çalışıyor")
+        # Birkac saniye sonra otomatik dene.
+        self.after(2500, self.load_initial_data)
+
     def _on_scenario_change(self) -> None:
+        self._update_scenario_description()
         self._render_algorithm_checks(self.algorithms or mock_data.ALGORITHMS)
         self._sync_readiness()
 
-    def _scenario_default_algorithms(self) -> list[str]:
-        selected = self.scenario_cb.get()
+    def _selected_scenario_key(self) -> str:
+        """Combobox'taki gosterilen ada karsilik gelen backend key'i dondurur."""
+        label = self.scenario_cb.get()
+        if label in self._scenario_label_to_key:
+            return self._scenario_label_to_key[label]
+        # Eski mock veya elle yazilmis durumlar icin guvenli geri donus.
+        return label
+
+    def _selected_scenario(self) -> dict | None:
+        key = self._selected_scenario_key()
         for scenario in self.scenarios:
-            if scenario.get("name") == selected:
-                return list(scenario.get("default_algorithms") or [])
+            if scenario.get("name") == key:
+                return scenario
+        return None
+
+    def _update_scenario_description(self) -> None:
+        if not hasattr(self, "scenario_purpose_lbl"):
+            return
+        scenario = self._selected_scenario() or {}
+        purpose = scenario.get("purpose_tr") or scenario.get("description") or "-"
+        impact = scenario.get("system_impact_tr") or "Sisteme etkisi bilgisi yok."
+        self.scenario_purpose_lbl.config(text=f"Amaç: {purpose}")
+        self.scenario_impact_lbl.config(text=f"Sisteme etkisi: {impact}")
+
+    def _scenario_default_algorithms(self) -> list[str]:
+        scenario = self._selected_scenario()
+        if scenario:
+            return list(scenario.get("default_algorithms") or [])
         return []
 
     def _sync_dataset_choices(self) -> None:
@@ -204,7 +308,7 @@ class DashboardPage(ttk.Frame):
         selected = self.selected_algorithms()
         allowed = set(self._scenario_default_algorithms())
         dataset_ready = bool(getattr(self.api, "last_dataset_name", None)) and self.dataset_cb.get() != "Yüklü dataset yok"
-        scenario_ready = self.scenario_cb.get() in {s.get("name") for s in self.scenarios}
+        scenario_ready = self._selected_scenario_key() in {s.get("name") for s in self.scenarios}
         algorithms_ready = bool(selected) and (not allowed or all(name in allowed for name in selected))
         backend_ready = bool(self.backend_ready) and not bool(getattr(self.api, "last_dataset_used_mock", False))
         return {
@@ -237,7 +341,9 @@ class DashboardPage(ttk.Frame):
             self.banner.show("Benchmark çalıştırmak için en az bir algoritma seçin.")
             return
         payload = {
-            "scenario": self.scenario_cb.get(),
+            # Backend ingilizce key bekler; combobox Turkce label gosterse de
+            # _selected_scenario_key dogru key'i dondurur.
+            "scenario": self._selected_scenario_key(),
             "dataset": self.dataset_cb.get(),
             "algorithms": algorithms,
             "parameters": {"source": "desktop-ui"},

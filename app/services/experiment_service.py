@@ -35,6 +35,10 @@ class ExperimentService:
                 "description": scenario.description,
                 "problem_type": scenario.problem_type,
                 "default_algorithms": scenario.algorithm_names,
+                # Turkce gosterim alanlari (UI kullanir):
+                "display_name": scenario.display_name or scenario.name,
+                "purpose_tr": scenario.purpose_tr,
+                "system_impact_tr": scenario.system_impact_tr,
             }
             for scenario in DEFAULT_SCENARIOS.values()
         ]
