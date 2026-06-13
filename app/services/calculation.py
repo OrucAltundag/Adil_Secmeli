@@ -588,6 +588,23 @@ def _havuz_unique_includes_donem(cur):
         return False
 
 
+def _drop_legacy_havuz_term_agnostic_unique(cur):
+    """havuz tablosundaki donem ICERMEYEN UNIQUE index'leri dusurur.
+
+    (ders_id, fakulte_id, yil) uzerinde donemsiz bir UNIQUE index, bir dersin ayni
+    yil icinde hem Guz hem Bahar satirina sahip olmasini engeller ve uretim hattindaki
+    term-scoping mantigini devre disi birakir. Donem-scoped unique index kanonik
+    kabul edilir. Idempotent.
+    """
+    for idx in cur.execute("PRAGMA index_list(havuz)").fetchall():
+        if not idx or not int(idx[2] or 0):  # idx[2] = unique bayragi
+            continue
+        idx_name = str(idx[1])
+        idx_cols = {str(r[2]) for r in cur.execute(f"PRAGMA index_info({idx_name})").fetchall()}
+        if {"ders_id", "fakulte_id", "yil"}.issubset(idx_cols) and "donem" not in idx_cols:
+            cur.execute(f'DROP INDEX IF EXISTS "{idx_name}"')
+
+
 def _fetch_other_term_curriculum_map(cur, fakulte_id, akademik_yil, current_term):
     """
     Next-year generation sirasinda, diger donemde zaten secili dersleri bolum bazli getirir.
@@ -1612,6 +1629,15 @@ def generate_next_year_curricula(
         except Exception as policy_exc:
             logger.warning("Karar politikasi cozumlenemedi, legacy esikler kullaniliyor: %s", policy_exc)
         havuz_has_donem = _havuz_has_donem_col(cur)
+        # Legacy donemsiz UNIQUE index'i (orn. ux_havuz_ders_fak_yil) burada da
+        # temizle: bu index term-scoping'i (Guz/Bahar ayrimini) sessizce kapatip
+        # sayac/donem hatalarina yol aciyordu. Idempotent; baslangic migration'i
+        # gecikse bile uretim dogru calissin diye uretim hattinda da uygulanir.
+        if havuz_has_donem:
+            try:
+                _drop_legacy_havuz_term_agnostic_unique(cur)
+            except Exception as drop_exc:
+                logger.warning("Legacy havuz unique index temizlenemedi: %s", drop_exc)
         havuz_term_scoped = havuz_has_donem and _havuz_unique_includes_donem(cur)
         normalized_rows = _normalize_mufredat_faculty_ids(cur)
 
@@ -1788,6 +1814,24 @@ def generate_next_year_curricula(
         metric_map = dict(score_pack.get("metric_map", {}))
         ders_meta = dict(score_pack.get("ders_meta", {}))
         aday_dersler = set(int(d) for d in metric_map.keys())
+
+        # DONEM AYRIMI (Guz/Bahar karismasini onler):
+        # Diger donemin KAYNAK YIL aktif mufredatindaki dersler, bu donemin sonraki
+        # yil adayi OLAMAZ. Ornegin Bahar 2022 mufredatindaki bir ders dogrudan
+        # Guz 2023 mufredatina eklenemez. (Havuza dusup dinlenen dersler bu kisitin
+        # disindadir; burada yalnizca aktif/secili karsi-donem dersleri haric tutulur.)
+        other_term_source_map = _fetch_other_term_curriculum_map(
+            cur=cur,
+            fakulte_id=fakulte_id,
+            akademik_yil=akademik_yil,
+            current_term=donem,
+        )
+        other_term_source_ids: set[int] = set()
+        for _ids in other_term_source_map.values():
+            other_term_source_ids.update(int(d) for d in _ids)
+        if other_term_source_ids:
+            aday_dersler -= other_term_source_ids
+
         if not aday_dersler:
             return {"ok": False, "error": "Skor hesaplamak icin aday ders bulunamadi."}
 
@@ -2168,6 +2212,37 @@ def generate_next_year_curricula(
             cleanup_sql += " AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?"
             cleanup_params.append(term_key)
         cur.execute(cleanup_sql, tuple(cleanup_params))
+
+        # Donem-disi kirlilik temizligi: term-scoped semada, bu donemin hedef yil
+        # havuzunda bu uretimin universum'una (gerekli_idler) ait OLMAYAN secmeli
+        # satirlari sil. Boylece yanlis donemde (orn. Bahar dersi Guz havuzunda)
+        # kalmis eski/hatali satirlar regenerasyonda temizlenir. Dinlenen/aday dersler
+        # gerekli_idler icinde oldugu icin korunur.
+        if havuz_term_scoped:
+            cur.execute(
+                """
+                SELECT CAST(ders_id AS INTEGER)
+                FROM havuz
+                WHERE fakulte_id = ? AND yil = ?
+                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?
+                """,
+                (fakulte_id, sonraki_yil, term_key),
+            )
+            existing_term_ids = {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
+            stale_ids = sorted(existing_term_ids - {int(d) for d in gerekli_idler})
+            stale_chunk = 900
+            for i in range(0, len(stale_ids), stale_chunk):
+                chunk = stale_ids[i : i + stale_chunk]
+                placeholders = ",".join("?" for _ in chunk)
+                cur.execute(
+                    f"""
+                    DELETE FROM havuz
+                    WHERE fakulte_id = ? AND yil = ?
+                      AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?
+                      AND CAST(ders_id AS INTEGER) IN ({placeholders})
+                    """,
+                    tuple([fakulte_id, sonraki_yil, term_key, *chunk]),
+                )
 
         upsert_count = 0
         pool_transition_count = 0

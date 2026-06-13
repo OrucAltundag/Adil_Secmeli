@@ -392,11 +392,18 @@ def generate_coverage_report_cursor(
                 cur, "populerlik", faculty_id, department_id,
                 extra_where=f"AND t.akademik_yil = {int(year)} AND t.doluluk_orani IS NOT NULL")
 
-        # Anket: informatif (tum ders paydasi), kapsama yuzdesine GIRMEZ.
-        with_survey = _count_distinct_courses(
-            cur, "anket_sonuclari", faculty_id, department_id,
-            extra_where="AND t.oy_sayisi > 0",
-        )
+        # Anket: informatif (kapsama yuzdesine GIRMEZ). Yeni anket importu degerleri
+        # ders_kriterleri.anket_dersi_secen alanina yazar; bu yuzden ayni yil/kapsam
+        # filtresiyle oradan sayilir (eski anket_sonuclari tablosu yil filtresiz oldugu
+        # icin sismis sayim ureterek toplam ders sayisini asabiliyordu).
+        if curriculum_defined:
+            with_survey = _count_courses_in_set(
+                cur, "ders_kriterleri", curriculum_ids,
+                f"AND t.yil = {int(year)} AND COALESCE(t.anket_dersi_secen, 0) > 0")
+        else:
+            with_survey = _count_distinct_courses(
+                cur, "ders_kriterleri", faculty_id, department_id,
+                extra_where=f"AND t.yil = {int(year)} AND COALESCE(t.anket_dersi_secen, 0) > 0")
 
         # Kapsama yuzdesi: yalniz ZORUNLU veri tipleri (kriter/perf/pop), mufredat paydasi.
         denom = required if required > 0 else 1

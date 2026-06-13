@@ -170,8 +170,14 @@ class DataQualityPage(ttk.Frame):
         ]
 
         self.progress_bars = {}
+        self.progress_value_labels = {}
         for label, key in metrics:
-            ttk.Label(content, text=label).pack(fill=tk.X, pady=(8, 2))
+            header = ttk.Frame(content)
+            header.pack(fill=tk.X, pady=(8, 2))
+            ttk.Label(header, text=label).pack(side=tk.LEFT)
+            value_label = ttk.Label(header, text="0 / 0  (%0.0)")
+            value_label.pack(side=tk.RIGHT)
+            self.progress_value_labels[key] = value_label
             pb = ttk.Progressbar(content, mode="determinate", maximum=100)
             pb.pack(fill=tk.X, pady=(0, 8))
             self.progress_bars[key] = pb
@@ -443,12 +449,20 @@ Sonuç: {'VERİ HAZIR - Karar alınabilir' if readiness.get('readiness_level') i
         self.coverage_text.delete("1.0", tk.END)
         total = coverage.get("total_courses", 1)
 
-        # Progress bars
-        if total > 0:
-            self.progress_bars["criteria"].config(value=(coverage.get("courses_with_criteria", 0) / total * 100))
-            self.progress_bars["performance"].config(value=(coverage.get("courses_with_performance", 0) / total * 100))
-            self.progress_bars["popularity"].config(value=(coverage.get("courses_with_popularity", 0) / total * 100))
-            self.progress_bars["survey"].config(value=(coverage.get("courses_with_survey", 0) / total * 100))
+        # Progress bars + yuzde etiketleri (0..100 araliginda kistirilir)
+        bar_counts = {
+            "criteria": coverage.get("courses_with_criteria", 0),
+            "performance": coverage.get("courses_with_performance", 0),
+            "popularity": coverage.get("courses_with_popularity", 0),
+            "survey": coverage.get("courses_with_survey", 0),
+        }
+        for key, count in bar_counts.items():
+            pct = (count / total * 100) if total > 0 else 0.0
+            pct_clamped = max(0.0, min(100.0, pct))
+            self.progress_bars[key].config(value=pct_clamped)
+            label = self.progress_value_labels.get(key)
+            if label is not None:
+                label.config(text=f"{count} / {total}  (%{pct:.1f})")
 
         # Text
         self.coverage_text.insert(

@@ -289,6 +289,7 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.semester_planning_page import SemesterPlanningPage
         from app.ui.tabs.system_health_page import SystemHealthPage
         from app.ui.tabs.tools_tab import ToolsTab
+        from app.ui.tabs.trend_visualization_page import TrendVisualizationPage
         from app.ui.tabs.view_tab import ViewTab
 
         apply_style(self)
@@ -404,6 +405,9 @@ class AdilSecmeliApp(tk.Tk):
 
         self.tab_analysis = AnalysisTab(self._nb_rapor, app=self)
         self._nb_rapor.add(self.tab_analysis, text="📊 Analiz & Grafik")
+
+        self.tab_trend_vis = TrendVisualizationPage(self._nb_rapor, app=self)
+        self._nb_rapor.add(self.tab_trend_vis, text="📈 Trend Görselleştirme")
 
         self.tab_tools = ToolsTab(self._nb_rapor, app=self)
         self._nb_rapor.add(self.tab_tools, text="📄 Rapor & Yükleme")
@@ -756,6 +760,8 @@ class AdilSecmeliApp(tk.Tk):
             elif group == "rapor":
                 if "Analiz" in selected:
                     self.tab_analysis.refresh()
+                elif "Trend" in selected:
+                    self.tab_trend_vis.refresh()
                 elif "Rapor" in selected:
                     self.tab_tools.refresh()
         except Exception:

@@ -282,12 +282,11 @@ def execute_import_request(
         )
 
     if import_type == "survey":
-        if faculty_id is None:
-            return {"ok": False, "message": "Anket importu için fakülte seçin.", "errors": ["Fakülte zorunlu."]}
+        # Fakulte = None ("Tumu") => belgedeki tum fakulteler tek tek import edilir.
         return import_survey_excel(
             db_path=db_path,
             excel_path=excel_path,
-            faculty_id=int(faculty_id),
+            faculty_id=int(faculty_id) if faculty_id is not None else None,
             year=int(year),
             source_filename=os.path.basename(excel_path),
             auto_activate=auto_activate,
@@ -335,16 +334,18 @@ def write_import_template(
             return {"ok": True, "message": "Kriter şablonu oluşturuldu.", "path": written}
 
         if import_type == "survey":
+            # faculty_id None ('Tumu') => tum fakulteler tek dosyada; db_path her durumda iletilir.
             try:
                 written = write_survey_template_excel(
                     target_path=target_path,
-                    db_path=db_path if faculty_id is not None else None,
+                    db_path=db_path,
                     faculty_id=int(faculty_id) if faculty_id is not None else None,
                     year=int(year),
                 )
             except Exception:
                 written = write_survey_template_excel(target_path=target_path, year=int(year))
-            return {"ok": True, "message": "Anket şablonu oluşturuldu.", "path": written}
+            scope_msg = "Anket şablonu oluşturuldu." if faculty_id is not None else "Anket şablonu (tüm fakülteler) oluşturuldu."
+            return {"ok": True, "message": scope_msg, "path": written}
 
         rows = [
             {

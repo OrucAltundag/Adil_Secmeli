@@ -795,6 +795,21 @@ def ensure_havuz_semester_schema(conn: sqlite3.Connection) -> dict[str, int]:
         )
         changed["duplicates_removed"] = int(cur.rowcount or 0)
 
+    # Legacy donemsiz UNIQUE index temizligi:
+    # Eski semalarda (ders_id, fakulte_id, yil) uzerinde donem ICERMEYEN bir UNIQUE
+    # index bulunabiliyor (orn. ux_havuz_ders_fak_yil). Bu index, bir dersin ayni yil
+    # icinde hem Guz hem Bahar satirina sahip olmasini engeller VE uretim hattindaki
+    # term-scoping mantigini (donem ayrimini) devre disi birakir. Donem-scoped unique
+    # index kanonik kabul edilir; donemsiz olanlari dusuruyoruz.
+    for idx in cur.execute("PRAGMA index_list(havuz)").fetchall():
+        if not idx or not int(idx[2] or 0):  # idx[2] = unique bayragi
+            continue
+        idx_name = str(idx[1])
+        idx_cols = {str(r[2]) for r in cur.execute(f"PRAGMA index_info({idx_name})").fetchall()}
+        if {"ders_id", "fakulte_id", "yil"}.issubset(idx_cols) and "donem" not in idx_cols:
+            cur.execute(f'DROP INDEX IF EXISTS "{idx_name}"')
+            changed["indexes_dropped"] = changed.get("indexes_dropped", 0) + 1
+
     idx_names = _index_names(cur, "havuz")
     if "uq_havuz_ders_fac_yil_donem" not in idx_names:
         cur.execute(

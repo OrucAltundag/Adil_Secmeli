@@ -315,8 +315,10 @@ def test_write_survey_template_prefills_active_pool_courses():
         assert "GST105" not in set(survey_df["ders_kodu"].dropna().tolist())
         assert "GST106" not in set(survey_df["ders_kodu"].dropna().tolist())
         assert "GST107" not in set(survey_df["ders_kodu"].dropna().tolist())
-        assert worksheet["D6"].value == "TOPLAM"
-        assert worksheet["E6"].value == "=SUM(E2:E5)"
+        # Kolon duzeni: fakulte_adi|yil|donem|ders_kodu|ders_adi|toplam_katilimci|tercih_sayisi
+        # ders_adi -> E sutunu, tercih_sayisi -> G sutunu
+        assert worksheet["E6"].value == "TOPLAM"
+        assert worksheet["G6"].value == "=SUM(G2:G5)"
     finally:
         for path in (db_path, template_path):
             try:
@@ -354,7 +356,8 @@ def test_write_survey_template_handles_legacy_ders_schema_without_kod():
             "Modern Sunum Teknikleri",
             "TOPLAM",
         ]
-        assert worksheet["E4"].value == "=SUM(E2:E3)"
+        # tercih_sayisi -> G sutunu (yeni kolon duzeni)
+        assert worksheet["G4"].value == "=SUM(G2:G3)"
     finally:
         for path in (db_path, template_path):
             try:

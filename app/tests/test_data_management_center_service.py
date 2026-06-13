@@ -36,11 +36,14 @@ def _db(tmp_path):
         """
     )
     ensure_reporting_schema(conn)
+    # Anket kapsami artik kanonik olarak ders_kriterleri.anket_dersi_secen alanindan
+    # (yeni anket importunun yazdigi yer) yil filtreli sayilir.
     conn.execute(
         """
         INSERT INTO ders_kriterleri
-            (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci)
-        VALUES (101, 2026, 'Guz', 40, 35, 82.0, 45, 40)
+            (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi, kontenjan, kayitli_ogrenci,
+             anket_katilimci, anket_dersi_secen)
+        VALUES (101, 2026, 'Guz', 40, 35, 82.0, 45, 40, 40, 32)
         """
     )
     conn.execute("INSERT INTO performans (ders_id, akademik_yil, basari_orani, ortalama_not) VALUES (101, 2026, 0.87, 82.0)")

@@ -123,12 +123,75 @@ def analyze_trend_values(
     }
 
 
-def analyze_course_trend(
+def build_trend_breakdown(
+    values_by_year: dict[int, float],
+    target_year: int | None = None,
+    first_seen_year: int | None = None,
+) -> dict[str, Any]:
+    """Ağırlıklı trend hesabını adım adım, kullanıcıya gösterilebilir biçimde döndürür.
+
+    UI'daki "Trend Görselleştirme" sayfası bu dökümü kullanır. weighted_trend_score
+    ile birebir aynı mantığı izler; ek olarak hangi yılın hangi (yeniden normalize
+    edilmiş) ağırlıkla katkı verdiğini ve 1/2/3 yıl senaryolarını raporlar.
+    """
+    analysis = analyze_trend_values(values_by_year, target_year=target_year, first_seen_year=first_seen_year)
+    clean = analysis.get("values_by_year", {})
+
+    ordered_desc = sorted(
+        ((int(y), max(0.0, min(1.0, _safe_float(v)))) for y, v in clean.items()),
+        key=lambda item: item[0],
+        reverse=True,
+    )[: len(TREND_DEFAULT_WEIGHTS)]
+    usable = [(y, v) for (y, v) in ordered_desc if v > 0]
+    weight_sum = sum(TREND_DEFAULT_WEIGHTS[i] for i in range(len(usable))) or 1.0
+
+    steps: list[dict[str, Any]] = []
+    for idx, (year, value) in enumerate(usable):
+        raw_weight = TREND_DEFAULT_WEIGHTS[idx]
+        norm_weight = raw_weight / weight_sum
+        steps.append(
+            {
+                "year": int(year),
+                "value": float(value),
+                "raw_weight": float(raw_weight),
+                "norm_weight": float(norm_weight),
+                "contribution": float(value * norm_weight),
+            }
+        )
+
+    year_count = len(clean)
+    scenario = (
+        "none" if year_count == 0
+        else "single" if year_count == 1
+        else "double" if year_count == 2
+        else "triple"
+    )
+    trend_score = float(analysis.get("trend_score") or 0.0)
+
+    return {
+        **analysis,
+        "year_count": year_count,
+        "scenario": scenario,
+        "weights_default": list(TREND_DEFAULT_WEIGHTS),
+        "weight_sum_used": float(weight_sum),
+        "steps": steps,
+        "trend_score_100": round(trend_score * 100, 2),
+    }
+
+
+def fetch_course_values_by_year(
     cur: sqlite3.Cursor,
     course_id: int,
     year: int,
-) -> dict[str, Any]:
+) -> tuple[dict[int, float], str]:
+    """Bir dersin yil bazli basari oranlarini ve kaynagini dondurur.
+
+    Once performans tablosundan basari_orani okunur; yoksa ders_kriterleri'ndeki
+    gecen_ogrenci/toplam_ogrenci oranina fallback yapilir. Kaynak metni UI'da
+    "Veri kaynagi" olarak gosterilir.
+    """
     values: dict[int, float] = {}
+    source = "yok"
     try:
         cur.execute(
             """
@@ -141,6 +204,8 @@ def analyze_course_trend(
         )
         for row in cur.fetchall():
             values[int(row[0])] = _safe_float(row[1])
+        if values:
+            source = "performans.basari_orani"
     except sqlite3.OperationalError:
         pass
 
@@ -159,11 +224,36 @@ def analyze_course_trend(
             for row in cur.fetchall():
                 if row[1] is not None:
                     values[int(row[0])] = _safe_float(row[1])
+            if values:
+                source = "ders_kriterleri (gecen/toplam)"
         except sqlite3.OperationalError:
             pass
 
+    return values, source
+
+
+def analyze_course_trend(
+    cur: sqlite3.Cursor,
+    course_id: int,
+    year: int,
+) -> dict[str, Any]:
+    values, _source = fetch_course_values_by_year(cur, int(course_id), int(year))
     first_seen = min(values.keys()) if values else None
     return analyze_trend_values(values, target_year=int(year), first_seen_year=first_seen)
+
+
+def course_trend_breakdown(
+    cur: sqlite3.Cursor,
+    course_id: int,
+    year: int,
+) -> dict[str, Any]:
+    """UI Trend Görselleştirme sayfasi icin tam döküm: ham değerler + adım adım hesap."""
+    values, source = fetch_course_values_by_year(cur, int(course_id), int(year))
+    first_seen = min(values.keys()) if values else None
+    breakdown = build_trend_breakdown(values, target_year=int(year), first_seen_year=first_seen)
+    breakdown["data_source"] = source
+    breakdown["first_seen_year"] = first_seen
+    return breakdown
 
 
 def save_trend_analysis(
