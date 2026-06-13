@@ -172,10 +172,18 @@ class Database:
 
     def read_df(self, query: str, params=None):
         engine = self._engine_ready()
+        # SQLAlchemy text() ile ? placeholder + tuple/list params calismiyor
+        # (pandas 2.x: "List argument must consist only of dictionaries"). Ayni
+        # _adapt_params donusumunu burada da uyguluyoruz; UI tarafindaki
+        # `db.read_df(sql, params=(...))` cagrilari boylece TREND/TOPSIS
+        # adimlarinda "Hata!" yerine duzgun calisir.
         with engine.connect() as conn:
             if params is None:
                 return pd.read_sql_query(text(query), conn)
-            return pd.read_sql_query(text(query), conn, params=params)
+            adapted_query, adapted_params = self._adapt_params(query, params)
+            if adapted_params is None:
+                return pd.read_sql_query(text(adapted_query), conn)
+            return pd.read_sql_query(text(adapted_query), conn, params=adapted_params)
 
     def run_sql(
         self,

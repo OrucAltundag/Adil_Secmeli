@@ -1649,13 +1649,90 @@ def generate_next_year_curricula(
         try:
             from app.services.criteria_completion_service import can_run_algorithm
 
-            criteria_gate = can_run_algorithm(
-                conn,
-                year=akademik_yil,
-                faculty_id=fakulte_id,
-                semester=donem,
-                scope_type="faculty",
+            # CIFT-DONEM KRITER KAPISI (kullanici kurali):
+            # "2 doneminde kriterleri girilmeden mufredat olusturma yapilamasin."
+            # Fakultenin o yil mufredatinda Guz + Bahar arasinda hangileri varsa
+            # her biri icin kapiyi calistir; uretilecek donemin kapisini her
+            # durumda kontrol et. Yalnizca tum kapilar gecerse uretim baslar.
+            cur.execute(
+                """
+                SELECT DISTINCT TRIM(COALESCE(m.donem, ''))
+                FROM mufredat m
+                JOIN bolum b ON b.bolum_id = m.bolum_id
+                WHERE b.fakulte_id = ? AND m.akademik_yil = ?
+                  AND COALESCE(TRIM(m.donem), '') <> ''
+                """,
+                (int(fakulte_id), int(akademik_yil)),
             )
+            terms_to_check: set[str] = {_normalize_term_key(donem)}
+            for row in cur.fetchall():
+                key = _normalize_term_key(str(row[0]) if row and row[0] else "")
+                if key in ("g", "b"):
+                    terms_to_check.add(key)
+
+            term_gates: dict[str, dict[str, Any]] = {}
+            gate_failures: list[tuple[str, dict[str, Any]]] = []
+            for term_key in sorted(terms_to_check):
+                term_label = "Güz" if term_key == "g" else "Bahar"
+                gate_for_term = can_run_algorithm(
+                    conn,
+                    year=akademik_yil,
+                    faculty_id=fakulte_id,
+                    semester=term_label,
+                    scope_type="faculty",
+                )
+                term_gates[term_label] = gate_for_term
+                if not gate_for_term.get("can_run"):
+                    gate_failures.append((term_label, gate_for_term))
+
+            current_label = "Güz" if _normalize_term_key(donem) == "g" else "Bahar"
+            criteria_gate = term_gates.get(current_label, {})
+
+            if gate_failures:
+                # Once uretilecek donemi onceliklendir.
+                primary_label, primary_gate = next(
+                    (item for item in gate_failures if item[0] == current_label),
+                    gate_failures[0],
+                )
+                gate_summary = primary_gate.get("summary") or {}
+                missing_matrix = [
+                    {
+                        "ders_id": row.get("course_id"),
+                        "ders": row.get("course_name"),
+                        "criterion_key": row.get("criterion_key"),
+                        "missing_reason": row.get("missing_reason"),
+                        "invalid_reason": row.get("invalid_reason"),
+                        "donem": primary_label,
+                    }
+                    for row in (gate_summary.get("matrix") or [])
+                    if row.get("is_required") and (not row.get("is_present") or not row.get("is_valid"))
+                ]
+                blocked_terms = ", ".join(label for label, _ in gate_failures)
+                reason = (
+                    f"Cift-donem kriter kapisi: {blocked_terms} doneminin kriter "
+                    "girisleri tamamlanmadan yeni yil mufredati uretilemez."
+                )
+                return {
+                    "ok": False,
+                    "error": reason,
+                    "missing_criteria": missing_matrix,
+                    "blocked_terms": [label for label, _ in gate_failures],
+                    "criteria_completion": {
+                        "completion_ratio": primary_gate.get("completion_ratio"),
+                        "completion_level": primary_gate.get("completion_level"),
+                        "required_completion_ratio": primary_gate.get("required_completion_ratio"),
+                        "override_active": primary_gate.get("override_active"),
+                        "risk": primary_gate.get("risk"),
+                        "by_term": {
+                            label: {
+                                "can_run": bool(gate.get("can_run")),
+                                "completion_ratio": gate.get("completion_ratio"),
+                                "blocking_reason": gate.get("blocking_reason"),
+                            }
+                            for label, gate in term_gates.items()
+                        },
+                    },
+                }
             if not criteria_gate.get("can_run"):
                 gate_summary = criteria_gate.get("summary") or {}
                 missing_matrix = [
@@ -1820,17 +1897,25 @@ def generate_next_year_curricula(
         # yil adayi OLAMAZ. Ornegin Bahar 2022 mufredatindaki bir ders dogrudan
         # Guz 2023 mufredatina eklenemez. (Havuza dusup dinlenen dersler bu kisitin
         # disindadir; burada yalnizca aktif/secili karsi-donem dersleri haric tutulur.)
+        # DONEM AYRIMI — fakulte geneli (kaynak yil VE hedef yil):
+        # Kaynak yilin diger doneminde aktif olan dersler ve hedef yilin diger
+        # doneminde herhangi bir bolumde halihazirda secili dersler, bu donemin
+        # aday havuzundan tamamen cikarilir. Boylece "kesinleşme puanlariyla
+        # ekleme yapilirken" bile bir Bahar dersi Guz mufredatina (veya tersi)
+        # eklenemez. Havuza dusup dinlenen dersler bu kisitin disindadir.
         other_term_source_map = _fetch_other_term_curriculum_map(
-            cur=cur,
-            fakulte_id=fakulte_id,
-            akademik_yil=akademik_yil,
-            current_term=donem,
+            cur=cur, fakulte_id=fakulte_id, akademik_yil=akademik_yil, current_term=donem,
         )
-        other_term_source_ids: set[int] = set()
+        other_term_target_map = _fetch_other_term_curriculum_map(
+            cur=cur, fakulte_id=fakulte_id, akademik_yil=sonraki_yil, current_term=donem,
+        )
+        other_term_blocked_ids: set[int] = set()
         for _ids in other_term_source_map.values():
-            other_term_source_ids.update(int(d) for d in _ids)
-        if other_term_source_ids:
-            aday_dersler -= other_term_source_ids
+            other_term_blocked_ids.update(int(d) for d in _ids)
+        for _ids in other_term_target_map.values():
+            other_term_blocked_ids.update(int(d) for d in _ids)
+        if other_term_blocked_ids:
+            aday_dersler -= other_term_blocked_ids
 
         if not aday_dersler:
             return {"ok": False, "error": "Skor hesaplamak icin aday ders bulunamadi."}
