@@ -18,3 +18,9 @@ exports/*.xlsx
 # Yedek veritabanlari git'te tutulmaz (canli data/adil_secmeli.db izlenir)
 *.db.bak_*
 data/backups/
+
+# Benchmark sentetik katmanlari buyuk (~158MB) ve yeniden uretilebilir:
+#   python -m scripts.build_benchmark_datasets
+# raw_real ve derived (kucuk) izlenir, synthetic ve run artefaktlari haric.
+data/benchmark/synthetic/
+reports/benchmark_runs/

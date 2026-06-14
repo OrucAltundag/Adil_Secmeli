@@ -169,6 +169,16 @@ class DashboardPage(ttk.Frame):
                 first_label = next(iter(self._scenario_label_to_key.keys()))
                 self.scenario_cb.set(first_label)
             self._update_scenario_description()
+            # Backend gerçek API ise ve henüz dataset yüklenmemişse otomatik yükle
+            # (data/benchmark CSV katmanlarından). Böylece "Dataset Eksik" durumu
+            # kullanıcı elle yükleme yapmadan çözülür.
+            if self.backend_ready and not getattr(self.api, "last_dataset_name", None):
+                try:
+                    ds_result = self.api.load_dataset()
+                    if ds_result.ok and not ds_result.used_mock:
+                        self.banner.show("Dataset otomatik yüklendi (data/benchmark).", level="info")
+                except Exception:
+                    pass
             self._sync_dataset_choices()
             self._render_algorithm_checks(self.algorithms)
             self._update_from_run(mock_data.SAMPLE_RUN)

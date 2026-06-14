@@ -1,280 +1,715 @@
 course_id,code,name,faculty_id,department_id,capacity,difficulty_score,instructor_effect_score
-1000,TIPSEC1,Çocuk Hakları ve Aile Eğitimi,10,101,37,0.82,0.49
-1001,TIPSEC2,Toplum ve Kültürü Anlamak,10,101,36,0.25,0.92
-1002,TIPSEC5,Plastik Rekonstrüktif ve Estetik Cerrahi,10,101,56,0.88,0.59
-1003,TIPSEC6,Radyasyon Onkolojisi,10,101,36,0.89,0.89
-1004,OZD061,Atatürk İlkeleri ve İnkılap Tarihi,10,101,33,0.69,0.64
-1005,OZD063,Türk Dili,10,101,33,0.66,0.73
-1006,OZD065,Yabancı Dil (İngilizce),10,101,48,0.5,0.43
-1007,OZD067,Kariyer Planlama,10,101,26,0.43,0.94
-1008,TIP609,Cerrahi Bilimler Seçmeli,10,101,33,0.49,0.7
-1009,TIP610,Dahili Bilimler Seçmeli,10,101,51,0.85,0.7
-1010,BMS002,Girişimcilik ve İş Kurma,20,201,41,0.66,0.56
-1011,BMS003,Bilişim Teknolojileri Uygulamaları,20,201,41,0.27,0.62
-1012,OSD012,Medeniyetler ve Küresel Karşılaşmalar,20,201,57,0.58,0.67
-1013,OSD023,Toplum ve Kültürü Anlamak,20,201,41,0.24,0.4
-1014,BMS005,Dijital Dönüşüm Teknikleri,20,201,34,0.26,0.85
-1015,BMS043,Bilişim Hukuku,20,201,37,0.64,0.66
-1016,BMB213,Mühendislik Etiği,20,201,30,0.27,0.51
-1017,BMS006,Yönetim Bilişim Sistemleri,20,201,50,0.65,0.94
-1018,BMS007,Blokzincir Teknolojisi,20,201,44,0.53,0.46
-1019,BMS044,Mühendisler İçin Yönetim,20,201,48,0.75,0.66
-1020,OSD028,Yapay Zeka ve İnsan,20,201,49,0.83,0.55
-1021,BMS046,Enerji Verimliliği ve Uygulamaları,20,201,36,0.65,0.61
-1022,BMS008,Bilimsel Araştırma Teknikleri,20,201,32,0.46,0.61
-1023,BMS009,Sistem Yöneticiliği,20,201,39,0.33,0.42
-1024,BMS010,Bilgisayar Destekli Çizim,20,201,33,0.51,0.54
-1025,OSD004,Post-Modern Dönemde Din ve Gençlik,20,201,41,0.79,0.71
-1026,BMS039,Bilgi Erişim Sistemleri,20,201,49,0.31,0.78
-1027,BMS014,E-Ticaret,20,201,38,0.27,0.77
-1028,BMS015,Ağ Güvenliği,20,201,41,0.77,0.63
-1029,BMS016,Sayısal Kontrol,20,201,39,0.73,0.53
-1030,BMS017,İnsansız Hava Aracı Teknolojisine Giriş,20,201,46,0.24,0.61
-1031,BMS018,Fikri ve Sınai Mülkiyet Hakları,20,201,34,0.57,0.93
-1032,OSD015,Siyaset ve Ekonomiyi Anlamak,20,201,22,0.68,0.91
-1033,BMS011,İnformasyon Güvenliği ve Kriptoloji,20,201,43,0.6,0.53
-1034,BMS012,Derleyici Tasarımı,20,201,47,0.41,0.62
-1035,BMS013,Robotiğe Giriş,20,201,43,0.8,0.42
-1036,BMS032,Bulut Bilişim Uygulamaları,20,201,34,0.6,0.68
-1037,BMS036,Oyun Programlama,20,201,30,0.6,0.94
-1038,BMS041,Metin Madenciliğine Giriş,20,201,43,0.3,0.92
-1039,BMS068,Bilgisayar Grafiği,20,201,41,0.51,0.92
-1040,BMS025,Veri Madenciliği,20,201,38,0.32,0.52
-1041,BMS019,Karar Destek Sistemleri,20,201,54,0.33,0.42
-1042,BMS020,Mobil Programlama,20,201,32,0.25,0.78
-1043,BMS021,Python Programlamaya Giriş,20,201,54,0.34,0.85
-1044,BMS022,MATLAB GUI Uygulamaları,20,201,40,0.3,0.73
-1045,BMS023,İnsan Bilgisayar Etkileşimi,20,201,25,0.42,0.8
-1046,BMS024,Python ile Derin Öğrenme,20,201,38,0.77,0.45
-1047,BMS026,Genetik Algoritma,20,201,47,0.59,0.7
-1048,BMS027,Makine Öğrenmesi ve Örüntü Tanıma,20,201,37,0.8,0.69
-1049,BMS028,Görüntü İşleme,20,201,28,0.84,0.41
-1050,BMS030,Veritabanı Yönetim Sistemi Uygulamaları,20,201,38,0.69,0.72
-1051,BMS031,Biyoinformatiğe Giriş,20,201,33,0.75,0.46
-1052,BMS047,Gömülü Sistemler,20,201,43,0.3,0.71
-1053,BMS048,IOS Programlama,20,201,46,0.61,0.93
-1054,BMS049,Nesnelerin İnterneti (IoT),20,201,31,0.27,0.46
-1055,BMS050,Paralel ve Dağıtık Sistemler,20,201,34,0.75,0.83
-1056,BMS051,Sosyal Ağ Analizi,20,201,46,0.81,0.88
-1057,BMS052,Doğal Dil İşlemeye Giriş,20,201,33,0.81,0.55
-1058,BMS053,Büyük Veri,20,201,31,0.66,0.71
-1059,BMS029,Bilgi Güvenliği,20,201,30,0.53,0.49
-1060,BMBSEC61,Bulut Bilişim Uygulamaları,20,201,42,0.48,0.74
-1061,BMBSEC62,Veri Madenciliği,20,201,42,0.68,0.62
-1062,BMBSEC71,Mobil Programlama,20,201,34,0.48,0.88
-1063,BMBSEC72,Makine Öğrenmesi ve Örüntü Tanıma,20,201,40,0.68,0.43
-1064,BMBSEC73,Doğal Dil İşlemeye Giriş,20,201,52,0.53,0.55
-1065,BMBSEC31,Blokzincir Teknolojisi,20,201,32,0.46,0.59
-1066,BMBSEC32,Yönetim Bilişim Sistemleri,20,201,24,0.76,0.57
-1067,BMBSEC51,E-Ticaret,20,201,43,0.79,0.87
-1068,BMBSEC52,İnsansız Hava Aracı Teknolojisine Giriş,20,201,39,0.68,0.93
-1069,BMBSEC63,Oyun Programlama,20,201,34,0.36,0.57
-1070,BMBSEC64,Metin Madenciliğine Giriş,20,201,45,0.72,0.83
-1071,BMBSEC65,Robotiğe Giriş,20,201,46,0.42,0.8
-1072,BMBSEC74,Büyük Veri,20,201,22,0.62,0.45
-1073,BMBSEC75,Nesnelerin İnterneti (IoT),20,201,34,0.51,0.9
-1074,BMBSEC76,Görüntü İşleme,20,201,58,0.49,0.67
-1075,BMBSEC77,Python ile Derin Öğrenme,20,201,44,0.56,0.61
-1076,BMBSEC78,Siber Güvenlik ve Kriptoloji,20,201,45,0.24,0.84
-1077,BMBSEC79,iOS Programlama,20,201,49,0.25,0.79
-1078,EEMSEC51,Yenilenebilir Enerji Kaynakları,20,202,40,0.48,0.83
-1079,EEMSEC71,Gömülü Sistemler - I,20,202,46,0.57,0.71
-1080,EEMSEC72,Robotik,20,202,45,0.32,0.88
-1081,EEMSEC73,Yapay Zeka ve Uygulamaları,20,202,44,0.34,0.43
-1082,EEMSEC74,Görüntü İşleme,20,202,37,0.22,0.43
-1083,EEMSEC75,Biyomedikal Enstrümantasyon,20,202,41,0.45,0.51
-1084,EEM410,Yarı İletken Cihazlar,20,202,35,0.46,0.66
-1085,EEM614,İş Hukuku,20,202,40,0.48,0.91
-1086,EEM615,Otomatik Kontrol Sistemleri II,20,202,30,0.68,0.53
-1087,EEM616,Matlab ile Sayısal Analiz,20,202,33,0.54,0.65
-1088,EEM619,Elektrik Enerjisi Üretimi ve Yenilenebilir Enerji,20,202,37,0.87,0.66
-1089,EEM620,Sayısal İşaret İşleme,20,202,32,0.59,0.59
-1090,EEM705,Elektrik Enerjisi Dağıtımı,20,202,35,0.79,0.54
-1091,EEM707,Güç Elektroniği II,20,202,38,0.78,0.45
-1092,EEM719,Girişimcilik,20,202,43,0.22,0.43
-1093,EEM720,Kalite Yönetim Sistemleri,20,202,47,0.8,0.83
-1094,EEM727,Sayısal İşaret İşleme Uygulamaları,20,202,36,0.35,0.52
-1095,EEM729,Gömülü Sistemler II,20,202,50,0.36,0.51
-1096,EEM736,Güç Elektroniği Kontrol ve Koruma Sistemleri,20,202,47,0.66,0.68
-1097,EEM737,Elektrik Makinaları Tasarımı,20,202,44,0.81,0.93
-1098,EEM738,Dalga Yayılımı ve Haberleşme Bağlantıları,20,202,41,0.68,0.66
-1099,EEM820,Günlük İngilizce,20,202,42,0.29,0.5
-1100,EEM821,Mühendislikte Rapor ve Proje Hazırlama,20,202,49,0.76,0.52
-1101,EEM309,Yüksek Gerilim Tekniği,20,202,49,0.63,0.92
-1102,EEM311,Bilgisayar Destekli Devre Analizi,20,202,50,0.7,0.79
-1103,EEM313,Görsel Programlama,20,202,40,0.39,0.89
-1104,EEM302,Aydınlatma Tekniği,20,202,44,0.8,0.65
-1105,EEM304,Endüstriyel Otomasyon,20,202,50,0.35,0.57
-1106,EEM306,Sayısal İşaret İşleme,20,202,35,0.56,0.74
-1107,EEM401,Elektrik Enerjisi Dağıtımı,20,202,37,0.61,0.4
-1108,EEM403,Mikrodalga Tekniği,20,202,40,0.9,0.93
-1109,EEM405,Doğrusal Olmayan Kontrol,20,202,47,0.79,0.71
-1110,EEM407,Özel Elektrik Makinaları,20,202,47,0.62,0.56
-1111,EEM409,Bilgisayar Destekli Kontrol Sis.,20,202,38,0.68,0.66
-1112,EEM411,Antenler ve Propagasyon,20,202,27,0.44,0.55
-1113,EEM413,Haberleşme Elektroniği,20,202,41,0.43,0.55
-1114,EEM415,Topraklama,20,202,32,0.66,0.92
-1115,EEM417,Nanoelektronik,20,202,28,0.66,0.5
-1116,EEM419,FPGA İle Gömülü Sistem Tasarımı,20,202,29,0.56,0.53
-1117,ENDSEC31,Endüstri 4.0 ve Dijital Dönüşüm,20,203,42,0.24,0.87
-1118,ENDSEC51,İnsan Kaynakları Yönetimi,20,203,50,0.77,0.62
-1119,ENDSEC52,Çok Kriterli Karar Verme,20,203,40,0.42,0.48
-1120,ENDSEC61,Tedarik Zinciri Yönetimi,20,203,41,0.22,0.67
-1121,ENDSEC62,Proje Yönetimi,20,203,49,0.41,0.9
-1122,ENDSEC71,Veri Madenciliği,20,203,27,0.48,0.81
-1123,ENDSEC72,Karar Destek Sistemleri,20,203,44,0.61,0.95
-1124,ENDSEC73,Yapay Zeka ve Uzman Sistemler,20,203,39,0.77,0.59
-1125,END205,Maliyet Muhasebesi,20,203,44,0.7,0.78
-1126,END207,Endüstri ve Örgüt Psikolojisine Giriş,20,203,36,0.65,0.66
-1127,END206,Ekonomiye Giriş,20,203,33,0.86,0.6
-1128,END208,Pazarlama,20,203,41,0.41,0.49
-1129,END210,Kritik Düşünce Yöntemleri,20,203,53,0.66,0.71
-1130,END305,Programlama Dilleri,20,203,46,0.41,0.66
-1131,END308,Sezgisel Eniyileme,20,203,35,0.72,0.8
-1132,END310,"Tedarik Zinciri, Lojistik ve Depo Yön.",20,203,29,0.59,0.9
-1133,END401,Bulanık Küme Teorisi,20,203,26,0.86,0.89
-1134,END403,Veri Tabanı Yönetimi,20,203,50,0.66,0.52
-1135,END405,Stokastik Süreçler ve Uygulamaları,20,203,32,0.36,0.88
-1136,END407,Teknoloji Yönetimi,20,203,37,0.49,0.89
-1137,END409,İleri Düzey Excel Uygulamaları,20,203,50,0.46,0.72
-1138,END411,Deney Tasarımı ve Analizi,20,203,27,0.52,0.46
-1139,END415,Derin Öğrenme Metotları,20,203,51,0.24,0.75
-1140,END119,Girişimcilik,20,203,37,0.61,0.74
-1141,END120,Enerji Verimliliği ve Uygulamaları,20,203,30,0.53,0.51
-1142,END218,Mühendislik Etiği,20,203,38,0.28,0.77
-1143,END219,Afet ve Kriz Yönetimi,20,203,34,0.57,0.63
-1144,HEM120,Kişilerarası İlişkiler,99,301,43,0.81,0.48
-1145,HEM122,Bilim Felsefesi,99,301,34,0.89,0.59
-1146,HEM123,Üniversiteye Uyum,99,301,24,0.89,0.89
-1147,HEM124,Beslenme İlkeleri,99,301,38,0.89,0.48
-1148,HEM125,Toplumsal Cinsiyet ve Sağlık,99,301,29,0.8,0.5
-1149,HEM126,Histoloji ve Embriyoloji,99,301,41,0.26,0.58
-1150,HEM127,İşçi Sağlığı ve İş Güvenliği,99,301,30,0.89,0.57
-1151,HEMSEC1,Sağlık Psikolojisi,99,301,36,0.24,0.65
-1152,HEMSEC2,Onkoloji Hemşireliği,99,301,41,0.35,0.83
-1153,HEMSEC3,İş Sağlığı ve Güvenliği,99,301,38,0.6,0.49
-1154,HEMSEC4,Diyaliz Hemşireliği,99,301,42,0.75,0.83
-1155,HEMSEC5,İlk Yardım,99,301,45,0.29,0.64
-1156,HEM218,Tamamlayıcı ve Destekleyici Bakım,99,301,30,0.5,0.64
-1157,HEM219,Eleştirel Düşünme,99,301,39,0.53,0.4
-1158,HEM220,Hemşirelik ve Liderlik,99,301,15,0.57,0.8
-1159,HEM221,Cinsel Sağlık,99,301,41,0.87,0.89
-1160,HEM222,Aile Danışmanlığı,99,301,37,0.73,0.69
-1161,HEM223,Stres ve Kriz Yönetimi,99,301,32,0.21,0.4
-1162,HEM224,Sosyal Medya ve Hemşirelik,99,301,42,0.71,0.52
-1163,HEM316,Sağlık Sosyolojisi ve Antropolojisi,99,301,49,0.81,0.57
-1164,HEM317,Bakım Teknolojileri,99,301,36,0.27,0.68
-1165,HEM319,Enfeksiyon Kontrol Hemşireliği,99,301,32,0.41,0.44
-1166,HEM320,Hemşirelikte İlaç Yönetimi,99,301,41,0.23,0.92
-1167,HEM321,Sağlık ve Medya,99,301,29,0.52,0.69
-1168,HEM322,Hasta Eğitimi,99,301,34,0.57,0.64
-1169,HEM303,Hemşirelikte Girişimcilik ve İnovasyon,99,301,49,0.68,0.47
-1170,HEM418,Yoğun Bakım Hemşireliği,99,301,40,0.9,0.67
-1171,HEM419,Palyatif Hemşireliği,99,301,24,0.73,0.49
-1172,HEM420,Sağlığın Tanılanması ve Değerlendirilmesi,99,301,25,0.83,0.85
-1173,HEM421,Transplantasyon Hemşireliği,99,301,41,0.21,0.52
-1174,HEM422,Ameliyathane Hemşireliği,99,301,46,0.89,0.52
-1175,HEM424,Geriatri Hemşireliği,99,301,27,0.22,0.68
-1176,HEM504,Afet Kültürü ve Yönetimi,99,301,43,0.29,0.79
-1177,HEM506,Doğuma Hazırlık ve Ebeveyn Eğitimi,99,301,50,0.75,0.61
-1178,HEM507,Hemşirelikte Kariyer Yönetimi,99,301,55,0.65,0.82
-1179,HEM511,Yenidoğan Hemşireliği,99,301,42,0.64,0.73
-1180,HEM603,Adli Hemşirelik,99,301,44,0.23,0.46
-1181,HEM604,Kanıta Dayalı Hemşirelik,99,301,22,0.79,0.43
-1182,HEM608,Konsültasyon Liyezon Psikiyatrisi Hemşireliği,99,301,56,0.28,0.64
-1183,HEM609,Hasta ve Çalışan Güvenliği,99,301,35,0.29,0.54
-1184,HEM614,Çocuk ve Ergen Ruh Sağlığı Hemşireliği,99,301,32,0.69,0.51
-1185,HEM615,Büyüme ve Gelişme,99,301,37,0.68,0.41
-1186,HEM709,Evde Bakım Hemşireliği,99,301,52,0.49,0.46
-1187,HEM710,Kültürlerarası Hemşirelik,99,301,57,0.56,0.74
-1188,HEM711,Sağlık Turizmi,99,301,41,0.69,0.63
-1189,HEM717,Sağlık Politikaları ve Hemşirelik,99,301,47,0.83,0.68
-1190,HEM718,Etkili Sunum İlkeleri,99,301,40,0.63,0.56
-1191,HEM720,Okul Sağlığı Hemşireliği,99,301,31,0.75,0.67
-1192,EBE116,İklim Değişikliği ve Sağlık,99,302,51,0.63,0.83
-1193,EBE117,Tıbbi Terminoloji,99,302,35,0.78,0.94
-1194,EBE118,Üniversiteye Uyum,99,302,52,0.45,0.63
-1195,EBE214,Sağlık Okuryazarlığı,99,302,50,0.31,0.7
-1196,EBE215,Toplumsal Cinsiyet,99,302,44,0.84,0.78
-1197,EBE216,Sosyal Sorumluluk Projesi,99,302,54,0.54,0.53
-1198,EBE315,Bakım Teknolojileri,99,302,57,0.21,0.45
-1199,EBE316,Eleştirel Düşünme,99,302,38,0.28,0.72
-1200,EBE318,Kadın Statüsü ve Sorunları,99,302,33,0.55,0.92
-1201,EBE406,Doğuma Hazırlık ve Ebeveyn Eğitimi,99,302,25,0.75,0.44
-1202,EBE413,Perinatal Ruh Sağlığı,99,302,57,0.71,0.9
-1203,EBE414,Ebelikte Bakım Planlama ve Danışmanlık,99,302,36,0.65,0.65
-1204,EBE412,Emzirme ve Danışmanlık,99,302,49,0.88,0.55
-1205,EBE415,Elektronik Fetal Monitörizasyon,99,302,34,0.24,0.85
-1206,EBE517,Ebelikte Kültürel Yaklaşımlar,99,302,52,0.81,0.87
-1207,EBE518,Prekonsepsiyonel Bakım,99,302,34,0.45,0.77
-1208,EBE519,Psikoloji,99,302,30,0.5,0.46
-1209,EBE514,Üreme ve Cinsel Sağlık,99,302,38,0.8,0.89
-1210,EBE520,Ebelikte Tamamlayıcı Tedaviler,99,302,35,0.21,0.48
-1211,EBE612,Ebelik ve Atılganlık,99,302,44,0.65,0.58
-1212,EBE613,Afetlerde Üreme Sağlığı,99,302,39,0.83,0.93
-1213,EBE614,Alternatif Doğum Yöntemleri,99,302,45,0.39,0.8
-1214,EBE713,Jinekolojik Kanser Kontrolü ve Ebelik,99,302,37,0.46,0.59
-1215,EBE711,İnfertilite ve Ebelik,99,302,34,0.28,0.62
-1216,EBE715,Ürojinekoloji ve Ebelik,99,302,35,0.52,0.86
-1217,EBE716,Ebelikte İnovasyon,99,302,56,0.68,0.66
-1218,EBESEC1,Doğuma Hazırlık ve Ebeveyn Eğitimi,99,302,41,0.5,0.89
-1219,EBESEC2,Suda Doğum ve Alternatif Yöntemler,99,302,24,0.32,0.47
-1220,EBESEC3,Emzirme Danışmanlığı,99,302,35,0.71,0.94
-1221,EBE_SEC7,Ebelikte İnovasyon,99,302,40,0.79,0.46
-1222,EBE_SEC8,Adli Ebelik,99,302,54,0.84,0.67
-1223,EBE_SEC7,Ebelikte İnovasyon,99,302,48,0.6,0.64
-1224,EBE_SEC8,Adli Ebelik,99,302,32,0.63,0.83
-1225,Fizyoterapi ve RehabilitasyonSEC1,Sporcu Sağlığı ve Rehabilitasyonu,99,303,59,0.63,0.87
-1226,Fizyoterapi ve RehabilitasyonSEC2,Manuel Terapi Teknikleri,99,303,39,0.82,0.8
-1227,Fizyoterapi ve RehabilitasyonSEC3,Hidroterapi ve Balneoterapi,99,303,49,0.82,0.67
-1228,Fizyoterapi ve Rehabilitasyon611,Sağlık Projeleri ve Gönüllülük,99,303,30,0.54,0.89
-1229,Fizyoterapi ve Rehabilitasyon608,El Rehabilitasyonu,99,303,20,0.51,0.43
-1230,Fizyoterapi ve Rehabilitasyon609,İşitme-Konuşma Rehabilitasyonu,99,303,28,0.66,0.41
-1231,Fizyoterapi ve Rehabilitasyon613,Müzik Destekli Fizyoterapi,99,303,15,0.81,0.69
-1232,Fizyoterapi ve Rehabilitasyon706,Tele-Rehabilitasyon,99,303,56,0.72,0.8
-1233,Fizyoterapi ve Rehabilitasyon707,Fizyoterapide Yönetim ve Organizasyon,99,303,41,0.36,0.93
-1234,Fizyoterapi ve Rehabilitasyon708,Yoga ve Pilates,99,303,32,0.81,0.69
-1235,Fizyoterapi ve Rehabilitasyon709,Engelli Hakları,99,303,43,0.68,0.74
-1236,Fizyoterapi ve Rehabilitasyon710,Onkolojik Rehabilitasyon,99,303,41,0.5,0.8
-1237,Fizyoterapi ve Rehabilitasyon808,Kadın ve Erkek Sağlığı,99,303,44,0.54,0.77
-1238,Fizyoterapi ve Rehabilitasyon806,Fizyoterapide Literatür,99,303,49,0.65,0.48
-1239,Fizyoterapi ve Rehabilitasyon807,Mesleki İngilizce,99,303,37,0.78,0.89
-1240,Fizyoterapi ve Rehabilitasyon809,Alternatif Tedavi Yöntemleri,99,303,32,0.63,0.41
-1241,Fizyoterapi ve Rehabilitasyon810,Hayvan Destekli Fizyoterapi,99,303,46,0.85,0.68
-1242,GSTSEC1,Moleküler Gastronomi,40,401,46,0.53,0.67
-1243,GSTSEC2,Yemek Fotoğrafçılığı,40,401,40,0.32,0.81
-1244,GSTSEC3,İçecek Bilgisi ve Miksoloji,40,401,57,0.42,0.58
-1245,GSTSEC4,Menü Planlama ve Maliyet Analizi,40,401,36,0.39,0.68
-1246,GSTSEC5,Yemek Sosyolojisi,40,401,32,0.59,0.61
-1247,GSTSEC6,Antik Mutfaklar,40,401,43,0.77,0.44
-1248,GST108A,Gastronomi ve Kültür,40,401,34,0.51,0.72
-1249,GST210,Lezzet ve Tat Oluşumunda Baharatlar,40,401,43,0.26,0.67
-1250,GST211,Gıda Katkı Maddeleri,40,401,33,0.42,0.94
-1251,GST509,Gastronomi ve Sanat,40,401,36,0.72,0.41
-1252,GST607,Temel Sanat ve Estetik Bilgisi,40,401,55,0.48,0.42
-1253,GSTSEC5,Yemek Sosyolojisi,40,401,36,0.58,0.85
-1254,GSTSEC6,Antik Mutfaklar,40,401,33,0.75,0.93
-1255,ILHSEC1,Osmanlı Türkçesi,50,501,49,0.65,0.89
-1256,ILHSEC2,Din ve Mitoloji,50,501,31,0.59,0.76
-1257,ILHSEC3,İslam Ahlak Felsefesi,50,501,34,0.52,0.59
-1258,ILH108S,Kur'an-ı Kerim Talimi,50,501,44,0.78,0.85
-1259,ILH109S,Kur'an Tarihi,50,501,47,0.79,0.58
-1260,ILH110S,İleri Düzey Sarf,50,501,49,0.74,0.73
-1261,ILH111S,İslam Ahlak Esasları,50,501,34,0.7,0.6
-1262,ILH112S,Toplum ve Kültürü Anlamak,50,501,44,0.52,0.45
-1263,ILH209S,Kur'an-ı Kerim Ezberleme Yöntemleri,50,501,36,0.66,0.4
-1264,ILH210S,İleri Düzey Nahiv,50,501,35,0.45,0.75
-1265,ILH211S,Hulefa-i Raşidin Siyasi Tarihi,50,501,49,0.76,0.7
-1266,ILH212S,Medeniyetler ve Küresel Karşılaşmalar,50,501,35,0.46,0.46
-1267,ILHSEC1,Osmanlı Türkçesi,50,501,42,0.83,0.67
-1268,ILHSEC2,Din ve Mitoloji,50,501,41,0.78,0.81
-1269,ILHSEC3,İslam Ahlak Felsefesi,50,501,31,0.49,0.54
-1270,ILH108S,Kur'an-ı Kerim Talimi,50,501,47,0.34,0.47
-1271,ILH109S,Kur'an Tarihi,50,501,44,0.8,0.52
-1272,ILH110S,İleri Düzey Sarf,50,501,24,0.78,0.5
-1273,ILH111S,İslam Ahlak Esasları,50,501,42,0.44,0.82
-1274,ILH112S,Toplum ve Kültürü Anlamak,50,501,33,0.23,0.75
-1275,ILH209S,Kur'an-ı Kerim Ezberleme Yöntemleri,50,501,48,0.67,0.47
-1276,ILH210S,İleri Düzey Nahiv,50,501,28,0.82,0.65
-1277,ILH211S,Hulefa-i Raşidin Siyasi Tarihi,50,501,37,0.61,0.68
-1278,ILH212S,Medeniyetler ve Küresel Karşılaşmalar,50,501,42,0.87,0.4
+1,TIP100,Ders Kurulları 1,1,1,50,,
+2,TIPSEC1,Çocuk Hakları ve Aile Eğitimi,1,1,50,,
+3,TIPSEC2,Toplum ve Kültürü Anlamak,1,1,50,,
+4,TIP200,Ders Kurulları 2,1,1,50,,
+5,TIP201,Mesleki İngilizce,1,1,50,,
+6,TIP300,Ders Kurulları 3,1,1,50,,
+7,TIP401,Dahiliye (İç Hastalıkları),1,1,50,,
+8,TIP402,Genel Cerrahi,1,1,50,,
+9,TIP403,Çocuk Sağlığı ve Hastalıkları,1,1,50,,
+10,TIP404,Kadın Hastalıkları ve Doğum,1,1,50,,
+11,TIP408,Kardiyoloji,1,1,50,,
+12,TIP406,Adli Tıp,1,1,50,,
+13,TIP501,Anesteziyoloji ve Reanimasyon,1,1,50,,
+14,TIP502,Beyin ve Sinir Cerrahisi,1,1,50,,
+15,TIP503,Dermatoloji,1,1,50,,
+16,TIP504,Enfeksiyon Hastalıkları,1,1,50,,
+17,TIP505,Fiziksel Tıp ve Rehabilitasyon,1,1,50,,
+18,TIP506,Göğüs Hastalıkları,1,1,50,,
+19,TIP507,Göz Hastalıkları,1,1,50,,
+20,TIP508,Psikiyatri,1,1,50,,
+21,TIP509,Radyoloji,1,1,50,,
+22,TIPSEC5,Plastik Rekonstrüktif ve Estetik Cerrahi,1,1,50,,
+23,TIPSEC6,Radyasyon Onkolojisi,1,1,50,,
+24,TIP601,Acil Tıp (İntörn),1,1,50,,
+25,TIP602,Halk Sağlığı (İntörn),1,1,50,,
+26,TIP603,Aile Hekimliği (İntörn),1,1,50,,
+27,TIP407,Kalp Damar Cerrahisi,1,1,50,,
+29,OZD061,Girisimcilik,1,1,50,,
+30,OZD063,Toplum Projesi,1,1,50,,
+31,OZD065,Yabancı Dil (İngilizce),1,1,50,,
+32,OZD067,Kariyer Planlama,1,1,50,,
+33,TIP607,Kardiyoloji (İntörn),1,1,50,,
+34,TIP609,Klinik Farmakoloji,1,1,50,,
+35,TIP610,Ileri Fizyoloji,1,1,50,,
+36,BMB101,Bilgisayar Mühendisliğine Giriş,2,2,50,,
+37,BMB104,Bilgisayar Programlama - II,2,2,50,,
+38,FIZ101,Fizik - I,2,2,50,,
+39,BMB102,Bilgisayar Programlama - I,2,2,50,,
+40,OYD-2.1,Ortak YÖK Dersleri (Güz),2,2,50,,
+41,BMB205,Mantıksal Devre Tasarımı,2,2,50,,
+42,MAT201,Ayrık Matematik,2,2,50,,
+43,MAT102,Matematik - II,2,2,50,,
+44,BMB211,Bilgisayar Programlama - II,2,2,50,,
+45,BMB212,Mesleki İngilizce,2,2,50,,
+46,OYD-2.2,Ortak YÖK Dersleri (Bahar),2,2,50,,
+47,BMB310,Görsel Programlamaya Giriş,2,2,50,,
+48,BMB201,Veri Yapıları ve Algoritma,2,2,50,,
+49,BMB312,Web ve İnternet Teknolojileri,2,2,50,,
+50,END318,Lineer Cebir,2,4,50,,
+51,END412,Diferansiyel Denklemler,2,4,50,,
+52,BMB408,Mantıksal Devre Tasarımı,2,2,50,,
+53,BMB202,Yazılım Mühendisliği,2,2,50,,
+54,BMB410,Elektroniğe Giriş,2,2,50,,
+55,BMB204,Veritabanı Yönetimi,2,2,50,,
+56,BMB206,İşletim Sistemleri,2,2,50,,
+57,END201,Olasılık ve İstatistik,2,4,50,,
+58,BMB504,Otomata Teorisi,2,2,50,,
+59,BMB506,Web Tasarımı ve Programlama,2,2,50,,
+60,BMB303,Bilgisayar Ağlarına Giriş,2,2,50,,
+61,BMB508,Mikro İşlemciler,2,2,50,,
+62,BMB301,Nesne Tabanlı Programlama,2,2,50,,
+63,BMB510,Bilgisayar Mimarisi,2,2,50,,
+64,BMB302,Algoritma Analizi ve Tasarım,2,2,50,,
+65,ENDSEC62,Proje Yönetimi,2,4,50,,
+66,BMB304,Yapay Zekaya Giriş,2,2,50,,
+67,BMB611,Sistem Programlama,2,2,50,,
+68,BMB612,İş Sağlığı ve Güvenliği - I,2,2,50,,
+69,BMB702,Proje - I,2,2,50,,
+70,BMB704,İş Sağlığı ve Güvenliği - II,2,2,50,,
+71,BMB802,Proje - II,2,2,50,,
+72,END824,Uygulamalı Mühendislik Eğitimi,2,4,50,,
+73,OZD021,Atatürk İlkeleri ve İnkılap Tarihi - I,2,2,50,,
+74,OZD022,Atatürk İlkeleri ve İnkılap Tarihi - II,2,2,50,,
+75,OZD023,Türk Dili - I,2,2,50,,
+76,OZD024,Türk Dili - II,2,2,50,,
+77,OZD025,Yabancı Dil - I,2,2,50,,
+78,OZD026,Yabancı Dil - II,2,2,50,,
+79,OZD027,Kariyer Planlama,2,2,50,,
+80,BMS002,Girişimcilik ve İş Kurma,2,2,50,,
+81,BMS003,Bilişim Teknolojileri Uygulamaları,2,2,50,,
+82,OSD012,Medeniyetler ve Küresel Karşılaşmalar,2,2,50,,
+83,OSD023,Toplum ve Kültürü Anlamak,2,2,50,,
+84,BMS005,Dijital Dönüşüm Teknikleri,2,2,50,,
+85,BMS043,Bilişim Hukuku,2,2,50,,
+86,END218,Mühendislik Etiği,2,4,50,,
+87,END511,Yönetim Bilişim Sistemleri,2,4,50,,
+88,BMBSEC31,Blokzincir Teknolojisi,2,2,50,,
+89,BMS044,Mühendisler İçin Yönetim,2,2,50,,
+90,OSD028,Yapay Zeka ve İnsan,2,2,50,,
+91,END120,Enerji Verimliliği ve Uygulamaları,2,4,50,,
+92,BMS008,Bilimsel Araştırma Teknikleri,2,2,50,,
+93,BMS009,Sistem Yöneticiliği,2,2,50,,
+94,END217,Bilgisayar Destekli Çizim,2,4,50,,
+95,OSD004,Post-Modern Dönemde Din ve Gençlik,2,2,50,,
+96,BMS039,Bilgi Erişim Sistemleri,2,2,50,,
+97,BMBSEC51,E-Ticaret,2,2,50,,
+98,BMS015,Ağ Güvenliği,2,2,50,,
+99,BMS016,Sayısal Kontrol,2,2,50,,
+100,BMBSEC52,İnsansız Hava Aracı Teknolojisine Giriş,2,2,50,,
+101,BMS018,Fikri ve Sınai Mülkiyet Hakları,2,2,50,,
+102,OSD015,Siyaset ve Ekonomiyi Anlamak,2,2,50,,
+103,BMS011,İnformasyon Güvenliği ve Kriptoloji,2,2,50,,
+104,BMS012,Derleyici Tasarımı,2,2,50,,
+105,BMBSEC65,Robotiğe Giriş,2,2,50,,
+106,BMBSEC61,Bulut Bilişim Uygulamaları,2,2,50,,
+107,BMBSEC63,Oyun Programlama,2,2,50,,
+108,BMBSEC64,Metin Madenciliğine Giriş,2,2,50,,
+109,BMS068,Bilgisayar Grafiği,2,2,50,,
+110,ENDSEC71,Veri Madenciliği,2,4,50,,
+111,ENDSEC72,Karar Destek Sistemleri,2,4,50,,
+112,BMBSEC71,Mobil Programlama,2,2,50,,
+113,BMS021,Python Programlamaya Giriş,2,2,50,,
+114,BMS022,MATLAB GUI Uygulamaları,2,2,50,,
+115,BMS023,İnsan Bilgisayar Etkileşimi,2,2,50,,
+116,BMBSEC77,Python ile Derin Öğrenme,2,2,50,,
+117,BMS026,Genetik Algoritma,2,2,50,,
+118,BMBSEC72,Makine Öğrenmesi ve Örüntü Tanıma,2,2,50,,
+119,EEMSEC74,Görüntü İşleme,2,3,50,,
+120,BMS030,Veritabanı Yönetim Sistemi Uygulamaları,2,2,50,,
+121,BMS031,Biyoinformatiğe Giriş,2,2,50,,
+122,BMS047,Gömülü Sistemler,2,2,50,,
+123,BMBSEC79,iOS Programlama,2,2,50,,
+124,BMBSEC75,Nesnelerin İnterneti (IoT),2,2,50,,
+125,BMS050,Paralel ve Dağıtık Sistemler,2,2,50,,
+126,BMS051,Sosyal Ağ Analizi,2,2,50,,
+127,BMBSEC73,Doğal Dil İşlemeye Giriş,2,2,50,,
+128,BMBSEC74,Büyük Veri,2,2,50,,
+129,BMS029,Bilgi Güvenliği,2,2,50,,
+134,BMB203,Web ve Internet Teknolojileri,2,2,50,,
+147,BMB401,Bitirme Projesi - I,2,2,50,,
+148,BMB402,Bitirme Projesi - II,2,2,50,,
+165,BMBSEC78,Siber Güvenlik ve Kriptoloji,2,2,50,,
+166,MB166,iOS Programlama,2,2,50,,
+168,EEM101,Elektrik-Elektronik Mühendisliği Müh. Giriş,2,3,50,,
+169,EEM201,Elektrik Devre Temelleri,2,3,50,,
+170,EEM202,Devre Analizi - I,2,3,50,,
+171,END214,Matematik II,2,4,50,,
+172,EEM206,Elektrik-Elektronik Mühendisliği Malzeme Bilimi,2,3,50,,
+173,EEM208,Elektrik Devre Temelleri,2,3,50,,
+174,EEM210,Bilgisayar Programlama,2,3,50,,
+175,EEM301,Elektrik Makinaları - I,2,3,50,,
+176,EEM502,Mikroişlemciler,2,3,50,,
+177,EEM305,Otomatik Kontrol Sistemleri - I,2,3,50,,
+178,EEM307,Haberleşme - I,2,3,50,,
+179,EEM602,Elektrik Enerjisi İletim Sistemleri,2,3,50,,
+180,EEM304,Endüstriyel Otomasyon,2,3,50,,
+181,EEMSEC51,Yenilenebilir Enerji Kaynakları,2,3,50,,
+182,EEMSEC71,Gömülü Sistemler - I,2,3,50,,
+183,EEMSEC72,Robotik,2,3,50,,
+184,EEMSEC73,Yapay Zeka ve Uygulamaları,2,3,50,,
+186,EEMSEC75,Biyomedikal Enstrümantasyon,2,3,50,,
+187,END116,Matematik I,2,4,50,,
+188,EEM107,Elektrik-Elektronik Mühendisliği Mühendisliğine Giriş,2,3,50,,
+189,END117,Fizik I,2,4,50,,
+190,END216,Genel Kimya,2,4,50,,
+191,ME191,Matematik II,2,3,50,,
+192,ME192,Elektrik-Elektronik Mühendisliği Malzeme Bilimi,2,3,50,,
+194,END215,Fizik II,2,4,50,,
+195,ME195,Bilgisayar Programlama,2,3,50,,
+200,EEM408,Sayısal Devre Laboratuvarı,2,3,50,,
+201,EEM410,Yarı İletken Cihazlar,2,3,50,,
+202,EEM501,Elektrik Makinaları I,2,3,50,,
+204,EEM503,Otomatik Kontrol Sistemleri I,2,3,50,,
+205,EEM504,Elektromanyetik Dalga Teorisi,2,3,50,,
+206,EEM505,Haberleşme I,2,3,50,,
+207,EEM506,Mikroişlemci Laboratuvarı,2,3,50,,
+208,EEM507,Kontrol Sistemleri Laboratuvarı,2,3,50,,
+209,EEM601,Elektrik Makinaları II,2,3,50,,
+211,EEM604,Elektrik Makinaları Laboratuvarı,2,3,50,,
+212,EEM605,Haberleşme II,2,3,50,,
+213,EEM606,Haberleşme Laboratuvarı,2,3,50,,
+214,EEM607,Güç Elektroniği I,2,3,50,,
+215,EBE120,İş Sağlığı ve Güvenliği,3,6,50,,
+216,EEM614,İş Hukuku,2,3,50,,
+217,EEM615,Otomatik Kontrol Sistemleri II,2,3,50,,
+218,EEM616,Matlab ile Sayısal Analiz,2,3,50,,
+219,EEM619,Elektrik Enerjisi Üretimi ve Yenilenebilir Enerji,2,3,50,,
+220,EEM306,Sayısal İşaret İşleme,2,3,50,,
+221,EEM401,Elektrik Enerjisi Dağıtımı,2,3,50,,
+222,EEM707,Güç Elektroniği II,2,3,50,,
+223,END119,Girişimcilik,2,4,50,,
+224,EEM720,Kalite Yönetim Sistemleri,2,3,50,,
+225,EEM727,Sayısal İşaret İşleme Uygulamaları,2,3,50,,
+226,EEM729,Gömülü Sistemler II,2,3,50,,
+227,EEM736,Güç Elektroniği Kontrol ve Koruma Sistemleri,2,3,50,,
+228,EEM737,Elektrik Makinaları Tasarımı,2,3,50,,
+229,EEM738,Dalga Yayılımı ve Haberleşme Bağlantıları,2,3,50,,
+230,END721,Bitirme Projesi I,2,4,50,,
+231,END823,Bitirme Projesi II,2,4,50,,
+233,EEM820,Günlük İngilizce,2,3,50,,
+234,EEM821,Mühendislikte Rapor ve Proje Hazırlama,2,3,50,,
+235,EEM309,Yüksek Gerilim Tekniği,2,3,50,,
+236,EEM311,Bilgisayar Destekli Devre Analizi,2,3,50,,
+237,EEM313,Görsel Programlama,2,3,50,,
+238,EEM302,Aydınlatma Tekniği,2,3,50,,
+239,ME239,Endüstriyel Otomasyon,2,3,50,,
+242,EEM403,Mikrodalga Tekniği,2,3,50,,
+243,EEM405,Doğrusal Olmayan Kontrol,2,3,50,,
+244,EEM407,Özel Elektrik Makinaları,2,3,50,,
+245,EEM409,Bilgisayar Destekli Kontrol Sis.,2,3,50,,
+246,EEM411,Antenler ve Propagasyon,2,3,50,,
+247,EEM413,Haberleşme Elektroniği,2,3,50,,
+248,EEM415,Topraklama,2,3,50,,
+249,EEM417,Nanoelektronik,2,3,50,,
+250,EEM419,FPGA İle Gömülü Sistem Tasarımı,2,3,50,,
+251,END101,Endüstri Mühendisliğine Giriş,2,4,50,,
+253,END203,İş ve Zaman Etüdü,2,4,50,,
+254,END204,Ergonomi,2,4,50,,
+255,END301,Yöneylem Araştırması - I,2,4,50,,
+256,END303,Üretim Planlama - I,2,4,50,,
+257,END302,Tesis Yeri Seçimi ve Tasarımı,2,4,50,,
+258,END612,İstatistiksel Kalite Kontrol,2,4,50,,
+259,END306,Yöneylem Araştırması - II,2,4,50,,
+260,ENDSEC31,Endüstri 4.0 ve Dijital Dönüşüm,2,4,50,,
+261,ENDSEC51,İnsan Kaynakları Yönetimi,2,4,50,,
+262,ENDSEC52,Çok Kriterli Karar Verme,2,4,50,,
+263,ENDSEC61,Tedarik Zinciri Yönetimi,2,4,50,,
+267,ENDSEC73,Yapay Zeka ve Uzman Sistemler,2,4,50,,
+268,END205,Maliyet Muhasebesi,2,4,50,,
+269,END207,Endüstri ve Örgüt Psikolojisine Giriş,2,4,50,,
+270,END206,Ekonomiye Giriş,2,4,50,,
+271,END208,Pazarlama,2,4,50,,
+272,END210,Kritik Düşünce Yöntemleri,2,4,50,,
+273,END305,Programlama Dilleri,2,4,50,,
+274,END308,İş Sağlığı ve Güvenliği I,2,4,50,,
+275,END310,"Tedarik Zinciri, Lojistik ve Depo Yön.",2,4,50,,
+276,END401,Bulanık Küme Teorisi,2,4,50,,
+277,END403,Veri Tabanı Yönetimi,2,4,50,,
+278,END405,Stokastik Süreçler ve Uygulamaları,2,4,50,,
+279,END407,Teknoloji Yönetimi,2,4,50,,
+280,END409,İş Sağlığı ve Güvenliği II,2,4,50,,
+281,END411,Deney Tasarımı ve Analizi,2,4,50,,
+282,END415,Derin Öğrenme Metotları,2,4,50,,
+283,END106,Temel Bilgisayar Teknolojileri Kullanımı,2,4,50,,
+290,ME290,İş Sağlığı ve Güvenliği I,2,4,50,,
+292,ME292,İş Sağlığı ve Güvenliği II,2,4,50,,
+294,END414,Nümerik Analiz,2,4,50,,
+295,END422,Teknik Rapor Hazırlama,2,4,50,,
+297,END513,Benzetim,2,4,50,,
+298,END520,Malzeme Bilgisi,2,4,50,,
+299,END605,İmal Usulleri,2,4,50,,
+300,END606,Tesis Yeri Tasarımı,2,4,50,,
+302,END628,Toplam Kalite Yönetimi,2,4,50,,
+303,END713,Teknik İngilizce I,2,4,50,,
+304,END714,Mühendislik Ekonomisi,2,4,50,,
+311,END219,Afet ve Kriz Yönetimi,2,4,50,,
+312,EBE104,Anatomi,3,6,50,,
+313,EBE105,Fizyoloji,3,6,50,,
+314,Fizyoterapi ve Rehabilitasyon211,Biyokimya,3,7,50,,
+315,HEM107,Hemşirelik Felsefesi Kavram ve Kuramları,3,5,50,,
+316,Fizyoterapi ve Rehabilitasyon511,Farmakoloji,3,7,50,,
+317,EBE213,Mikrobiyoloji-Parazitoloji,3,6,50,,
+318,HEM101,Hemşirelik Esasları,3,5,50,,
+319,EBE409,Epidemiyoloji ve Bulaşıcı Hastalıklar,3,6,50,,
+320,HEM304,Sosyal Sorumluluk Projesi I,3,5,50,,
+321,HEM202,İç Hastalıkları Hemşireliği,3,5,50,,
+322,HEM411,Hemşirelikte Etik İlke ve Uygulamalar,3,5,50,,
+323,HEM413,İlk Yardım ve Acil Hemşireliği,3,5,50,,
+324,HEM501,Doğum ve Kadın Hastalıkları Hemşireliği,3,5,50,,
+325,HEM503,Hemşirelikte Araştırma ve Biyoistatistik,3,5,50,,
+326,HEM509,Hemşirelikte Yönetim,3,5,50,,
+327,HEM601,Psikiyatri Hemşireliği,3,5,50,,
+328,HEM611,Çocuk Sağlığı ve Hastalıkları Hemşireliği,3,5,50,,
+329,HEM402,Halk Sağlığı Hemşireliği,3,5,50,,
+330,HEM702,Hemşirelikte Eğitim,3,5,50,,
+331,HEM801,Klinik / Saha Dersi,3,5,50,,
+332,HEM802,Klinik / Saha Bitirme Projesi,3,5,50,,
+333,HEM120,Kişilerarası İlişkiler,3,5,50,,
+334,HEM122,Bilim Felsefesi,3,5,50,,
+335,EBE118,Üniversiteye Uyum,3,6,50,,
+336,EBE211,Beslenme İlkeleri,3,6,50,,
+337,HEM125,Toplumsal Cinsiyet ve Sağlık,3,5,50,,
+338,HEM126,Histoloji ve Embriyoloji,3,5,50,,
+339,HEM127,İşçi Sağlığı ve İş Güvenliği,3,5,50,,
+341,HEM103,Anatomi ve Fizyoloji,3,5,50,,
+343,HEM204,Cerrahi Hastalıkları Hemşireliği,3,5,50,,
+344,HEM301,Kadın Sağlığı ve Hastalıkları Hem.,3,5,50,,
+345,HEM303,Hemşirelikte Girişimcilik ve İnovasyon,3,5,50,,
+346,HEM401,Ruh Sağlığı ve Psikiyatri Hem.,3,5,50,,
+348,HEMSEC1,Sağlık Psikolojisi,3,5,50,,
+349,HEMSEC2,Onkoloji Hemşireliği,3,5,50,,
+350,HEMSEC3,İş Sağlığı ve Güvenliği,3,5,50,,
+351,HEMSEC4,Diyaliz Hemşireliği,3,5,50,,
+352,EBE307,İlk Yardım,3,6,50,,
+353,HEM218,Tamamlayıcı ve Destekleyici Bakım,3,5,50,,
+354,EBE316,Eleştirel Düşünme,3,6,50,,
+355,HEM220,Hemşirelik ve Liderlik,3,5,50,,
+356,HEM221,Cinsel Sağlık,3,5,50,,
+357,HEM222,Aile Danışmanlığı,3,5,50,,
+358,HEM223,Stres ve Kriz Yönetimi,3,5,50,,
+359,HEM224,Sosyal Medya ve Hemşirelik,3,5,50,,
+360,HEM316,Sağlık Sosyolojisi ve Antropolojisi,3,5,50,,
+361,EBE315,Bakım Teknolojileri,3,6,50,,
+362,HEM319,Enfeksiyon Kontrol Hemşireliği,3,5,50,,
+363,HEM320,Hemşirelikte İlaç Yönetimi,3,5,50,,
+364,HEM321,Sağlık ve Medya,3,5,50,,
+365,HEM322,Hasta Eğitimi,3,5,50,,
+366,SH366,Hemşirelikte Girişimcilik ve İnovasyon,3,5,50,,
+367,HEM418,Yoğun Bakım Hemşireliği,3,5,50,,
+368,HEM419,Palyatif Hemşireliği,3,5,50,,
+369,HEM420,Sağlığın Tanılanması ve Değerlendirilmesi,3,5,50,,
+370,HEM421,Transplantasyon Hemşireliği,3,5,50,,
+371,HEM422,Ameliyathane Hemşireliği,3,5,50,,
+372,HEM424,Geriatri Hemşireliği,3,5,50,,
+373,HEM504,Afet Kültürü ve Yönetimi,3,5,50,,
+374,EBESEC1,Doğuma Hazırlık ve Ebeveyn Eğitimi,3,6,50,,
+375,HEM507,Hemşirelikte Kariyer Yönetimi,3,5,50,,
+376,HEM511,Yenidoğan Hemşireliği,3,5,50,,
+377,HEM603,Adli Hemşirelik,3,5,50,,
+378,HEM604,Kanıta Dayalı Hemşirelik,3,5,50,,
+379,HEM608,Konsültasyon Liyezon Psikiyatrisi Hemşireliği,3,5,50,,
+380,HEM609,Hasta ve Çalışan Güvenliği,3,5,50,,
+381,HEM614,Çocuk ve Ergen Ruh Sağlığı Hemşireliği,3,5,50,,
+382,EBE516,Büyüme ve Gelişme,3,6,50,,
+383,HEM709,Evde Bakım Hemşireliği,3,5,50,,
+384,HEM710,Kültürlerarası Hemşirelik,3,5,50,,
+385,HEM711,Sağlık Turizmi,3,5,50,,
+386,HEM717,Sağlık Politikaları ve Hemşirelik,3,5,50,,
+387,HEM718,Etkili Sunum İlkeleri,3,5,50,,
+388,HEM720,Okul Sağlığı Hemşireliği,3,5,50,,
+392,EBE115,Ebeliğe Giriş,3,6,50,,
+393,Fizyoterapi ve Rehabilitasyon111,Histoloji-Embriyoloji,3,7,50,,
+395,EBE210,Genetik,3,6,50,,
+397,EBE212,İletişim Becerileri,3,6,50,,
+399,EBE217,Ebelik Esasları,3,6,50,,
+401,EBE201,Normal Gebelik ve Bakım,3,6,50,,
+402,EBE311,Dahili ve Cerrahi Hastalıklar,3,6,50,,
+403,EBE312,Ruh Sağlığı ve Hastalıkları,3,6,50,,
+405,Fizyoterapi ve Rehabilitasyon206,Patoloji,3,7,50,,
+406,EBE408,Aile Planlaması,3,6,50,,
+408,EBE410,Ebelik Tarihi ve Deontolojisi,3,6,50,,
+409,EBE411,Ebelikte Öğretim Yöntemleri,3,6,50,,
+410,EBE512,Normal Doğum ve Doğum Sonu Bakım,3,6,50,,
+411,EBE515,Sağlık Sosyolojisi,3,6,50,,
+413,EBE601,Riskli Doğum ve Doğum Sonu Bakım,3,6,50,,
+414,EBE609,Kadın Sağlığı ve Hastalıkları,3,6,50,,
+415,EBE304,Çocuk Sağlığı ve Hastalıkları,3,6,50,,
+416,EBE306,Araştırma Yöntemleri ve Biyoistatistik,3,6,50,,
+417,EBE705,Toplum Sağlığı ve Ebelik,3,6,50,,
+418,EBE706,Klinik/Saha Uygulamaları I,3,6,50,,
+419,EBE710,Ebelikte Yönetim ve Liderlik,3,6,50,,
+420,EBE803,Klinik/Saha Uygulamaları II,3,6,50,,
+421,EBE806,Kanıta Dayalı Ebelik Uygulamaları,3,6,50,,
+422,EBE116,İklim Değişikliği ve Sağlık,3,6,50,,
+423,EBE117,Tıbbi Terminoloji,3,6,50,,
+425,EBE214,Sağlık Okuryazarlığı,3,6,50,,
+426,EBE215,Toplumsal Cinsiyet,3,6,50,,
+427,EBE216,Sosyal Sorumluluk Projesi,3,6,50,,
+430,EBE318,Kadın Statüsü ve Sorunları,3,6,50,,
+432,EBE413,Perinatal Ruh Sağlığı,3,6,50,,
+433,EBE414,Ebelikte Bakım Planlama ve Danışmanlık,3,6,50,,
+434,EBE412,Emzirme ve Danışmanlık,3,6,50,,
+435,EBE415,Elektronik Fetal Monitörizasyon,3,6,50,,
+436,EBE517,Ebelikte Kültürel Yaklaşımlar,3,6,50,,
+437,EBE518,Prekonsepsiyonel Bakım,3,6,50,,
+438,EBE519,Psikoloji,3,6,50,,
+439,EBE514,Üreme ve Cinsel Sağlık,3,6,50,,
+440,EBE520,Ebelikte Tamamlayıcı Tedaviler,3,6,50,,
+441,EBE612,Ebelik ve Atılganlık,3,6,50,,
+442,EBE613,Afetlerde Üreme Sağlığı,3,6,50,,
+443,EBE614,Alternatif Doğum Yöntemleri,3,6,50,,
+444,EBE713,Jinekolojik Kanser Kontrolü ve Ebelik,3,6,50,,
+445,EBE711,İnfertilite ve Ebelik,3,6,50,,
+446,EBE715,Ürojinekoloji ve Ebelik,3,6,50,,
+447,EBE_SEC7,Ebelikte İnovasyon,3,6,50,,
+448,EBE_SEC8,Adli Ebelik,3,6,50,,
+449,EBE808,Ana Çocuk Sağlığı,3,6,50,,
+450,EBE809,Malpraktis ve Hasta Hakları,3,6,50,,
+451,EBE810,Obstetrik ve Jinekolojik Aciller,3,6,50,,
+452,EBE101,Ebeliğe Giriş ve Temel Kavramlar,3,6,50,,
+454,EBE202,Riskli Gebelik ve Bakım,3,6,50,,
+455,EBE301,Normal Doğum ve Doğum Sonu,3,6,50,,
+456,EBE302,Yenidoğan Sağlığı ve Hastalıkları,3,6,50,,
+457,EBE401,Üreme Sağlığı ve Aile Planlaması,3,6,50,,
+459,EBESEC2,Suda Doğum ve Alternatif Yöntemler,3,6,50,,
+460,EBESEC3,Emzirme Danışmanlığı,3,6,50,,
+463,EBE403,Klinik / Saha Uygulamaları - I,3,6,50,,
+464,EBE404,Klinik / Saha Uygulamaları - II,3,6,50,,
+465,Fizyoterapi ve Rehabilitasyon506,Pulmoner Rehabilitasyon,3,7,50,,
+466,Fizyoterapi ve Rehabilitasyon603,Kardiyak Rehabilitasyon,3,7,50,,
+467,Fizyoterapi ve Rehabilitasyon401,Elektroterapi II,3,7,50,,
+468,Fizyoterapi ve Rehabilitasyon402,Kinezyoloji ve Biyomekanik II,3,7,50,,
+481,Fizyoterapi ve Rehabilitasyon101,Fizyoterapiye Giriş,3,7,50,,
+482,Fizyoterapi ve Rehabilitasyon201,Kinezyoloji ve Biyomekanik,3,7,50,,
+483,Fizyoterapi ve Rehabilitasyon203,Elektroterapi - I,3,7,50,,
+484,Fizyoterapi ve Rehabilitasyon301,Elektroterapi I,3,7,50,,
+485,Fizyoterapi ve Rehabilitasyon302,Kinezyoloji ve Biyomekanik I,3,7,50,,
+486,Fizyoterapi ve Rehabilitasyon304,Isı-Işık-Su,3,7,50,,
+487,Fizyoterapi ve RehabilitasyonSEC1,Sporcu Sağlığı ve Rehabilitasyonu,3,7,50,,
+488,Fizyoterapi ve RehabilitasyonSEC2,Manuel Terapi Teknikleri,3,7,50,,
+489,Fizyoterapi ve RehabilitasyonSEC3,Hidroterapi ve Balneoterapi,3,7,50,,
+490,Fizyoterapi ve Rehabilitasyon104,Anatomi I,3,7,50,,
+491,Fizyoterapi ve Rehabilitasyon105,Fizyoloji I,3,7,50,,
+492,Fizyoterapi ve Rehabilitasyon106,Fizik,3,7,50,,
+494,Fizyoterapi ve Rehabilitasyon204,Anatomi II,3,7,50,,
+495,Fizyoterapi ve Rehabilitasyon205,Fizyoloji II,3,7,50,,
+498,SF498,Elektroterapi I,3,7,50,,
+499,SF499,Kinezyoloji ve Biyomekanik I,3,7,50,,
+500,Fizyoterapi ve Rehabilitasyon303,Fonksiyonel Nöroanatomi,3,7,50,,
+501,SF501,Isı-Işık-Su,3,7,50,,
+502,Fizyoterapi ve Rehabilitasyon311,Egzersiz Fizyolojisi,3,7,50,,
+503,Fizyoterapi ve Rehabilitasyon315,Temel Ölçme ve Değerlendirme,3,7,50,,
+504,Fizyoterapi ve Rehabilitasyon316,Manipulatif Tedavi I,3,7,50,,
+505,SF505,Elektroterapi II,3,7,50,,
+506,SF506,Kinezyoloji ve Biyomekanik II,3,7,50,,
+507,Fizyoterapi ve Rehabilitasyon403,Dahiliye,3,7,50,,
+508,Fizyoterapi ve Rehabilitasyon408,Pediatri,3,7,50,,
+509,Fizyoterapi ve Rehabilitasyon409,Ortopedi,3,7,50,,
+510,Fizyoterapi ve Rehabilitasyon410,Nöroloji,3,7,50,,
+511,Fizyoterapi ve Rehabilitasyon413,Temel Egzersiz Prensipleri,3,7,50,,
+512,Fizyoterapi ve Rehabilitasyon418,Manipulatif Tedavi II,3,7,50,,
+513,Fizyoterapi ve Rehabilitasyon419,Yaz Stajı I,3,7,50,,
+514,Fizyoterapi ve Rehabilitasyon501,Nörofizyolojik Yaklaşımlar I,3,7,50,,
+515,Fizyoterapi ve Rehabilitasyon502,Ortez ve Rehabilitasyon,3,7,50,,
+519,Fizyoterapi ve Rehabilitasyon510,Romatolojik Rehabilitasyon,3,7,50,,
+521,Fizyoterapi ve Rehabilitasyon512,İş ve Uğraşı Tedavisi,3,7,50,,
+522,Fizyoterapi ve Rehabilitasyon601,Nörofizyolojik Yaklaşımlar II,3,7,50,,
+523,Fizyoterapi ve Rehabilitasyon602,Protez ve Rehabilitasyon,3,7,50,,
+526,Fizyoterapi ve Rehabilitasyon605,Sporda Fizyoterapi ve Rehabilitasyon,3,7,50,,
+527,Fizyoterapi ve Rehabilitasyon606,Geriatrik Rehabilitasyon,3,7,50,,
+528,Fizyoterapi ve Rehabilitasyon610,Fizyoterapide Özel Konular,3,7,50,,
+529,Fizyoterapi ve Rehabilitasyon611,Sağlık Projeleri ve Gönüllülük,3,7,50,,
+530,Fizyoterapi ve Rehabilitasyon608,El Rehabilitasyonu,3,7,50,,
+531,Fizyoterapi ve Rehabilitasyon609,İşitme-Konuşma Rehabilitasyonu,3,7,50,,
+532,Fizyoterapi ve Rehabilitasyon613,Müzik Destekli Fizyoterapi,3,7,50,,
+533,Fizyoterapi ve Rehabilitasyon701,Klinik Uygulama I,3,7,50,,
+534,Fizyoterapi ve Rehabilitasyon702,Klinik Problem Çözme I,3,7,50,,
+535,Fizyoterapi ve Rehabilitasyon704,Araştırma Yöntemleri,3,7,50,,
+536,Fizyoterapi ve Rehabilitasyon705,Halk Sağlığı ve Toplum Temelli Rehabilitasyon,3,7,50,,
+537,Fizyoterapi ve Rehabilitasyon706,Tele-Rehabilitasyon,3,7,50,,
+538,Fizyoterapi ve Rehabilitasyon707,Fizyoterapide Yönetim ve Organizasyon,3,7,50,,
+539,Fizyoterapi ve Rehabilitasyon708,Yoga ve Pilates,3,7,50,,
+540,Fizyoterapi ve Rehabilitasyon709,Engelli Hakları,3,7,50,,
+541,Fizyoterapi ve Rehabilitasyon710,Onkolojik Rehabilitasyon,3,7,50,,
+542,Fizyoterapi ve Rehabilitasyon801,Klinik Uygulama II,3,7,50,,
+543,Fizyoterapi ve Rehabilitasyon802,Klinik Problem Çözme II,3,7,50,,
+544,Fizyoterapi ve Rehabilitasyon803,Kanıta Dayalı Fizyoterapi,3,7,50,,
+545,Fizyoterapi ve Rehabilitasyon804,Endüstride Fizyoterapi,3,7,50,,
+546,Fizyoterapi ve Rehabilitasyon808,Kadın ve Erkek Sağlığı,3,7,50,,
+547,Fizyoterapi ve Rehabilitasyon806,Fizyoterapide Literatür,3,7,50,,
+548,Fizyoterapi ve Rehabilitasyon807,Mesleki İngilizce,3,7,50,,
+549,Fizyoterapi ve Rehabilitasyon809,Alternatif Tedavi Yöntemleri,3,7,50,,
+550,Fizyoterapi ve Rehabilitasyon810,Hayvan Destekli Fizyoterapi,3,7,50,,
+551,GST101,Gastronomiye Giriş,4,8,50,,
+552,GST103,Temel Mutfak Bilgisi,4,8,50,,
+553,GST105,Gıda Hijyeni ve Güvenliği,4,8,50,,
+554,GST201,Türk Mutfağı,4,8,50,,
+555,GST202,Dünya Mutfakları,4,8,50,,
+556,GST301,Pastane ve Ekmekçilik,4,8,50,,
+557,GSTSEC1,Moleküler Gastronomi,4,8,50,,
+558,GSTSEC2,Yemek Fotoğrafçılığı,4,8,50,,
+559,GSTSEC3,İçecek Bilgisi ve Miksoloji,4,8,50,,
+560,GSTSEC4,Menü Planlama ve Maliyet Analizi,4,8,50,,
+561,GST203,Yiyecek İçecek İşletmelerinde Maliyet Analizi,4,8,50,,
+562,GST205,Yöresel Mutfak Uygulamaları - I,4,8,50,,
+563,GST303,İnsan Kaynakları Yönetimi,4,8,50,,
+564,GST305,Tüketici Davranışları,4,8,50,,
+565,GST401,Ziyafet Organizasyonu ve Yönetimi,4,8,50,,
+566,GST403,Gastronomik Ürün Geliştirme (Ar-Ge),4,8,50,,
+567,GSTSEC5,Yemek Sosyolojisi,4,8,50,,
+568,GSTSEC6,Antik Mutfaklar,4,8,50,,
+569,GST104,Mutfakta İş Güvenliği ve İlk Yardım,4,8,50,,
+570,GST106,Beslenmenin Temel İlkeleri,4,8,50,,
+571,GST108,Gastronomi ve Yiyecek Tarihi,4,8,50,,
+572,GST109,Gıda ve Personel Hijyeni,4,8,50,,
+573,GST110,Temel Mutfak Bilgisi II,4,8,50,,
+574,GST301A,Gastronomide Güncel Konular,4,8,50,,
+575,GST205B,Yöresel Mutfak Uygulamaları II,4,8,50,,
+576,GST202B,Dünya Mutfakları II,4,8,50,,
+577,GST204,Menü Planlama,4,8,50,,
+578,GST206,Yiyecek İçecek Servisi,4,8,50,,
+579,GST207,Staj I,4,8,50,,
+580,GST501,Gastronomide Duyusal Analiz,4,8,50,,
+581,GST502,"Tatlı, Pasta ve Hamur İşleri",4,8,50,,
+582,GST601,Ekmek Pişirme Teknikleri,4,8,50,,
+583,GST602,Soğuk Mutfak Uygulamaları,4,8,50,,
+584,GST603,Gıda Mevzuatı,4,8,50,,
+585,GST604,Staj II,4,8,50,,
+586,GST605,Girişimcilik ve İnovasyon Yönetimi,4,8,50,,
+587,GST701,Gastronomik Ürün Geliştirme I,4,8,50,,
+588,GST703,Osmanlı Mutfağı,4,8,50,,
+589,GST704,Bilimsel Araştırma Teknikleri,4,8,50,,
+590,GST711,Bitirme Projesi I,4,8,50,,
+591,GST801,Gastronomik Ürün Geliştirme II,4,8,50,,
+592,GST802,Bitirme Projesi II,4,8,50,,
+593,GST804,İletişim Becerileri,4,8,50,,
+594,GST108A,Gastronomi ve Kültür,4,8,50,,
+595,GST210,Lezzet ve Tat Oluşumunda Baharatlar,4,8,50,,
+596,GST211,Gıda Katkı Maddeleri,4,8,50,,
+597,GST509,Gastronomi ve Sanat,4,8,50,,
+598,GST607,Temel Sanat ve Estetik Bilgisi,4,8,50,,
+607,ILH101,Kur'an Okuma ve Tecvid - I,5,9,50,,
+608,ILH103,Tefsir Tarihi,5,9,50,,
+609,ILH105,Hadis Tarihi,5,9,50,,
+610,ILH107,İslam İnanç Esasları,5,9,50,,
+611,ILH109,Siyer (İslam Tarihi I),5,9,50,,
+612,ILH111,Arap Dili ve Belagatı - I,5,9,50,,
+613,ILH113,İslam Hukukuna Giriş,5,9,50,,
+614,ILH201,İslam İbadet Esasları,5,9,50,,
+615,ILH203,Mantık,5,9,50,,
+616,ILH205,Din Psikolojisi,5,9,50,,
+617,ILH207,Felsefe Tarihi,5,9,50,,
+618,ILH301,Sistematik Kelam,5,9,50,,
+619,ILH303,Din Sosyolojisi,5,9,50,,
+620,ILH305,Tasavvuf,5,9,50,,
+621,ILH401,Dinler Tarihi,5,9,50,,
+622,ILH403,Din Felsefesi,5,9,50,,
+623,ILH405,İslam Sanatları Tarihi,5,9,50,,
+624,ILHSEC1,Osmanlı Türkçesi,5,9,50,,
+625,ILHSEC2,Din ve Mitoloji,5,9,50,,
+626,ILHSEC3,İslam Ahlak Felsefesi,5,9,50,,
+627,ILH102,Kur'an Okuma ve Tecvid - II,5,9,50,,
+628,ILH104,Tefsir Usulü,5,9,50,,
+629,ILH106,Hadis Usulü,5,9,50,,
+630,ILH108,Kelam Tarihi,5,9,50,,
+631,ILH110,Arap Dili ve Belagatı - II,5,9,50,,
+632,ILH112,Türk Din Musikisi Nazariyatı,5,9,50,,
+633,ILH202,Kur'an Okuma ve Tecvid - III,5,9,50,,
+634,ILH204,İslam Hukuk Usulü - I,5,9,50,,
+635,ILH206,Tefsir Metinleri - I,5,9,50,,
+636,ILH208,Hadis Metinleri - I,5,9,50,,
+637,ILH210,İslam Tarihi - I,5,9,50,,
+638,ILH212,Arapça Modern Metinler,5,9,50,,
+639,ILH302,Kur'an Okuma ve Tecvid - IV,5,9,50,,
+640,ILH304,İslam Hukuk Usulü - II,5,9,50,,
+641,ILH306,Tefsir Metinleri - II,5,9,50,,
+642,ILH308,Hadis Metinleri - II,5,9,50,,
+643,ILH310,Sistematik Kelam - II,5,9,50,,
+644,ILH312,İslam Tarihi - II,5,9,50,,
+645,ILH314,Din Eğitimi,5,9,50,,
+646,ILH316,Din Psikolojisi - II,5,9,50,,
+647,ILH318,Felsefe Tarihi - II,5,9,50,,
+648,ILH402,Kur'an Okuma ve Tecvid - V,5,9,50,,
+649,ILH404,İslam Hukuku - I,5,9,50,,
+650,ILH406,İslam Mezhepleri Tarihi,5,9,50,,
+651,ILH408,İslam Felsefesi - I,5,9,50,,
+652,ILH502,Kur'an Okuma ve Tecvid - VI,5,9,50,,
+653,ILH504,İslam Hukuku - II,5,9,50,,
+654,ILH506,Tasavvuf - II,5,9,50,,
+655,ILH508,İslam Medeniyeti Tarihi,5,9,50,,
+656,ILH510,Din Sosyolojisi - II,5,9,50,,
+657,ILH512,İslam Felsefesi - II,5,9,50,,
+658,ILH514,Türk İslam Edebiyatı,5,9,50,,
+659,ILH702,Kur'an Okuma ve Tecvid - VII,5,9,50,,
+660,ILH704,Hitabet ve Mesleki Uygulama,5,9,50,,
+661,ILH802,Kur'an Okuma ve Tecvid - VIII,5,9,50,,
+662,ILH804,Din Felsefesi - II,5,9,50,,
+663,ILH806,Dinler Tarihi - II,5,9,50,,
+664,ILH108S,Kur'an-ı Kerim Talimi,5,9,50,,
+665,ILH109S,Islami Etik ve Ahlak,5,9,50,,
+666,ILH110S,Karsilastirmali Dinler Tarihi,5,9,50,,
+667,ILH111S,Hadis Ilimleri Secmeli,5,9,50,,
+668,ILH112S,Kelam Tarihi Secmeli,5,9,50,,
+669,ILH209S,Kur'an-ı Kerim Ezberleme Yöntemleri,5,9,50,,
+670,ILH210S,İleri Düzey Nahiv,5,9,50,,
+671,ILH211S,Hulefa-i Raşidin Siyasi Tarihi,5,9,50,,
+672,ILH212S,Medeniyetler ve Küresel Karşılaşmalar,5,9,50,,
+673,MAT101,Matematik - I,2,2,50,,
+674,EEM308,Analog Elektronik,2,3,50,,
+675,EEM404,Elektromanyetik Alan Teorisi,2,3,50,,
+676,EEM406,Sinyaller ve Sistemler,2,3,50,,
+677,Fizyoterapi ve Rehabilitasyon503,Ortopedik Rehabilitasyon,3,7,50,,
+678,Fizyoterapi ve Rehabilitasyon504,Nörolojik Rehabilitasyon,3,7,50,,
+679,Fizyoterapi ve Rehabilitasyon604,Pediatrik Rehabilitasyon,3,7,50,,
+680,TIP405,Kardiyoloji,1,1,50,,
+681,BMB105,Fizik - I,2,2,50,,
+682,BMB108,Bilgisayar Programlama - I,2,2,50,,
+683,BMB209,Ayrık Matematik,2,2,50,,
+684,BMB210,Matematik - II,2,2,50,,
+685,BMB311,Veri Yapıları ve Algoritma,2,2,50,,
+686,BMB313,Lineer Cebir,2,2,50,,
+687,BMB314,Diferansiyel Denklemler,2,2,50,,
+688,BMB409,Yazılım Mühendisliği,2,2,50,,
+689,BMB411,Veritabanı Yönetimi,2,2,50,,
+690,BMB412,İşletim Sistemleri,2,2,50,,
+691,BMB413,Olasılık ve İstatistik,2,2,50,,
+692,BMB507,Bilgisayar Ağlarına Giriş,2,2,50,,
+693,BMB509,Nesne Tabanlı Programlama,2,2,50,,
+694,BMB604,Algoritma Analizi ve Tasarım,2,2,50,,
+695,BMB609,Proje Yönetimi,2,2,50,,
+696,BMB610,Yapay Zekaya Giriş,2,2,50,,
+697,BMB810,Uygulamalı Mühendislik Eğitimi,2,2,50,,
+698,BMB213,Mühendislik Etiği,2,2,50,,
+699,BMS006,Yönetim Bilişim Sistemleri,2,2,50,,
+700,BMS007,Blokzincir Teknolojisi,2,2,50,,
+701,BMS046,Enerji Verimliliği ve Uygulamaları,2,2,50,,
+702,BMS010,Bilgisayar Destekli Çizim,2,2,50,,
+703,BMS014,E-Ticaret,2,2,50,,
+704,BMS017,İnsansız Hava Aracı Teknolojisine Giriş,2,2,50,,
+705,BMS013,Robotiğe Giriş,2,2,50,,
+706,BMS032,Bulut Bilişim Uygulamaları,2,2,50,,
+707,BMS036,Oyun Programlama,2,2,50,,
+708,BMS041,Metin Madenciliğine Giriş,2,2,50,,
+709,BMS025,Veri Madenciliği,2,2,50,,
+710,BMS019,Karar Destek Sistemleri,2,2,50,,
+711,BMS020,Mobil Programlama,2,2,50,,
+712,BMS024,Python ile Derin Öğrenme,2,2,50,,
+713,BMS027,Makine Öğrenmesi ve Örüntü Tanıma,2,2,50,,
+714,BMS028,Görüntü İşleme,2,2,50,,
+715,BMS048,IOS Programlama,2,2,50,,
+716,BMS049,Nesnelerin İnterneti (IoT),2,2,50,,
+717,BMS052,Doğal Dil İşlemeye Giriş,2,2,50,,
+718,BMS053,Büyük Veri,2,2,50,,
+719,BMBSEC62,Veri Madenciliği,2,2,50,,
+720,BMBSEC32,Yönetim Bilişim Sistemleri,2,2,50,,
+721,BMBSEC76,Görüntü İşleme,2,2,50,,
+722,BMB405,Uygulamalı Mühendislik Eğitimi,2,2,50,,
+723,EEM204,Matematik II,2,3,50,,
+724,EEM303,Mikroişlemciler,2,3,50,,
+725,EEM104,Matematik I,2,3,50,,
+726,EEM109,Fizik I,2,3,50,,
+727,EEM110,Genel Kimya,2,3,50,,
+728,EEM209,Fizik II,2,3,50,,
+729,EEM310,Lineer Cebir,2,3,50,,
+730,EEM613,İş Sağlığı ve Güvenliği,2,3,50,,
+731,EEM620,Sayısal İşaret İşleme,2,3,50,,
+732,EEM705,Elektrik Enerjisi Dağıtımı,2,3,50,,
+733,EEM719,Girişimcilik,2,3,50,,
+734,EEM701,Bitirme Projesi I,2,3,50,,
+735,EEM818,Bitirme Projesi II,2,3,50,,
+736,EEM819,Uygulamalı Mühendislik Eğitimi,2,3,50,,
+737,END304,İstatistiksel Kalite Kontrol,2,4,50,,
+738,HEM104,Anatomi,3,5,50,,
+739,HEM105,Fizyoloji,3,5,50,,
+740,HEM106,Biyokimya,3,5,50,,
+741,HEM205,Farmakoloji,3,5,50,,
+742,HEM216,Mikrobiyoloji-Parazitoloji,3,5,50,,
+743,HEM217,Hemşirelik Esasları,3,5,50,,
+744,HEM302,Epidemiyoloji ve Bulaşıcı Hastalıklar,3,5,50,,
+745,HEM313,İç Hastalıkları Hemşireliği,3,5,50,,
+746,HEM701,Halk Sağlığı Hemşireliği,3,5,50,,
+747,HEM123,Üniversiteye Uyum,3,5,50,,
+748,HEM124,Beslenme İlkeleri,3,5,50,,
+749,HEMSEC5,İlk Yardım,3,5,50,,
+750,HEM219,Eleştirel Düşünme,3,5,50,,
+751,HEM317,Bakım Teknolojileri,3,5,50,,
+752,HEM506,Doğuma Hazırlık ve Ebeveyn Eğitimi,3,5,50,,
+753,HEM615,Büyüme ve Gelişme,3,5,50,,
+754,EBE106,Biyokimya,3,6,50,,
+755,EBE119,Histoloji-Embriyoloji,3,6,50,,
+756,EBE310,Normal Gebelik ve Bakım,3,6,50,,
+757,EBE313,Farmakoloji,3,6,50,,
+758,EBE314,Patoloji,3,6,50,,
+759,EBE610,Çocuk Sağlığı ve Hastalıkları,3,6,50,,
+760,EBE611,Araştırma Yöntemleri ve Biyoistatistik,3,6,50,,
+761,EBE406,Doğuma Hazırlık ve Ebeveyn Eğitimi,3,6,50,,
+762,EBE716,Ebelikte İnovasyon,3,6,50,,
+763,EBE807,Adli Ebelik,3,6,50,,
+764,Fizyoterapi ve Rehabilitasyon306,Pulmoner Rehabilitasyon,3,7,50,,
+765,Fizyoterapi ve Rehabilitasyon308,Kardiyak Rehabilitasyon,3,7,50,,
+766,OZD062,Iletisim Becerileri,1,1,60,,
+767,OZD064,Arastirma Yontemleri,1,1,60,,
+768,TIP101S,Klinik Anatomi Secmeli,1,1,60,,
+769,TIP102S,Tibbi Etik Secmeli,1,1,60,,
+770,BMB402S,Derin Ogrenme,2,2,60,,
+771,BMB404S,Buyuk Veri Analizi,2,2,60,,
+772,BMB406S,Oyun Gelistirme,2,2,60,,
+773,BMB408S,Dogal Dil Isleme,2,2,60,,
+774,BMB401S,Makine Ogrenmesi,2,2,60,,
+775,BMB403S,Bulut Bilisim,2,2,60,,
+776,BMB405S,Mobil Uygulama Gelistirme,2,2,60,,
+777,BMB407S,Siber Guvenlik,2,2,60,,
+778,EEM402S,Nesnelerin Interneti,2,3,60,,
+779,EEM404S,Yenilenebilir Enerji,2,3,60,,
+780,EEM406S,Robot Kontrolu,2,3,60,,
+781,EEM408S,Sinyal Isleme,2,3,60,,
+782,EEM401S,Kablosuz Haberlesme,2,3,60,,
+783,EEM403S,Guc Elektroniği,2,3,60,,
+784,EEM405S,Goruntu Isleme,2,3,60,,
+785,EEM407S,Gomulu Sistemler,2,3,60,,
+786,END402S,Yapay Zeka Uygulamalari,2,4,60,,
+787,END404S,Veri Madenciligi,2,4,60,,
+788,END406S,Ileri Uretim Sistemleri,2,4,60,,
+789,END408S,Surec Simulasyonu,2,4,60,,
+790,END401S,Tedarik Zinciri Yonetimi,2,4,60,,
+791,END403S,Proje Yonetimi,2,4,60,,
+792,END405S,Sezgisel Optimizasyon,2,4,60,,
+793,END407S,Kalite Yonetim Sistemleri,2,4,60,,
+794,HEM402S,Kadin Sagligi Hemsireliginde Guncel,3,5,60,,
+795,HEM404S,Cocuk Sagligi Hemsireliginde Guncel,3,5,60,,
+796,HEM406S,Ameliyathane Hemsireliginde Guncel,3,5,60,,
+797,HEM408S,Yogun Bakim Hemsireliginde Guncel,3,5,60,,
+798,HEM401S,Ileri Klinik Hemsirelik,3,5,60,,
+799,HEM403S,Psikiyatri Hemsireliginde Guncel,3,5,60,,
+800,HEM405S,Onkoloji Hemsireliginde Kanit,3,5,60,,
+801,HEM407S,Aile Sagligi Hemsireliginde Guncel,3,5,60,,
+802,EBE402S,Infertilite Hemsireliginde Guncel,3,6,60,,
+803,EBE404S,Maternal Saglik,3,6,60,,
+804,EBE406S,Postpartum Bakim,3,6,60,,
+805,EBE408S,Kadinlarda Onkoloji,3,6,60,,
+806,EBE401S,Yuksek Riskli Gebelik Bakimi,3,6,60,,
+807,EBE403S,Dogum Agi Yonetimi,3,6,60,,
+808,EBE405S,Neonatal Bakim,3,6,60,,
+809,EBE407S,Reproductive Saglik,3,6,60,,
+810,FTR602S,Norolojik Rehabilitasyon Guncel,3,7,60,,
+811,FTR604S,Ortopedik Rehabilitasyon Guncel,3,7,60,,
+812,FTR606S,Onkolojik Rehabilitasyon,3,7,60,,
+813,FTR610S,Geriatrik Rehabilitasyon,3,7,60,,
+814,FTR608S,Kardiyopulmoner Rehabilitasyon,3,7,60,,
+815,FTR609S,Pediatrik Rehabilitasyon,3,7,60,,
+816,FTR611S,Manuel Terapi Teknikleri,3,7,60,,
+817,FTR613S,Sportif Rehabilitasyon,3,7,60,,
+818,GAS402S,Fermentasyon ve Mutfak Kimyasi,4,8,60,,
+819,GAS404S,Pastane ve Firinci Sanatlari,4,8,60,,
+820,GAS406S,Gida Stili ve Fotografciligi,4,8,60,,
+821,GAS408S,Gastronomi Turizmi,4,8,60,,
+822,GAS401S,Molekuler Gastronomi,4,8,60,,
+823,GAS403S,Dunya Mutfaklari,4,8,60,,
+824,GAS405S,Seker ve Cikolata Sanatlari,4,8,60,,
+825,GAS407S,Restoran Yonetimi,4,8,60,,
+826,ILH201S,Kuran Yorumlari ve Tefsir,5,9,60,,
+827,ILH202S,Islam Felsefesi,5,9,60,,
+828,ILH203S,Din Egitimi Yontemleri,5,9,60,,
+829,ILH204S,Tasavvuf ve Manevi Hayat,5,9,60,,

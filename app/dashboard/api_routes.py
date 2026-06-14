@@ -16,6 +16,34 @@ service = ExperimentService()
 _STATE: dict[str, Any] = {"dataset": None}
 
 
+def _default_db_path() -> str:
+    """Otomatik dataset üretimi için yapılandırılmış veritabanı yolu."""
+    try:
+        from app.core.config import load_app_config
+
+        return load_app_config().sqlite_db_path
+    except Exception:
+        return "data/adil_secmeli.db"
+
+
+def _ensure_dataset():
+    """State'te dataset yoksa varsayılan veritabanından otomatik üretir.
+
+    "Dataset Eksik" durumunu giderir: kullanıcı manuel yükleme yapmasa bile
+    benchmark çalıştırılabilir. Üretilen dataset state'e cache'lenir.
+    """
+    dataset = _STATE.get("dataset")
+    if dataset is not None:
+        return dataset
+    dataset = service.build_dataset(
+        source_type="sqlite",
+        source_path=_default_db_path(),
+        dataset_name="adil_real",
+    )
+    _STATE["dataset"] = dataset
+    return dataset
+
+
 class DatasetLoadRequest(BaseModel):
     source_type: Literal["sqlite", "csv"] = "sqlite"
     source_path: str = "data/adil_secmeli.db"
@@ -81,11 +109,25 @@ def load_dataset(request: DatasetLoadRequest):
     }
 
 
+@router.get("/datasets/status")
+def dataset_status():
+    """Yüklü dataset durumunu döndürür; yoksa varsayılan DB'den otomatik üretir."""
+    dataset = _ensure_dataset()
+    return {
+        "loaded": True,
+        "auto_built": True,
+        "dataset_name": dataset.dataset_name,
+        "raw_real_tables": sorted(dataset.raw_real.keys()),
+        "derived_tables": sorted(dataset.derived.keys()),
+        "synthetic_tiers": sorted(dataset.synthetic.keys()),
+        "layer_counts": _layer_counts(dataset),
+    }
+
+
 @router.post("/runs/execute")
 def run_scenario(request: ScenarioRunRequest):
-    dataset = _STATE.get("dataset")
-    if dataset is None:
-        raise HTTPException(status_code=400, detail="No dataset loaded. Call /datasets/load first.")
+    # Dataset yüklü değilse varsayılan veritabanından otomatik üret.
+    dataset = _ensure_dataset()
     run_payload = service.run_scenario(
         dataset=dataset,
         scenario_name=request.scenario_name,
@@ -105,9 +147,8 @@ def run_scenario(request: ScenarioRunRequest):
 
 @router.post("/runs/compare")
 def compare_algorithms(request: CompareRequest):
-    dataset = _STATE.get("dataset")
-    if dataset is None:
-        raise HTTPException(status_code=400, detail="No dataset loaded. Call /datasets/load first.")
+    # Dataset yüklü değilse varsayılan veritabanından otomatik üret.
+    dataset = _ensure_dataset()
     run_payload = service.compare_algorithms(
         dataset=dataset,
         scenario_name=request.scenario_name,
