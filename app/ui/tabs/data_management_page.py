@@ -175,7 +175,9 @@ class DataManagementPage(ttk.Frame):
 
         ttk.Label(form, text="Excel dosyası").grid(row=1, column=0, sticky=tk.W, padx=4, pady=4)
         self.file_path_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.file_path_var, width=70).grid(row=1, column=1, sticky=tk.EW, padx=4, pady=4)
+        self.file_path_var.trace_add("write", self._on_file_path_change)
+        self._file_entry = ttk.Entry(form, textvariable=self.file_path_var, width=70)
+        self._file_entry.grid(row=1, column=1, sticky=tk.EW, padx=4, pady=4)
         ttk.Button(form, text="Seç", command=self._select_import_file).grid(row=1, column=2, sticky=tk.W, padx=4, pady=4)
 
         ttk.Label(form, text="Yıl").grid(row=2, column=0, sticky=tk.W, padx=4, pady=4)
@@ -192,13 +194,18 @@ class DataManagementPage(ttk.Frame):
             row=2, column=2, sticky=tk.W, padx=4, pady=4
         )
 
-        ttk.Button(form, text="Şablon Oluştur", command=self._write_template).grid(row=3, column=0, sticky=tk.W, padx=4, pady=8)
-        ttk.Button(form, text="Importu Başlat", command=self._run_import).grid(row=3, column=1, sticky=tk.W, padx=4, pady=8)
+        btn_frame = ttk.Frame(form)
+        btn_frame.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=8)
+        ttk.Button(btn_frame, text="Şablon Oluştur", command=self._write_template).pack(side=tk.LEFT, padx=(0, 6))
+        self._btn_import = ttk.Button(btn_frame, text="Importu Başlat", command=self._run_import, state="disabled")
+        self._btn_import.pack(side=tk.LEFT, padx=(0, 6))
+        self._import_status_lbl = ttk.Label(btn_frame, text="", foreground="#64748b")
+        self._import_status_lbl.pack(side=tk.LEFT, padx=6)
         form.columnconfigure(1, weight=1)
 
         req = ttk.LabelFrame(self.import_tab, text="Seçili Veri Tipi", padding=8)
         req.pack(fill=tk.X, pady=(8, 0))
-        self.requirements_text = tk.Text(req, height=5, wrap=tk.WORD)
+        self.requirements_text = tk.Text(req, height=9, wrap=tk.WORD)
         self.requirements_text.pack(fill=tk.X)
         self.requirements_text.configure(state=tk.DISABLED)
 
@@ -465,6 +472,21 @@ class DataManagementPage(ttk.Frame):
     def _selected_import_type(self) -> str:
         return self._import_type_options.get(self.import_type_combo.get(), "criteria")
 
+    def _on_file_path_change(self, *_args: Any) -> None:
+        path = self.file_path_var.get().strip()
+        has_file = bool(path and os.path.exists(path))
+        btn = getattr(self, "_btn_import", None)
+        if btn:
+            btn.configure(state="normal" if has_file else "disabled")
+        lbl = getattr(self, "_import_status_lbl", None)
+        if lbl:
+            if has_file:
+                lbl.configure(text="Dosya hazır. 'Importu Başlat' butonuna basın.", foreground="#16a34a")
+            elif path:
+                lbl.configure(text="Dosya bulunamadı.", foreground="#dc2626")
+            else:
+                lbl.configure(text="Önce Excel dosyası seçin.", foreground="#64748b")
+
     def _select_import_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Excel dosyası seç",
@@ -509,12 +531,14 @@ class DataManagementPage(ttk.Frame):
         selected = self._selected_import_type()
         specs = {item["key"]: item for item in get_import_type_specs()}
         spec = specs.get(selected, {})
-        columns = ", ".join(spec.get("expected_columns") or [])
+        columns = "\n  • " + "\n  • ".join(spec.get("expected_columns") or [])
         text = (
-            f"{spec.get('label', selected)}\n"
-            f"Kapsam: {spec.get('required_scope', '-')}\n"
-            f"Beklenen kolonlar: {columns}\n"
-            f"Not: Import sonucu kalite kontrol, diff ve karar etkisi otomatik kaydedilir."
+            f"Veri Tipi : {spec.get('label', selected)}\n"
+            f"Kapsam    : {spec.get('required_scope', '-')}\n"
+            f"\nAçıklama:\n{spec.get('description', '-')}\n"
+            f"\nBeklenen Kolonlar:{columns}\n"
+            f"\nNot: Import sonrası kalite kontrol, diff ve karar etkisi otomatik hesaplanır.\n"
+            f"     Rollback & Onay sekmesinden onaylayabilir veya geri alabilirsiniz."
         )
         self._set_text(self.requirements_text, text)
 
@@ -524,24 +548,55 @@ class DataManagementPage(ttk.Frame):
         if not path:
             messagebox.showerror("Import", "Veritabanı seçilmedi.")
             return
-        if not excel_path:
-            messagebox.showwarning("Import", "Önce Excel dosyası seçin.")
+        if not excel_path or not os.path.exists(excel_path):
+            messagebox.showwarning("Import", "Önce geçerli bir Excel dosyası seçin.")
             return
-        if not messagebox.askyesno("Import", "Seçili dosya veritabanına aktarılsın mı?"):
-            return
+
+        import_type = self._selected_import_type()
+        year = self._selected_import_year()
+        import_filename = os.path.basename(excel_path)
+
+        # Müfredat importu: yılın eski müfredatı sıfırlanacak — kullanıcıya uyar
+        if import_type == "curriculum":
+            uyari = (
+                f"DİKKAT: Bu işlem {year} yılına ait mevcut müfredat bağlantılarını\n"
+                f"sıfırlayacak ve dosyadaki yeni verilerle değiştirecektir.\n\n"
+                f"  • Seçilen yıl  : {year}\n"
+                f"  • Dosya        : {import_filename}\n"
+                f"  • Diğer yıllar : ETKİLENMEZ\n\n"
+                f"Devam etmek istiyor musunuz?"
+            )
+            if not messagebox.askyesno("Müfredat Sıfırlama Onayı", uyari, icon="warning"):
+                return
+        else:
+            if not messagebox.askyesno(
+                "Import Onayı",
+                f"Seçili dosya ({import_filename}) veritabanına aktarılsın mı?\n\nYıl: {year}",
+            ):
+                return
+
+        lbl = getattr(self, "_import_status_lbl", None)
+        btn = getattr(self, "_btn_import", None)
+        if lbl:
+            lbl.configure(text="Import çalışıyor, lütfen bekleyin...", foreground="#d97706")
+        if btn:
+            btn.configure(state="disabled")
+        self.update_idletasks()
+
         try:
             result = execute_import_request(
                 db_path=path,
-                import_type=self._selected_import_type(),
+                import_type=import_type,
                 excel_path=excel_path,
-                year=self._selected_import_year(),
+                year=year,
                 faculty_id=self._selected_faculty_id(),
                 department_id=self._selected_department_id(),
                 term=self.term_combo.get() or "Guz",
                 auto_activate=bool(self.auto_activate_var.get()),
                 uploaded_by="desktop-ui",
             )
-            self._set_text(self.import_result_text, result)
+            readable = self._format_import_result(result, import_type, year, import_filename)
+            self._set_text(self.import_result_text, readable)
             batch_id = result.get("import_batch_id")
             if batch_id:
                 self.selected_import_batch_id = int(batch_id)
@@ -550,11 +605,133 @@ class DataManagementPage(ttk.Frame):
             self.refresh_center()
             self._refresh_related_views()
             if result.get("ok"):
-                messagebox.showinfo("Import", result.get("message") or "Import tamamlandı.")
+                if lbl:
+                    lbl.configure(text="Import başarılı.", foreground="#16a34a")
+                messagebox.showinfo("Import Başarılı", self._build_success_message(result, import_type, year))
             else:
-                messagebox.showwarning("Import", result.get("message") or "Import tamamlanamadı.")
+                if lbl:
+                    lbl.configure(text="Import başarısız.", foreground="#dc2626")
+                messagebox.showwarning("Import Başarısız", result.get("message") or "Import tamamlanamadı.")
         except Exception:
+            if lbl:
+                lbl.configure(text="Import hatası.", foreground="#dc2626")
             messagebox.showerror("Import", self._friendly_backend_error())
+        finally:
+            if btn and self.file_path_var.get().strip():
+                btn.configure(state="normal")
+
+    @staticmethod
+    def _format_import_result(result: dict[str, Any], import_type: str, year: int, filename: str) -> str:
+        lines: list[str] = []
+        ok = result.get("ok", False)
+        lines.append(f"{'✓ BAŞARILI' if ok else '✗ BAŞARISIZ'} — {import_type.upper()} Import")
+        lines.append(f"Yıl: {year}  |  Dosya: {filename}")
+        lines.append("-" * 60)
+        msg = result.get("message", "")
+        if msg:
+            lines.append(f"Mesaj: {msg}")
+        lines.append("")
+
+        if import_type == "curriculum":
+            sc_total = result.get("scopes_total", 0)
+            sc_created = result.get("scopes_created", 0)
+            sc_updated = result.get("scopes_updated", 0)
+            sc_same = result.get("scopes_unchanged", 0)
+            lines.append("── Müfredat Özeti ──────────────────────────────")
+            lines.append(f"  Toplam kapsam     : {sc_total}")
+            lines.append(f"  Yeni oluşturulan  : {sc_created}")
+            lines.append(f"  Güncellenen       : {sc_updated}")
+            lines.append(f"  Değişmeyen        : {sc_same}")
+            lines.append(f"  Eklenen ders bağı : {result.get('links_added', 0)}")
+            lines.append(f"  Çıkarılan ders bağ: {result.get('links_removed', 0)}")
+            lines.append("")
+            lines.append("── Sıfırlanan Veriler ──────────────────────────")
+            lines.append(f"  Kriter satırı     : {result.get('criteria_rows_deleted', 0)}")
+            lines.append(f"  Performans satırı : {result.get('performance_rows_deleted', 0)}")
+            lines.append(f"  Popülerlik satırı : {result.get('popularity_rows_deleted', 0)}")
+            lines.append(f"  Havuz skoru       : {result.get('pool_scores_cleared', 0)}")
+            lines.append("")
+            if result.get("criteria_rows_deleted", 0) > 0 or result.get("pool_scores_cleared", 0) > 0:
+                lines.append("⚠ Yeni müfredat sonrası kriter ve skor verileri sıfırlandı.")
+                lines.append("  Bu yıl için algoritmaların yeniden çalıştırılması gerekiyor.")
+            compare = result.get("compare") or []
+            if compare:
+                lines.append("")
+                lines.append("── Kapsam Detayı ───────────────────────────────")
+                for c in compare[:10]:
+                    status = "DEĞİŞMEDİ" if c.get("same") else f"+{c.get('added_count', 0)} / -{c.get('removed_count', 0)}"
+                    lines.append(f"  {c.get('fakulte', '')[:20]} / {c.get('bolum', '')[:20]} ({c.get('donem', '')}) → {status}")
+                if len(compare) > 10:
+                    lines.append(f"  ... ve {len(compare) - 10} kapsam daha")
+        elif import_type == "criteria":
+            lines.append("── Kriter Import Özeti ─────────────────────────")
+            for key, label in (
+                ("rows_loaded", "Yüklenen satır"),
+                ("rows_matched", "Eşleşen satır"),
+                ("rows_skipped", "Atlanan satır"),
+                ("rows_failed", "Hatalı satır"),
+                ("import_batch_id", "Import batch ID"),
+            ):
+                val = result.get(key)
+                if val is not None:
+                    lines.append(f"  {label:20}: {val}")
+        elif import_type == "survey":
+            lines.append("── Anket Import Özeti ──────────────────────────")
+            for key, label in (
+                ("rows_loaded", "Yüklenen satır"),
+                ("rows_matched", "Eşleşen satır"),
+                ("import_batch_id", "Import batch ID"),
+            ):
+                val = result.get(key)
+                if val is not None:
+                    lines.append(f"  {label:20}: {val}")
+
+        batch_id = result.get("import_batch_id")
+        if batch_id:
+            lines.append("")
+            lines.append(f"Import Batch ID    : {batch_id}")
+            lines.append(f"Kalite puanı       : {result.get('quality_score', '-')}")
+            lines.append(f"Kalite seviyesi    : {result.get('quality_level', '-')}")
+            lines.append(f"Import durumu      : {result.get('import_status', '-')}")
+            lines.append("")
+            lines.append("Rollback & Onay sekmesinden onaylayabilir veya geri alabilirsiniz.")
+
+        warnings = result.get("warnings") or []
+        if warnings:
+            lines.append("")
+            lines.append("── Uyarılar ────────────────────────────────────")
+            for w in warnings[:10]:
+                lines.append(f"  ⚠ {w}")
+            if len(warnings) > 10:
+                lines.append(f"  ... ve {len(warnings) - 10} uyarı daha")
+
+        errors = result.get("errors") or []
+        if errors:
+            lines.append("")
+            lines.append("── Hatalar ─────────────────────────────────────")
+            for e in errors[:10]:
+                lines.append(f"  ✗ {e}")
+            if len(errors) > 10:
+                lines.append(f"  ... ve {len(errors) - 10} hata daha")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_success_message(result: dict[str, Any], import_type: str, year: int) -> str:
+        batch_id = result.get("import_batch_id", "?")
+        if import_type == "curriculum":
+            sc = result.get("scopes_total", 0)
+            added = result.get("links_added", 0)
+            removed = result.get("links_removed", 0)
+            reset = result.get("criteria_rows_deleted", 0)
+            msg = f"{year} yılı müfredatı başarıyla güncellendi.\n\n"
+            msg += f"  • {sc} kapsam işlendi, {added} ders eklendi, {removed} ders çıkarıldı\n"
+            if reset > 0:
+                msg += f"  • {reset} kriter kaydı sıfırlandı (yeniden hesaplama gerekir)\n"
+            msg += f"\nImport Batch ID: {batch_id}\n"
+            msg += "Rollback & Onay sekmesinden onaylayabilirsiniz."
+            return msg
+        return f"Import tamamlandı. Batch ID: {batch_id}"
 
     def _refresh_related_views(self) -> None:
         if not self.app:

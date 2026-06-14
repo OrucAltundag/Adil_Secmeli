@@ -14,7 +14,7 @@
 # =============================================================================
 import threading
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 
 _lock = threading.Lock()
@@ -47,7 +47,18 @@ def _build_engine(url: str):
         kwargs["pool_size"] = 10
         kwargs["max_overflow"] = 20
 
-    return create_engine(url, connect_args=connect_args, **kwargs)
+    eng = create_engine(url, connect_args=connect_args, **kwargs)
+
+    if url.startswith("sqlite"):
+        @event.listens_for(eng, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, _record):
+            try:
+                dbapi_conn.execute("PRAGMA busy_timeout = 30000")
+                dbapi_conn.execute("PRAGMA journal_mode = WAL")
+            except Exception:
+                pass
+
+    return eng
 
 
 def _fallback_sqlite_url() -> str:

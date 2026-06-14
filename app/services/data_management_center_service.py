@@ -43,9 +43,13 @@ class ImportTypeSpec:
 IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
     "criteria": ImportTypeSpec(
         key="criteria",
-        label="Kriter / Performans / Populerlik",
-        description="Ders bazlı başarı, kontenjan ve doluluk sinyallerini yükler.",
-        required_scope="Fakülte, yıl ve dönem zorunlu; bölüm opsiyonel.",
+        label="Kriter / Performans / Popülerlik",
+        description=(
+            "Ders bazlı başarı oranı, kontenjan doluluk sinyali ve popülerlik verilerini yükler.\n"
+            "Import sonrası kriter tamamlama durumu otomatik güncellenir.\n"
+            "⚠ Bu import türü için FAKÜLTE seçimi zorunludur."
+        ),
+        required_scope="Fakülte ve yıl zorunlu; bölüm opsiyonel; dönem önerilir.",
         expected_columns=(
             "ders_kodu veya ders_adi",
             "toplam_ogrenci",
@@ -57,16 +61,26 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
     ),
     "survey": ImportTypeSpec(
         key="survey",
-        label="Anket / Tercih",
-        description="Öğrenci tercih sayılarını ve anket sinyalini yükler.",
-        required_scope="Fakülte ve yıl zorunlu.",
+        label="Anket / Tercih Verisi",
+        description=(
+            "Öğrencilerin ders tercih sayılarını ve anket puanlarını yükler.\n"
+            "Her ders için bir tercih/oy sayısı beklenir.\n"
+            "Fakülte seçmeden yüklerseniz tüm fakülteler için işlenir."
+        ),
+        required_scope="Yıl zorunlu; fakülte opsiyonel (seçilmezse tüm fakülteler).",
         expected_columns=("ders_kodu veya ders_adi", "tercih_sayisi veya oy_sayisi"),
     ),
     "curriculum": ImportTypeSpec(
         key="curriculum",
-        label="Mufredat",
-        description="Yıl, fakülte, bölüm, dönem ve ders-müfredat ilişkisini yükler.",
-        required_scope="Hedef yıl zorunlu; fakülte/bölüm bilgisi dosyadan okunur.",
+        label="Müfredat (Ders Listesi)",
+        description=(
+            "Belirtilen yıl için fakülte/bölüm/dönem bazında hangi derslerin\n"
+            "müfredatta olduğunu yükler.\n"
+            "⚠ DİKKAT: Bu import seçilen yılın mevcut müfredat bağlantılarını\n"
+            "   sıfırlayarak dosyadaki verilerle değiştirir.\n"
+            "   Diğer yılların verileri ETKİLENMEZ."
+        ),
+        required_scope="Hedef yıl zorunlu; fakülte/bölüm/dönem bilgisi dosyadan okunur.",
         expected_columns=("fakulte", "bolum", "yil", "donem", "ders_kodu veya ders_adi"),
     ),
 }

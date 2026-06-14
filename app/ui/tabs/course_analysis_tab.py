@@ -425,7 +425,10 @@ class CourseAnalysisTab(ttk.Frame):
         # ---- 1) UST SECiM BARI ----
         self._build_top_bar()
 
-        # ---- 2) SPLIT VIEW ----
+        # ---- 2) YIL DURUM BANDI ----
+        self._build_year_status_bar()
+
+        # ---- 3) SPLIT VIEW ----
         paned = tk.PanedWindow(self, orient=tk.HORIZONTAL,
                                sashwidth=5, bg="#cbd5e1")
         paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
@@ -487,6 +490,97 @@ class CourseAnalysisTab(ttk.Frame):
             cursor="hand2",
             command=self._clear_all
         ).pack(side=tk.LEFT, padx=4)
+
+    def _build_year_status_bar(self):
+        """Yıl bazlı workflow durumunu gösteren ince banner."""
+        self._status_bar = tk.Frame(self, bg="#f1f5f9", pady=4, padx=10)
+        self._status_bar.pack(fill=tk.X)
+
+        tk.Label(self._status_bar, text="Yıl Durumu:",
+                 bg="#f1f5f9", font=("Segoe UI", 8, "bold"),
+                 fg="#475569").pack(side=tk.LEFT)
+
+        self._lbl_kriter_status = tk.Label(
+            self._status_bar, text="—",
+            bg="#e2e8f0", fg="#64748b",
+            font=("Segoe UI", 8), padx=8, pady=2, relief="flat"
+        )
+        self._lbl_kriter_status.pack(side=tk.LEFT, padx=(6, 4))
+
+        self._lbl_algo_status = tk.Label(
+            self._status_bar, text="—",
+            bg="#e2e8f0", fg="#64748b",
+            font=("Segoe UI", 8), padx=8, pady=2, relief="flat"
+        )
+        self._lbl_algo_status.pack(side=tk.LEFT, padx=(0, 4))
+
+        self._lbl_year_hint = tk.Label(
+            self._status_bar, text="",
+            bg="#f1f5f9", fg="#94a3b8",
+            font=("Segoe UI", 8, "italic")
+        )
+        self._lbl_year_hint.pack(side=tk.LEFT, padx=(8, 0))
+
+    def _update_year_status_bar(self, fakulte_id: int | None = None, yil: int | None = None):
+        """Seçili yıl ve fakülte için workflow durumunu status bar'da günceller."""
+        STATUS_LABELS = {
+            "not_started": ("Kriter Girilmedi", "#fef2f2", "#dc2626"),
+            "partial":     ("Kriter Eksik",      "#fefce8", "#b45309"),
+            "completed":   ("Kriter Tamamlandı", "#f0fdf4", "#16a34a"),
+        }
+        ALGO_LABELS = {
+            "not_run": ("Algoritma Çalışmadı", "#fef2f2", "#dc2626"),
+            "ran":     ("Algoritmalar Çalıştı", "#f0fdf4", "#16a34a"),
+            "failed":  ("Algoritma Hatası",     "#fef2f2", "#dc2626"),
+        }
+
+        def _reset():
+            self._lbl_kriter_status.configure(text="—", bg="#e2e8f0", fg="#64748b")
+            self._lbl_algo_status.configure(text="—", bg="#e2e8f0", fg="#64748b")
+            self._lbl_year_hint.configure(text="")
+
+        if fakulte_id is None or yil is None:
+            _reset()
+            return
+
+        try:
+            db_path = getattr(self.app, "db_path", None)
+            if not db_path:
+                _reset()
+                return
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            try:
+                conn.execute("PRAGMA busy_timeout = 5000")
+                from app.services.yearly_workflow import (
+                    ensure_yearly_workflow_schema,
+                    get_faculty_year_status,
+                )
+                ensure_yearly_workflow_schema(conn)
+                status = get_faculty_year_status(conn, int(fakulte_id), int(yil), refresh=False)
+            finally:
+                conn.close()
+
+            krit_key = str(status.get("criteria_status", "not_started"))
+            algo_key = str(status.get("algorithm_run_status", "not_run"))
+            algo_at  = status.get("algorithm_run_at") or ""
+
+            k_txt, k_bg, k_fg = STATUS_LABELS.get(krit_key, (krit_key, "#e2e8f0", "#64748b"))
+            a_txt, a_bg, a_fg = ALGO_LABELS.get(algo_key, (algo_key, "#e2e8f0", "#64748b"))
+
+            self._lbl_kriter_status.configure(text=k_txt, bg=k_bg, fg=k_fg)
+            self._lbl_algo_status.configure(text=a_txt, bg=a_bg, fg=a_fg)
+
+            hint = ""
+            if algo_key == "not_run" and krit_key == "not_started":
+                hint = "Bu yıl için kriter girilmemiş ve algoritma çalıştırılmamış."
+            elif algo_key == "not_run" and krit_key in ("partial", "completed"):
+                hint = "Kriterler girilmiş ancak algoritmalar henüz çalıştırılmamış."
+            elif algo_key == "ran" and algo_at:
+                hint = f"Son çalışma: {algo_at[:16]}"
+            self._lbl_year_hint.configure(text=hint)
+        except Exception:
+            _reset()
 
     def _build_left_panel(self, parent):
         tk.Label(parent, text="KAYITLI KRITERLER",
@@ -611,6 +705,8 @@ class CourseAnalysisTab(ttk.Frame):
     # =========================================================
     def _load_initial_data(self):
         self._load_faculties()
+        self._reset_right_panel("Fakülte ve yıl seçip ders analizi başlatın.")
+        self._try_update_year_status()
 
     def _sync_year_for_faculty(self, fakulte_id: int):
         """
@@ -741,6 +837,8 @@ class CourseAnalysisTab(ttk.Frame):
                 fid = int(rows[0][0])
             self._sync_year_for_faculty(fid)
             self._refresh_courses_for_scope(fid, self.cb_yil.get())
+            self._clear_results_for_new_scope()
+            self._try_update_year_status()
         except Exception as e:
             print(f"[CourseAnalysisTab] fakulte degisimi hatasi: {e}")
             self._ders_list = []
@@ -768,11 +866,61 @@ class CourseAnalysisTab(ttk.Frame):
                     return
                 fid = int(rows[0][0])
             self._refresh_courses_for_scope(int(fid), self.cb_yil.get())
+            # Yıl değişince önceki analiz sonucunu temizle (başka yılın verisi görünmesin)
+            self._clear_results_for_new_scope()
+            self._try_update_year_status()
         except Exception as e:
             print(f"[CourseAnalysisTab] yil degisimi hatasi: {e}")
             self._ders_list = []
             self._ders_map = {}
             self._update_ders_combo("")
+
+    def _clear_results_for_new_scope(self):
+        """Yıl veya fakülte değiştiğinde analiz sonuçlarını temizler."""
+        self._result = None
+        # Kriter tablosu temizle
+        try:
+            self.tree_krit.delete(*self.tree_krit.get_children())
+        except Exception:
+            pass
+        # Algoritma adımlarını sıfırla
+        try:
+            for box in self._step_boxes.values():
+                box["state"].configure(text="Bekliyor...", fg="#94a3b8")
+                t = box["text"]
+                t.configure(state="normal")
+                t.delete("1.0", "end")
+                t.configure(state="disabled")
+        except Exception:
+            pass
+        # Sağ panel sıfırla
+        self._reset_right_panel()
+
+    def _reset_right_panel(self, message: str = "Ders seçip 'Analizi Başlat' butonuna basın."):
+        """Sağ paneli boş/bekleme durumuna döndürür."""
+        try:
+            self.lbl_statu_big.configure(
+                text="—", bg="white", fg="#94a3b8"
+            )
+            self.lbl_sayac.configure(text="—")
+            t = self.txt_summary
+            t.configure(state="normal")
+            t.delete("1.0", "end")
+            t.insert("end", message)
+            t.configure(state="disabled")
+            self.warn_frame.pack_forget()
+        except Exception:
+            pass
+
+    def _try_update_year_status(self):
+        """Mevcut fakülte ve yıl için status bar'ı günceller."""
+        try:
+            fid = getattr(self, "_fakulte_map", {}).get(self.cb_fakulte.get())
+            yil_str = self.cb_yil.get()
+            yil = int(yil_str) if yil_str else None
+            self._update_year_status_bar(fakulte_id=fid, yil=yil)
+        except Exception:
+            pass
 
     def _on_ders_selected(self, event=None):
         """Ders seçildiğinde (Analizi Başlat için hazır)."""
@@ -854,6 +1002,11 @@ class CourseAnalysisTab(ttk.Frame):
                 result["error"]
             )
             self._mark_all_steps_error(result["error"])
+            self._reset_right_panel(
+                f"Veri Eksik / Hata:\n{result['error']}\n\n"
+                "Bu yıl için gerekli veri bulunmadığından analiz yapılamadı.\n"
+                "Önce kriter girin, ardından tekrar deneyin."
+            )
             return
 
         self._fill_criteria(
@@ -866,6 +1019,8 @@ class CourseAnalysisTab(ttk.Frame):
             result.get("course", {}),
             result.get("steps", {}),
         )
+        # Analiz bittikten sonra yıl durum bandını güncelle
+        self._try_update_year_status()
 
     # =========================================================
     #  KRITERLER PANEL
