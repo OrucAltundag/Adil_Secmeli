@@ -73,6 +73,30 @@ class ComparisonPage(ttk.Frame):
 
         ttk.Button(filters, text="Uygula", command=self.apply_filters).grid(row=0, column=8, sticky="e", padx=(8, 0))
 
+        # Canlı karşılaştırma: seçili senaryoyu sistem verisiyle API üzerinden
+        # çalıştırıp tabloyu GERÇEK metriklerle doldurur (mock değil).
+        ttk.Label(filters, text="Senaryo (canlı)").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.live_scenario_cb = ttk.Combobox(
+            filters, state="readonly",
+            values=[
+                "MCDM Ders Önerisi (Gerçek Veri)",
+                "ML Ders Seçimi Tahmini (Gerçek Veri)",
+                "Yerleştirme Adaleti Karşılaştırması",
+                "Öğrenci & Ders Kümelemesi (Keşif)",
+            ],
+        )
+        self.live_scenario_cb.set("MCDM Ders Önerisi (Gerçek Veri)")
+        self.live_scenario_cb.grid(row=1, column=1, columnspan=3, sticky="ew", padx=4, pady=(8, 0))
+        self._live_label_to_key = {
+            "MCDM Ders Önerisi (Gerçek Veri)": ("real_mcdm_recommendation", ["AHP", "TOPSIS", "VIKOR", "PROMETHEE_II"]),
+            "ML Ders Seçimi Tahmini (Gerçek Veri)": ("real_ml_prediction", ["NaiveBayes", "LogisticRegression", "RandomForest", "XGBoostLike"]),
+            "Yerleştirme Adaleti Karşılaştırması": ("allocation_fairness", ["GaleShapley", "GreedyAllocation", "RandomAllocation", "FirstComeFirstServed", "MinimumRegretAllocation"]),
+            "Öğrenci & Ders Kümelemesi (Keşif)": ("clustering_exploration", ["KMeans", "HierarchicalClustering", "DBSCAN"]),
+        }
+        ttk.Button(
+            filters, text="Canlı Karşılaştır (Sistem Verisi)", command=self.run_live_comparison,
+        ).grid(row=1, column=8, sticky="e", padx=(8, 0), pady=(8, 0))
+
         self.table = DataTable(
             self,
             [
@@ -144,6 +168,42 @@ class ComparisonPage(ttk.Frame):
                     self.banner.show("Backend API erişilemiyor; örnek karşılaştırma verisi gösteriliyor.", level="warning")
                 self.rows = list(mock_data.COMPARISON_ROWS)
                 self.loaded_run_ids = []
+            self._sync_metric_options()
+            self.apply_filters()
+
+        if self.api.__class__.__name__ != "BenchmarkApiClient":
+            success(worker())
+            return
+        run_async(self, worker, success)
+
+    def run_live_comparison(self) -> None:
+        """Seçili senaryoyu sistem verisiyle API üzerinden çalıştırır ve tabloyu
+        gerçek metriklerle doldurur."""
+        label = self.live_scenario_cb.get()
+        scenario_key, algorithms = self._live_label_to_key.get(
+            label, ("real_mcdm_recommendation", ["AHP", "TOPSIS"])
+        )
+        payload = {"scenario_name": scenario_key, "algorithm_names": algorithms, "top_k": int(self.k_cb.get() or 10)}
+
+        def worker():
+            return self.api.compare_runs(payload)
+
+        def success(result):
+            if not getattr(result, "ok", False):
+                self.banner.show(f"Canlı karşılaştırma başarısız: {getattr(result, 'error', '')}", level="error")
+                return
+            if getattr(result, "used_mock", False):
+                self.banner.show(
+                    "Backend API erişilemiyor; canlı karşılaştırma için Benchmark Paneli'nden 'API Başlat' deyin.",
+                    level="warning",
+                )
+                self.source_badge.set_source(True, "Veri kaynağı: Örnek (API yok)")
+            else:
+                self.source_badge.set_source(False, "Veri kaynağı: Sistem (gerçek API)")
+                self.banner.show(f"Canlı karşılaştırma tamamlandı: {label}", level="info")
+            data = result.data if isinstance(result.data, dict) else {}
+            self.rows = _rows_from_run_detail(scenario_key, data)
+            self.loaded_run_ids = [scenario_key]
             self._sync_metric_options()
             self.apply_filters()
 

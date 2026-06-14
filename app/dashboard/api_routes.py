@@ -16,6 +16,44 @@ service = ExperimentService()
 _STATE: dict[str, Any] = {"dataset": None}
 
 
+def _to_native(obj: Any) -> Any:
+    """numpy/pandas tiplerini saf Python tiplerine indirger (JSON serileştirme).
+
+    ML senaryolarında run detayları numpy.int64/float64, ndarray vb. içerebiliyor;
+    bu da FastAPI'nin jsonable_encoder'ında "object is not iterable" hatasına yol
+    açıyordu. Yanıtı dönmeden önce recursive olarak temizliyoruz.
+    """
+    # numpy skaler / dizi
+    try:
+        import numpy as _np
+
+        if isinstance(obj, _np.generic):
+            return obj.item()
+        if isinstance(obj, _np.ndarray):
+            return [_to_native(x) for x in obj.tolist()]
+    except Exception:
+        pass
+    # pandas
+    try:
+        import pandas as _pd
+
+        if isinstance(obj, _pd.Series):
+            return [_to_native(x) for x in obj.tolist()]
+        if isinstance(obj, _pd.DataFrame):
+            return [_to_native(rec) for rec in obj.to_dict(orient="records")]
+        if obj is _pd.NaT:
+            return None
+    except Exception:
+        pass
+    if isinstance(obj, dict):
+        return {str(k): _to_native(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_to_native(x) for x in obj]
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
+    return obj
+
+
 def _default_db_path() -> str:
     """Otomatik dataset üretimi için yapılandırılmış veritabanı yolu."""
     try:
@@ -137,12 +175,12 @@ def run_scenario(request: ScenarioRunRequest):
     )
     if request.allocation_parameters is not None:
         run_payload["request_parameters"] = {"allocation": request.allocation_parameters}
-    return {
+    return _to_native({
         "summary": summarize_run(run_payload),
         "comparison_table": build_comparison_table(run_payload),
         "details": run_payload,
         "request_parameters": run_payload.get("request_parameters"),
-    }
+    })
 
 
 @router.post("/runs/compare")
@@ -158,12 +196,12 @@ def compare_algorithms(request: CompareRequest):
     )
     if request.allocation_parameters is not None:
         run_payload["request_parameters"] = {"allocation": request.allocation_parameters}
-    return {
+    return _to_native({
         "summary": summarize_run(run_payload),
         "comparison_table": build_comparison_table(run_payload),
         "details": run_payload,
         "request_parameters": run_payload.get("request_parameters"),
-    }
+    })
 
 
 @router.post("/recommendation")
