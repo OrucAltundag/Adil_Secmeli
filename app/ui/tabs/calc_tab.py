@@ -324,10 +324,37 @@ class CalcTab(ttk.Frame):
         self.cb_algo_year.pack(side=tk.LEFT, padx=(0, 8))
         self.cb_algo_year.bind("<<ComboboxSelected>>", lambda e: self._update_button_state())
 
+        # --- Otomatik mod + Excel: kullanici "kriter girdileri tamamlandiginda
+        # sistem otomatik mufredat/oneri uretip Excel paylassin" istedi. ---
+        try:
+            from app.services.auto_pipeline_service import is_auto_pipeline_enabled
+
+            self._auto_mode_var = tk.BooleanVar(value=is_auto_pipeline_enabled())
+        except Exception:
+            self._auto_mode_var = tk.BooleanVar(value=False)
+        self._chk_auto_mode = tk.Checkbutton(
+            next_year_bar,
+            text="Otomatik Mod",
+            variable=self._auto_mode_var,
+            command=self._toggle_auto_mode,
+            bg="#0f172a", fg="#cbd5e1", selectcolor="#0f172a",
+            activebackground="#0f172a", activeforeground="white",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self._chk_auto_mode.pack(side=tk.LEFT, padx=(16, 4))
+        self._btn_export_excel = tk.Button(
+            next_year_bar,
+            text="Ders Önerisi Excel'e Aktar",
+            bg="#2563eb", fg="white", activebackground="#1d4ed8", activeforeground="white",
+            font=("Segoe UI", 9, "bold"), cursor="hand2", relief="flat", bd=0, padx=12, pady=4,
+            command=self._export_recommendation_excel,
+        )
+        self._btn_export_excel.pack(side=tk.LEFT, padx=(8, 0))
+
         # Fakülte ve yıl combobox'larını doldur
         self._refresh_algo_faculty_options()
         self._refresh_algo_year_options()
-        
+
         # İlk durumda button disabled olsun
         self._btn_next_year.config(state="disabled", bg="#6b7280")
 
@@ -486,6 +513,60 @@ class CalcTab(ttk.Frame):
                 }
             )
         return batch_results
+
+    def _toggle_auto_mode(self):
+        """Otomatik modu config.json'a yazar; kullanıcıya kısa bilgi verir."""
+        try:
+            from app.services.auto_pipeline_service import set_auto_pipeline_enabled
+
+            enabled = bool(self._auto_mode_var.get())
+            set_auto_pipeline_enabled(enabled)
+            if enabled:
+                messagebox.showinfo(
+                    "Otomatik Mod",
+                    "Otomatik mod açıldı.\n\nKriter girdileri tamamlandığında (kriter "
+                    "importu sonrası) sistem ilgili fakülte için yeni yıl müfredatını "
+                    "üretip ders önerisi Excel'ini exports/ klasörüne yazacak.",
+                )
+            else:
+                messagebox.showinfo("Otomatik Mod", "Otomatik mod kapatıldı (manuel çalışma).")
+        except Exception:
+            messagebox.showerror("Otomatik Mod", self._friendly_ui_error())
+
+    def _export_recommendation_excel(self):
+        """Seçili fakülte/yıl için ders önerisi Excel'ini elle üretir."""
+        try:
+            import os
+
+            from app.services.auto_pipeline_service import export_recommendations_excel
+
+            db_path = getattr(self.app, "db_path", None) or getattr(self, "db_path", None)
+            if not db_path:
+                messagebox.showerror("Excel", "Veritabanı yolu bulunamadı.")
+                return
+            year = None
+            if self.cb_algo_year and self.cb_algo_year.get():
+                try:
+                    year = int(self.cb_algo_year.get())
+                except ValueError:
+                    year = None
+            if year is None:
+                messagebox.showwarning("Excel", "Önce yıl seçin.")
+                return
+            fac_id = None
+            if self.cb_algo_fakulte and self.cb_algo_fakulte.get():
+                fac_id = self._fakulte_map.get(self.cb_algo_fakulte.get())
+            # Seçili yıl kaynak yıl ise üretilen yıl = year+1; ama kullanıcı doğrudan
+            # mevcut yılın önerisini de isteyebilir. Burada seçili yılın raporunu üretiriz.
+            faculty_ids = [int(fac_id)] if fac_id is not None else None
+            path = export_recommendations_excel(
+                db_path=os.path.abspath(db_path),
+                year=int(year),
+                faculty_ids=faculty_ids,
+            )
+            messagebox.showinfo("Excel", f"Ders önerisi Excel oluşturuldu:\n{path}")
+        except Exception:
+            messagebox.showerror("Excel", self._friendly_ui_error())
 
     def run_single_step(self, algo_id: str):
         """

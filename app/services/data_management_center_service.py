@@ -249,6 +249,36 @@ def get_dashboard_context(
         }
 
 
+def _maybe_run_auto_pipeline(
+    db_path: str,
+    year: int,
+    faculty_id: int,
+    result: dict[str, Any],
+) -> None:
+    """Otomatik mod açıksa kriter importu sonrası üretim hattını best-effort tetikler.
+
+    Sonucu ana import sonucuna `auto_pipeline` anahtarıyla iliştirir; herhangi bir
+    hata import akışını bozmaz (sessizce yutulur).
+    """
+    try:
+        from app.services.auto_pipeline_service import (
+            is_auto_pipeline_enabled,
+            run_auto_pipeline,
+        )
+
+        if not is_auto_pipeline_enabled():
+            return
+        auto_summary = run_auto_pipeline(
+            db_path=db_path,
+            source_year=int(year),
+            faculty_id=int(faculty_id),
+            trigger="criteria_import",
+        )
+        result["auto_pipeline"] = auto_summary
+    except Exception as exc:  # noqa: BLE001
+        result["auto_pipeline"] = {"ok": False, "error": str(exc)}
+
+
 def execute_import_request(
     db_path: str,
     import_type: str,
@@ -269,7 +299,7 @@ def execute_import_request(
     if import_type == "criteria":
         if faculty_id is None:
             return {"ok": False, "message": "Kriter importu için fakülte seçin.", "errors": ["Fakülte zorunlu."]}
-        return import_criteria_excel(
+        criteria_result = import_criteria_excel(
             db_path=db_path,
             excel_path=excel_path,
             faculty_id=int(faculty_id),
@@ -280,6 +310,13 @@ def execute_import_request(
             auto_activate=auto_activate,
             uploaded_by=uploaded_by,
         )
+        # OTOMATIK MOD: kriter importu basariliysa ve otomatik mod aciksa, ilgili
+        # fakulte icin sonraki yil mufredatini uretip ders onerisi Excel'ini yaz.
+        # Kriter kapisi (cift-donem) generate icinde uygulandigi icin eksik donemde
+        # uretim sessizce atlanir; hata olusursa ana import sonucu etkilenmez.
+        if criteria_result.get("ok"):
+            _maybe_run_auto_pipeline(db_path, year=int(year), faculty_id=int(faculty_id), result=criteria_result)
+        return criteria_result
 
     if import_type == "survey":
         # Fakulte = None ("Tumu") => belgedeki tum fakulteler tek tek import edilir.
