@@ -9,10 +9,10 @@ from datetime import datetime
 from tkinter import messagebox, ttk
 
 from app.core.config import load_app_config
-from app.db.sqlite_connection import connect_sqlite
 from app.services.data_quality_integration_service import (
-    assess_data_readiness_cursor,
-    generate_coverage_report_cursor,
+    build_quality_report,
+    list_available_years,
+    list_faculties,
 )
 
 
@@ -35,11 +35,11 @@ class DataQualityPage(ttk.Frame):
                 return self.db_path
         return None
 
-    def _open_connection(self):
+    def _require_db_path(self) -> str:
         db_path = self._refresh_db_path()
         if not db_path:
             raise RuntimeError("Veritabanı bağlantısı bulunamadı. Üst menüden geçerli veritabanı dosyasını seçin.")
-        return connect_sqlite(db_path)
+        return db_path
 
     def _setup_ui(self):
         """UI bileşenlerini kur"""
@@ -294,58 +294,35 @@ class DataQualityPage(ttk.Frame):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _populate_years(self):
-        """Akademik yılları doldur"""
+        """Akademik yılları doldur (servis üzerinden)"""
         try:
             previous = self.year_combo.get() if hasattr(self, "year_combo") else ""
-            conn = self._open_connection()
-            try:
-                cur = conn.cursor()
-                year_values = set()
-                for query in (
-                    "SELECT DISTINCT akademik_yil FROM performans WHERE akademik_yil IS NOT NULL",
-                    "SELECT DISTINCT akademik_yil FROM mufredat WHERE akademik_yil IS NOT NULL",
-                    "SELECT DISTINCT yil FROM ders_kriterleri WHERE yil IS NOT NULL",
-                ):
-                    try:
-                        cur.execute(query)
-                        for row in cur.fetchall():
-                            if not row or row[0] is None:
-                                continue
-                            try:
-                                year_values.add(int(row[0]))
-                            except (TypeError, ValueError):
-                                continue
-                    except Exception:
-                        continue
-                years = [str(year) for year in sorted(year_values, reverse=True)]
-                self.year_combo["values"] = years
-                if previous in years:
-                    self.year_combo.set(previous)
-                elif years:
-                    self.year_combo.current(0)
-                else:
-                    self.year_combo.set("")
-            finally:
-                conn.close()
+            db_path = self._refresh_db_path()
+            year_values = list_available_years(db_path) if db_path else []
+            years = [str(year) for year in year_values]
+            self.year_combo["values"] = years
+            if previous in years:
+                self.year_combo.set(previous)
+            elif years:
+                self.year_combo.current(0)
+            else:
+                self.year_combo.set("")
         except Exception as e:
             print(f"Yıl yükleme hatası: {e}")
 
     def _populate_faculties(self):
-        """Fakülteleri doldur"""
+        """Fakülteleri doldur (servis üzerinden)"""
         try:
             previous = self.faculty_combo.get() if hasattr(self, "faculty_combo") else ""
-            conn = self._open_connection()
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY ad")
-                faculties = [f"{row[1]} (ID: {row[0]})" for row in cur.fetchall()]
-                self.faculty_combo["values"] = ["Tümü"] + faculties
-                if previous in self.faculty_combo["values"]:
-                    self.faculty_combo.set(previous)
-                else:
-                    self.faculty_combo.current(0)
-            finally:
-                conn.close()
+            db_path = self._refresh_db_path()
+            faculties = [
+                f"{ad} (ID: {fid})" for fid, ad in (list_faculties(db_path) if db_path else [])
+            ]
+            self.faculty_combo["values"] = ["Tümü"] + faculties
+            if previous in self.faculty_combo["values"]:
+                self.faculty_combo.set(previous)
+            else:
+                self.faculty_combo.current(0)
         except Exception as e:
             self.faculty_combo["values"] = ["Tümü"]
             self.faculty_combo.current(0)
@@ -380,25 +357,16 @@ class DataQualityPage(ttk.Frame):
         try:
             year = int(year_str)
             faculty_id = self._get_selected_faculty_id()
+            db_path = self._require_db_path()
 
-            conn = self._open_connection()
-            try:
-                cur = conn.cursor()
+            # Tüm rapor servis katmanında tek seferde hesaplanır
+            report = build_quality_report(db_path, year, faculty_id)
 
-                # Readiness
-                readiness = assess_data_readiness_cursor(cur, year, faculty_id)
-                # Coverage
-                coverage = generate_coverage_report_cursor(cur, year, faculty_id)
-
-                # Update UI
-                self._update_summary(readiness, coverage)
-                self._update_coverage(coverage)
-                self._update_readiness(readiness)
-                self._update_missing_data(cur, year, faculty_id)
-                self._update_validation_issues(cur, year, faculty_id)
-
-            finally:
-                conn.close()
+            self._update_summary(report["readiness"], report["coverage"])
+            self._update_coverage(report["coverage"])
+            self._update_readiness(report["readiness"])
+            self._update_missing_data(report["missing_data"])
+            self._update_validation_issues(report["validation_issues"], year)
 
         except Exception as e:
             messagebox.showerror("Rapor Hatası", str(e))
@@ -581,98 +549,35 @@ Tavsiyeler:
 """,
             )
 
-    def _update_missing_data(self, cur, year: int, faculty_id):
-        """Eksik Veri Matrisi sekmesini doldur (sadece eksiği olan dersler)."""
+    def _update_missing_data(self, rows: list[dict]):
+        """Eksik Veri Matrisi sekmesini doldur (servis verisiyle)."""
         for item in self.missing_tree.get_children():
             self.missing_tree.delete(item)
 
-        fac = f"AND d.fakulte_id = {int(faculty_id)}" if faculty_id else ""
-        try:
-            cur.execute(
-                f"""
-                SELECT d.ders_id, COALESCE(d.kod,''), COALESCE(d.ad,''),
-                  EXISTS(SELECT 1 FROM ders_kriterleri k
-                         WHERE k.ders_id=d.ders_id AND k.yil=?) ,
-                  EXISTS(SELECT 1 FROM performans p
-                         WHERE p.ders_id=d.ders_id AND p.akademik_yil=?
-                               AND p.basari_orani IS NOT NULL),
-                  EXISTS(SELECT 1 FROM populerlik o
-                         WHERE o.ders_id=d.ders_id AND o.akademik_yil=?
-                               AND o.doluluk_orani IS NOT NULL),
-                  EXISTS(SELECT 1 FROM anket_sonuclari a
-                         WHERE a.ders_id=d.ders_id AND a.oy_sayisi>0),
-                  (SELECT COUNT(DISTINCT akademik_yil) FROM performans p2
-                         WHERE p2.ders_id=d.ders_id) >= 2
-                FROM ders d
-                WHERE 1=1 {fac}
-                ORDER BY d.kod, d.ad
-                """,
-                (int(year), int(year), int(year)),
-            )
-            rows = cur.fetchall()
-        except Exception as exc:
-            self.missing_tree.insert("", tk.END, text="HATA", values=(str(exc), "", "", "", ""))
-            return
-
         mark = lambda v: "✓" if v else "✗"
-        eksik_sayisi = 0
         for r in rows:
-            crit, perf, pop, srv, trend = bool(r[3]), bool(r[4]), bool(r[5]), bool(r[6]), bool(r[7])
-            if crit and perf and pop and srv and trend:
-                continue  # tam dersleri gizle
-            eksik_sayisi += 1
-            label = f"{r[1]} {r[2]}".strip() or f"#{r[0]}"
+            crit = bool(r.get("criteria"))
+            label = f"{r.get('kod','')} {r.get('ad','')}".strip() or f"#{r.get('ders_id')}"
             iid = self.missing_tree.insert(
                 "", tk.END, text=label,
-                values=(mark(crit), mark(perf), mark(pop), mark(srv), mark(trend)),
+                values=(
+                    mark(crit), mark(r.get("performance")), mark(r.get("popularity")),
+                    mark(r.get("survey")), mark(r.get("trend")),
+                ),
             )
             if not crit:
                 self.missing_tree.item(iid, tags=("eksik",))
         self.missing_tree.tag_configure("eksik", background="#FFEBEE")
-        if eksik_sayisi == 0:
+        if not rows:
             self.missing_tree.insert(
                 "", tk.END, text="(Tüm dersler tam)",
                 values=("✓", "✓", "✓", "✓", "✓"),
             )
 
-    def _update_validation_issues(self, cur, year: int, faculty_id):
-        """Doğrulama Sorunları sekmesini doldur (criteria_validation_issues)."""
+    def _update_validation_issues(self, rows: list[dict], year: int):
+        """Doğrulama Sorunları sekmesini doldur (servis verisiyle)."""
         for item in self.issues_tree.get_children():
             self.issues_tree.delete(item)
-
-        fac = f"AND faculty_id = {int(faculty_id)}" if faculty_id else ""
-        rows = []
-        try:
-            cur.execute(
-                f"""
-                SELECT id, COALESCE(issue_type,''), COALESCE(severity,''),
-                       COALESCE(message,''), COALESCE(criterion_key,''),
-                       COALESCE(created_at,'')
-                FROM criteria_validation_issues
-                WHERE year = ? {fac}
-                ORDER BY CASE severity WHEN 'critical' THEN 0
-                         WHEN 'warning' THEN 1 ELSE 2 END, id
-                LIMIT 1000
-                """,
-                (int(year),),
-            )
-            rows = cur.fetchall()
-        except Exception:
-            try:
-                cur.execute(
-                    """
-                    SELECT id, COALESCE(issue_type,''), COALESCE(severity,''),
-                           COALESCE(message,''), COALESCE(field_name,''),
-                           COALESCE(created_at,'')
-                    FROM data_validation_issues
-                    WHERE is_resolved = 0
-                    ORDER BY id LIMIT 1000
-                    """
-                )
-                rows = cur.fetchall()
-            except Exception as exc:
-                self.issues_tree.insert("", tk.END, text="HATA", values=("", "", str(exc), "", ""))
-                return
 
         if not rows:
             self.issues_tree.insert(
@@ -682,13 +587,17 @@ Tavsiyeler:
             return
 
         for r in rows:
+            severity = str(r.get("severity", ""))
             iid = self.issues_tree.insert(
-                "", tk.END, text=str(r[0]),
-                values=(r[1], r[2], r[3], r[4], r[5]),
+                "", tk.END, text=str(r.get("id", "")),
+                values=(
+                    r.get("issue_type", ""), severity, r.get("message", ""),
+                    r.get("key", ""), r.get("created_at", ""),
+                ),
             )
-            if str(r[2]).lower() == "critical":
+            if severity.lower() == "critical":
                 self.issues_tree.item(iid, tags=("critical",))
-            elif str(r[2]).lower() == "warning":
+            elif severity.lower() == "warning":
                 self.issues_tree.item(iid, tags=("warning",))
         self.issues_tree.tag_configure("critical", background="#FFCDD2")
         self.issues_tree.tag_configure("warning", background="#FFF3CD")

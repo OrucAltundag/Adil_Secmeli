@@ -38,3 +38,15 @@ python-dotenv>=1.0.0
 scipy>=1.10
 shap>=0.44
 lime>=0.2
+
+# Sistem izleme ve raporlama
+# psutil: saglik panelinde bellek/performans olcumu (yoksa SKIPPED)
+psutil>=5.9.0
+# reportlab: PDF rapor ciktisi (yoksa SKIPPED)
+reportlab>=4.0.0
+# python-docx: Word rapor ciktisi (override/trend/veri raporlari)
+python-docx>=1.1.0
+
+# Makine ogrenmesi - gradient boosting
+# xgboost: XGBoostLikePredictor; yoksa GradientBoosting fallback devreye girer
+xgboost>=2.0.0

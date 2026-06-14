@@ -62,7 +62,10 @@ class HealthConfig:
     )
     duplicate_keys: dict[str, tuple[str, ...]] = field(
         default_factory=lambda: {
-            "havuz": ("ders_id", "yil"),
+            # Aynı ders aynı yıl iki farklı dönemde (Güz/Bahar) açılabilir;
+            # benzersizlik anahtarı 'donem' içermeli. 'donem' olmadan Güz/Bahar
+            # kayıtları yanlışlıkla tekrar olarak işaretleniyordu (false positive).
+            "havuz": ("ders_id", "yil", "donem"),
             "ders_kriterleri": ("ders_id", "yil", "donem"),
         }
     )

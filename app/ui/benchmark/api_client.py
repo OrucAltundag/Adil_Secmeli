@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from app.ui.benchmark import mock_data
+from app.ui.benchmark import local_backend, mock_data
 
 DEFAULT_BASE_URL = os.environ.get("ADIL_BENCHMARK_API_URL", "http://127.0.0.1:8000")
 
@@ -33,10 +33,10 @@ class BenchmarkApiClient:
         self.selected_run_ids_for_comparison: list[str] = []
 
     def get_scenarios(self) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/scenarios"), mock_data.get_mock_scenarios)
+        return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/scenarios"), mock_data.get_mock_scenarios, local=local_backend.get_scenarios)
 
     def get_algorithms(self) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/algorithms"), mock_data.get_mock_algorithms)
+        return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/algorithms"), mock_data.get_mock_algorithms, local=local_backend.get_algorithms)
 
     def load_dataset(self, payload: dict[str, Any] | None = None) -> ApiResult:
         body = payload or {"source_type": "csv", "source_path": "data/benchmark/raw_real", "dataset_name": "desktop_benchmark_dataset"}
@@ -101,10 +101,10 @@ class BenchmarkApiClient:
         return self._with_mock(lambda: self._request("GET", "/api/v1/ml/readiness-reports"), mock_data.get_mock_ml_readiness_reports)
 
     def get_algorithm_governance(self) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/governance"), mock_data.get_mock_algorithm_governance)
+        return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/governance"), mock_data.get_mock_algorithm_governance, local=local_backend.get_algorithm_governance)
 
     def set_algorithm_active(self, algorithm_key: str, is_active: bool) -> ApiResult:
-        """Algoritmayı aktif/pasif yapar (mock fallback yok; gerçek API gerektirir)."""
+        """Algoritmayı aktif/pasif yapar (API yoksa yerel servis ile gerçek uygulanır)."""
         return self._with_mock(
             lambda: self._request(
                 "PATCH",
@@ -112,37 +112,39 @@ class BenchmarkApiClient:
                 {"is_active": bool(is_active)},
             ),
             lambda: {"data": {"algorithm_key": algorithm_key, "is_active": bool(is_active)}},
+            local=lambda: local_backend.set_algorithm_active(algorithm_key, bool(is_active)),
         )
 
     def get_algorithm_tasks(self) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/tasks"), mock_data.get_mock_algorithm_tasks)
+        return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/tasks"), mock_data.get_mock_algorithm_tasks, local=local_backend.get_algorithm_tasks)
 
     def get_governed_runs(self) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/governed-runs"), mock_data.get_mock_governed_runs)
+        return self._with_mock(lambda: self._request("GET", "/api/v1/benchmark/governed-runs"), mock_data.get_mock_governed_runs, local=local_backend.get_governed_runs)
 
     def execute_governed_run(self, payload: dict[str, Any]) -> ApiResult:
         return self._with_mock(
             lambda: self._request("POST", "/api/v1/benchmark/governed-runs/execute", payload),
             lambda: mock_data.get_mock_execute_governed_run(payload),
+            local=lambda: local_backend.execute_governed_run(payload),
         )
 
     def get_governed_run_metrics(self, run_id: int | str) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/metrics"), mock_data.get_mock_governed_run_metrics)
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/metrics"), mock_data.get_mock_governed_run_metrics, local=lambda: local_backend.get_governed_run_metrics(run_id))
 
     def get_governed_run_validation(self, run_id: int | str) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/validation"), mock_data.get_mock_governed_run_validation)
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/validation"), mock_data.get_mock_governed_run_validation, local=lambda: local_backend.get_governed_run_validation(run_id))
 
     def get_governed_run_statistics(self, run_id: int | str) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/statistics"), mock_data.get_mock_governed_run_statistics)
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/statistics"), mock_data.get_mock_governed_run_statistics, local=lambda: local_backend.get_governed_run_statistics(run_id))
 
     def get_governed_run_diagnostics(self, run_id: int | str) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/diagnostics"), mock_data.get_mock_governed_run_diagnostics)
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/diagnostics"), mock_data.get_mock_governed_run_diagnostics, local=lambda: local_backend.get_governed_run_diagnostics(run_id))
 
     def get_governed_run_leakage(self, run_id: int | str) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/leakage"), mock_data.get_mock_governed_run_leakage)
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/leakage"), mock_data.get_mock_governed_run_leakage, local=lambda: local_backend.get_governed_run_leakage(run_id))
 
     def get_governed_run_clustering(self, run_id: int | str) -> ApiResult:
-        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/clustering"), mock_data.get_mock_governed_run_clustering)
+        return self._with_mock(lambda: self._request("GET", f"/api/v1/benchmark/governed-runs/{run_id}/clustering"), mock_data.get_mock_governed_run_clustering, local=lambda: local_backend.get_governed_run_clustering(run_id))
 
     def _normalize_run_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         algorithms = payload.get("algorithm_names") or payload.get("algorithms") or []
@@ -168,8 +170,29 @@ class BenchmarkApiClient:
             raw = response.read().decode("utf-8")
             return json.loads(raw) if raw else {}
 
-    def _with_mock(self, call, fallback) -> ApiResult:
+    _REMOTE_ERRORS = (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        json.JSONDecodeError,
+        OSError,
+        ValueError,
+    )
+
+    def _with_mock(self, call, fallback, local=None) -> ApiResult:
+        """HTTP API -> (yoksa) yerel gerçek hesap -> (o da yoksa) statik mock.
+
+        `local` verildiğinde ve HTTP başarısız olduğunda gerçek servisler
+        in-process çağrılır; sonuç GERÇEK olduğu için used_mock=False döner.
+        Yalnızca local da başarısız olursa statik mock'a (used_mock=True) düşülür.
+        """
         try:
             return ApiResult(ok=True, data=call(), used_mock=False)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError, ValueError) as exc:
-            return ApiResult(ok=False, data=fallback(), error=str(exc), used_mock=True)
+        except self._REMOTE_ERRORS as exc:
+            remote_error = str(exc)
+        if local is not None:
+            try:
+                return ApiResult(ok=True, data=local(), used_mock=False, error=remote_error)
+            except Exception:  # noqa: BLE001 - yerel başarısızsa mock'a düş
+                pass
+        return ApiResult(ok=False, data=fallback(), error=remote_error, used_mock=True)

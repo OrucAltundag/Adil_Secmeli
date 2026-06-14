@@ -1,10 +1,17 @@
 # Automated smoke test for AHPWeightPage
 import logging
+import sys
 import traceback
 import tkinter as tk
 from pathlib import Path
 
-logfile = Path('logs/ahp_auto_test.log')
+# Proje kökünü sys.path'e ekle: script herhangi bir dizinden çalıştırılsa da
+# 'app' paketi import edilebilsin (ModuleNotFoundError: No module named 'app' fix).
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+logfile = PROJECT_ROOT / 'logs' / 'ahp_auto_test.log'
 logfile.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(filename=str(logfile), level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
 

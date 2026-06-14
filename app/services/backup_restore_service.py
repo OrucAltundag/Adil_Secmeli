@@ -2,6 +2,7 @@
 import hashlib
 import os
 import shutil
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 
@@ -10,6 +11,45 @@ from sqlalchemy.orm import Session
 
 from app.core.config import AppConfig, resolve_sqlite_db_path
 from app.db.models import DataSnapshot
+
+
+def create_manual_file_backup(db_path: str, created_by: str = "desktop-ui") -> dict:
+    """Hafif manuel yedek: SQLite online backup API ile tutarlı kopya alır.
+
+    ORM Session gerektirmez; uygulama açık (yazma kilidi varken) bile güvenlidir.
+    Yedeği data/backups/ altına zaman damgalı yazar ve SHA-256 özetini döndürür.
+    """
+    if not db_path or not os.path.exists(db_path):
+        raise FileNotFoundError(f"Veritabanı bulunamadı: {db_path}")
+
+    backup_dir = os.path.join(os.path.dirname(db_path), "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(backup_dir, f"manual_backup_{ts}.db")
+
+    src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        dst = sqlite3.connect(backup_path)
+        try:
+            src.backup(dst)  # tutarlı online kopya
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+    sha = hashlib.sha256()
+    with open(backup_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha.update(chunk)
+
+    return {
+        "ok": True,
+        "path": backup_path,
+        "size_bytes": os.path.getsize(backup_path),
+        "sha256": sha.hexdigest(),
+        "created_by": created_by,
+        "created_at": ts,
+    }
 
 
 # pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportCallIssue=false

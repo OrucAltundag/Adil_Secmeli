@@ -76,11 +76,11 @@ class CalcTab(ttk.Frame):
         self.sub_nb.add(self.page_algos, text="Algoritma Kontrol & Ders Lab")
         self.setup_algo_panel(self.page_algos)
 
-        # 2) Relations tab
-        self.page_relations = RelationsTab(self.sub_nb, app=self.app)
-        self.sub_nb.add(self.page_relations, text="Ders Iliskileri & Kurallar")
+        # NOT: "Ders İlişkileri & Kurallar" sekmesi kullanıcı talebiyle arayüzden
+        # kaldırıldı (RelationsTab sınıfı/dosyası ileride yeniden kullanılabilmesi
+        # için korunmaktadır; yalnızca notebook'a eklenmiyor).
 
-        # 3) Pool tab
+        # 2) Pool tab
         self.page_pool = PoolTab(self.sub_nb, app=self.app)
         self.sub_nb.add(self.page_pool, text="Havuz Yonetimi")
 
@@ -97,7 +97,7 @@ class CalcTab(ttk.Frame):
             if idx == 1 and not getattr(self, "_lab_initialized", False):
                 self.page_lab.refresh()
                 self._lab_initialized = True
-            elif idx == 3 and not getattr(self, "_pool_initialized", False):
+            elif idx == 2 and not getattr(self, "_pool_initialized", False):
                 self.page_pool.refresh()
                 self._pool_initialized = True
         except Exception:

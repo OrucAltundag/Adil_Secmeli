@@ -42,6 +42,15 @@ def open_sqlite_connection(db_path: str | None = None, *, row_factory: bool = Tr
     conn = sqlite3.connect(_resolve_sqlite_path(db_path, cfg))
     if row_factory:
         conn.row_factory = sqlite3.Row
+    # WAL: okuyucular yazıcıyı bloklamaz (masaüstü uygulaması açıkken benchmark/
+    # rapor okumaları 'database is locked' almaz). busy_timeout: kısa yazma
+    # çakışmalarında hata yerine bekleme. WAL kalıcı bir DB özelliğidir; tek
+    # ayar tüm bağlantılar için geçerli olur. Salt-okunur dosyalarda sessiz geçilir.
+    try:
+        conn.execute("PRAGMA busy_timeout = 8000")
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.Error:
+        pass
     return conn
 
 

@@ -375,6 +375,11 @@ class AdilSecmeliApp(tk.Tk):
         self.tab_data_quality = DataQualityPage(self._nb_veri, app=self, db_path=self.db_path)
         self._nb_veri.add(self.tab_data_quality, text="✓ Veri Kalitesi")
 
+        # Trend Kontrol Sayfası (Veri başlığı altında, canlı hesaplama).
+        # TrendVisualizationPage yeniden kullanılır; Veri sekmesi için ayrı örnek.
+        self.tab_data_trend = TrendVisualizationPage(self._nb_veri, app=self)
+        self._nb_veri.add(self.tab_data_trend, text="📈 Trend")
+
         # ── GRUP 3: KARAR SÜRECİ ──────────────────────────────────────
         _g_karar = ttk.Frame(self.nb)
         self.nb.add(_g_karar, text="⚙️ Karar Süreci")

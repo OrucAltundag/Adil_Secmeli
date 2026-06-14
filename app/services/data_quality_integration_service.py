@@ -442,6 +442,204 @@ def generate_coverage_report_cursor(
         }
 
 
+def list_available_years(db_path: Optional[str] = None) -> list[int]:
+    """Performans/mufredat/kriter tablolarindaki distinct akademik yillari doner.
+
+    Baglantiyi kendi acar/kapatir; UI katmaninin DB acmasina gerek kalmaz.
+    """
+    from app.db.session import open_sqlite_connection
+
+    conn = open_sqlite_connection(db_path or None, row_factory=True)
+    try:
+        cur = conn.cursor()
+        year_values: set[int] = set()
+        for query in (
+            "SELECT DISTINCT akademik_yil FROM performans WHERE akademik_yil IS NOT NULL",
+            "SELECT DISTINCT akademik_yil FROM mufredat WHERE akademik_yil IS NOT NULL",
+            "SELECT DISTINCT yil FROM ders_kriterleri WHERE yil IS NOT NULL",
+        ):
+            try:
+                cur.execute(query)
+                for row in cur.fetchall():
+                    if not row or row[0] is None:
+                        continue
+                    try:
+                        year_values.add(int(row[0]))
+                    except (TypeError, ValueError):
+                        continue
+            except sqlite3.OperationalError:
+                continue
+        return sorted(year_values, reverse=True)
+    finally:
+        conn.close()
+
+
+def list_faculties(db_path: Optional[str] = None) -> list[tuple[int, str]]:
+    """(fakulte_id, ad) listesini ada gore sirali doner."""
+    from app.db.session import open_sqlite_connection
+
+    conn = open_sqlite_connection(db_path or None, row_factory=True)
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY ad")
+            return [(int(row[0]), str(row[1])) for row in cur.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+    finally:
+        conn.close()
+
+
+def get_missing_data_matrix(
+    db_path: Optional[str],
+    year: int,
+    faculty_id: Optional[int] = None,
+) -> list[dict[str, Any]]:
+    """Eksik veri matrisi: en az bir veri tipi eksik olan dersleri doner.
+
+    Her oge: {ders_id, kod, ad, criteria, performance, popularity, survey, trend}
+    (bool alanlar). Tum dersler tam ise bos liste doner.
+    """
+    from app.db.session import open_sqlite_connection
+
+    conn = open_sqlite_connection(db_path or None, row_factory=True)
+    try:
+        cur = conn.cursor()
+        fac = f"AND d.fakulte_id = {int(faculty_id)}" if faculty_id else ""
+        cur.execute(
+            f"""
+            SELECT d.ders_id, COALESCE(d.kod,''), COALESCE(d.ad,''),
+              EXISTS(SELECT 1 FROM ders_kriterleri k
+                     WHERE k.ders_id=d.ders_id AND k.yil=?) ,
+              EXISTS(SELECT 1 FROM performans p
+                     WHERE p.ders_id=d.ders_id AND p.akademik_yil=?
+                           AND p.basari_orani IS NOT NULL),
+              EXISTS(SELECT 1 FROM populerlik o
+                     WHERE o.ders_id=d.ders_id AND o.akademik_yil=?
+                           AND o.doluluk_orani IS NOT NULL),
+              EXISTS(SELECT 1 FROM anket_sonuclari a
+                     WHERE a.ders_id=d.ders_id AND a.oy_sayisi>0),
+              (SELECT COUNT(DISTINCT akademik_yil) FROM performans p2
+                     WHERE p2.ders_id=d.ders_id) >= 2
+            FROM ders d
+            WHERE 1=1 {fac}
+            ORDER BY d.kod, d.ad
+            """,
+            (int(year), int(year), int(year)),
+        )
+        rows = cur.fetchall()
+    except sqlite3.OperationalError as exc:
+        conn.close()
+        raise RuntimeError(f"Eksik veri sorgusu basarisiz: {exc}") from exc
+    else:
+        conn.close()
+
+    result: list[dict[str, Any]] = []
+    for r in rows:
+        crit, perf, pop, srv, trend = bool(r[3]), bool(r[4]), bool(r[5]), bool(r[6]), bool(r[7])
+        if crit and perf and pop and srv and trend:
+            continue  # tam dersleri atla
+        result.append({
+            "ders_id": r[0],
+            "kod": r[1],
+            "ad": r[2],
+            "criteria": crit,
+            "performance": perf,
+            "popularity": pop,
+            "survey": srv,
+            "trend": trend,
+        })
+    return result
+
+
+def get_validation_issues(
+    db_path: Optional[str],
+    year: int,
+    faculty_id: Optional[int] = None,
+    limit: int = 1000,
+) -> list[dict[str, Any]]:
+    """Dogrulama sorunlarini (criteria_validation_issues, yoksa
+    data_validation_issues fallback) severity sirali doner."""
+    from app.db.session import open_sqlite_connection
+
+    conn = open_sqlite_connection(db_path or None, row_factory=True)
+    try:
+        cur = conn.cursor()
+        fac = f"AND faculty_id = {int(faculty_id)}" if faculty_id else ""
+        rows = []
+        try:
+            cur.execute(
+                f"""
+                SELECT id, COALESCE(issue_type,''), COALESCE(severity,''),
+                       COALESCE(message,''), COALESCE(criterion_key,''),
+                       COALESCE(created_at,'')
+                FROM criteria_validation_issues
+                WHERE year = ? {fac}
+                ORDER BY CASE severity WHEN 'critical' THEN 0
+                         WHEN 'warning' THEN 1 ELSE 2 END, id
+                LIMIT {int(limit)}
+                """,
+                (int(year),),
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            cur.execute(
+                f"""
+                SELECT id, COALESCE(issue_type,''), COALESCE(severity,''),
+                       COALESCE(message,''), COALESCE(field_name,''),
+                       COALESCE(created_at,'')
+                FROM data_validation_issues
+                WHERE is_resolved = 0
+                ORDER BY id LIMIT {int(limit)}
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "issue_type": r[1],
+            "severity": r[2],
+            "message": r[3],
+            "key": r[4],
+            "created_at": r[5],
+        }
+        for r in rows
+    ]
+
+
+def build_quality_report(
+    db_path: Optional[str],
+    year: int,
+    faculty_id: Optional[int] = None,
+    department_id: Optional[int] = None,
+) -> dict[str, Any]:
+    """Tam veri kalitesi raporu: readiness + coverage + eksik matris + sorunlar.
+
+    Tek baglantida hesaplar; UI yalnizca sonucu render eder.
+    """
+    from app.db.session import open_sqlite_connection
+
+    conn = open_sqlite_connection(db_path or None, row_factory=True)
+    try:
+        cur = conn.cursor()
+        readiness = assess_data_readiness_cursor(cur, year, faculty_id, department_id)
+        coverage = generate_coverage_report_cursor(cur, year, faculty_id, department_id)
+    finally:
+        conn.close()
+
+    return {
+        "year": int(year),
+        "faculty_id": faculty_id,
+        "readiness": readiness,
+        "coverage": coverage,
+        "missing_data": get_missing_data_matrix(db_path, year, faculty_id),
+        "validation_issues": get_validation_issues(db_path, year, faculty_id),
+    }
+
+
 def save_data_coverage_report(
     cur: sqlite3.Cursor,
     year: int,

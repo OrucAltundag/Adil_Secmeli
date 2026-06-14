@@ -11,6 +11,12 @@ from typing import Any
 
 TREND_DEFAULT_WEIGHTS = (0.50, 0.30, 0.20)
 
+# Trend yönü en az 2 yıllık geçmiş gerektirir. Geçmişi olmayan (ör. veri
+# kümesinin en erken yılı 2022) derslerde 0.0 döndürmek dersi en düşük trendle
+# CEZALANDIRIRDI ve karar formülünü bozardı. Bunun yerine NÖTR skor (0.5)
+# döndürülür: dersi ne ödüllendirir ne cezalandırır (madde 10 gereği).
+NEUTRAL_TREND_SCORE = 0.5
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -64,25 +70,32 @@ def analyze_trend_values(
     if data_points == 0:
         return {
             "values_by_year": {},
-            "trend_score": 0.0,
+            "trend_score": NEUTRAL_TREND_SCORE,
             "trend_label": "insufficient_data",
             "volatility_score": None,
             "data_points_count": 0,
-            "explanation": "Trend icin yeterli gecmis veri bulunmuyor.",
+            "neutral_trend": True,
+            "explanation": (
+                "Trend icin gecmis veri yok; notr skor (0.5) uygulandi - "
+                "ders cezalandirilmaz/odullendirilmez."
+            ),
         }
     if data_points == 1:
         label = "new_course" if target_year is not None and first_seen_year == target_year else "insufficient_data"
         explanation = (
-            "Ders yeni gorundugu icin trend karari temkinli yorumlanmalidir."
+            "Ders yeni gorundugu icin trend yonu hesaplanamaz; notr skor (0.5) uygulandi."
             if label == "new_course"
-            else "Trend icin yalnizca bir veri noktasi var."
+            else "Trend yonu icin en az 2 yil gerekir; tek veri noktasi var, notr skor (0.5) uygulandi."
         )
+        # Tek veri noktasi trend YONU vermez (yukselis/dusus belirsiz). Karar
+        # formulunu bozmamak icin notr skor dondurulur (madde 10).
         return {
             "values_by_year": clean,
-            "trend_score": weighted_trend_score(clean),
+            "trend_score": NEUTRAL_TREND_SCORE,
             "trend_label": label,
             "volatility_score": 0.0,
             "data_points_count": data_points,
+            "neutral_trend": True,
             "explanation": explanation,
         }
 

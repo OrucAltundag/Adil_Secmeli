@@ -8,6 +8,7 @@ parçacığında çalışır; UI donmaz.
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import tkinter as tk
@@ -89,6 +90,7 @@ class SystemHealthPage(ttk.Frame):
         for text, cmd in (
             ("TXT Dışa Aktar", lambda: self._export("txt")),
             ("JSON Dışa Aktar", lambda: self._export("json")),
+            ("Yedek Al", self._manual_backup),
             ("Otomatik Düzelt (Güvenli)", self._start_repair),
             ("Denetim (Audit)", lambda: self._start("audit")),
             ("Hızlı Kontrol", lambda: self._start("quick")),
@@ -103,6 +105,26 @@ class SystemHealthPage(ttk.Frame):
         self.status_var = tk.StringVar(value="Hazır. 'Tam Sağlık Kontrolü' ile başlayın.")
         ttk.Label(status, textvariable=self.status_var).pack(side=tk.LEFT)
         self.progress = ttk.Progressbar(status, mode="indeterminate", length=160)
+
+        # Renkli özet kartları (skor + kategori bazlı sayımlar)
+        self._cards = {}
+        cards = ttk.Frame(self, padding=(8, 6))
+        cards.pack(fill=tk.X)
+        card_defs = [
+            ("score", "Sağlık Puanı", "#1565C0"),
+            ("ok", "Başarılı", "#2E7D32"),
+            ("warning", "Uyarı", "#E65100"),
+            ("critical", "Kritik", "#C62828"),
+            ("failed", "Başarısız", "#AD1457"),
+            ("skipped", "Atlandı", "#616161"),
+        ]
+        for key, label, color in card_defs:
+            box = tk.Frame(cards, bg=color, padx=10, pady=4)
+            box.pack(side=tk.LEFT, padx=3)
+            tk.Label(box, text=label, bg=color, fg="white", font=("Segoe UI", 8)).pack()
+            val = tk.Label(box, text="–", bg=color, fg="white", font=("Segoe UI", 14, "bold"))
+            val.pack()
+            self._cards[key] = val
 
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
@@ -133,6 +155,37 @@ class SystemHealthPage(ttk.Frame):
         widget.delete("1.0", tk.END)
         widget.insert(tk.END, content)
         widget.see("1.0")
+
+    # severity etiketi -> (renk, kalın mı)
+    _LINE_TAGS = {
+        "[CRITICAL]": ("#C62828", True),
+        "[FAILED]": ("#AD1457", True),
+        "[WARNING]": ("#E65100", False),
+        "[OK]": ("#2E7D32", False),
+        "[INFO]": ("#1565C0", False),
+        "[SKIPPED]": ("#616161", False),
+    }
+
+    def _colorize_report(self, widget: tk.Text) -> None:
+        """Rapor metnini satır başındaki severity etiketine göre renklendirir."""
+        try:
+            widget.configure(state=tk.NORMAL)
+            for marker, (color, bold) in self._LINE_TAGS.items():
+                tag = f"sev_{marker.strip('[]')}"
+                widget.tag_configure(
+                    tag, foreground=color,
+                    font=("Segoe UI", 10, "bold") if bold else ("Segoe UI", 10),
+                )
+            total = int(widget.index("end-1c").split(".")[0])
+            for ln in range(1, total + 1):
+                line = widget.get(f"{ln}.0", f"{ln}.end")
+                stripped = line.lstrip()
+                for marker, _ in self._LINE_TAGS.items():
+                    if stripped.startswith(marker):
+                        widget.tag_add(f"sev_{marker.strip('[]')}", f"{ln}.0", f"{ln}.end")
+                        break
+        except Exception:
+            pass
 
     # -- Başlangıç / yenileme ----------------------------------------------------
     def _initial_load(self):
@@ -280,8 +333,27 @@ class SystemHealthPage(ttk.Frame):
             f"Düzeltildi: {report.fixed_count}  •  "
             f"Süre: {report.duration_ms:.0f} ms"
         )
+        self._update_cards(report)
         self._rerender_last()
         self.nb.select(0)
+
+    def _update_cards(self, report) -> None:
+        """Renkli özet kartlarını canlı raporla günceller."""
+        if not getattr(self, "_cards", None):
+            return
+        values = {
+            "score": f"{report.score:.0f}",
+            "ok": report.ok_count,
+            "warning": report.warning_count,
+            "critical": report.critical_count,
+            "failed": report.failed_count,
+            "skipped": report.skipped_count,
+        }
+        for key, lbl in self._cards.items():
+            try:
+                lbl.config(text=str(values.get(key, "–")))
+            except Exception:
+                pass
 
     def _rerender_last(self):
         if self._last_report is None:
@@ -294,12 +366,34 @@ class SystemHealthPage(ttk.Frame):
                 self._last_report, developer=bool(self.dev_detail.get())
             )
             self._set_text(self.txt_report, text)
+            self._colorize_report(self.txt_report)
         except Exception as exc:  # noqa: BLE001
             self._set_text(
                 self.txt_report,
                 f"Rapor biçimlendirilemedi: {type(exc).__name__}: {exc}",
             )
         self._render_previous_report()
+
+    # -- Manuel yedekleme --------------------------------------------------------
+    def _manual_backup(self):
+        """Veritabanının tutarlı (online) manuel yedeğini alır."""
+        db_path = getattr(self.app, "db_path", None) or getattr(self.config, "sqlite_db_path", None)
+        if not db_path:
+            messagebox.showinfo("Yedekleme", "Aktif veritabanı bulunamadı.")
+            return
+        try:
+            from app.services.backup_restore_service import create_manual_file_backup
+
+            result = create_manual_file_backup(str(db_path), created_by="desktop-ui")
+            size_mb = result["size_bytes"] / (1024 * 1024)
+            messagebox.showinfo(
+                "Yedekleme",
+                f"Yedek alındı:\n{result['path']}\n\n"
+                f"Boyut: {size_mb:.2f} MB\nSHA-256: {result['sha256'][:16]}…",
+            )
+            self.status_var.set(f"Manuel yedek alındı: {os.path.basename(result['path'])}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Yedekleme", f"Yedek alınamadı: {exc}")
 
     # -- Dışa aktarma ------------------------------------------------------------
     def _export(self, fmt: str):
