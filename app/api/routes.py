@@ -34,6 +34,7 @@ from app.schemas.ahp import (
     AHPSensitivityRequest,
 )
 from app.schemas.algorithm_governance import (
+    AlgorithmActiveRequest,
     AlgorithmGovernanceUpdateRequest,
     DataGuardCheckRequest,
     GovernedBenchmarkRunRequest,
@@ -112,6 +113,7 @@ from app.services.algorithm_governance_service import (
     get_allowed_algorithms_for_task,
     list_algorithm_governance,
     list_task_mappings,
+    set_algorithm_active,
 )
 from app.services.algorithm_governance_service import (
     seed_default_algorithm_registry as seed_default_governance_registry,
@@ -2440,8 +2442,24 @@ def algorithms_governance_update(algorithm_key: str, payload: AlgorithmGovernanc
             minimum_sample_count=payload.minimum_sample_count,
             user_facing_warning=payload.user_facing_warning,
         )
+        # Aktif/pasif bayrağı verildiyse uygula (çekirdek karar algoritmaları korunur).
+        if payload.is_active is not None:
+            result = set_algorithm_active(conn, algorithm_key, bool(payload.is_active))
         conn.commit()
         return _api_response(data=result, message="Algoritma yönetişimi kaydı güncellendi.")
+    finally:
+        conn.close()
+
+
+@router.patch("/algorithms/governance/{algorithm_key}/active")
+def algorithms_governance_set_active(algorithm_key: str, payload: AlgorithmActiveRequest):
+    """Algoritmayı aktif/pasif yapar (Benchmark platformu yönetim aksiyonu)."""
+    conn = _open_connection()
+    try:
+        result = set_algorithm_active(conn, algorithm_key, bool(payload.is_active))
+        conn.commit()
+        durum = "aktif" if payload.is_active else "pasif"
+        return _api_response(data=result, message=f"Algoritma {durum} hale getirildi.")
     finally:
         conn.close()
 

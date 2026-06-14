@@ -103,6 +103,17 @@ class BenchmarkApiClient:
     def get_algorithm_governance(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/governance"), mock_data.get_mock_algorithm_governance)
 
+    def set_algorithm_active(self, algorithm_key: str, is_active: bool) -> ApiResult:
+        """Algoritmayı aktif/pasif yapar (mock fallback yok; gerçek API gerektirir)."""
+        return self._with_mock(
+            lambda: self._request(
+                "PATCH",
+                f"/api/v1/algorithms/governance/{algorithm_key}/active",
+                {"is_active": bool(is_active)},
+            ),
+            lambda: {"data": {"algorithm_key": algorithm_key, "is_active": bool(is_active)}},
+        )
+
     def get_algorithm_tasks(self) -> ApiResult:
         return self._with_mock(lambda: self._request("GET", "/api/v1/algorithms/tasks"), mock_data.get_mock_algorithm_tasks)
 

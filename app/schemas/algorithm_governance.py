@@ -13,6 +13,11 @@ class AlgorithmGovernanceUpdateRequest(BaseModel):
     can_affect_final_decision: bool | None = None
     minimum_sample_count: int | None = None
     user_facing_warning: str | None = None
+    is_active: bool | None = None
+
+
+class AlgorithmActiveRequest(BaseModel):
+    is_active: bool
 
 
 class DataGuardCheckRequest(BaseModel):

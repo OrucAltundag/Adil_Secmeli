@@ -262,6 +262,38 @@ def update_algorithm_role(
     return get_algorithm_governance(conn, algo["algorithm_key"])
 
 
+def set_algorithm_active(conn: sqlite3.Connection, algorithm_key: str, is_active: bool) -> dict:
+    """Bir algoritmayı aktif/pasif yapar (Benchmark platformundan yönetim).
+
+    Üretim hattının ANA karar bileşenleri (can_affect_final_decision=1) pasife
+    alınamaz; aksi hâlde nihai karar üretilemez hâle gelirdi. Bu kural ihlal
+    edilirse BusinessRuleAppError fırlatılır.
+    """
+    algo = get_algorithm_governance(conn, algorithm_key)
+    if not is_active and bool(algo.get("can_affect_final_decision")):
+        raise BusinessRuleAppError(
+            code="CORE_ALGORITHM_CANNOT_DISABLE",
+            message=f"{algo['display_name']} nihai karar hattının çekirdek bileşenidir, pasife alınamaz.",
+            details={"algorithm_key": algo["algorithm_key"], "usage_role": algo["usage_role"]},
+            suggestion="Yalnızca destekleyici/benchmark algoritmalar pasife alınabilir.",
+        )
+    conn.execute(
+        "UPDATE algorithm_governance_registry SET is_active=?, updated_at=? WHERE algorithm_key=?",
+        (int(bool(is_active)), _now(), algo["algorithm_key"]),
+    )
+    return get_algorithm_governance(conn, algo["algorithm_key"])
+
+
+def is_algorithm_active(conn: sqlite3.Connection, algorithm_key: str) -> bool:
+    """Algoritma aktif mi? Kayıt yoksa veya kolon yoksa True kabul edilir."""
+    try:
+        algo = get_algorithm_governance(conn, algorithm_key)
+    except Exception:
+        return True
+    value = algo.get("is_active")
+    return True if value is None else bool(value)
+
+
 def get_user_facing_algorithm_label(conn: sqlite3.Connection, algorithm_key: str) -> str:
     role = get_algorithm_governance(conn, algorithm_key)["usage_role"] or ""
     return {
@@ -371,6 +403,11 @@ def _row_to_governance_dict(row: sqlite3.Row | tuple, keys: list[str]) -> dict:
         "supports_cross_validation",
     ):
         data[key] = bool(data.get(key))
+    # is_active kolonu eski semalarda olmayabilir; yoksa default_enabled'a düşülür.
+    if "is_active" in data:
+        data["is_active"] = bool(data.get("is_active"))
+    else:
+        data["is_active"] = bool(data.get("default_enabled", True))
     try:
         data["recommended_metrics"] = json.loads(data.get("recommended_metrics_json") or "[]")
     except Exception:

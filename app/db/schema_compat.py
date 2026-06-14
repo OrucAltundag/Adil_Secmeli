@@ -2849,6 +2849,16 @@ def ensure_algorithm_governance_schema(conn: sqlite3.Connection, commit: bool = 
         if not _table_exists(cur, table_name):
             cur.execute(ddl)
             changed["tables_created"] += 1
+    # is_active: kullanicinin Benchmark platformundan algoritmalari aktif/pasif
+    # yapabilmesi icin runtime bayragi (default_enabled'dan bagimsiz).
+    existing_cols = {str(r[1]) for r in cur.execute("PRAGMA table_info(algorithm_governance_registry)").fetchall()}
+    if "is_active" not in existing_cols:
+        cur.execute(
+            "ALTER TABLE algorithm_governance_registry ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"
+        )
+        # Mevcut kayitlarda is_active'i default_enabled ile hizala.
+        cur.execute("UPDATE algorithm_governance_registry SET is_active = COALESCE(default_enabled, 1)")
+        changed["columns_added"] += 1
     index_ddls = [
         "CREATE INDEX IF NOT EXISTS ix_algorithm_governance_registry_role ON algorithm_governance_registry (usage_role, algorithm_family, task_type)",
         "CREATE INDEX IF NOT EXISTS ix_algorithm_task_mapping_task ON algorithm_task_mapping (task_key, algorithm_key, allowed_usage_role)",

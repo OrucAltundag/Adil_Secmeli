@@ -69,10 +69,11 @@ class AlgorithmGovernancePage(ttk.Frame):
     def _build_role_matrix(self) -> None:
         card = ttk.LabelFrame(self.role_frame, text="Algoritma Rol Matrisi", padding=8)
         card.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
-        columns = ("algorithm", "family", "task", "role", "final", "min_samples", "metrics", "warning")
+        columns = ("algorithm", "active", "family", "task", "role", "final", "min_samples", "metrics", "warning")
         self.role_tree = ttk.Treeview(card, columns=columns, show="headings", height=16)
         headers = {
             "algorithm": "Algoritma",
+            "active": "Durum",
             "family": "Aile",
             "task": "Görev",
             "role": "Kullanım rolü",
@@ -81,12 +82,23 @@ class AlgorithmGovernancePage(ttk.Frame):
             "metrics": "Önerilen metrikler",
             "warning": "Uyarı",
         }
-        widths = {"algorithm": 150, "family": 90, "task": 110, "role": 140, "final": 110, "min_samples": 80, "metrics": 230, "warning": 260}
+        widths = {"algorithm": 150, "active": 70, "family": 90, "task": 110, "role": 140, "final": 110, "min_samples": 80, "metrics": 230, "warning": 240}
         for col in columns:
             self.role_tree.heading(col, text=headers[col])
             self.role_tree.column(col, width=widths[col], anchor="w")
         self.role_tree.pack(fill=tk.BOTH, expand=True)
         self.role_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_role_select())
+        # is_active'e göre satır renklendirmesi.
+        self.role_tree.tag_configure("inactive", foreground="#b91c1c")
+        self.role_tree.tag_configure("active", foreground="#15803d")
+
+        # Aktif/pasif yönetim çubuğu (kullanıcı: "kapatılıp açılabilmesini sağla").
+        toggle_bar = ttk.Frame(card)
+        toggle_bar.pack(fill=tk.X, pady=(6, 0))
+        self._role_key_by_item: dict[str, str] = {}
+        ttk.Button(toggle_bar, text="Seçili Algoritmayı Aktif Et", command=lambda: self._set_selected_active(True)).pack(side=tk.LEFT, padx=4)
+        ttk.Button(toggle_bar, text="Seçili Algoritmayı Pasif Et", command=lambda: self._set_selected_active(False)).pack(side=tk.LEFT, padx=4)
+        ttk.Label(toggle_bar, text="(Çekirdek karar algoritmaları — AHP/TOPSIS/kural motoru — pasife alınamaz.)").pack(side=tk.LEFT, padx=8)
 
     def _build_task_mapping(self) -> None:
         card = ttk.LabelFrame(self.task_frame, text="Problem-Algoritma Eşleşmesi", padding=8)
@@ -191,13 +203,19 @@ class AlgorithmGovernancePage(ttk.Frame):
 
     def _fill_roles(self, rows: list[dict[str, Any]]) -> None:
         self.role_tree.delete(*self.role_tree.get_children())
+        self._role_key_by_item = {}
         for row in rows:
             metrics = row.get("recommended_metrics") or []
-            self.role_tree.insert(
+            is_active = row.get("is_active")
+            is_active = True if is_active is None else bool(is_active)
+            tag = "active" if is_active else "inactive"
+            item = self.role_tree.insert(
                 "",
                 "end",
+                tags=(tag,),
                 values=(
                     row.get("display_name") or row.get("algorithm_key"),
+                    "Aktif" if is_active else "Pasif",
                     row.get("algorithm_family"),
                     row.get("task_type"),
                     _role_label(row.get("usage_role")),
@@ -207,6 +225,40 @@ class AlgorithmGovernancePage(ttk.Frame):
                     row.get("user_facing_warning") or "",
                 ),
             )
+            self._role_key_by_item[item] = row.get("algorithm_key") or ""
+
+    def _set_selected_active(self, is_active: bool) -> None:
+        """Seçili algoritmayı aktif/pasif yapar (API üzerinden)."""
+        selection = self.role_tree.selection()
+        if not selection:
+            self.banner.show("Önce listeden bir algoritma seçin.", level="warning")
+            return
+        algorithm_key = self._role_key_by_item.get(selection[0])
+        if not algorithm_key:
+            self.banner.show("Algoritma anahtarı bulunamadı.", level="warning")
+            return
+
+        def worker():
+            return self.api.set_algorithm_active(algorithm_key, is_active)
+
+        def success(result):
+            if getattr(result, "used_mock", False):
+                self.banner.show(
+                    "Aktif/pasif değişikliği için gerçek API gerekli (Benchmark Paneli > API Başlat).",
+                    level="warning",
+                )
+                return
+            if not getattr(result, "ok", False):
+                self.banner.show(f"Değiştirilemedi: {getattr(result, 'error', '')}", level="error")
+                return
+            durum = "aktif" if is_active else "pasif"
+            self.banner.show(f"{algorithm_key} {durum} hale getirildi.", level="info")
+            self.load_data()
+
+        if self.api.__class__.__name__ != "BenchmarkApiClient":
+            success(worker())
+            return
+        run_async(self, worker, success)
 
     def _fill_tasks(self, rows: list[dict[str, Any]]) -> None:
         self.task_tree.delete(*self.task_tree.get_children())
@@ -267,19 +319,20 @@ class AlgorithmGovernancePage(ttk.Frame):
         values = self.role_tree.item(selection[0], "values")
         text = [
             f"Algoritma: {values[0]}",
-            f"Aile: {values[1]}",
-            f"Görev: {values[2]}",
-            f"Kullanım rolü: {values[3]}",
-            f"Final karara etki: {values[4]}",
-            f"Minimum veri: {values[5]}",
-            f"Önerilen metrikler: {values[6]}",
+            f"Durum: {values[1]}",
+            f"Aile: {values[2]}",
+            f"Görev: {values[3]}",
+            f"Kullanım rolü: {values[4]}",
+            f"Final karara etki: {values[5]}",
+            f"Minimum veri: {values[6]}",
+            f"Önerilen metrikler: {values[7]}",
             "",
             "Canlı guard özeti:",
             "- Minimum veri eşiği sağlanmadan algoritma çalıştırması karar hattına alınmamalıdır.",
             "- Benchmark-only veya deneysel roller final kararı etkileyemez.",
         ]
-        if values[7]:
-            text.append(f"- Uyarı: {values[7]}")
+        if len(values) > 8 and values[8]:
+            text.append(f"- Uyarı: {values[8]}")
         self.guard_text.delete("1.0", tk.END)
         self.guard_text.insert("1.0", "\n".join(text))
 
