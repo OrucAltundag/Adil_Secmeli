@@ -72,7 +72,7 @@ class AlgorithmExplorerPage(ttk.Frame):
         detail = ttk.LabelFrame(middle, text="Algoritma Detayı", padding=8)
         detail.grid(row=1, column=0, sticky="ew", pady=8)
         self.detail_labels = {}
-        for idx, field in enumerate(["Ad", "Grup", "Kullanım Rolü", "Açıklama", "Kullanım Senaryosu", "Avantajlar", "Dezavantajlar"]):
+        for idx, field in enumerate(["Ad", "Grup", "Kullanım Rolü", "Projede Kullanımı", "Açıklama", "Kullanım Senaryosu", "Avantajlar", "Dezavantajlar"]):
             ttk.Label(detail, text=field, font=("Segoe UI", 9, "bold")).grid(row=idx, column=0, sticky="nw", pady=2)
             label = ttk.Label(detail, text="-", wraplength=430, foreground=COLORS["muted"])
             label.grid(row=idx, column=1, sticky="w", pady=2)
@@ -128,6 +128,8 @@ class AlgorithmExplorerPage(ttk.Frame):
         self.detail_labels["Ad"].configure(text=name, foreground=algorithm_group_color(item.get("group", "")))
         self.detail_labels["Grup"].configure(text=item.get("group", "-"))
         self.detail_labels["Kullanım Rolü"].configure(text=item.get("role_label") or item.get("usage_role") or "Sadece benchmark")
+        usage_note, usage_color = _project_usage_note(name, item.get("usage_role"))
+        self.detail_labels["Projede Kullanımı"].configure(text=usage_note, foreground=usage_color)
         self.detail_labels["Açıklama"].configure(text=detail.get("description", "Katalog üzerinden gelen algoritma."))
         self.detail_labels["Kullanım Senaryosu"].configure(text=detail.get("use_case", "Benchmark senaryosuna göre kullanılır."))
         self.detail_labels["Avantajlar"].configure(text=detail.get("pros", "-"))
@@ -150,6 +152,31 @@ class AlgorithmExplorerPage(ttk.Frame):
                 "parameters": {"source": "desktop-preview"},
             }
         )
+
+
+# Kod denetimine dayalı (docs/ALGORITMA_KULLANIM_DENETIMI.md) projede gerçek kullanım.
+_PRODUCTION_ALGORITHMS = {"ahp", "topsis", "rule_engine", "state_machine", "trend_analysis"}
+_ADVISORY_ALGORITHMS = {"random_forest", "decision_tree", "randomforest", "decisiontree", "tfidf_cosine"}
+
+
+def _project_usage_note(name: str, usage_role: str | None) -> tuple[str, str]:
+    """Algoritmanın projede gerçekte nerede kullanıldığını döndürür (metin, renk)."""
+    key = str(name or "").strip().lower().replace(" ", "_").replace("-", "_")
+    role = str(usage_role or "").strip().lower()
+    if key in _PRODUCTION_ALGORITHMS or role == "production_decision":
+        return (
+            "ÜRETİM HATTI — müfredat üretimi ve kesinleşme puanını doğrudan üretir. Kararı etkiler.",
+            "#15803d",
+        )
+    if key in _ADVISORY_ALGORITHMS or role == "advisory_ml":
+        return (
+            "DESTEKLEYİCİ — Ders Lab'de ikincil sinyal/yorum verir; nihai kararı değiştirmez.",
+            "#b45309",
+        )
+    return (
+        "SADECE BENCHMARK — yalnızca karşılaştırma/araştırma; üretim hattında çalışmaz, kararı etkilemez.",
+        "#6b7280",
+    )
 
 
 def _matches_group_filter(item_group: str, selected_group: str) -> bool:
