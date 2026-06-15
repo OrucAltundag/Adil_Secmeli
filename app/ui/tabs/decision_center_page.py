@@ -86,6 +86,7 @@ class DecisionCenterPage(ttk.Frame):
         self._decision_ids: dict[str, int] = {}
         self._pool_transition_rows: dict[str, dict] = {}
         self._pool_approval_ids: dict[str, int] = {}
+        self._recommended_course_ids: dict[str, int] = {}
         self._action_buttons: list[ttk.Button] = []
         self._override_ids: dict[str, int] = {}
 
@@ -402,6 +403,20 @@ class DecisionCenterPage(ttk.Frame):
             frame,
             ("kod", "ders", "kategori", "açılabilirlik", "topsis", "trend", "güven", "final", "onay"),
         )
+        swap_bar = ttk.Frame(frame)
+        swap_bar.pack(fill=tk.X, pady=(6, 0))
+        self.btn_takas = ttk.Button(
+            swap_bar,
+            text="↔ Müfredattaki Bir Dersle Takas Et",
+            command=self._takas_secili_ders,
+        )
+        self.btn_takas.pack(side=tk.LEFT, padx=4)
+        ttk.Label(
+            swap_bar,
+            text="Seçili önerilen dersi, bu çalıştırmanın müfredatındaki bir ders ile değiştirir. "
+            "Gelen ders müfredata, çıkan ders havuza alınır.",
+            foreground="#6B7280",
+        ).pack(side=tk.LEFT, padx=8)
 
     def _build_pool_lifecycle_tab(self):
         frame = ttk.PanedWindow(self.sub_nb, orient=tk.VERTICAL)
@@ -1079,12 +1094,18 @@ class DecisionCenterPage(ttk.Frame):
         if getattr(self, "tree_recommended", None) is None:
             return
         self._clear(self.tree_recommended)
+        self._recommended_course_ids.clear()
         if not run_id:
             return
         for row in list_recommended_courses(self._conn(), int(run_id)):
+            course_id = row.get("course_id")
+            iid = f"rec-{course_id}" if course_id is not None else None
+            if iid is not None:
+                self._recommended_course_ids[iid] = int(course_id)
             self.tree_recommended.insert(
                 "",
                 tk.END,
+                iid=iid,
                 values=(
                     row.get("course_code") or "",
                     row.get("course_name") or row.get("course_id"),
@@ -1097,6 +1118,150 @@ class DecisionCenterPage(ttk.Frame):
                     "Evet" if row.get("approval_required") else "Hayır",
                 ),
             )
+
+    def _takas_secili_ders(self):
+        """Seçili önerilen dersi, çalıştırmanın müfredatındaki bir ders ile takas eder."""
+        from app.services.curriculum_swap_service import (
+            list_curriculum_courses_for_run,
+            swap_curriculum_course,
+        )
+
+        run_id = self._selected_run_id()
+        if not run_id:
+            messagebox.showwarning(
+                "Takas", "Önce üstteki 'Run' filtresinden bir karar çalıştırması seçin."
+            )
+            return
+        selected = self.tree_recommended.selection()
+        if not selected:
+            messagebox.showinfo("Takas", "Lütfen takas etmek istediğiniz önerilen dersi seçin.")
+            return
+        incoming_id = self._recommended_course_ids.get(selected[0])
+        if incoming_id is None:
+            messagebox.showwarning("Takas", "Seçili dersin kimliği çözümlenemedi.")
+            return
+
+        try:
+            curriculum = list_curriculum_courses_for_run(self._conn(), int(run_id))
+        except Exception:
+            messagebox.showerror("Takas", self._friendly_backend_error())
+            return
+        if not curriculum:
+            messagebox.showinfo(
+                "Takas",
+                "Bu çalıştırmanın müfredatında (final statü = Müfredatta) ders bulunamadı; "
+                "takas yapılamaz.",
+            )
+            return
+        # Gelen ders zaten müfredattaysa kullanıcıyı uyar.
+        if any(int(c["ders_id"]) == int(incoming_id) for c in curriculum):
+            messagebox.showinfo("Takas", "Seçili ders zaten müfredatta.")
+            return
+
+        outgoing_id = self._ask_curriculum_course(curriculum)
+        if outgoing_id is None:
+            return  # kullanıcı vazgeçti
+
+        try:
+            result = swap_curriculum_course(
+                self._conn(),
+                run_id=int(run_id),
+                incoming_course_id=int(incoming_id),
+                outgoing_course_id=int(outgoing_id),
+                created_by="decision-center-ui",
+            )
+        except Exception as exc:
+            messagebox.showerror("Takas", f"Takas uygulanamadı: {exc}")
+            return
+
+        if not result.get("ok"):
+            messagebox.showerror("Takas", result.get("error", "Takas başarısız."))
+            return
+
+        inc = result.get("incoming", {})
+        out = result.get("outgoing", {})
+        mesaj = [
+            f"Takas tamamlandı:",
+            f"  Müfredata alınan : {inc.get('kod','')} — {inc.get('ad','')}",
+            f"  Havuza alınan    : {out.get('kod','')} — {out.get('ad','')}",
+            f"  Güncellenen havuz kaydı: {result.get('havuz_updated', 0)}, "
+            f"müfredat-ders kaydı: {result.get('mufredat_updated', 0)}",
+        ]
+        if result.get("warnings"):
+            mesaj.append("")
+            mesaj.append("Uyarılar:")
+            mesaj.extend(f"  • {w}" for w in result["warnings"])
+        messagebox.showinfo("Takas", "\n".join(mesaj))
+
+        # İlgili görünümleri tazele.
+        self._load_recommended(run_id)
+        self._load_course_decisions(run_id)
+
+    def _ask_curriculum_course(self, curriculum: list[dict]) -> int | None:
+        """Müfredattaki dersleri listeleyip kullanıcıya seçtiren modal pencere.
+
+        Seçilen dersin ders_id'sini döndürür; kullanıcı vazgeçerse None.
+        """
+        dialog = tk.Toplevel(self)
+        dialog.title("Çıkacak müfredat dersini seçin")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+        dialog.geometry("560x340")
+
+        ttk.Label(
+            dialog,
+            text="Önerilen ders, aşağıda seçeceğiniz müfredat dersinin yerine geçecek.",
+            wraplength=540,
+        ).pack(fill=tk.X, padx=10, pady=(10, 6))
+
+        cols = ("kod", "ders", "akts", "topsis", "açılabilirlik")
+        tree = ttk.Treeview(dialog, columns=cols, show="headings", height=10)
+        for c in cols:
+            tree.heading(c, text=c.title())
+            tree.column(c, width=100, anchor=tk.W)
+        tree.column("ders", width=200)
+        tree.pack(fill=tk.BOTH, expand=True, padx=10)
+
+        id_map: dict[str, int] = {}
+        for c in curriculum:
+            iid = f"curr-{c['ders_id']}"
+            id_map[iid] = int(c["ders_id"])
+            akts = c.get("akts")
+            topsis = c.get("topsis_score")
+            acil = c.get("acilabilirlik_score")
+            tree.insert(
+                "", tk.END, iid=iid,
+                values=(
+                    c.get("kod", ""),
+                    c.get("ad", ""),
+                    f"{akts:g}" if akts is not None else "-",
+                    f"{topsis:.1f}" if topsis is not None else "-",
+                    f"{acil:.1f}" if acil is not None else "-",
+                ),
+            )
+
+        chosen: dict[str, int | None] = {"id": None}
+
+        def _onayla():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showinfo("Takas", "Bir ders seçin.", parent=dialog)
+                return
+            chosen["id"] = id_map.get(sel[0])
+            dialog.destroy()
+
+        def _vazgec():
+            chosen["id"] = None
+            dialog.destroy()
+
+        btns = ttk.Frame(dialog)
+        btns.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(btns, text="Takas Et", command=_onayla).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(btns, text="Vazgeç", command=_vazgec).pack(side=tk.RIGHT, padx=4)
+        tree.bind("<Double-1>", lambda _e: _onayla())
+
+        dialog.wait_window()
+        return chosen["id"]
 
     def _havuzdan_oner(self):
         """Havuzdaki secmeli dersleri AKTIF AHP agirliklariyla puanlayip
