@@ -801,7 +801,10 @@ class CalcTab(ttk.Frame):
             elif algo_id == "next_year":
                 import os
 
-                from app.services.calculation import run_all_algorithms_for_year
+                from app.services.calculation import (
+                    run_all_algorithms_for_year,
+                    run_all_algorithms_for_year_dual,
+                )
 
                 db_path = getattr(self.app, "db_path", None) or self.db_path
                 if not db_path:
@@ -900,21 +903,61 @@ class CalcTab(ttk.Frame):
                 batch_results = self._run_full_algorithm_batch_for_next_year()
                 batch_failures = [item for item in batch_results if not item.get("ok")]
 
-                summary = run_all_algorithms_for_year(
+                # Spec madde 3: Guz+Bahar BIRLIKTE uretim. Dual wrapper hem G hem B
+                # icin alt akisi calistirir; UI rapor mantigi geriye uyumlu olsun
+                # diye `summary` olarak guz detayini, bahar bilgilerini ek bolum
+                # olarak gosteririz.
+                dual_result = run_all_algorithms_for_year_dual(
                     yil=int(secili_yil),
                     db_path=db_path,
-                    donem="G",
-                    fakulte_id=secili_fakulte_id,  # Sadece seçili fakülte için çalıştır
+                    fakulte_id=secili_fakulte_id,
                 )
+                summary = dual_result.get("guz_detay", {}) or {}
+                bahar_detay = dual_result.get("bahar_detay", {}) or {}
 
                 processed = summary.get("processed", []) or []
                 skipped = summary.get("skipped", []) or []
                 errors = summary.get("errors", []) or []
+                bahar_processed = bahar_detay.get("processed", []) or []
+                bahar_skipped = bahar_detay.get("skipped", []) or []
+                bahar_errors = bahar_detay.get("errors", []) or []
 
                 lines = []
                 lines.append(f"Algoritma kontrol merkezi: {secili_fakulte_ad} fakultesi, {int(secili_yil)} yili calistirildi.")
                 lines.append(
-                    f"Ozet: islenen_fakulte={len(processed)} | atlanan_fakulte={len(skipped)} | hata={len(errors)}"
+                    f"GUZ ozeti  : islenen_fakulte={len(processed)} | atlanan={len(skipped)} | hata={len(errors)}"
+                )
+                lines.append(
+                    f"BAHAR ozeti: islenen_fakulte={len(bahar_processed)} | atlanan={len(bahar_skipped)} | hata={len(bahar_errors)}"
+                )
+                # Yillik bütünlük durumu
+                guz_ok = bool(dual_result.get("guz_olusturuldu"))
+                bahar_ok = bool(dual_result.get("bahar_olusturuldu"))
+                if guz_ok and bahar_ok:
+                    lines.append("Yillik butunluk: Guz ve Bahar BIRLIKTE uretildi.")
+                elif guz_ok and not bahar_ok:
+                    bahar_neden = ""
+                    if bahar_skipped:
+                        bahar_neden = (bahar_skipped[0] or {}).get("reason", "")
+                    elif bahar_errors:
+                        bahar_neden = (bahar_errors[0] or {}).get("error", "")
+                    lines.append(
+                        f"Yillik butunluk: BAHAR uretilemedi. Neden: {bahar_neden or 'bahar verisi/krit eri eksik'}"
+                    )
+                elif bahar_ok and not guz_ok:
+                    lines.append("Yillik butunluk: Sadece BAHAR uretildi (guz uretimi basarisiz).")
+                else:
+                    lines.append("Yillik butunluk: Hicbir donem uretilemedi.")
+                ahp_meta = dual_result.get("kullanilan_ahp_profile", {}) or {}
+                if ahp_meta.get("id") or ahp_meta.get("name"):
+                    lines.append(
+                        f"Kullanilan AHP profili: id={ahp_meta.get('id')} "
+                        f"ad={ahp_meta.get('name')} v={ahp_meta.get('version')} "
+                        f"tutarli={ahp_meta.get('is_consistent')}"
+                    )
+                lines.append(
+                    f"Calistirma zamani: {dual_result.get('baslangic_zaman')} -> "
+                    f"{dual_result.get('bitis_zaman')}"
                 )
                 lines.append("")
 
@@ -963,8 +1006,31 @@ class CalcTab(ttk.Frame):
                 if not processed and not skipped and not errors:
                     lines.append("Calistirilacak uygun fakulte bulunamadi.")
 
+                # Bahar bolumu (spec madde 3: bahar tarafi acikca raporlanmali)
+                lines.append("")
+                lines.append("=" * 60)
+                lines.append("BAHAR DETAYI")
+                lines.append("=" * 60)
+                if bahar_processed:
+                    lines.append("Bahar islenen fakulteler:")
+                    for item in bahar_processed:
+                        lines.append(f"- {item.get('message', '')}")
+                if bahar_skipped:
+                    lines.append("Bahar atlanan fakulteler (bu beklenen olabilir):")
+                    for item in bahar_skipped:
+                        lines.append(f"- {item.get('reason')}")
+                if bahar_errors:
+                    lines.append("Bahar hatalari:")
+                    for item in bahar_errors:
+                        lines.append(
+                            f"- {item.get('fakulte')} | yil={item.get('year')} -> {item.get('error')}"
+                        )
+                if not bahar_processed and not bahar_skipped and not bahar_errors:
+                    lines.append("Bahar icin uygun fakulte bulunamadi.")
+
                 sonuc_metni = "\n".join(lines)
-                basarili_mi = bool(summary.get("ok", True)) and len(errors) == 0 and not batch_failures
+                # Genel basari: en az bir donem uretildi VE batch hatasiz
+                basarili_mi = (guz_ok or bahar_ok) and not batch_failures
 
                 try:
                     self._refresh_algo_faculty_options()

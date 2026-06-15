@@ -428,10 +428,77 @@ class CourseAnalysisTab(ttk.Frame):
         # ---- 2) YIL DURUM BANDI ----
         self._build_year_status_bar()
 
-        # ---- 3) SPLIT VIEW ----
-        paned = tk.PanedWindow(self, orient=tk.HORIZONTAL,
+        # ---- 3) MOD BARI (Faz C, spec madde 4/26) ----
+        self._build_mode_bar()
+
+        # ---- 4) ICERIK KONTEYNERI: iki mod (tek ders / toplu kesinlesme) ----
+        # Single ve bulk view ayni parent altinda; mod degisince pack/pack_forget.
+        self._single_view = tk.Frame(self, bg="#f8fafc")
+        self._bulk_view = tk.Frame(self, bg="#f8fafc")
+        self._build_single_view(self._single_view)
+        self._build_bulk_view(self._bulk_view)
+
+        # Varsayilan: tek ders modu (mevcut davranis korunur).
+        self._current_mode = "single"
+        self._single_view.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        self._update_mode_buttons()
+
+    def _build_mode_bar(self):
+        """Iki mod arasinda gecis butonlari (spec madde 4/26)."""
+        bar = tk.Frame(self, bg="#0f172a", pady=4, padx=10)
+        bar.pack(fill=tk.X)
+
+        tk.Label(
+            bar, text="Gorunum:", bg="#0f172a", fg="#94a3b8",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        self._btn_mode_single = tk.Button(
+            bar, text="Tek Ders Analizi",
+            font=("Segoe UI", 9, "bold"), cursor="hand2",
+            command=lambda: self._switch_mode("single"),
+        )
+        self._btn_mode_single.pack(side=tk.LEFT, padx=(0, 4))
+
+        self._btn_mode_bulk = tk.Button(
+            bar, text="Toplu Kesinlesme Puanlari",
+            font=("Segoe UI", 9, "bold"), cursor="hand2",
+            command=lambda: self._switch_mode("bulk"),
+        )
+        self._btn_mode_bulk.pack(side=tk.LEFT, padx=(0, 4))
+
+    def _update_mode_buttons(self):
+        """Aktif modun butonunu vurgular (spec madde 26)."""
+        active_bg, active_fg = "#22c55e", "white"
+        inactive_bg, inactive_fg = "#475569", "#cbd5e1"
+        if self._current_mode == "single":
+            self._btn_mode_single.config(bg=active_bg, fg=active_fg)
+            self._btn_mode_bulk.config(bg=inactive_bg, fg=inactive_fg)
+        else:
+            self._btn_mode_single.config(bg=inactive_bg, fg=inactive_fg)
+            self._btn_mode_bulk.config(bg=active_bg, fg=active_fg)
+
+    def _switch_mode(self, mode: str):
+        """Mod degistir; spec madde 26: eski veri karismamali, filtreler korunsun."""
+        if mode == self._current_mode:
+            return
+        self._current_mode = mode
+        if mode == "single":
+            self._bulk_view.pack_forget()
+            self._single_view.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        else:
+            self._single_view.pack_forget()
+            self._bulk_view.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+            # Bulk gorunume gecince filtreleri ust bardan kopyala + veriyi yukle.
+            self._sync_bulk_filters_from_topbar()
+            self._reload_bulk_table()
+        self._update_mode_buttons()
+
+    def _build_single_view(self, parent):
+        """Mevcut 3 panelli split (sol/orta/sag) — parent degisti, mantik korundu."""
+        paned = tk.PanedWindow(parent, orient=tk.HORIZONTAL,
                                sashwidth=5, bg="#cbd5e1")
-        paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        paned.pack(fill=tk.BOTH, expand=True)
 
         # Sol (kriterler)
         left = tk.Frame(paned, bg="white")
@@ -1306,3 +1373,423 @@ class CourseAnalysisTab(ttk.Frame):
         self.lbl_statu_big.config(text="—", bg="white", fg="#94a3b8")
         self.lbl_sayac.config(text="—")
         self._set_text(self.txt_summary, "")
+
+    # =========================================================
+    #  FAZ C — TOPLU KESINLESME PUANLARI MODU (spec madde 4/6/26)
+    # =========================================================
+    # Yeni yıl müfredatı oluşturma sonrası kullanıcı tüm derslerin kesinleşme
+    # puanlarını filtreli bir tabloda görmek istiyor. Tek-ders modundan ayrı,
+    # ama aynı sekme içinde toggle ile geçişli.
+
+    _BULK_COLUMNS = (
+        ("ders_id", "ID", 50),
+        ("kod", "Ders Kodu", 80),
+        ("ad", "Ders Adı", 240),
+        ("fakulte", "Fakülte", 160),
+        ("yil", "Yıl", 60),
+        ("donem", "Dönem", 60),
+        ("durum", "Mevcut Durum", 120),
+        ("eski_kp", "Eski KP", 70),
+        ("yeni_kp", "Yeni KP", 70),
+        ("degisim", "Değişim", 90),
+        ("basari", "Başarı", 70),
+        ("trend", "Trend", 70),
+        ("populerlik", "Popülerlik", 80),
+        ("anket", "Anket", 70),
+        ("topsis", "TOPSIS C", 75),
+        ("karar", "Nihai Karar", 130),
+        ("yontem", "Yöntem", 110),
+        ("ahp_profil", "AHP Profili", 90),
+    )
+
+    def _build_bulk_view(self, parent):
+        """Toplu kesinleşme puanları görünümü — filtre paneli + tablo."""
+        # ---- Filtre paneli ----
+        filter_bar = tk.Frame(parent, bg="#1e293b", pady=6, padx=10)
+        filter_bar.pack(fill=tk.X)
+
+        lbl_style = {"bg": "#1e293b", "fg": "#94a3b8",
+                     "font": ("Segoe UI", 9, "bold")}
+
+        tk.Label(filter_bar, text="Yıl:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
+        self.cb_bulk_yil = ttk.Combobox(filter_bar, state="readonly", width=7)
+        self.cb_bulk_yil.pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Label(filter_bar, text="Fakülte:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
+        self.cb_bulk_fakulte = ttk.Combobox(filter_bar, state="readonly", width=28)
+        self.cb_bulk_fakulte.pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Label(filter_bar, text="Dönem:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
+        self.cb_bulk_donem = ttk.Combobox(
+            filter_bar, state="readonly", width=8,
+            values=["Hepsi", "Güz", "Bahar"],
+        )
+        self.cb_bulk_donem.set("Hepsi")
+        self.cb_bulk_donem.pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Label(filter_bar, text="Durum:", **lbl_style).pack(side=tk.LEFT, padx=(0, 2))
+        self.cb_bulk_durum = ttk.Combobox(
+            filter_bar, state="readonly", width=14,
+            values=["Hepsi", "Müfredatta", "Havuzda"],
+        )
+        self.cb_bulk_durum.set("Hepsi")
+        self.cb_bulk_durum.pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Button(
+            filter_bar, text="Filtreyi Uygula",
+            bg="#2563eb", fg="white",
+            font=("Segoe UI", 9, "bold"), cursor="hand2",
+            command=self._reload_bulk_table,
+        ).pack(side=tk.LEFT, padx=4)
+
+        tk.Button(
+            filter_bar, text="Yenile",
+            bg="#475569", fg="white",
+            font=("Segoe UI", 9), cursor="hand2",
+            command=self._reload_bulk_table,
+        ).pack(side=tk.LEFT, padx=4)
+
+        # ---- Algoritma Aktivitesi Baslik Satiri (Faz D, spec madde 25) ----
+        # Son decision_run'dan kullanilan AHP profili + zaman + ders sayisi gosterir.
+        self._bulk_activity = tk.Label(
+            parent, text="Son hesaplama: —",
+            bg="#0f172a", fg="#86efac",
+            font=("Consolas", 9), anchor="w", padx=10, pady=4,
+        )
+        self._bulk_activity.pack(fill=tk.X)
+
+        # ---- Ozet satiri ----
+        self._bulk_summary = tk.Label(
+            parent, text="Filtreyi uygulayın...",
+            bg="#f8fafc", fg="#1e293b",
+            font=("Segoe UI", 9), anchor="w", padx=10, pady=4,
+        )
+        self._bulk_summary.pack(fill=tk.X)
+
+        # ---- Tablo (Treeview) ----
+        tree_frame = tk.Frame(parent, bg="white")
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+
+        cols = [c[0] for c in self._BULK_COLUMNS]
+        self._bulk_tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings", height=20,
+        )
+        for col_id, heading, width in self._BULK_COLUMNS:
+            self._bulk_tree.heading(col_id, text=heading)
+            self._bulk_tree.column(
+                col_id, width=width,
+                anchor="e" if col_id in ("ders_id", "yil", "eski_kp", "yeni_kp",
+                                          "basari", "trend", "populerlik", "anket",
+                                          "topsis") else "w",
+            )
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical",
+                            command=self._bulk_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal",
+                            command=self._bulk_tree.xview)
+        self._bulk_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        self._bulk_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+
+        # Renk taglari (puan degisimi gorsellestirmesi - spec madde 6)
+        self._bulk_tree.tag_configure("artti", background="#d4edda")
+        self._bulk_tree.tag_configure("azaldi", background="#ffe0b2")
+        self._bulk_tree.tag_configure("ilk_kez", background="#dbeafe")
+        self._bulk_tree.tag_configure("hesaplanmadi", background="#f1f5f9")
+
+    def _sync_bulk_filters_from_topbar(self):
+        """Tek-ders üst barından filtreleri toplu görünüme kopyala (spec madde 26).
+
+        'Görünüm değiştiğinde filtreler mümkünse korunmalı' kuralına uyar.
+        """
+        # Yil listesi
+        try:
+            yvals = list(self.cb_yil.cget("values") or [])
+            if yvals:
+                self.cb_bulk_yil.config(values=yvals)
+                cur_yil = self.cb_yil.get() or (yvals[-1] if yvals else "")
+                if cur_yil:
+                    self.cb_bulk_yil.set(cur_yil)
+        except Exception:
+            pass
+        # Fakulte listesi - "Hepsi" ekle
+        try:
+            fvals = list(self.cb_fakulte.cget("values") or [])
+            options = ["Hepsi"] + fvals
+            self.cb_bulk_fakulte.config(values=options)
+            cur_fak = self.cb_fakulte.get() or "Hepsi"
+            self.cb_bulk_fakulte.set(cur_fak if cur_fak in options else "Hepsi")
+        except Exception:
+            self.cb_bulk_fakulte.config(values=["Hepsi"])
+            self.cb_bulk_fakulte.set("Hepsi")
+
+    def _reload_bulk_table(self):
+        """Filtreye göre toplu kesinleşme puanı tablosunu yeniden yükle.
+
+        Veri kaynağı: get_faculty_year_topsis_results (canlı = "yeni KP") +
+        havuz.skor (saklanan = "eski KP"). Spec madde 7 karşılaştırma mantığı.
+        Spec madde 8: anlık güncelleme - her çağrıda taze veri.
+        """
+        # Eski satirlari temizle (madde 8: eski veri karismamali)
+        for iid in self._bulk_tree.get_children():
+            self._bulk_tree.delete(iid)
+
+        try:
+            yil = int(self.cb_bulk_yil.get())
+        except Exception:
+            self._bulk_summary.config(text="Yıl seçin.")
+            return
+
+        fakulte_sec = self.cb_bulk_fakulte.get() or "Hepsi"
+        donem_sec = self.cb_bulk_donem.get() or "Hepsi"
+        durum_sec = self.cb_bulk_durum.get() or "Hepsi"
+
+        rows = self._collect_bulk_rows(yil, fakulte_sec, donem_sec, durum_sec)
+
+        # Tabloyu doldur
+        topsis_count = pool_count = artan = azalan = ilk_kez = 0
+        for row in rows:
+            tag = row["_tag"]
+            self._bulk_tree.insert(
+                "", tk.END,
+                values=[row.get(c[0], "") for c in self._BULK_COLUMNS],
+                tags=(tag,),
+            )
+            if row.get("yontem") == "topsis":
+                topsis_count += 1
+            elif row.get("yontem") == "pool_anket_only":
+                pool_count += 1
+            if tag == "artti":
+                artan += 1
+            elif tag == "azaldi":
+                azalan += 1
+            elif tag == "ilk_kez":
+                ilk_kez += 1
+
+        self._bulk_summary.config(
+            text=(
+                f"Toplam: {len(rows)} ders | TOPSIS: {topsis_count} | "
+                f"Havuz (anket-only): {pool_count} | "
+                f"Arttı: {artan} | Azaldı: {azalan} | İlk kez hesaplandı: {ilk_kez} | "
+                f"Yıl: {yil} | Fakülte: {fakulte_sec} | Dönem: {donem_sec}"
+            )
+        )
+
+        # Algoritma aktivitesi (Faz D, spec madde 25): son decision_run ozeti
+        self._update_activity_banner(yil, fakulte_sec)
+
+    def _update_activity_banner(self, yil: int, fakulte_sec: str):
+        """Son decision_run ozetini bulk gorunumun ust bandina yazar."""
+        try:
+            from app.services.algorithm_activity_service import get_last_run_summary
+            conn = getattr(self.db, "conn", None)
+            if conn is None:
+                self._bulk_activity.config(text="Son hesaplama: (DB yok)")
+                return
+            # Fakulte filtresi 'Hepsi' ise tum fakulteler genelinde son run
+            fak_id = None
+            if fakulte_sec and fakulte_sec != "Hepsi":
+                cur = conn.cursor()
+                cur.execute("SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1", (fakulte_sec,))
+                row = cur.fetchone()
+                if row:
+                    fak_id = int(row[0])
+            summary = get_last_run_summary(conn, year=int(yil), faculty_id=fak_id)
+            if summary is None:
+                self._bulk_activity.config(
+                    text=f"Son hesaplama: (kayıt yok — yıl {yil} için decision_run bulunamadı)",
+                )
+                return
+            sure = summary.get("sure_sn")
+            sure_str = f"{int(sure)} sn" if sure is not None else "—"
+            ahp_id = summary.get("ahp_profile_id")
+            ahp_v = summary.get("ahp_profile_version")
+            ahp_str = f"#{ahp_id} v{ahp_v}" if ahp_id is not None else "—"
+            algos = ", ".join(summary.get("algoritmalar") or [])
+            text = (
+                f"Son hesaplama: {summary.get('baslangic') or '—'} | "
+                f"{summary.get('fakulte_adi') or '?'} | "
+                f"yıl={summary.get('yil')} dönem={summary.get('donem')} | "
+                f"durum={summary.get('status')} | süre={sure_str} | "
+                f"AHP profili={ahp_str} | dersler={summary.get('ders_sayisi') or '—'} | "
+                f"algoritmalar={algos} | ağırlıklar=[{summary.get('weights_compact')}]"
+            )
+            # H3 (2026-06-15): dejenere kriter uyarisi
+            degenerate = sorted(getattr(self, "_bulk_degenerate_criteria", set()) or [])
+            if degenerate:
+                text += (
+                    f"\n⚠ Dejenere kriterler (varyans=0, sıralamaya katkısız): "
+                    f"{', '.join(degenerate)} — yeni kesinleşme puanları pratikte yalnız "
+                    f"diğer kriterlerden geliyor."
+                )
+            self._bulk_activity.config(text=text)
+        except Exception as exc:  # noqa: BLE001 - UI banner; bozulmamali
+            self._bulk_activity.config(text=f"Son hesaplama: (özet alınamadı: {exc})")
+
+    def _collect_bulk_rows(self, yil, fakulte_sec, donem_sec, durum_sec):
+        """Tüm fakülteler veya seçili fakülte için canlı KP hesabını döner.
+
+        Eski KP = havuz.skor (en son persist edilmiş)
+        Yeni KP = canlı get_faculty_year_topsis_results sonucu
+        Değişim etiketi spec madde 6 listesine göre.
+        """
+        from app.services.calculation import get_faculty_year_topsis_results
+
+        # H3 (Faz iyilestirme): her cagrida dejenere kriterleri sıfırla.
+        self._bulk_degenerate_criteria = set()
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            return []
+        cur = conn.cursor()
+
+        # Hangi fakulteler?
+        if fakulte_sec == "Hepsi":
+            cur.execute("SELECT fakulte_id, ad FROM fakulte ORDER BY fakulte_id")
+        else:
+            cur.execute(
+                "SELECT fakulte_id, ad FROM fakulte WHERE ad = ? LIMIT 1",
+                (fakulte_sec,),
+            )
+        fakulteler = [(int(r[0]), str(r[1] or "")) for r in cur.fetchall()]
+        if not fakulteler:
+            return []
+
+        donem_kodlari = []
+        if donem_sec in ("Hepsi", "Güz"):
+            donem_kodlari.append("G")
+        if donem_sec in ("Hepsi", "Bahar"):
+            donem_kodlari.append("B")
+
+        # Eski KP haritasi: havuz.skor (mevcut saklanan)
+        eski_kp_map: dict[tuple[int, str], float | None] = {}
+        try:
+            cur.execute(
+                """
+                SELECT CAST(ders_id AS INTEGER),
+                       LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)),
+                       skor
+                FROM havuz WHERE yil = ?
+                """,
+                (int(yil),),
+            )
+            for did, dkey, sk in cur.fetchall():
+                if did is None:
+                    continue
+                term = "B" if str(dkey or "").startswith("b") else "G"
+                eski_kp_map[(int(did), term)] = float(sk) if sk is not None else None
+        except Exception:
+            pass
+
+        # Ders adlari
+        cur.execute("SELECT ders_id, kod, ad, bolum_id FROM ders")
+        ders_info = {
+            int(r[0]): {"kod": r[1] or str(r[0]), "ad": r[2] or "", "bolum_id": r[3]}
+            for r in cur.fetchall()
+        }
+
+        rows = []
+        for fak_id, fak_ad in fakulteler:
+            for donem in donem_kodlari:
+                try:
+                    res = get_faculty_year_topsis_results(
+                        cur, fak_id, int(yil), donem=donem
+                    )
+                except Exception:
+                    continue
+                if not res.get("ok"):
+                    continue
+                scores = res.get("scores", {}) or {}
+                methods = res.get("score_methods", {}) or {}
+                metric_map = res.get("metric_map", {}) or {}
+                df_sonuc = res.get("df_sonuc")
+                # TOPSIS C katsayisi: df_sonuc icinden ders_id->AHP_TOPSIS_Skor
+                ci_map: dict[int, float] = {}
+                if df_sonuc is not None and not df_sonuc.empty:
+                    for _, r in df_sonuc.iterrows():
+                        try:
+                            ci_map[int(r.get("ders_id", 0))] = float(r.get("AHP_TOPSIS_Skor") or 0.0)
+                        except Exception:
+                            pass
+                ahp_id = (res.get("ahp_profile") or {}).get("id") if res.get("ahp_profile") else None
+                # H3 (2026-06-15): dejenere kriter toplama (sutun=ayirt edici degil)
+                meta_local = res.get("meta", {}) or {}
+                for crit in meta_local.get("degenerate_criteria", []):
+                    self._bulk_degenerate_criteria.add(str(crit))
+
+                for did, yeni_kp in scores.items():
+                    did = int(did)
+                    info = ders_info.get(did, {"kod": str(did), "ad": "", "bolum_id": None})
+                    m = metric_map.get(did, {}) or {}
+                    eski_kp = eski_kp_map.get((did, donem))
+                    yontem = methods.get(did, "")
+                    durum = "Müfredatta" if yontem == "topsis" else "Havuzda"
+
+                    if durum_sec != "Hepsi" and durum != durum_sec:
+                        continue
+
+                    degisim, tag = self._compute_change(eski_kp, yeni_kp)
+                    karar = self._compute_decision(yeni_kp)
+
+                    rows.append({
+                        "ders_id": did,
+                        "kod": info["kod"],
+                        "ad": info["ad"],
+                        "fakulte": fak_ad,
+                        "yil": int(yil),
+                        "donem": "Güz" if donem == "G" else "Bahar",
+                        "durum": durum,
+                        "eski_kp": "—" if eski_kp is None else f"{eski_kp:.2f}",
+                        "yeni_kp": f"{float(yeni_kp):.2f}",
+                        "degisim": degisim,
+                        "basari": f"{float(m.get('basari', 0.0)):.3f}",
+                        "trend": f"{float(m.get('trend', 0.0)):.3f}",
+                        "populerlik": f"{float(m.get('populerlik', 0.0)):.3f}",
+                        "anket": f"{float(m.get('anket', 0.0)):.3f}",
+                        "topsis": f"{ci_map.get(did, 0.0):.4f}" if yontem == "topsis" else "—",
+                        "karar": karar,
+                        "yontem": yontem,
+                        "ahp_profil": str(ahp_id) if ahp_id is not None else "—",
+                        "_tag": tag,
+                    })
+
+        rows.sort(key=lambda r: (-float(r["yeni_kp"]), r["fakulte"], r["kod"]))
+        return rows
+
+    @staticmethod
+    def _compute_change(eski, yeni):
+        """Spec madde 6 puan değişimi etiketi."""
+        try:
+            yeni_f = float(yeni)
+        except (TypeError, ValueError):
+            return "Hesaplanmadı", "hesaplanmadi"
+        if eski is None:
+            return "İlk kez hesaplandı", "ilk_kez"
+        try:
+            eski_f = float(eski)
+        except (TypeError, ValueError):
+            return "İlk kez hesaplandı", "ilk_kez"
+        diff = yeni_f - eski_f
+        if abs(diff) < 0.01:
+            return f"Değişmedi (={yeni_f:.2f})", ""
+        if diff > 0:
+            return f"Arttı (+{diff:.2f})", "artti"
+        return f"Azaldı ({diff:.2f})", "azaldi"
+
+    @staticmethod
+    def _compute_decision(kp):
+        """Spec madde 23 karar eşikleri (calculation.py barajları ile uyumlu)."""
+        try:
+            v = float(kp)
+        except (TypeError, ValueError):
+            return "Veri yok"
+        if v >= 80:
+            return "Müfredata güçlü öneri"
+        if v >= 60:
+            return "Müfredatta kalabilir"
+        if v >= 40:
+            return "Manuel inceleme"
+        return "Düşme önerisi"

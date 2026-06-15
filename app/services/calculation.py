@@ -71,6 +71,13 @@ AHP_PAIRWISE_MATRIX = np.array(
 DROP_SCORE_THRESHOLD = 40.0
 # Ortalama not baraj degeri â€” bu notun altindaki dersler mufredattan duser
 DROP_AVERAGE_GRADE_THRESHOLD = 45.0
+# H4 (2026-06-15): Goreli sifirlanma korumasi. TOPSIS goreli bir yontemdir; ayni
+# kumede tum dersler iyiyse en alttaki ders C=0 alip baraj-alti dusebilir
+# (kanit: tum 2022 TOPSIS dersleri basari 0.80+ olmasina ragmen 8/36'si KP=0).
+# Ham basari orani bu esiğin üstündeyse, düşük kesinleşme puanı (göreli) tek başına
+# dusme nedeni sayilmaz. Ortalama not ayri kontrol edilmeye devam eder.
+# bkz. docs/MATEMATIKSEL_INCELEME_RAPORU_2026-06-15.md (H4)
+MIN_RAW_SUCCESS_FLOOR = 0.70
 
 # Mufredat disi (havuz) dersler icin varsayilan kesinlesme puani merkezi
 POOL_DEFAULT_SCORE = 50.0
@@ -283,12 +290,21 @@ class KararMotoru:
             })
 
         df_sonuc = pd.DataFrame(sonuclar).sort_values(by="AHP_TOPSIS_Skor", ascending=False)
+        # H3 (2026-06-15): Dejenere kriter tespiti. Bir kriterde A+ == A- ise o
+        # kriter ayirt edici degildir (varyans 0 veya tum dersler ayni deger);
+        # TOPSIS mesafesine sifir katki verir. Kullanici buyuk goreli farkliliklari
+        # yorumlamadan once bu durumu bilmeli. UI bunu uyari olarak gosterir.
+        # bkz. docs/MATEMATIKSEL_INCELEME_RAPORU_2026-06-15.md (H3)
+        degenerate = [
+            c for c in sutunlar if abs(float(A_plus[c]) - float(A_minus[c])) < 1e-9
+        ]
         meta = {
             "agirliklar": w,
             "sutunlar": sutunlar,
             "A_plus": A_plus,
             "A_minus": A_minus,
             "benefit_map": {c: bool(benefit_map.get(c, True)) for c in sutunlar},
+            "degenerate_criteria": degenerate,
         }
         return df_sonuc, meta
 
@@ -892,7 +908,21 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         anket_kat = _safe_float2(dk[5], 0.0)
         anket_secen = _safe_float2(dk[6], 0.0)
         if anket_kat > 0:
-            anket = max(0.0, min(1.0, anket_secen / anket_kat))
+            raw_anket_ratio = anket_secen / anket_kat
+            # H5 (2026-06-15): anket_secen > anket_kat mantiksiz veri (dersi secen
+            # sayisi ankete katilandan fazla olamaz). Eskiden 1.0'a clamp ediliyordu
+            # ve tum derslerde anket=1.0 sabit oluyordu, anket kriteri ayirt edici
+            # olmuyordu. Artik mantiksiz oran NOTR 0.5 olarak kabul edilir + log uyarisi.
+            # bkz. docs/MATEMATIKSEL_INCELEME_RAPORU_2026-06-15.md (H5)
+            if raw_anket_ratio > 1.0 + 1e-6:
+                logger.warning(
+                    "Mantiksiz anket verisi (secen %d > katilimci %d) ders_id=%s yil=%s; "
+                    "notr 0.5 uygulandi.",
+                    int(anket_secen), int(anket_kat), ders_id, yil,
+                )
+                anket = 0.5
+            else:
+                anket = max(0.0, min(1.0, raw_anket_ratio))
 
     basari = max(0.0, min(1.0, basari))
     doluluk = max(0.0, min(1.0, doluluk))
@@ -908,8 +938,14 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         (int(ders_id), int(yil)),
     )
     gecmis = [{"yil": int(r[0]), "oran": _safe_float2(r[1], basari)} for r in cur.fetchall()]
-    trend, _ = motor.gecmis_trend_hesapla(gecmis)
-    trend = max(0.0, min(1.0, _safe_float2(trend, 0.0)))
+    # H1 duzeltmesi (2026-06-15): Trend kaynagi olarak notr-farkinda
+    # analyze_course_trend kullanilir. Tek yil verisi olan dersler (orn. 2022
+    # baslangic) icin trend=0.5 (notr) doner; legacy gecmis_trend_hesapla 0.0
+    # veya basari'nin kopyasini veriyordu. Boylece trend kriteri basari'nin
+    # kopyasi olmaz ve karar formulu haksiz cezalandirma/odullendirme yapmaz.
+    # bkz. docs/MATEMATIKSEL_INCELEME_RAPORU_2026-06-15.md
+    trend_analysis = analyze_course_trend(cur, int(ders_id), int(yil))
+    trend = max(0.0, min(1.0, _safe_float2(trend_analysis.get("trend_score"), 0.5)))
 
     no_current_year_data = (
         not dk and not pf and not pop
@@ -958,13 +994,27 @@ def evaluate_drop_reasons(
     average_grade,
     score_threshold=DROP_SCORE_THRESHOLD,
     average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
+    raw_basari_ratio=None,
+    raw_success_floor=MIN_RAW_SUCCESS_FLOOR,
 ):
     """
     Dersin mufredattan dusme nedenlerini degerlendirip neden listesi doner.
+
+    H4 (2026-06-15): `raw_basari_ratio` (0-1) verilirse, ham basari
+    `raw_success_floor` esiğinin üstündeyse "kesinleşme puani düşük" nedeni
+    LISTEYE EKLENMEZ (göreli sıfırlama koruması). Ortalama not nedeni etkilenmez.
     """
     reasons = []
-    if _safe_float2(score_100, 0.0) < float(score_threshold):
-        reasons.append(f"Kesinlesme puani {float(score_threshold):.0f} altinda")
+    score_low = _safe_float2(score_100, 0.0) < float(score_threshold)
+    if score_low:
+        # Goreli sifirlama korumasi: ham basari yeterli ise gocereli skor dusuk
+        # olsa bile dusme nedeni sayilmaz.
+        protected = (
+            raw_basari_ratio is not None
+            and _safe_float2(raw_basari_ratio, 0.0) >= float(raw_success_floor)
+        )
+        if not protected:
+            reasons.append(f"Kesinlesme puani {float(score_threshold):.0f} altinda")
     if _safe_float2(average_grade, 0.0) < float(average_grade_threshold):
         reasons.append(f"Gecme not ortalamasi {float(average_grade_threshold):.0f} altinda")
     return reasons
@@ -975,15 +1025,22 @@ def should_drop_course(
     average_grade,
     score_threshold=DROP_SCORE_THRESHOLD,
     average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
+    raw_basari_ratio=None,
+    raw_success_floor=MIN_RAW_SUCCESS_FLOOR,
 ):
     """
     Dersin dusup dusmeyecegini ve nedenlerini doner. (drop_flag, reasons) tuple.
+
+    H4 korumasi: `raw_basari_ratio` verilirse, ham basari esikten yuksekse
+    yalniz kesinlesme puani dusuk diye dusurulmez.
     """
     reasons = evaluate_drop_reasons(
         score_100,
         average_grade,
         score_threshold=score_threshold,
         average_grade_threshold=average_grade_threshold,
+        raw_basari_ratio=raw_basari_ratio,
+        raw_success_floor=raw_success_floor,
     )
     return len(reasons) > 0, reasons
 
@@ -1573,6 +1630,7 @@ def generate_next_year_curricula(
     drop_score_threshold=DROP_SCORE_THRESHOLD,
     drop_average_grade_threshold=DROP_AVERAGE_GRADE_THRESHOLD,
     require_decision_governance: bool = False,
+    strict_ahp: bool = False,
 ):
     """
     Faculty + year + term icin bolum bazli sonraki yil mufredati olusturur.
@@ -1880,6 +1938,7 @@ def generate_next_year_curricula(
             fakulte_id=fakulte_id,
             akademik_yil=akademik_yil,
             donem=donem,
+            strict_ahp=strict_ahp,
         )
         if not score_pack.get("ok"):
             return {
@@ -1996,12 +2055,17 @@ def generate_next_year_curricula(
             for d_id in mevcut:
                 score = _safe_float2(skor_map.get(d_id), 0.0)
                 ortalama_not = _safe_float2(metric_map.get(d_id, {}).get("ortalama_not"), 0.0)
+                # H4 (2026-06-15): goreli sifirlanma korumasi - ham basari
+                # `MIN_RAW_SUCCESS_FLOOR`'un (0.70) ustundeyse, gocereli TOPSIS
+                # skoru dusuk olsa bile yalniz skor nedeniyle dusurulmez.
+                raw_basari = _safe_float2(metric_map.get(d_id, {}).get("basari"), 0.0)
                 prev_statu, _ = _effective_prev_state(d_id)
                 drop_reasons = evaluate_drop_reasons(
                     score_100=score,
                     average_grade=ortalama_not,
                     score_threshold=drop_score_threshold,
                     average_grade_threshold=drop_average_grade_threshold,
+                    raw_basari_ratio=raw_basari,
                 )
                 if int(d_id) not in aday_dersler:
                     drop_reasons = ["Ders secmeli havuz adaylari disinda"] + drop_reasons
@@ -2605,6 +2669,7 @@ def run_all_algorithms_for_year(
     db_path: str | None = None,
     donem: str = "G",
     fakulte_id: int | None = None,
+    strict_ahp: bool = False,
 ) -> dict:
     """
     Algoritma kontrol merkezi icin yil bazli manuel calistirma.
@@ -2740,6 +2805,7 @@ def run_all_algorithms_for_year(
             fakulte_id=fakulte_id_iter,
             akademik_yil=yil,
             donem=donem,
+            strict_ahp=strict_ahp,
         )
 
         status_conn = get_raw_connection(db_path)
@@ -2805,6 +2871,116 @@ def run_all_algorithms_for_year(
     if not summary["processed"] and not summary["errors"]:
         summary["messages"].append("Calistirilacak uygun fakulte bulunamadi.")
     return summary
+
+
+def run_all_algorithms_for_year_dual(
+    yil: int,
+    db_path: str | None = None,
+    fakulte_id: int | None = None,
+    strict_ahp: bool = True,
+) -> dict:
+    """
+    Faz A (Spec madde 3): Yeni yil mufredatini GUZ ve BAHAR olarak BIRLIKTE uretir.
+
+    Akademik yili tek butun kabul eder; ayni isleme guzu ve bahari ardisik calistirir.
+    Bahar icin kriter/veri yoksa hata firlatmaz; ayrik bir gerekce ile raporlar
+    (boylece guz uretimi engellenmez ve kullanici 'bahar uretilemedi' nedenini gorur).
+
+    Cikti spec madde 3 alanlarini icerir:
+      - akademik_yil
+      - guz_olusturuldu / bahar_olusturuldu (bool)
+      - guz_islenen_fakulte / bahar_islenen_fakulte (int)
+      - guz_atlanan / bahar_atlanan (liste; reason ile)
+      - guz_hata / bahar_hata (liste)
+      - kullanilan_ahp_profile (calistirma anindaki aktif profil ozeti)
+      - baslangic_zaman / bitis_zaman (ISO)
+      - messages (insana okunabilir butun mesajlar)
+
+    Geri uyumluluk: mevcut tek-donem `run_all_algorithms_for_year` aynen kalir;
+    bu sarmalayici onu cagirir. Caller (UI/CLI) yalniz tek donem isterse
+    eskisini kullanmaya devam edebilir.
+    """
+    from datetime import datetime, timezone
+
+    yil = int(yil)
+    start_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # Aktif AHP profili ozetini calistirma anindan topla (decision_run/benchmark icin).
+    ahp_profile_summary: dict[str, Any] = {}
+    try:
+        from app.services.ahp_profile_service import resolve_ahp_profile
+
+        resolved_db_path = resolve_sqlite_db_path(db_path)
+        if resolved_db_path.exists():
+            conn = get_raw_connection(str(resolved_db_path))
+            try:
+                profile = resolve_ahp_profile(
+                    conn,
+                    faculty_id=fakulte_id,
+                    department_id=None,
+                    year=yil,
+                )
+                ahp_profile_summary = {
+                    "id": profile.get("id"),
+                    "name": profile.get("name"),
+                    "version": profile.get("version"),
+                    "is_consistent": profile.get("is_consistent"),
+                    "weights": profile.get("weights"),
+                }
+            finally:
+                conn.close()
+    except Exception as exc:  # noqa: BLE001 - rapor amacli, dolayisiyla yutulabilir
+        ahp_profile_summary = {"error": str(exc)}
+
+    # H6 (2026-06-15): dual wrapper varsayilan strict_ahp=True. Karar uretimi
+    # kullanicinin secmedigi (tutarsiz/yedek) AHP agirliklariyla yapilmamalidir.
+    # Yine de testler ve uzun-zamanli geriye uyumluluk icin opt-out parametresi acik.
+    guz_result = run_all_algorithms_for_year(
+        yil=yil, db_path=db_path, donem="G", fakulte_id=fakulte_id, strict_ahp=strict_ahp,
+    )
+
+    # Bahari uret. Bahar kriter/verisi olmayan fakulteler `skipped` listesinde
+    # gerekce ile gelir; bu beklenen bir durum (hata degil).
+    bahar_result = run_all_algorithms_for_year(
+        yil=yil, db_path=db_path, donem="B", fakulte_id=fakulte_id, strict_ahp=strict_ahp,
+    )
+
+    end_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    guz_ok = bool(guz_result.get("processed"))
+    bahar_ok = bool(bahar_result.get("processed"))
+
+    messages: list[str] = []
+    messages.append(f"GUZ: {len(guz_result.get('processed', []))} fakulte islendi, "
+                    f"{len(guz_result.get('skipped', []))} atlandi, "
+                    f"{len(guz_result.get('errors', []))} hata.")
+    messages.append(f"BAHAR: {len(bahar_result.get('processed', []))} fakulte islendi, "
+                    f"{len(bahar_result.get('skipped', []))} atlandi, "
+                    f"{len(bahar_result.get('errors', []))} hata.")
+    if not bahar_ok and bahar_result.get("skipped"):
+        # Bahar uretilemedi - kullaniciya nedeni acik gostermek icin ilk gerekceyi yansit.
+        first_reason = (bahar_result["skipped"][0] or {}).get("reason") or ""
+        if first_reason:
+            messages.append(f"Bahar mufredati uretilemedi. Ornek gerekce: {first_reason}")
+
+    return {
+        "ok": guz_ok or bahar_ok,  # En az bir donem uretildiyse genel basari
+        "akademik_yil": yil,
+        "guz_olusturuldu": guz_ok,
+        "bahar_olusturuldu": bahar_ok,
+        "guz_islenen_fakulte": len(guz_result.get("processed", [])),
+        "bahar_islenen_fakulte": len(bahar_result.get("processed", [])),
+        "guz_atlanan": guz_result.get("skipped", []),
+        "bahar_atlanan": bahar_result.get("skipped", []),
+        "guz_hata": guz_result.get("errors", []),
+        "bahar_hata": bahar_result.get("errors", []),
+        "guz_detay": guz_result,
+        "bahar_detay": bahar_result,
+        "kullanilan_ahp_profile": ahp_profile_summary,
+        "baslangic_zaman": start_iso,
+        "bitis_zaman": end_iso,
+        "messages": messages + list(guz_result.get("messages", [])) + list(bahar_result.get("messages", [])),
+    }
 
 
 def auto_generate_next_year_curricula(db_path=None, donem="G"):

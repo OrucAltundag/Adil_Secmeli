@@ -1021,11 +1021,15 @@ def analyze_single_course(
             drop_reasons = ["Kriter verisi eksik"]
         else:
             if score_available:
+                # H4 korumasi (2026-06-15): ham basari MIN_RAW_SUCCESS_FLOOR (0.70)
+                # ustundeyse gocereli skor dusuk olsa bile dusme sayilmaz.
+                raw_basari = float(criteria.get("basari") or 0.0) if isinstance(criteria, dict) else 0.0
                 drop_flag, drop_reasons = should_drop_course(
                     score_100=skor_final,
                     average_grade=ortalama_not,
                     score_threshold=SKOR_BARAJ,
                     average_grade_threshold=ORTALAMA_NOT_BARAJ,
+                    raw_basari_ratio=raw_basari,
                 )
                 in_mufredat = not drop_flag
             else:
