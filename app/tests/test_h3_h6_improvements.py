@@ -208,6 +208,63 @@ def test_h5_edge_case_equal_secen_and_katilim():
         os.unlink(path)
 
 
+def test_h5_warning_is_deduplicated_per_course_year(caplog):
+    """Mantiksiz anket icin uyari ayni (ders, yil) icin bir kez basilmali (log spam fix).
+
+    Onceden _read_course_metrics her cagrildiginda WARNING basıyordu; uygulama
+    acilisinda 24+ satır spam olusuyordu. Artik process-omru boyunca tek uyari.
+    """
+    import logging
+
+    from app.services.calculation import reset_anket_warning_cache
+
+    reset_anket_warning_cache()
+    path = _build_db_with_anket(secen=50, katilim=44)
+    conn = sqlite3.connect(path); conn.row_factory = sqlite3.Row
+    try:
+        motor = KararMotoru()
+        with caplog.at_level(logging.INFO, logger="app.services.calculation"):
+            # Ayni ders icin 5 kez cagir
+            for _ in range(5):
+                _read_course_metrics(conn.cursor(), 1, 2022, "Guz", motor)
+        anket_warnings = [
+            r for r in caplog.records
+            if "Mantiksiz anket" in r.getMessage() and "ders_id=1" in r.getMessage()
+        ]
+        assert len(anket_warnings) == 1, (
+            f"Beklenen 1 uyari; alinan: {len(anket_warnings)}. Dedupe calismiyor."
+        )
+        # Log seviyesi INFO olmali (WARNING degil) - kod hatasi degil veri kalitesi notu
+        assert anket_warnings[0].levelname == "INFO"
+    finally:
+        conn.close()
+        os.unlink(path)
+
+
+def test_h5_warning_resets_with_cache_reset(caplog):
+    """reset_anket_warning_cache cagrilinca tekrar uyari basabilmeli (yeni import sonrasi vb.)."""
+    import logging
+
+    from app.services.calculation import reset_anket_warning_cache
+
+    reset_anket_warning_cache()
+    path = _build_db_with_anket(secen=50, katilim=44)
+    conn = sqlite3.connect(path); conn.row_factory = sqlite3.Row
+    try:
+        motor = KararMotoru()
+        with caplog.at_level(logging.INFO, logger="app.services.calculation"):
+            _read_course_metrics(conn.cursor(), 1, 2022, "Guz", motor)
+            reset_anket_warning_cache()
+            _read_course_metrics(conn.cursor(), 1, 2022, "Guz", motor)
+        anket_warnings = [
+            r for r in caplog.records if "Mantiksiz anket" in r.getMessage()
+        ]
+        assert len(anket_warnings) == 2  # reset sonrasi tekrar basti
+    finally:
+        conn.close()
+        os.unlink(path)
+
+
 # -----------------------------
 # H6: Strict AHP varsayilan
 # -----------------------------

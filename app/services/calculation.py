@@ -88,6 +88,16 @@ TREND_DEFAULT_WEIGHTS = (0.50, 0.30, 0.20)
 # Ayni bolum mufredatina fakulte ortak havuzundan en fazla bu kadar dis bolum dersi girebilir.
 MAX_CROSS_DEPARTMENT_COURSES = 1
 
+# H5 log dedupe (2026-06-15): Mantiksiz anket verisi uyarisi process-omru boyunca
+# ayni (ders_id, yil) icin yalniz bir kez basilir. Onceden _read_course_metrics
+# her cagrildiginda WARNING basıyordu (uygulama acilisinda 24+ satır spam).
+_ANKET_INVALID_WARNED: set[tuple[int, int]] = set()
+
+
+def reset_anket_warning_cache() -> None:
+    """Test/yeni-import sonrasi yeniden uyarmak icin cache'i sifirlar."""
+    _ANKET_INVALID_WARNED.clear()
+
 class KararMotoru:
     def __init__(self, db=None):
         self.db = db
@@ -915,11 +925,18 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
             # olmuyordu. Artik mantiksiz oran NOTR 0.5 olarak kabul edilir + log uyarisi.
             # bkz. docs/MATEMATIKSEL_INCELEME_RAPORU_2026-06-15.md (H5)
             if raw_anket_ratio > 1.0 + 1e-6:
-                logger.warning(
-                    "Mantiksiz anket verisi (secen %d > katilimci %d) ders_id=%s yil=%s; "
-                    "notr 0.5 uygulandi.",
-                    int(anket_secen), int(anket_kat), ders_id, yil,
-                )
+                # Dedupe: ayni (ders_id, yil) icin process-omru boyunca bir kez
+                # uyar. Tekrar uyari spam'i kullaniciyi yaniltir; veri kalitesi
+                # raporu icin asil arac UI/import dogrulamasidir.
+                key = (int(ders_id), int(yil))
+                if key not in _ANKET_INVALID_WARNED:
+                    _ANKET_INVALID_WARNED.add(key)
+                    logger.info(
+                        "Mantiksiz anket verisi (secen %d > katilimci %d) "
+                        "ders_id=%s yil=%s; notr 0.5 uygulandi. "
+                        "(Veri kalitesi sorunu - bu uyari ayni ders/yil icin bir kez basilir.)",
+                        int(anket_secen), int(anket_kat), ders_id, yil,
+                    )
                 anket = 0.5
             else:
                 anket = max(0.0, min(1.0, raw_anket_ratio))
