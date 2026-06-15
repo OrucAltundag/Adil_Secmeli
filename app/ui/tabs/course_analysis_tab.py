@@ -544,22 +544,18 @@ class CourseAnalysisTab(ttk.Frame):
             return
 
         try:
-            db_path = getattr(self.app, "db_path", None)
-            if not db_path:
+            # Mimari kuralı: UI kendi DB bağlantısını açmaz; paylaşılan
+            # bağlantı (app.db.conn) üzerinden çalışır.
+            conn = getattr(self.db, "conn", None)
+            if conn is None:
                 _reset()
                 return
-            import sqlite3
-            conn = sqlite3.connect(str(db_path))
-            try:
-                conn.execute("PRAGMA busy_timeout = 5000")
-                from app.services.yearly_workflow import (
-                    ensure_yearly_workflow_schema,
-                    get_faculty_year_status,
-                )
-                ensure_yearly_workflow_schema(conn)
-                status = get_faculty_year_status(conn, int(fakulte_id), int(yil), refresh=False)
-            finally:
-                conn.close()
+            from app.services.yearly_workflow import (
+                ensure_yearly_workflow_schema,
+                get_faculty_year_status,
+            )
+            ensure_yearly_workflow_schema(conn)
+            status = get_faculty_year_status(conn, int(fakulte_id), int(yil), refresh=False)
 
             krit_key = str(status.get("criteria_status", "not_started"))
             algo_key = str(status.get("algorithm_run_status", "not_run"))

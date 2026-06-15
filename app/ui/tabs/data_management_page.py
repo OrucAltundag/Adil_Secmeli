@@ -26,6 +26,7 @@ from app.services.import_audit_service import (
     list_import_batches,
     reject_import,
 )
+from app.services.import_history_service import cleanup_import_history, preview_cleanup
 from app.services.import_quality_service import evaluate_import_quality
 from app.services.import_rollback_service import get_rollback_plan, rollback_import
 
@@ -220,6 +221,12 @@ class DataManagementPage(ttk.Frame):
         toolbar.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(toolbar, text="Geçmişi Yenile", command=self.refresh_imports).pack(side=tk.LEFT)
         ttk.Button(toolbar, text="Seçili Importu Aç", command=self.load_selected_import).pack(side=tk.LEFT, padx=4)
+        ttk.Button(toolbar, text="Import Geçmişini Temizle", command=self.cleanup_import_history_action).pack(side=tk.RIGHT)
+        ttk.Label(
+            toolbar,
+            text="(Eski/tamamlanmış kayıtlar arşivlenir; aktif, onaylı ve karara bağlı kayıtlar korunur.)",
+            foreground="#64748b",
+        ).pack(side=tk.RIGHT, padx=8)
 
         columns = (
             "id",
@@ -438,6 +445,50 @@ class DataManagementPage(ttk.Frame):
         except Exception:
             self.status_var.set("Import geçmişi yüklenemedi.")
             messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+
+    def cleanup_import_history_action(self) -> None:
+        """Import geçmişini güvenli şekilde temizler (arşivler).
+
+        Önce kaç kaydın temizleneceği/korunacağı gösterilir, onay alınır; sonra
+        terminal kayıtlar arşiv tablosuna taşınır. Gerçek veri silinmez.
+        """
+        try:
+            with self._connect() as conn:
+                preview = preview_cleanup(conn)
+        except Exception:
+            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+            return
+
+        cleanable = int(preview.get("cleanable_count", 0))
+        protected = int(preview.get("protected_count", 0))
+        if cleanable == 0:
+            messagebox.showinfo(
+                "Import Geçmişini Temizle",
+                f"Temizlenecek eski import kaydı yok.\n{protected} aktif/korunan kayıt mevcut.",
+            )
+            return
+        if not messagebox.askyesno(
+            "Import Geçmişini Temizle",
+            "Import geçmişini temizlemek üzeresiniz. Bu işlem eski/tamamlanmış import "
+            "kayıtlarını arşivleyecek (ekrandan kaldıracak) ve ilgili işlem loglarını "
+            "temizleyecektir.\n\n"
+            f"  • Arşivlenecek kayıt : {cleanable}\n"
+            f"  • Korunacak kayıt    : {protected} (aktif / onaylı / karara bağlı)\n\n"
+            "Gerçek ders, havuz, müfredat ve skor verileri ETKİLENMEZ.\n\n"
+            "Onaylıyor musunuz?",
+            icon="warning",
+        ):
+            return
+        try:
+            with self._connect() as conn:
+                result = cleanup_import_history(conn, user="desktop-ui")
+                conn.commit()
+        except Exception:
+            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+            return
+        self.refresh_center()
+        self.status_var.set(result.get("message") or "Import geçmişi temizlendi.")
+        messagebox.showinfo("Import Geçmişini Temizle", result.get("message") or "Import geçmişi temizlendi.")
 
     def _on_filter_change(self, _event: Any = None) -> None:
         if not self._suppress_filter_events:

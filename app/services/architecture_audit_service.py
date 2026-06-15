@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 UI_DB_ALLOWLIST = {
     "app/ui/tabs/view_tab.py": "Admin tablo görüntüleyici ve SQL Console",
     "app/ui/tabs/data_management_page.py": "Import governance geçiş ekranı; servis katmanına aşamalı taşınıyor",
+    "app/ui/benchmark/local_backend.py": "Benchmark in-process backend adapteri (API yokken gerçek backend rolü; UI değil arka uç katmanı)",
 }
 
 API_RAW_SQL_ALLOWLIST = {

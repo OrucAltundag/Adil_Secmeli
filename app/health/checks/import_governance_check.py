@@ -75,6 +75,10 @@ class ImportDataConsistencyCheck(_ImportGovCheck):
     default_severity = HealthSeverity.MEDIUM
 
     def run(self, context: HealthContext) -> HealthCheckResult:
+        # Yalnız canlı/işlemdeki batch'lerin satır sorunları "çözülmemiş" sayılır.
+        # failed/rejected/rolled_back/superseded batch'lerin sorunları tarihsel
+        # kalıntıdır (ör. başarısız import denemesi) ve sağlık uyarısı üretmemeli.
+        terminal = ("failed", "rejected", "rolled_back", "superseded")
         with context.repository() as repo:
             if not repo.table_exists("import_row_issues"):
                 return self.info(
@@ -82,17 +86,29 @@ class ImportDataConsistencyCheck(_ImportGovCheck):
                     detail="import_row_issues bulunamadı.",
                     suggestion="Import kalite kontrol altyapısını etkinleştirin.",
                 )
-            open_issues = repo.scalar(
-                "SELECT COUNT(*) FROM import_row_issues"
-            )
+            total_issues = repo.scalar("SELECT COUNT(*) FROM import_row_issues") or 0
+            if repo.table_exists("import_batches"):
+                placeholders = ",".join("?" for _ in terminal)
+                open_issues = repo.scalar(
+                    "SELECT COUNT(*) FROM import_row_issues i "
+                    "JOIN import_batches b ON b.id = i.import_batch_id "
+                    f"WHERE b.status NOT IN ({placeholders})",
+                    terminal,
+                ) or 0
+            else:
+                open_issues = total_issues
+        historical = int(total_issues) - int(open_issues)
         if open_issues:
             return self.warning(
                 "Import sonrası çözülmemiş satır sorunları var.",
-                detail=f"import_row_issues kaydı: {open_issues}",
+                detail=f"Canlı batch'lerde {open_issues} açık sorun (tarihsel/başarısız: {historical}).",
                 suggestion="Import kalite sorunlarını inceleyip giderin.",
-                metadata={"issues": open_issues},
+                metadata={"issues": open_issues, "historical": historical},
             )
         return self.ok(
             "Import sonrası veri tutarlı.",
-            detail="import_row_issues kaydı yok.",
+            detail=(
+                "Canlı batch'lerde açık satır sorunu yok."
+                + (f" ({historical} tarihsel/başarısız import kaydı yok sayıldı.)" if historical else "")
+            ),
         )

@@ -12,6 +12,7 @@ from app.db.schema_compat import ensure_ahp_governance_schema
 from app.services.ahp_calculation_service import (
     build_pairwise_matrix_from_weights,
     calculate_weights_from_pairwise_matrix,
+    enforce_reciprocal_matrix,
     normalize_weights,
 )
 from app.services.ahp_profile_policy_service import (
@@ -158,9 +159,9 @@ def create_profile(
         matrix = pairwise_matrix or build_pairwise_matrix_from_weights(normalized_weights, keys)
     else:
         matrix = pairwise_matrix or build_pairwise_matrix_from_weights(DEFAULT_WEIGHTS, keys)
-        result = calculate_weights_from_pairwise_matrix(keys, matrix)
-        normalized_weights = result.weights
 
+    # Kalıcı kayıttan önce tam reciprocal'a normalize et (yuvarlama sapmalarını giderir).
+    matrix = enforce_reciprocal_matrix(matrix)
     result = calculate_weights_from_pairwise_matrix(keys, matrix)
     normalized_weights = result.weights
     policy = resolve_policy(conn, year=year, faculty_id=faculty_id, department_id=department_id, semester=semester)
@@ -300,6 +301,7 @@ def update_profile(conn: sqlite3.Connection, profile_id: int, **updates: Any) ->
             matrix = build_pairwise_matrix_from_weights(normalize_weights(weights, criteria_keys), criteria_keys)
         else:
             matrix = matrix or profile["pairwise_matrix"]
+        matrix = enforce_reciprocal_matrix(matrix)
         result = calculate_weights_from_pairwise_matrix(criteria_keys, matrix)
         assignments.extend(
             [

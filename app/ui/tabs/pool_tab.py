@@ -1,386 +1,224 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# app/ui/tabs/pool_tab.py â€” Havuz Yonetimi Sekmesi
+# app/ui/tabs/pool_tab.py — Havuz Yönetimi Sekmesi (Birleşik Görünüm)
 # =============================================================================
-# Ders havuzunu fakulte/bolum/yil/donem bazinda goruntuler.
-# Sol panel: Havuz tablosu (statu renklendirme, strikeout iptal, skor gorunumu)
-# Sag panel: Secili bolumun mufredat dersleri
+# Güz ve bahar havuzu TEK birleşik tabloda gösterilir (güz/bahar filtresi yok).
+# Sol: Birleşik Havuz (ders + kredi/akts + güz/bahar/yıllık müfredat durumu +
+#      öneri/karar/güven/açıklama, renkli durum).
+# Sağ: Üstte Güz Müfredatı, altta Bahar Müfredatı (aynı yıl, yan yana
+#      karşılaştırılabilir).
 #
-# Statu renk kodlari:
-#   1  Mufredatta (yesil) | 0 Havuzda (sari)
-#  -1  Dinlenmede (turuncu) | -2 Iptal (gri + ustu cizili)
-#
-# Saglik kontrolu: havuz-mufredat tutarliligini denetler.
-# Ogrenci simÃ¼lasyonu: mufredattan ornek ders secim ekrani acar.
+# Tüm veriler gerçek servis/repository üzerinden gelir
+# (CourseCurriculumStatusService + curriculum_repository birleşik paketi).
 # =============================================================================
 
 import tkinter as tk
-from tkinter import font as tkfont
 from tkinter import messagebox, ttk
+from typing import Any
 
-from app.services.calculation import (
-    ensure_pool_visibility_for_curriculum,
-)
-from app.services.course_type import build_elective_predicate
-from app.services.yearly_workflow import (
-    get_faculty_year_status,
-    is_yearly_workflow_enabled,
-    list_active_years_for_faculty,
-)
+from app.repositories.curriculum_repository import get_unified_pool_by_year
+from app.services.course_curriculum_status_service import FALL, SPRING
+from app.services.yearly_curriculum_integrity_service import check_yearly_curriculum_integrity
 
-# ---------------------------------------------------------------------------
-# Statu sabitleri ve gorsel esleme
-# ---------------------------------------------------------------------------
-_STATU_ETIKET = {
-    1:  "1  (Mufredatta)",
-    0:  "0  (Havuzda)",
-    -1: "-1 (Dinlenmede - 1 yil)",
-    -2: "-2 (Iptal - kalici)",
+# Durum rengi jetonu -> (arka plan, yazı rengi). Servisten gelen status_color ile eşleşir.
+_COLOR_TAGS: dict[str, tuple[str, str]] = {
+    "green": ("#d4edda", "#155724"),   # müfredatta
+    "blue": ("#dbeafe", "#1e3a8a"),    # havuzda
+    "yellow": ("#fff9c4", "#854d0e"),  # inceleme
+    "red": ("#fee2e2", "#991b1b"),     # çakışma / tekrar eklenemez
+    "purple": ("#ede9fe", "#5b21b6"),  # yeni öneri
+    "gray": ("#e5e7eb", "#475569"),    # hesaplanmadı / veri yok
 }
 
-_STATU_TAG = {
-    1:  "mufredatta",
-    0:  "havuzda",
-    -1: "dinlenmede",
-    -2: "iptal",
+# Havuz statü (havuz.statu) kısa etiketleri
+_POOL_STATU_LABEL = {
+    1: "Müfredatta",
+    0: "Havuzda",
+    -1: "Dinlenmede",
+    -2: "İptal",
 }
 
-_SAYAC_TOOLTIP = {
-    0: "Hic dusmedi",
-    1: "1 kez mufredattan dustu (bir kez daha duserse iptal)",
-    2: "Kalici iptal esigi",
-}
-
-# Renk paleti
-_RENK = {
-    "mufredatta_bg":  "#d4edda",   # acik yesil
-    "mufredatta_fg":  "#155724",
-    "havuzda_bg":     "#fff9c4",   # acik sari
-    "havuzda_fg":     "#1e293b",
-    "dinlenmede_bg":  "#ffe0b2",   # acik turuncu
-    "dinlenmede_fg":  "#7c2d12",
-    "iptal_bg":       "#e0e0e0",   # acik gri
-    "iptal_fg":       "#616161",
-}
+_FILTERS = [
+    "Tümü",
+    "Havuzda",
+    "Müfredatta",
+    "Güzde",
+    "Baharda",
+    "Çakışma",
+    "Tekrar eklenemez",
+    "Yeni öneri",
+]
 
 
 class PoolTab(ttk.Frame):
-    """
-    Havuz Yonetimi sekmesi:
-    - Fakulte / Bolum / Yil filtreleri (dinamik)
-    - Ders havuzu tablosu (statu renklendirme + strikeout iptal)
-    - Mufredat tablosu
-    - Aciklama / Legend kutusu
-    """
+    """Birleşik havuz + Güz/Bahar müfredat karşılaştırma ekranı."""
 
     def __init__(self, parent, app):
         super().__init__(parent)
         self.app = app
         self.db = app.db
         self.db_path = getattr(app, "db_path", None)
-
-        self.hide_resting = False
-
-        # Strikeout font iptal satirlari icin
-        self._font_normal    = tkfont.Font(family="Segoe UI", size=9)
-        self._font_strikeout = tkfont.Font(family="Segoe UI", size=9, overstrike=True)
-
+        self._pool_rows: list[dict[str, Any]] = []
+        self.var_filter = tk.StringVar(value="Tümü")
+        self.var_search = tk.StringVar()
         self._build_ui()
         self.after(200, self.refresh)
 
     # =========================================================
     #  PUBLIC
     # =========================================================
-    def refresh(self, select_latest_year=False):
+    def refresh(self, select_latest_year: bool = False):
         self.db_path = getattr(self.app, "db_path", self.db_path)
         prev_fak = self.cb_fakulte.get()
         prev_bol = self.cb_bolum.get()
         prev_yil = self.cb_yil.get()
-        prev_donem = self.cb_donem.get()
-
         self.load_faculties_to_combo(force_latest_year=select_latest_year)
-
         if not select_latest_year and prev_fak:
             try:
-                vals = list(self.cb_fakulte.cget("values") or [])
-                if prev_fak in vals:
+                if prev_fak in list(self.cb_fakulte.cget("values") or []):
                     self.cb_fakulte.set(prev_fak)
             except Exception:
                 pass
             self.on_faculty_change(None)
-            if prev_bol:
+            for combo, prev in ((self.cb_bolum, prev_bol), (self.cb_yil, prev_yil)):
                 try:
-                    bvals = list(self.cb_bolum.cget("values") or [])
-                    if prev_bol in bvals:
-                        self.cb_bolum.set(prev_bol)
+                    if prev and prev in list(combo.cget("values") or []):
+                        combo.set(prev)
                 except Exception:
                     pass
-            if prev_yil:
-                try:
-                    yvals = list(self.cb_yil.cget("values") or [])
-                    if prev_yil in yvals:
-                        self.cb_yil.set(prev_yil)
-                except Exception:
-                    pass
-            if prev_donem:
-                try:
-                    self.cb_donem.set(prev_donem)
-                except Exception:
-                    pass
-
         self.load_pool_data()
 
     # =========================================================
-    #  UI INSASI
+    #  UI
     # =========================================================
     def _build_ui(self):
-        # --- 1) UST FILTRELER ---
         top = tk.Frame(self, bg="#f1f5f9", pady=8, padx=10)
         top.pack(fill=tk.X)
 
-        tk.Label(top, text="Fakulte:", bg="#f1f5f9",
-                 font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=4)
-        self.cb_fakulte = ttk.Combobox(top, state="readonly", width=32)
+        tk.Label(top, text="Fakülte:", bg="#f1f5f9", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=4)
+        self.cb_fakulte = ttk.Combobox(top, state="readonly", width=30)
         self.cb_fakulte.pack(side=tk.LEFT, padx=4)
         self.cb_fakulte.bind("<<ComboboxSelected>>", self.on_faculty_change)
 
-        tk.Label(top, text="Bolum:", bg="#f1f5f9",
-                 font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
+        tk.Label(top, text="Bölüm:", bg="#f1f5f9", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
         self.cb_bolum = ttk.Combobox(top, state="readonly", width=24)
         self.cb_bolum.pack(side=tk.LEFT, padx=4)
         self.cb_bolum.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
 
-        tk.Label(top, text="Yil:", bg="#f1f5f9",
-                 font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
-        self.cb_yil = ttk.Combobox(
-            top, state="readonly",
-            values=[],
-            width=8
-        )
+        tk.Label(top, text="Yıl:", bg="#f1f5f9", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
+        self.cb_yil = ttk.Combobox(top, state="readonly", values=[], width=8)
         self.cb_yil.pack(side=tk.LEFT, padx=4)
         self.cb_yil.set("")
         self.cb_yil.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
 
-        tk.Label(top, text="Donem:", bg="#f1f5f9",
-                 font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(12, 4))
-        self.cb_donem = ttk.Combobox(top, state="readonly", values=["Guz", "Bahar"], width=8)
-        self.cb_donem.pack(side=tk.LEFT, padx=4)
-        self.cb_donem.current(0)
-        self.cb_donem.bind("<<ComboboxSelected>>", lambda e: self.load_pool_data())
+        ttk.Button(top, text="Yenile", command=self.load_pool_data).pack(side=tk.LEFT, padx=14)
+        ttk.Button(top, text="Yıllık Bütünlük / Sağlık", command=self.run_pool_health_check).pack(side=tk.LEFT)
 
-        ttk.Button(top, text="Getir", command=self.load_pool_data).pack(
-            side=tk.LEFT, padx=14)
-
-        # --- 2) AKSIYONLAR ---
+        # Arama + filtre + havuz statü aksiyonları
         actions = tk.Frame(self, bg="#e2e8f0", pady=5, padx=8)
         actions.pack(fill=tk.X)
+        tk.Label(actions, text="Ara:", bg="#e2e8f0", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        entry = ttk.Entry(actions, textvariable=self.var_search, width=22)
+        entry.pack(side=tk.LEFT, padx=(4, 12))
+        entry.bind("<KeyRelease>", lambda e: self._render_pool_table())
+        tk.Label(actions, text="Filtre:", bg="#e2e8f0", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        filter_combo = ttk.Combobox(actions, textvariable=self.var_filter, values=_FILTERS, width=16, state="readonly")
+        filter_combo.pack(side=tk.LEFT, padx=(4, 12))
+        filter_combo.bind("<<ComboboxSelected>>", lambda e: self._render_pool_table())
 
-        self.btn_toggle = tk.Button(
-            actions, text="Dinlenmedekileri Gizle",
-            bg="#fca5a5", font=("Segoe UI", 8),
-            command=self.toggle_resting_courses
-        )
-        self.btn_toggle.pack(side=tk.LEFT, padx=5)
+        ttk.Button(actions, text="Seçileni Havuzda Yap (0)", command=lambda: self.set_selected_pool_status(0)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(actions, text="Dinlenmeye Al (-1)", command=lambda: self.set_selected_pool_status(-1)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(actions, text="Kalıcı İptal (-2)", command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=3)
 
-        ttk.Button(
-            actions,
-            text="Saglik Kontrolu (Fakulte/Yil)",
-            command=self.run_pool_health_check,
-        ).pack(side=tk.LEFT, padx=5)
+        self.lbl_summary = tk.Label(actions, text="", bg="#e2e8f0", fg="#334155", font=("Segoe UI", 8, "italic"))
+        self.lbl_summary.pack(side=tk.RIGHT, padx=6)
 
-        ttk.Button(actions, text="Secileni Dinlenmeye Al (-1)",
-                   command=lambda: self.set_selected_pool_status(-1)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions, text="Secileni Havuzda Yap (0)",
-                   command=lambda: self.set_selected_pool_status(0)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions, text="Secileni Kalici Iptal (-2)",
-                   command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=5)
-
-        self.lbl_workflow_info = tk.Label(
-            actions,
-            text="",
-            bg="#e2e8f0",
-            fg="#334155",
-            font=("Segoe UI", 8, "italic"),
-            anchor="w",
-        )
-        self.lbl_workflow_info.pack(side=tk.RIGHT, padx=6)
-
-        # "Algoritmay Calistir" kaldirildi â€” algoritma islemleri Hesaplama sekmesindedir.
-
-        # --- 3) LEGEND (Aciklama Kutusu) ---
         self._build_legend()
 
-        # --- 4) SPLIT VIEW ---
+        # Split: sol birleşik havuz | sağ (üst güz / alt bahar müfredatı)
         paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashwidth=5, bg="#cbd5e1")
         paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=4)
 
-        # SOL: HAVUZ
         left = tk.Frame(paned, bg="white")
-        paned.add(left, width=800)
-        tk.Label(left, text="DERS HAVUZU",
-                 bg="#dbeafe", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
-
+        paned.add(left, width=980, minsize=600)
+        tk.Label(left, text="BİRLEŞİK HAVUZ (Güz + Bahar)", bg="#dbeafe", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
         self._build_pool_tree(left)
 
-        # SAG: MUFREDAT
         right = tk.Frame(paned, bg="white")
-        paned.add(right)
-        tk.Label(right, text="MUFREDAT",
-                 bg="#dcfce7", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
+        paned.add(right, minsize=360)
+        right_paned = tk.PanedWindow(right, orient=tk.VERTICAL, sashwidth=5, bg="#cbd5e1")
+        right_paned.pack(fill=tk.BOTH, expand=True)
 
-        self._build_curr_tree(right)
+        fall_box = tk.Frame(right_paned, bg="white")
+        right_paned.add(fall_box, minsize=140)
+        tk.Label(fall_box, text="GÜZ MÜFREDATI", bg="#dcfce7", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
+        self.tree_fall = self._build_curr_tree(fall_box)
 
-        tk.Button(
-            right, text="Ornek Ogrenci Secimi Baslat",
-            bg="#22c55e", fg="white", font=("Segoe UI", 9, "bold"),
-            command=self.open_student_simulation
-        ).pack(fill=tk.X, pady=4, padx=4)
+        spring_box = tk.Frame(right_paned, bg="white")
+        right_paned.add(spring_box, minsize=140)
+        tk.Label(spring_box, text="BAHAR MÜFREDATI", bg="#fef9c3", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
+        self.tree_spring = self._build_curr_tree(spring_box)
+
+        ttk.Button(right, text="Örnek Öğrenci Seçimi Başlat", command=self.open_student_simulation).pack(fill=tk.X, pady=4, padx=4)
 
     def _build_legend(self):
-        """Durum kodlari ve sayac mantigini gosteren aciklama kutusu."""
-        legend = tk.LabelFrame(
-            self, text="  Durum Aciklamasi  ",
-            bg="#f8fafc", font=("Segoe UI", 8, "bold"),
-            fg="#475569", pady=4, padx=8
-        )
+        legend = tk.Frame(self, bg="#f8fafc")
         legend.pack(fill=tk.X, padx=6, pady=(2, 0))
-
         items = [
-            (_RENK["mufredatta_bg"],  _RENK["mufredatta_fg"],
-             "statu= 1  | Mufredatta      : Ders o yil aktif mufredatta."),
-            (_RENK["havuzda_bg"],     _RENK["havuzda_fg"],
-             "statu= 0  | Havuzda         : Mufredattan disarda, aday."),
-            (_RENK["dinlenmede_bg"],  _RENK["dinlenmede_fg"],
-             "statu=-1  | Dinlenmede      : Mufredattan yeni dustu, 1 yil secilemeez."),
-            (_RENK["iptal_bg"],       _RENK["iptal_fg"],
-             "statu=-2  | Kalici Iptal    : 2 kez dustugu icin sistemden cikarildi."),
+            ("blue", "Havuzda"),
+            ("green", "Müfredatta"),
+            ("purple", "Yeni öneri"),
+            ("red", "Çakışma / tekrar eklenemez"),
+            ("gray", "Veri yok"),
         ]
+        for color, text in items:
+            bg, fg = _COLOR_TAGS[color]
+            tk.Label(legend, text=f" {text} ", bg=bg, fg=fg, font=("Segoe UI", 8), padx=6).pack(side=tk.LEFT, padx=3, pady=2)
 
-        for bg, fg, metin in items:
-            tk.Label(
-                legend, text=metin,
-                bg=bg, fg=fg,
-                font=("Consolas", 8),
-                anchor="w", padx=6, pady=1,
-                relief="flat"
-            ).pack(fill=tk.X, pady=1)
-
-        tk.Label(
-            legend,
-            text="Sayac: 0=Hic dusmedi | 1=1 kez dustu (1 hak kaldi) | 2=Kalici iptal",
-            bg="#f1f5f9", fg="#64748b",
-            font=("Segoe UI", 8, "italic"),
-            anchor="w", padx=6
-        ).pack(fill=tk.X, pady=(2, 0))
+    def _configure_color_tags(self, tree: ttk.Treeview) -> None:
+        for name, (bg, fg) in _COLOR_TAGS.items():
+            tree.tag_configure(name, background=bg, foreground=fg)
 
     def _build_pool_tree(self, parent):
-        cols = ("ders_id", "ders_adi", "kaynak_bolum", "statu_etiket", "sayac", "skor", "yil")
-        self.tree_pool = ttk.Treeview(
-            parent, columns=cols, show="headings", selectmode="extended"
-        )
-
-        self.tree_pool.heading("ders_id",      text="ID")
-        self.tree_pool.heading("ders_adi",     text="Ders Adi")
-        self.tree_pool.heading("kaynak_bolum", text="Kaynak Bolum")
-        self.tree_pool.heading("statu_etiket", text="Durum")
-        self.tree_pool.heading("sayac",        text="Sayac")
-        self.tree_pool.heading("skor",         text="Kesinesme Puani")
-        self.tree_pool.heading("yil",          text="Yil")
-
-        self.tree_pool.column("ders_id",      width=45,  anchor="center")
-        self.tree_pool.column("ders_adi",     width=270)
-        self.tree_pool.column("kaynak_bolum", width=170)
-        self.tree_pool.column("statu_etiket", width=175, anchor="center")
-        self.tree_pool.column("sayac",        width=55,  anchor="center")
-        self.tree_pool.column("skor",         width=110, anchor="center")
-        self.tree_pool.column("yil",          width=50,  anchor="center")
-
-        # Renk etiketleri â€” normal satirlar
-        self.tree_pool.tag_configure(
-            "mufredatta",
-            background=_RENK["mufredatta_bg"],
-            foreground=_RENK["mufredatta_fg"],
-            font=self._font_normal,
-        )
-        self.tree_pool.tag_configure(
-            "havuzda",
-            background=_RENK["havuzda_bg"],
-            foreground=_RENK["havuzda_fg"],
-            font=self._font_normal,
-        )
-        self.tree_pool.tag_configure(
-            "dinlenmede",
-            background=_RENK["dinlenmede_bg"],
-            foreground=_RENK["dinlenmede_fg"],
-            font=self._font_normal,
-        )
-        # Iptal: gri arka plan + strikeout font
-        self.tree_pool.tag_configure(
-            "iptal",
-            background=_RENK["iptal_bg"],
-            foreground=_RENK["iptal_fg"],
-            font=self._font_strikeout,
-        )
-
-        sb = ttk.Scrollbar(parent, orient="vertical", command=self.tree_pool.yview)
-        self.tree_pool.configure(yscrollcommand=sb.set)
+        cols = ("code", "name", "credit", "ects", "pool", "fall", "spring", "yearly", "reco", "decision", "confidence", "explanation")
+        tree = ttk.Treeview(parent, columns=cols, show="headings", selectmode="extended")
+        headings = {
+            "code": ("Kod", 90), "name": ("Ders Adı", 210), "credit": ("Kredi", 50), "ects": ("AKTS", 50),
+            "pool": ("Havuz Durumu", 100), "fall": ("Güz", 45), "spring": ("Bahar", 50), "yearly": ("Yıllık", 50),
+            "reco": ("Öneri", 150), "decision": ("Karar", 170), "confidence": ("Güven", 60), "explanation": ("Açıklama", 320),
+        }
+        for col, (text, width) in headings.items():
+            tree.heading(col, text=text)
+            anchor = tk.CENTER if col in ("credit", "ects", "fall", "spring", "yearly", "confidence") else tk.W
+            tree.column(col, width=width, anchor=anchor)
+        self._configure_color_tags(tree)
+        sb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree_pool.pack(fill=tk.BOTH, expand=True)
+        tree.pack(fill=tk.BOTH, expand=True)
+        self.tree_pool = tree
 
-        # Sayac tooltip'i kullanici talebiyle kapatildi.
-        self._tooltip_win = None
-
-    def _build_curr_tree(self, parent):
-        cols = ("ders_id", "ders_adi", "skor")
-        self.tree_curr = ttk.Treeview(parent, columns=cols, show="headings")
-        self.tree_curr.heading("ders_id",  text="ID")
-        self.tree_curr.heading("ders_adi", text="Ders Adi")
-        self.tree_curr.heading("skor",     text="Kesinesme Puani")
-        self.tree_curr.column("ders_id",  width=45,  anchor="center")
-        self.tree_curr.column("ders_adi", width=260)
-        self.tree_curr.column("skor",     width=100, anchor="center")
-        self.tree_curr.pack(fill=tk.BOTH, expand=True)
-
-    # =========================================================
-    #  TOOLTIP (Sayac icin)
-    # =========================================================
-    def _on_pool_tree_motion(self, event):
-        # Tooltip davranisi kapatildi.
-        self._hide_tooltip()
-        return
-
-    def _show_tooltip(self, event, metin: str):
-        self._hide_tooltip()
-        x = self.winfo_rootx() + event.x + 14
-        y = self.winfo_rooty() + event.y + 14
-        self._tooltip_win = tw = tk.Toplevel(self)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        tk.Label(
-            tw, text=metin,
-            bg="#fffde7", fg="#1e293b",
-            font=("Segoe UI", 8),
-            relief="solid", bd=1, padx=6, pady=3
-        ).pack()
-
-    def _hide_tooltip(self):
-        if self._tooltip_win:
-            try:
-                self._tooltip_win.destroy()
-            except Exception:
-                pass
-            self._tooltip_win = None
+    def _build_curr_tree(self, parent) -> ttk.Treeview:
+        cols = ("code", "name", "credit", "ects", "term", "status", "note")
+        tree = ttk.Treeview(parent, columns=cols, show="headings")
+        headings = {
+            "code": ("Kod", 90), "name": ("Ders Adı", 200), "credit": ("Kredi", 50), "ects": ("AKTS", 50),
+            "term": ("Dönem", 60), "status": ("Müfredat Durumu", 130), "note": ("Açıklama", 220),
+        }
+        for col, (text, width) in headings.items():
+            tree.heading(col, text=text)
+            anchor = tk.CENTER if col in ("credit", "ects", "term") else tk.W
+            tree.column(col, width=width, anchor=anchor)
+        self._configure_color_tags(tree)
+        sb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        tree.pack(fill=tk.BOTH, expand=True)
+        return tree
 
     # =========================================================
-    #  DATA LOADERS
+    #  FİLTRE / KAPSAM ÇÖZÜMLEME
     # =========================================================
-    def _ensure_year_scores(self, fakulte_id: int, yil: int, donem: str = "G") -> None:
-        """
-        Legacy helper (deprecated).
-        Yearly workflow modunda otomatik puan hesaplamasi kapatilir.
-        """
-        return
-
     def load_faculties_to_combo(self, force_latest_year=False):
         try:
             _, rows = self.db.run_sql("SELECT ad FROM fakulte ORDER BY ad")
@@ -388,7 +226,6 @@ class PoolTab(ttk.Frame):
             self.cb_fakulte["values"] = faculties
             if faculties and self.cb_fakulte.current() < 0:
                 self.cb_fakulte.current(0)
-
             if faculties:
                 self.on_faculty_change(None, force_latest_year=force_latest_year)
         except Exception:
@@ -396,460 +233,330 @@ class PoolTab(ttk.Frame):
 
     def _refresh_years_for_faculty(self, fakulte_id: int, force_latest_year: bool = False):
         years: list[int] = []
-        conn = getattr(self.db, "conn", None)
-        if conn is None:
-            return
         try:
-            if is_yearly_workflow_enabled():
-                years = list_active_years_for_faculty(conn, int(fakulte_id))
+            _, rows = self.db.run_sql(
+                """
+                SELECT DISTINCT m.akademik_yil
+                FROM mufredat m JOIN bolum b ON b.bolum_id = m.bolum_id
+                WHERE b.fakulte_id = ? ORDER BY 1
+                """,
+                (int(fakulte_id),),
+            )
+            years = sorted({int(r[0]) for r in (rows or []) if r and r[0] is not None})
         except Exception:
             years = []
-
-        if not years:
-            try:
-                _, rows = self.db.run_sql(
-                    """
-                    SELECT DISTINCT m.akademik_yil
-                    FROM mufredat m
-                    JOIN bolum b ON b.bolum_id = m.bolum_id
-                    WHERE b.fakulte_id = ?
-                    ORDER BY 1
-                    """,
-                    (int(fakulte_id),),
-                )
-                years = sorted({int(r[0]) for r in (rows or []) if r and r[0] is not None})
-            except Exception:
-                years = []
-
+        # Havuzdan da yıl topla (müfredat olmasa bile havuz olabilir)
+        try:
+            _, hrows = self.db.run_sql(
+                "SELECT DISTINCT yil FROM havuz WHERE fakulte_id = ? ORDER BY 1", (int(fakulte_id),)
+            )
+            for r in (hrows or []):
+                if r and r[0] is not None:
+                    years.append(int(r[0]))
+        except Exception:
+            pass
+        years = sorted(set(years))
         yil_values = [str(y) for y in years]
         self.cb_yil["values"] = yil_values
-        if yil_values:
-            if force_latest_year or self.cb_yil.get() not in yil_values:
-                self.cb_yil.set(yil_values[-1])
+        if yil_values and (force_latest_year or self.cb_yil.get() not in yil_values):
+            self.cb_yil.set(yil_values[-1])
 
     def on_faculty_change(self, _event, force_latest_year: bool = False):
         fakulte = self.cb_fakulte.get()
         if not fakulte:
             return
         try:
-            _, rows = self.db.run_sql(
-                "SELECT fakulte_id FROM fakulte WHERE ad = ?", (fakulte,)
-            )
-            if not rows:
+            fid = self._faculty_id(fakulte)
+            if fid is None:
                 return
-            fid = int(rows[0][0])
-            _, rows_b = self.db.run_sql(
-                "SELECT ad FROM bolum WHERE fakulte_id = ? ORDER BY ad", (fid,)
-            )
-            bolumler = [r[0] for r in (rows_b or [])]
+            _, rows_b = self.db.run_sql("SELECT ad FROM bolum WHERE fakulte_id = ? ORDER BY ad", (fid,))
+            bolumler = ["Fakülte Geneli"] + [r[0] for r in (rows_b or [])]
             self.cb_bolum["values"] = bolumler
-            if bolumler and self.cb_bolum.current() < 0:
+            if self.cb_bolum.current() < 0:
                 self.cb_bolum.current(0)
             self._refresh_years_for_faculty(fid, force_latest_year=force_latest_year)
             self.load_pool_data()
         except Exception:
             pass
 
-    def toggle_resting_courses(self):
-        self.hide_resting = not self.hide_resting
-        if self.hide_resting:
-            self.btn_toggle.config(text="Dinlenmedekileri Goster", bg="#86efac")
-        else:
-            self.btn_toggle.config(text="Dinlenmedekileri Gizle",  bg="#fca5a5")
-        self.load_pool_data()
-
-    def load_pool_data(self):
-        """Secili fakulte/bolum/yil icin havuz ve mufredat verilerini ceker, tablolara basar."""
-        fakulte = self.cb_fakulte.get()
-        bolum   = self.cb_bolum.get()
-        yil     = self.cb_yil.get()
-        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
-        donem_norm = str(donem).strip() or "Guz"
-
-        if not fakulte or not yil:
-            return
-
-        # Fakulte ID'sini kesin olarak cozumle (ad LIKE degil, birebir)
-        fakulte_id = None
+    def _faculty_id(self, name: str) -> int | None:
         try:
-            _, fid_rows = self.db.run_sql(
-                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
-                (fakulte,),
-            )
-            if fid_rows and fid_rows[0] and fid_rows[0][0] is not None:
-                fakulte_id = int(fid_rows[0][0])
+            _, rows = self.db.run_sql("SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1", (name,))
+            if rows and rows[0] and rows[0][0] is not None:
+                return int(rows[0][0])
         except Exception:
-            fakulte_id = None
+            return None
+        return None
 
-        if fakulte_id is None:
-            return
-
-        if bolum:
-            try:
-                _, bid_rows = self.db.run_sql(
-                    "SELECT bolum_id FROM bolum WHERE fakulte_id = ? AND ad = ? LIMIT 1",
-                    (int(fakulte_id), bolum),
-                )
-                if bid_rows and bid_rows[0] and bid_rows[0][0] is not None:
-                    int(bid_rows[0][0])
-            except Exception:
-                pass
-
-        workflow_note = ""
-        if getattr(self, "lbl_workflow_info", None):
-            self.lbl_workflow_info.config(text="")
-
-        # Secili fakulte + yil icin havuz gorunurlugunu senkronize et (otomatik skor hesaplamaz).
-        try:
-            conn = getattr(self.db, "conn", None)
-            if conn is not None:
-                cur = conn.cursor()
-                ensure_pool_visibility_for_curriculum(
-                    cur=cur,
-                    fakulte_id=fakulte_id,
-                    akademik_yil=int(yil),
-                    donem=donem_norm,
-                )
-                conn.commit()
-                if is_yearly_workflow_enabled():
-                    status = get_faculty_year_status(
-                        conn=conn,
-                        fakulte_id=int(fakulte_id),
-                        yil=int(yil),
-                        refresh=True,
-                    )
-                    criteria_status = str(status.get("criteria_status") or "")
-                    algorithm_status = str(status.get("algorithm_run_status") or "")
-                    if criteria_status == "completed" and algorithm_status != "ran":
-                        workflow_note = "Kriter girisi tamamlandi ancak algoritmalar henuz calistirilmadi."
-                    elif criteria_status == "completed" and algorithm_status == "ran":
-                        workflow_note = f"{int(yil)} yili icin algoritmalar calistirildi."
-                    elif criteria_status == "partial":
-                        workflow_note = f"{int(yil)} yili kriter girisi kismi durumda."
-                    elif criteria_status == "not_started":
-                        workflow_note = f"{int(yil)} yili kriter girisi henuz baslatilmadi."
-        except Exception as wf_exc:
-            workflow_note = f"Workflow durumu okunamadi: {wf_exc}"
-
-        if getattr(self, "lbl_workflow_info", None):
-            self.lbl_workflow_info.config(text=workflow_note)
-
-        # --- SOL: HAVUZ ---
-        self.tree_pool.delete(*self.tree_pool.get_children())
-
-        extra_where = "AND h.statu NOT IN (-1, -2)" if self.hide_resting else ""
-        elective_predicate = "0=1"
-        try:
-            conn = getattr(self.db, "conn", None)
-            if conn is not None:
-                elective_predicate = build_elective_predicate(conn.cursor(), alias="d")
-        except Exception:
-            elective_predicate = "0=1"
-
-        q_pool = f"""
-            SELECT DISTINCT
-                h.ders_id,
-                d.ad,
-                h.statu,
-                h.sayac,
-                h.skor,
-                h.yil,
-                COALESCE(d.bolum_id, h.bolum_id) AS kaynak_bolum_id,
-                b.ad AS kaynak_bolum
-            FROM havuz h
-            LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
-            LEFT JOIN bolum b ON b.bolum_id = COALESCE(d.bolum_id, h.bolum_id)
-            WHERE h.fakulte_id = ?
-              AND h.yil = ?
-              AND LOWER(SUBSTR(TRIM(COALESCE(h.donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
-              AND {elective_predicate}
-              {extra_where}
-            ORDER BY
-                CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END,
-                h.skor DESC,
-                h.statu DESC,
-                d.ad
-        """
+    def _department_id(self, faculty_id: int, name: str) -> int | None:
+        if not name or name == "Fakülte Geneli":
+            return None
         try:
             _, rows = self.db.run_sql(
-                q_pool,
-                (int(fakulte_id), int(yil), donem_norm),
+                "SELECT bolum_id FROM bolum WHERE fakulte_id = ? AND ad = ? LIMIT 1", (int(faculty_id), name)
             )
-            seen = set()
-            for d_id, d_ad, statu, sayac, skor, y, _kaynak_bolum_id, kaynak_bolum in (rows or []):
-                if d_id in seen:
-                    continue
-                seen.add(d_id)
+            if rows and rows[0] and rows[0][0] is not None:
+                return int(rows[0][0])
+        except Exception:
+            return None
+        return None
 
-                s_val = int(statu) if statu is not None else 0
-                tag   = _STATU_TAG.get(s_val, "havuzda")
-                etkt  = _STATU_ETIKET.get(s_val, f"{s_val}")
-
-                skor_txt  = f"{float(skor):.2f}" if skor is not None else "-"
-                sayac_val = int(sayac) if sayac is not None else 0
-                kaynak_bolum_txt = str(kaynak_bolum or "-")
-                ders_adi_txt = str(d_ad or "")
-
-                self.tree_pool.insert(
-                    "", tk.END,
-                    values=(d_id, ders_adi_txt, kaynak_bolum_txt, etkt, sayac_val, skor_txt, y),
-                    tags=(tag,)
-                )
-        except Exception as e:
-            print(f"UI Hata (Havuz): {e}")
-
-        # --- SAG: MUFREDAT ---
-        self.tree_curr.delete(*self.tree_curr.get_children())
-        if not bolum:
+    # =========================================================
+    #  VERİ YÜKLEME
+    # =========================================================
+    def load_pool_data(self):
+        fakulte = self.cb_fakulte.get()
+        yil = self.cb_yil.get()
+        if not fakulte or not yil:
+            return
+        faculty_id = self._faculty_id(fakulte)
+        if faculty_id is None:
+            return
+        department_id = self._department_id(faculty_id, self.cb_bolum.get())
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            return
+        try:
+            bundle = get_unified_pool_by_year(conn, int(yil), faculty_id, department_id)
+        except Exception as exc:
+            self.lbl_summary.config(text=f"Havuz verisi yüklenemedi: {exc}")
             return
 
-        donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
-        donem_norm = str(donem).strip() or "Guz"
+        self._pool_rows = bundle.get("pool_courses", [])
+        fall = bundle.get("fall_curriculum", [])
+        spring = bundle.get("spring_curriculum", [])
+        summary = bundle.get("summary", {})
 
-        q_curr = f"""
-            SELECT DISTINCT d.ders_id, d.ad, h.skor
-            FROM mufredat m
-            JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
-            JOIN ders d ON md.ders_id = d.ders_id
-            JOIN bolum b ON m.bolum_id = b.bolum_id
-            LEFT JOIN havuz h ON h.id = (
-                SELECT h2.id
-                FROM havuz h2
-                WHERE CAST(h2.ders_id AS INTEGER) = d.ders_id
-                  AND h2.yil = m.akademik_yil
-                  AND LOWER(SUBSTR(TRIM(COALESCE(h2.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1))
-                ORDER BY
-                    CASE WHEN h2.skor IS NULL THEN 1 ELSE 0 END,
-                    h2.skor DESC,
-                    h2.id DESC
-                LIMIT 1
+        # Çakışma (her iki dönem) tespiti — müfredat panelleri için
+        fall_ids = {r["course_id"] for r in fall}
+        spring_ids = {r["course_id"] for r in spring}
+        conflicts = fall_ids & spring_ids
+
+        self._render_pool_table()
+        self._fill_curriculum_tree(self.tree_fall, fall, conflicts)
+        self._fill_curriculum_tree(self.tree_spring, spring, conflicts)
+
+        self.lbl_summary.config(
+            text=(
+                f"Güz: {summary.get('fall_count', 0)}  |  Bahar: {summary.get('spring_count', 0)}  |  "
+                f"Yıllık: {summary.get('yearly_total', 0)}  |  Havuz: {summary.get('pool_count', 0)}  |  "
+                f"Yeni öneri: {summary.get('new_suggestion_count', 0)}  |  Çakışma: {summary.get('conflict_count', 0)}"
             )
-            WHERE b.fakulte_id = ?
-              AND m.akademik_yil = ?
-              AND b.ad = ?
-              AND LOWER(SUBSTR(TRIM(COALESCE(m.donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
-              AND {elective_predicate}
-            ORDER BY
-                CASE WHEN h.skor IS NULL THEN 1 ELSE 0 END,
-                h.skor DESC,
-                d.ad
-        """
-        try:
-            _, rows_r = self.db.run_sql(q_curr, (int(fakulte_id), int(yil), bolum, donem_norm))
-            seen_r = set()
-            for d_id, d_ad, skor in (rows_r or []):
-                if d_id in seen_r:
-                    continue
-                seen_r.add(d_id)
-                skor_txt = f"{float(skor):.2f}" if skor is not None else "-"
-                self.tree_curr.insert("", tk.END, values=(d_id, d_ad, skor_txt))
-        except Exception as e:
-            print(f"UI Hata (Mufredat): {e}")
+        )
+
+    def _filter_match(self, row: dict[str, Any]) -> bool:
+        flt = self.var_filter.get()
+        search = (self.var_search.get() or "").strip().lower()
+        if search:
+            hay = f"{row.get('course_code', '')} {row.get('course_name', '')}".lower()
+            if search not in hay:
+                return False
+        if flt == "Tümü":
+            return True
+        if flt == "Havuzda":
+            return bool(row.get("in_pool")) and not bool(row.get("in_yearly_curriculum"))
+        if flt == "Müfredatta":
+            return bool(row.get("in_yearly_curriculum"))
+        if flt == "Güzde":
+            return bool(row.get("in_fall_curriculum"))
+        if flt == "Baharda":
+            return bool(row.get("in_spring_curriculum"))
+        if flt == "Çakışma":
+            return row.get("status_code") == "conflict_both_terms"
+        if flt == "Tekrar eklenemez":
+            return bool(row.get("in_yearly_curriculum"))
+        if flt == "Yeni öneri":
+            return bool(row.get("in_pool")) and not bool(row.get("in_yearly_curriculum"))
+        return True
+
+    def _render_pool_table(self):
+        tree = self.tree_pool
+        tree.delete(*tree.get_children())
+        shown = 0
+        for row in self._pool_rows:
+            if not self._filter_match(row):
+                continue
+            pool_status = row.get("pool_status")
+            pool_label = _POOL_STATU_LABEL.get(pool_status, "-") if pool_status is not None else "-"
+            confidence = row.get("confidence_score")
+            conf_txt = f"{float(confidence):.2f}" if confidence is not None else "-"
+            # Yeni öneri ise renk morumsu olsun (havuz adayı, müfredatta değil)
+            color = row.get("status_color") or "gray"
+            if color == "blue" and row.get("in_pool") and not row.get("in_yearly_curriculum"):
+                color = "purple"
+            tree.insert(
+                "",
+                tk.END,
+                values=(
+                    row.get("course_code") or row.get("course_id"),
+                    row.get("course_name") or "",
+                    row.get("credit") if row.get("credit") is not None else "-",
+                    row.get("ects") if row.get("ects") is not None else "-",
+                    pool_label,
+                    "✓" if row.get("in_fall_curriculum") else "—",
+                    "✓" if row.get("in_spring_curriculum") else "—",
+                    "✓" if row.get("in_yearly_curriculum") else "—",
+                    row.get("recommendation_status") or row.get("recommendation") or "",
+                    row.get("final_decision") or row.get("status_label") or "",
+                    conf_txt,
+                    row.get("explanation") or "",
+                ),
+                tags=(color,),
+            )
+            shown += 1
+        if shown == 0:
+            tree.insert("", tk.END, values=("", "Kayıt yok / kapsam boş.", "", "", "", "", "", "", "", "", "", ""), tags=("gray",))
+
+    def _fill_curriculum_tree(self, tree: ttk.Treeview, rows: list[dict[str, Any]], conflicts: set[int]) -> None:
+        tree.delete(*tree.get_children())
+        if not rows:
+            tree.insert("", tk.END, values=("", "Müfredat dersi yok.", "", "", "", "", ""), tags=("gray",))
+            return
+        for row in rows:
+            cid = row["course_id"]
+            is_conflict = cid in conflicts
+            note = "Her iki dönemde de var (çakışma)" if is_conflict else "Yıllık müfredatta"
+            tree.insert(
+                "",
+                tk.END,
+                values=(
+                    row.get("course_code") or cid,
+                    row.get("course_name") or "",
+                    row.get("credit") if row.get("credit") is not None else "-",
+                    row.get("ects") if row.get("ects") is not None else "-",
+                    "Güz" if row.get("term") == FALL else "Bahar",
+                    row.get("curriculum_status") or "Müfredatta",
+                    note,
+                ),
+                tags=("red" if is_conflict else "green",),
+            )
 
     # =========================================================
-    #  AKSIYONLAR
+    #  AKSİYONLAR
     # =========================================================
-    def _selected_pool_items(self):
-        items = self.tree_pool.selection()
-        return [self.tree_pool.item(it)["values"] for it in items if self.tree_pool.item(it)["values"]]
+    def _selected_pool_course_ids(self) -> list[int]:
+        out: list[int] = []
+        for it in self.tree_pool.selection():
+            vals = self.tree_pool.item(it)["values"]
+            if not vals:
+                continue
+            # ilk kolon kod; course_id'yi _pool_rows üzerinden eşle
+            code = str(vals[0])
+            match = next((r for r in self._pool_rows if str(r.get("course_code")) == code), None)
+            if match:
+                out.append(int(match["course_id"]))
+        return out
 
     def set_selected_pool_status(self, new_status: int):
-        selected = self._selected_pool_items()
-        if not selected:
-            messagebox.showinfo("Bilgi", "Oncelikle havuzdan ders secin.")
+        course_ids = self._selected_pool_course_ids()
+        if not course_ids:
+            messagebox.showinfo("Bilgi", "Önce havuzdan ders seçin.")
             return
         fakulte = self.cb_fakulte.get()
         yil = self.cb_yil.get()
         if not (fakulte and yil):
             return
+        faculty_id = self._faculty_id(fakulte)
+        if faculty_id is None:
+            return
         try:
-            _, fid_rows = self.db.run_sql(
-                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
-                (fakulte,),
-            )
-            if not fid_rows:
-                return
-            fakulte_id = int(fid_rows[0][0])
-            donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
-            for vals in selected:
-                ders_id = int(vals[0])
+            for ders_id in course_ids:
+                # Birleşik yönetim: dersin o yıl/fakülte tüm dönem havuz satırlarını günceller.
                 self.db.run_sql(
-                    """
-                    UPDATE havuz
-                    SET statu = ?
-                    WHERE ders_id = ? AND yil = ? AND fakulte_id = ?
-                      AND LOWER(SUBSTR(TRIM(COALESCE(donem,'')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
-                    """,
-                    (int(new_status), ders_id, int(yil), fakulte_id, donem),
+                    "UPDATE havuz SET statu = ? WHERE CAST(ders_id AS INTEGER) = ? AND yil = ? AND fakulte_id = ?",
+                    (int(new_status), int(ders_id), int(yil), int(faculty_id)),
                 )
             self.load_pool_data()
         except Exception as e:
-            messagebox.showerror("Guncelleme Hatasi", str(e))
+            messagebox.showerror("Güncelleme Hatası", str(e))
 
     def run_pool_health_check(self):
-        """Secili fakulte+yil icin havuz statu dagilimi ve mufredat-havuz senkronizasyon raporunu cikartir."""
         fakulte = self.cb_fakulte.get()
         yil = self.cb_yil.get()
         if not fakulte or not yil:
-            messagebox.showwarning("Eksik Secim", "Lutfen once fakulte ve yil secin.")
+            messagebox.showwarning("Eksik Seçim", "Lütfen önce fakülte ve yıl seçin.")
             return
-
-        try:
-            _, fid_rows = self.db.run_sql(
-                "SELECT fakulte_id FROM fakulte WHERE ad = ? LIMIT 1",
-                (fakulte,),
-            )
-            if not fid_rows or fid_rows[0][0] is None:
-                messagebox.showerror("Hata", "Secilen fakulte icin fakulte_id bulunamadi.")
-                return
-            fakulte_id = int(fid_rows[0][0])
-        except Exception as e:
-            messagebox.showerror("Hata", f"Fakulte id cozumlenemedi:\n{e}")
+        faculty_id = self._faculty_id(fakulte)
+        if faculty_id is None:
             return
-
+        department_id = self._department_id(faculty_id, self.cb_bolum.get())
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            return
         try:
-            donem = getattr(self, "cb_donem", None) and self.cb_donem.get() or "Guz"
-            donem_norm = str(donem).strip() or "Guz"
-            donem_key = donem_norm[0].lower()
-
-            # 1) Havuz statu dagilimi (secili fakulte + yil)
-            q_statu = """
-                SELECT
-                    COALESCE(statu, 0) AS s,
-                    COUNT(*) AS adet
-                FROM havuz
-                WHERE fakulte_id = ? AND yil = ?
-                  AND LOWER(SUBSTR(TRIM(COALESCE(donem, '')), 1, 1)) = ?
-                GROUP BY COALESCE(statu, 0)
-            """
-            _, rows_st = self.db.run_sql(q_statu, (fakulte_id, int(yil), donem_key))
-            statu_counts = {int(r[0]): int(r[1]) for r in (rows_st or [])}
-
-            # 2) Mufredatta olup havuzda olmayan dersler
-            q_curr_only = """
-                SELECT COUNT(DISTINCT md.ders_id) AS adet
-                FROM mufredat m
-                JOIN bolum b ON b.bolum_id = m.bolum_id
-                JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
-                LEFT JOIN havuz h ON (
-                    h.fakulte_id = b.fakulte_id
-                    AND h.yil = m.akademik_yil
-                    AND CAST(h.ders_id AS INTEGER) = md.ders_id
-                )
-                WHERE b.fakulte_id = ?
-                  AND m.akademik_yil = ?
-                  AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = ?
-                  AND h.ders_id IS NULL
-            """
-            _, rows_c = self.db.run_sql(
-                q_curr_only,
-                (fakulte_id, int(yil), donem_key),
-            )
-            curr_not_in_pool = int(rows_c[0][0]) if rows_c and rows_c[0] and rows_c[0][0] is not None else 0
-
-            # 3) Havuzda olup ayni yil/donem mufredatinda olmayan dersler
-            q_pool_only = """
-                SELECT COUNT(DISTINCT CAST(h.ders_id AS INTEGER)) AS adet
-                FROM havuz h
-                LEFT JOIN mufredat m ON (
-                    m.akademik_yil = h.yil
-                    AND m.fakulte_id = h.fakulte_id
-                    AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = ?
-                )
-                LEFT JOIN mufredat_ders md ON (
-                    md.mufredat_id = m.mufredat_id
-                    AND md.ders_id = CAST(h.ders_id AS INTEGER)
-                )
-                WHERE h.fakulte_id = ?
-                  AND h.yil = ?
-                  AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?
-                  AND md.ders_id IS NULL
-            """
-            _, rows_p = self.db.run_sql(
-                q_pool_only,
-                (donem_key, fakulte_id, int(yil), donem_key),
-            )
-            pool_not_in_curr = int(rows_p[0][0]) if rows_p and rows_p[0] and rows_p[0][0] is not None else 0
-
-            lines = []
-            lines.append(f"Fakulte: {fakulte}")
-            lines.append(f"Yil: {yil}  Donem: {donem_norm}")
-            lines.append("")
-            lines.append("Havuz statu dagilimi:")
-            lines.append(f"  statu= 1 (Mufredatta): {statu_counts.get(1, 0)}")
-            lines.append(f"  statu= 0 (Havuzda):   {statu_counts.get(0, 0)}")
-            lines.append(f"  statu=-1 (Dinlenme):  {statu_counts.get(-1, 0)}")
-            lines.append(f"  statu=-2 (Iptal):      {statu_counts.get(-2, 0)}")
-            lines.append("")
-            lines.append("Mufredat / Havuz senkronizasyonu:")
-            lines.append(f"  Mufredatta olup havuzda olmayan ders sayisi : {curr_not_in_pool}")
-            lines.append(f"  Havuzda olup mufredatta olmayan ders sayisi : {pool_not_in_curr}")
-
-            msg = "\n".join(lines)
-            messagebox.showinfo("Havuz Saglik Kontrolu", msg)
+            report = check_yearly_curriculum_integrity(conn, int(yil), faculty_id, department_id)
         except Exception as e:
-            messagebox.showerror("Hata", f"Saglik kontrolu calistirilirken hata olustu:\n{e}")
+            messagebox.showerror("Hata", f"Bütünlük kontrolü çalıştırılamadı:\n{e}")
+            return
+        summary = report.get("summary", {})
+        lines = [
+            f"Fakülte: {fakulte}  |  Yıl: {yil}",
+            f"Durum: {report.get('status')}",
+            "",
+            f"Güz müfredatı     : {summary.get('fall_count', 0)} ders",
+            f"Bahar müfredatı   : {summary.get('spring_count', 0)} ders",
+            f"Yıllık toplam     : {summary.get('yearly_total', 0)} ders",
+            f"Havuz             : {summary.get('pool_count', 0)} ders",
+            f"Yeni öneri        : {summary.get('new_suggestion_count', 0)} ders",
+            f"Çakışma           : {summary.get('conflict_count', 0)} ders",
+        ]
+        issues = report.get("issues") or []
+        if issues:
+            lines.append("")
+            lines.append("Bulgular:")
+            for issue in issues:
+                lines.append(f"  [{issue.get('severity', '').upper()}] {issue.get('message', '')}")
+        messagebox.showinfo("Yıllık Müfredat Bütünlük / Havuz Sağlık", "\n".join(lines))
 
     def run_decision_engine(self):
-        messagebox.showinfo(
-            "Bilgi",
-            "Lutfen 'Hesaplama & Test' sekmesinden 'Otomatik Puanlama' butonunu kullanin."
-        )
+        messagebox.showinfo("Bilgi", "Lütfen 'Hesaplama & Test' sekmesinden 'Otomatik Puanlama' butonunu kullanın.")
 
     # =========================================================
-    #  SIMULASYON
+    #  SİMÜLASYON
     # =========================================================
     def open_student_simulation(self):
-        """Mufredattaki derslerden ogrenci secim simulasyonu penceresi acar."""
-        curr_items = self.tree_curr.get_children()
-        if not curr_items:
-            messagebox.showwarning("Uyari", "Mufredatta ders yok! Once algoritmay calistirin.")
+        rows = list(self.tree_fall.get_children()) + list(self.tree_spring.get_children())
+        courses = []
+        for tree in (self.tree_fall, self.tree_spring):
+            for item in tree.get_children():
+                vals = tree.item(item)["values"]
+                if vals and vals[1] and vals[1] != "Müfredat dersi yok.":
+                    courses.append((vals[0], vals[1], vals[4]))
+        if not courses:
+            messagebox.showwarning("Uyarı", "Müfredatta ders yok! Önce müfredat oluşturun.")
             return
-
         sim_win = tk.Toplevel(self)
-        sim_win.title(f"Ogrenci Ders Secim Ekrani - {self.cb_yil.get()} Guz Donemi")
-        sim_win.geometry("620x520")
+        sim_win.title(f"Öğrenci Ders Seçim Ekranı - {self.cb_yil.get()}")
+        sim_win.geometry("640x540")
         sim_win.configure(bg="#f8fafc")
-
         tk.Label(
-            sim_win,
-            text=f"{self.cb_yil.get()} GUZ DONEMI DERS SECIMI",
-            font=("Segoe UI", 14, "bold"), bg="#f8fafc", fg="#1e293b"
+            sim_win, text=f"{self.cb_yil.get()} DERS SEÇİMİ (Güz + Bahar)",
+            font=("Segoe UI", 14, "bold"), bg="#f8fafc", fg="#1e293b",
         ).pack(pady=14)
-
         tk.Label(
-            sim_win,
-            text="Mufredat Komisyonu tarafindan onaylanan dersler asagidadir.\n"
-                 "Almak istediklerinizi isaretleyiniz.",
-            bg="#f8fafc"
+            sim_win, text="Müfredat komisyonunca onaylanan dersler aşağıdadır. Almak istediklerinizi işaretleyin.",
+            bg="#f8fafc",
         ).pack(pady=(0, 8))
-
         check_frame = tk.Frame(sim_win, bg="white", relief="groove", bd=1)
         check_frame.pack(fill=tk.BOTH, expand=True, padx=18, pady=8)
-
         vars_list = []
-        for item in curr_items:
-            d_id, d_ad, skor = self.tree_curr.item(item)["values"]
+        for code, name, term in courses:
             var = tk.IntVar()
             tk.Checkbutton(
-                check_frame, text=f"{d_ad}  (Puan: {skor})",
-                variable=var, bg="white",
-                font=("Segoe UI", 10), anchor="w", padx=10, pady=4
+                check_frame, text=f"[{term}] {code} - {name}", variable=var, bg="white",
+                font=("Segoe UI", 10), anchor="w", padx=10, pady=3,
             ).pack(fill=tk.X)
-            vars_list.append((d_ad, var))
+            vars_list.append((f"{code} - {name}", var))
 
         def save_selection():
             secilen = [n for n, v in vars_list if v.get() == 1]
             if not secilen:
-                messagebox.showwarning("Uyari", "Hic ders secmediniz!")
+                messagebox.showwarning("Uyarı", "Hiç ders seçmediniz!")
                 return
-            msg = "Secilen Dersler:\n\n" + "\n".join(f"  + {s}" for s in secilen)
-            msg += "\n\nKaydiniz tamamlandi!"
-            messagebox.showinfo("Onay", msg)
+            messagebox.showinfo("Onay", "Seçilen Dersler:\n\n" + "\n".join(f"  + {s}" for s in secilen) + "\n\nKaydınız tamamlandı!")
             sim_win.destroy()
 
         tk.Button(
-            sim_win, text="Secimi Onayla ve Kaydet",
-            bg="#22c55e", fg="white", font=("Segoe UI", 10, "bold"),
-            command=save_selection
+            sim_win, text="Seçimi Onayla ve Kaydet", bg="#22c55e", fg="white",
+            font=("Segoe UI", 10, "bold"), command=save_selection,
         ).pack(pady=18, ipadx=10)

@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.db.schema_compat import ensure_semester_planning_schema
+from app.services.course_curriculum_status_service import (
+    get_yearly_curriculum_term_map,
+)
 from app.services.course_semester_availability_service import (
     display_semester,
     get_course_availability,
@@ -353,6 +356,7 @@ def generate_semester_plan(
     created_by: str | None = None,
     scenario_type: str = "score_priority",
     generate_alternatives: bool = True,
+    respect_existing_curriculum: bool = False,
 ) -> dict[str, Any]:
     ensure_semester_planning_schema(conn, commit=False)
     year = int(year)
@@ -372,6 +376,25 @@ def generate_semester_plan(
             warnings.extend(workload_warnings)
 
     candidates = _prepare_candidates(conn, year, candidate_courses, faculty_id, department_id)
+    # Bölüm bazlı yıllık bütünlük: o yıl zaten müfredatta olan dersler yeni
+    # öneri olarak tekrar dağıtılmaz (opt-in; varsayılan davranış değişmez).
+    already_in_curriculum_ids: list[int] = []
+    if respect_existing_curriculum:
+        existing_term_map = get_yearly_curriculum_term_map(conn, year, faculty_id, department_id)
+        if existing_term_map:
+            kept: list[dict[str, Any]] = []
+            for row in candidates:
+                cid = int(row["course_id"])
+                if cid in existing_term_map:
+                    already_in_curriculum_ids.append(cid)
+                else:
+                    kept.append(row)
+            candidates = kept
+            if already_in_curriculum_ids:
+                warnings.append(
+                    f"{len(already_in_curriculum_ids)} ders bu akademik yıl müfredatında zaten bulunduğu için "
+                    "yeni öneri listesinden çıkarıldı."
+                )
     sorted_candidates = sorted(candidates, key=lambda row: (_float(row.get("course_score")), _float(row.get("expected_demand")), -int(row["course_id"])), reverse=True)
     if scenario_type == "demand_priority":
         sorted_candidates = sorted(candidates, key=lambda row: (_float(row.get("expected_demand")), _float(row.get("course_score"))), reverse=True)
@@ -539,6 +562,7 @@ def generate_semester_plan(
         "spring_course_ids": [int(a["course_id"]) for a in spring],
         "unassigned_courses": unassigned,
         "rejected_courses": unassigned,
+        "already_in_curriculum_ids": already_in_curriculum_ids,
         "plan_score": plan_score,
         "metrics": metrics,
         "constraint_violations": violations,

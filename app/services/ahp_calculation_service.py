@@ -59,6 +59,32 @@ class AHPResult:
         return asdict(self)
 
 
+def enforce_reciprocal_matrix(matrix: list[list[float]]) -> list[list[float]]:
+    """Üst üçgeni koruyarak tam reciprocal (a[j][i] = 1/a[i][j]) matris üretir.
+
+    Kullanıcı arayüzünden gelen matrislerde üst ve alt üçgen ayrı ayrı
+    yuvarlandığında küçük reciprocal sapmaları (ör. 1.75 ↔ 0.571) oluşur.
+    Kalıcı kayıttan önce bu fonksiyon alt üçgeni üst üçgenin tam tersinden
+    türetir; köşegeni 1 yapar. Ağırlık/CR anlamını değiştirmez, yalnız
+    tutarlılığı garanti eder.
+    """
+    if not matrix or not isinstance(matrix, list):
+        return matrix
+    n = len(matrix)
+    out = [[float(matrix[i][j]) for j in range(len(matrix[i]))] for i in range(n)]
+    if any(len(row) != n for row in out):
+        return out
+    for i in range(n):
+        out[i][i] = 1.0
+        for j in range(i + 1, n):
+            a = float(out[i][j])
+            if a <= 0 or math.isnan(a) or math.isinf(a):
+                a = 1.0
+                out[i][j] = a
+            out[j][i] = 1.0 / a
+    return out
+
+
 def validate_pairwise_matrix(matrix: list[list[float]], criteria_keys: list[str] | None = None) -> ValidationResult:
     issues: list[dict[str, Any]] = []
     warnings: list[str] = []
