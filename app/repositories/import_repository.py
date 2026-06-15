@@ -194,9 +194,14 @@ def archive_import_history(
         return {"archived": 0, "logs_removed": 0}
     ensure_import_archive_schema(conn, commit=False)
     cur = conn.cursor()
+    # Yalnız her iki tabloda da bulunan kolonları taşı. Arşiv tablosu kurulduktan
+    # sonra import_batches'e yeni kolon eklenirse INSERT/SELECT bu kolonu atlar;
+    # böylece additive şema değişiklikleri arşivlemeyi kırmaz (şema kayması koruması).
     base_cols = _columns(cur, "import_batches")
+    archive_cols = set(_columns(cur, "import_batches_archive"))
+    shared_cols = [c for c in base_cols if c in archive_cols]
     placeholders = ",".join("?" for _ in ids)
-    col_list = ", ".join(f'"{c}"' for c in base_cols)
+    col_list = ", ".join(f'"{c}"' for c in shared_cols)
     now = _now()
     # Arşive kopyala
     cur.execute(

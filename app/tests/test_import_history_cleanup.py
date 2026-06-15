@@ -10,7 +10,9 @@ import tempfile
 import pytest
 
 from app.repositories.import_repository import (
+    archive_import_history,
     count_protected_import_batches,
+    ensure_import_archive_schema,
     get_cleanable_import_batches,
     get_import_history,
 )
@@ -133,3 +135,24 @@ def test_cleanup_idempotent_second_run(conn):
     conn.commit()
     assert second["archived"] == 0
     assert "Temizlenecek eski import kaydı yok" in second["message"]
+
+
+def test_archive_survives_schema_drift(conn):
+    """Arşiv tablosu kurulduktan SONRA import_batches'e yeni kolon eklenirse
+    arşivleme kırılmamalı (her iki tabloda ortak kolonlar taşınır)."""
+    # Önce arşiv tablosunu mevcut kolonlarla oluştur.
+    ensure_import_archive_schema(conn, commit=True)
+    # Sonra ana tabloya yeni bir kolon ekle (additive şema değişikliği).
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE import_batches ADD COLUMN extra_note TEXT")
+    cur.execute("UPDATE import_batches SET extra_note = 'x' WHERE id = 2")
+    conn.commit()
+
+    result = archive_import_history(conn, [2, 3], archived_by="drift")
+    conn.commit()
+    assert result["archived"] == 2
+
+    archived = {int(r[0]) for r in cur.execute("SELECT id FROM import_batches_archive").fetchall()}
+    assert archived == {2, 3}
+    # Yeni kolon arşivde olmadığı için sessizce atlanmış olmalı.
+    assert "extra_note" not in {r[1] for r in cur.execute("PRAGMA table_info(import_batches_archive)").fetchall()}

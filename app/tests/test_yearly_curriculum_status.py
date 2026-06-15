@@ -26,6 +26,11 @@ from app.services.course_curriculum_status_service import (
     STATUS_IN_FALL,
     STATUS_IN_POOL,
     get_course_yearly_curriculum_status,
+    get_courses_status_batch,
+)
+from app.services.course_semester_availability_service import (
+    get_courses_availability_batch,
+    upsert_course_availability,
 )
 from app.services.semester_planning_engine import generate_semester_plan
 from app.services.yearly_curriculum_integrity_service import (
@@ -121,6 +126,26 @@ def test_status_in_fall_blocks_readd(conn):
     assert status["in_yearly_curriculum"] is True
     assert status["can_be_added_to_fall"] is False
     assert status["can_be_added_to_spring"] is False
+
+
+def test_availability_batch_honors_scope_row(conn):
+    # 104 havuzda, müfredatta yok -> normalde her iki döneme eklenebilir.
+    # Bahar uygunluğunu kapatan bir kayıt girince batch bunu yansıtmalı.
+    upsert_course_availability(
+        conn, 104, year=2024, faculty_id=1, department_id=10,
+        allowed_fall=True, allowed_spring=False,
+    )
+    conn.commit()
+    avail = get_courses_availability_batch(conn, [104, 105], year=2024, department_id=10, faculty_id=1)
+    assert avail[104]["allowed_fall"] is True
+    assert avail[104]["allowed_spring"] is False
+    # 105 için kayıt yok -> varsayılan (her iki dönem açık)
+    assert avail[105]["allowed_spring"] is True
+
+    # Toplu durum hesabı bu uygunluğu kullanmalı.
+    status = get_courses_status_batch(conn, 2024, [104], department_id=10, faculty_id=1)
+    assert status[104]["can_be_added_to_fall"] is True
+    assert status[104]["can_be_added_to_spring"] is False
 
 
 def test_status_conflict_both_terms(conn):

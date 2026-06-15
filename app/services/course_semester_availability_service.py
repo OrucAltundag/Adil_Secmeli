@@ -108,6 +108,63 @@ def get_course_availability(
     return default_availability(course_id, year)
 
 
+def get_courses_availability_batch(
+    conn: sqlite3.Connection,
+    course_ids: list[int],
+    year: int | None = None,
+    department_id: int | None = None,
+    faculty_id: int | None = None,
+) -> dict[int, dict[str, Any]]:
+    """Birden çok ders için dönem uygunluğunu tek geçişte çözer.
+
+    `get_course_availability` ile aynı kapsam-daraltma (yıl/fakülte/bölüm > genel)
+    önceliğini uygular ama her ders için ayrı sorgu yerine, her aday kapsam için
+    `course_id IN (...)` ile toplu sorgu çalıştırır. Bir ders için ilk eşleşen
+    (en yüksek öncelikli) kapsam kazanır; eşleşmeyenler varsayılana düşer.
+    """
+    ids = [int(c) for c in dict.fromkeys(course_ids)]
+    if not ids:
+        return {}
+    ensure_semester_planning_schema(conn, commit=False)
+    cur = conn.cursor()
+    placeholders = ",".join("?" for _ in ids)
+    candidates = [
+        (year, faculty_id, department_id),
+        (year, faculty_id, None),
+        (year, None, None),
+        (None, faculty_id, department_id),
+        (None, faculty_id, None),
+        (None, None, None),
+    ]
+    resolved: dict[int, dict[str, Any]] = {}
+    for cand_year, cand_faculty, cand_department in candidates:
+        if len(resolved) == len(ids):
+            break
+        where = [f"course_id IN ({placeholders})"]
+        params: list[Any] = list(ids)
+        for col, value in (("year", cand_year), ("faculty_id", cand_faculty), ("department_id", cand_department)):
+            if value is None:
+                where.append(f"{col} IS NULL")
+            else:
+                where.append(f"{col} = ?")
+                params.append(int(value))
+        # id DESC: her ders için ilk görülen satır o kapsamdaki en güncel kayıttır.
+        cur.execute(
+            f"SELECT * FROM course_semester_availability WHERE {' AND '.join(where)} ORDER BY id DESC",
+            tuple(params),
+        )
+        for row in _fetch_all_dicts(cur):
+            cid = row.get("course_id")
+            if cid is None:
+                continue
+            cid = int(cid)
+            if cid not in resolved:
+                resolved[cid] = row
+    for cid in ids:
+        resolved.setdefault(cid, default_availability(cid, year))
+    return resolved
+
+
 def validate_course_semester(
     conn: sqlite3.Connection,
     course_id: int,

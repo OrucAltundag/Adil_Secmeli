@@ -26,6 +26,7 @@ from typing import Any
 from app.services.course_semester_availability_service import (
     display_semester,
     get_course_availability,
+    get_courses_availability_batch,
     normalize_semester,
 )
 
@@ -245,20 +246,24 @@ def get_courses_status_batch(
     faculty_id: int | None = None,
     department_id: int | None = None,
 ) -> dict[int, dict[str, Any]]:
-    """Birden çok ders için durumu tek seferde hesaplar (N+1 sorgudan kaçınır)."""
+    """Birden çok ders için durumu tek seferde hesaplar (N+1 sorgudan kaçınır).
+
+    term_map, havuz id'leri ve dönem uygunluğu üçü de toplu (batch) okunur;
+    böylece ders sayısı arttıkça sorgu sayısı sabit kalır.
+    """
     term_map = get_yearly_curriculum_term_map(conn, year, faculty_id, department_id)
     pool_ids = get_pool_course_ids(conn, year, faculty_id, department_id)
+    availability_map = get_courses_availability_batch(
+        conn, [int(c) for c in course_ids], year=year, department_id=department_id, faculty_id=faculty_id
+    )
     out: dict[int, dict[str, Any]] = {}
     for raw in course_ids:
         cid = int(raw)
-        availability = get_course_availability(
-            conn, cid, year=year, department_id=department_id, faculty_id=faculty_id
-        )
         out[cid] = _build_status(
             course_id=cid,
             year=int(year),
             terms=term_map.get(cid, set()),
             in_pool=cid in pool_ids,
-            availability=availability,
+            availability=availability_map.get(cid, {}),
         )
     return out
