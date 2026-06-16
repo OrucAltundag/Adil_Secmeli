@@ -28,6 +28,9 @@ from app.services.import_diff_service import get_import_diff, recalculate_import
 from app.services.import_impact_service import get_import_impact, recalculate_import_impact
 from app.services.import_quality_service import summarize_quality
 from app.services.import_rollback_service import get_rollback_plan
+from app.services.student_dataset_criteria_service import (
+    auto_generate_criteria_from_student_dataset,
+)
 from app.services.survey_import_service import import_survey_excel, write_survey_template_excel
 
 
@@ -38,6 +41,11 @@ class ImportTypeSpec:
     description: str
     required_scope: str
     expected_columns: tuple[str, ...]
+    affected_tables: tuple[str, ...] = ()
+    on_missing_columns: str = ""
+    post_import: str = ""
+    rollback_supported: bool = True
+    approval_required: bool = False
 
 
 IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
@@ -58,6 +66,11 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
             "kontenjan",
             "kayitli_ogrenci",
         ),
+        affected_tables=("ders_kriterleri", "performans", "populerlik"),
+        on_missing_columns="Eksik/eşleşmeyen satır atlanır ve raporlanır; import bütünüyle iptal olmaz.",
+        post_import="Kalite kontrol, diff ve karar etkisi otomatik hesaplanır; kriter tamamlama durumu güncellenir.",
+        rollback_supported=True,
+        approval_required=False,
     ),
     "survey": ImportTypeSpec(
         key="survey",
@@ -69,6 +82,11 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
         ),
         required_scope="Yıl zorunlu; fakülte opsiyonel (seçilmezse tüm fakülteler).",
         expected_columns=("ders_kodu veya ders_adi", "tercih_sayisi veya oy_sayisi"),
+        affected_tables=("anket", "populerlik"),
+        on_missing_columns="Eşleşmeyen ders kodları atlanır ve raporlanır.",
+        post_import="Anket/tercih sinyali güncellenir; kalite ve karar etkisi yeniden hesaplanır.",
+        rollback_supported=True,
+        approval_required=False,
     ),
     "curriculum": ImportTypeSpec(
         key="curriculum",
@@ -82,6 +100,38 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
         ),
         required_scope="Hedef yıl zorunlu; fakülte/bölüm/dönem bilgisi dosyadan okunur.",
         expected_columns=("fakulte", "bolum", "yil", "donem", "ders_kodu veya ders_adi"),
+        affected_tables=("mufredat", "mufredat_ders", "(ilgili yıl) ders_kriterleri/performans/populerlik/havuz skor"),
+        on_missing_columns="Zorunlu kolon (fakulte/bolum/yil/donem/ders) eksikse import durdurulur.",
+        post_import="Seçilen yılın müfredat bağlantıları sıfırlanır; kriter/skor verileri temizlenir ve yeniden hesaplama gerekir.",
+        rollback_supported=True,
+        approval_required=True,
+    ),
+    "student_criteria": ImportTypeSpec(
+        key="student_criteria",
+        label="Öğrenci Veri Setinden Kriter Oluştur",
+        description=(
+            "Öğrenci not veri setinden (kayıt/geçme/ortalama/katılım) ders bazlı\n"
+            "kriterleri OTOMATİK hesaplar ve kaydeder:\n"
+            "  • Başarı oranı, ortalama not (performans tablosu)\n"
+            "  • Talep/kayıt sayısı ve doluluk oranı (popülerlik tablosu)\n"
+            "  • Kriter tamamlama (ders_kriterleri tablosu)\n"
+            "Dersler ders koduyla eşleşir; eşleşmeyen ders için yeni ders açılmaz.\n"
+            "Kaydetmeden önce hesaplanan kriterlerin ÖNİZLEMESİ gösterilir."
+        ),
+        required_scope="Yıl zorunlu. Dosya 'Ders Analizi' sayfasını içermelidir.",
+        expected_columns=(
+            "ders_kodu",
+            "donem",
+            "kayit_sayisi",
+            "gecme_orani_%",
+            "ort_agirlikli",
+            "ort_katilim_yuzde",
+        ),
+        affected_tables=("ders_kriterleri", "performans", "populerlik"),
+        on_missing_columns="'Ders Analizi' sayfası veya zorunlu kolon yoksa işlem durur; eşleşmeyen ders kodu atlanır.",
+        post_import="Kaydetmeden önce ÖNİZLEME gösterilir; onaylanırsa seçilen yılın kriter verileri yeniden yazılır.",
+        rollback_supported=False,
+        approval_required=False,
     ),
 }
 
@@ -224,6 +274,11 @@ def get_import_type_specs() -> list[dict[str, Any]]:
             "description": item.description,
             "required_scope": item.required_scope,
             "expected_columns": list(item.expected_columns),
+            "affected_tables": list(item.affected_tables),
+            "on_missing_columns": item.on_missing_columns,
+            "post_import": item.post_import,
+            "rollback_supported": item.rollback_supported,
+            "approval_required": item.approval_required,
         }
         for item in IMPORT_TYPE_SPECS.values()
     ]
@@ -344,6 +399,14 @@ def execute_import_request(
             uploaded_by=uploaded_by,
         )
 
+    if import_type == "student_criteria":
+        return generate_criteria_from_student_dataset(
+            db_path=db_path,
+            excel_path=excel_path,
+            year=int(year),
+            dry_run=False,
+        )
+
     return import_curriculum_excel(
         db_path=db_path,
         excel_path=excel_path,
@@ -351,6 +414,63 @@ def execute_import_request(
         auto_activate=auto_activate,
         uploaded_by=uploaded_by,
     )
+
+
+def generate_criteria_from_student_dataset(
+    db_path: str,
+    excel_path: str,
+    year: int,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Öğrenci not veri setinden kriter üretimini standart import sonucu sözlüğüne çevirir.
+
+    ``dry_run=True`` ise hiçbir yazma yapılmaz; UI önizleme/onay adımında kullanır.
+    Hata durumlarında (sayfa/kolon eksik) kullanıcıya dönük ``ok=False`` döner.
+    """
+    if not excel_path or not os.path.exists(excel_path):
+        return {"ok": False, "message": "Excel dosyası bulunamadı.", "errors": ["Excel dosyası bulunamadı."]}
+    try:
+        with connect_data_management(db_path) as conn:
+            summary = auto_generate_criteria_from_student_dataset(
+                conn,
+                excel_path=excel_path,
+                year=int(year),
+                replace=True,
+                dry_run=dry_run,
+            )
+    except (FileNotFoundError, ValueError) as exc:
+        return {"ok": False, "message": str(exc), "errors": [str(exc)]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "message": f"Kriter üretimi başarısız: {exc}", "errors": [str(exc)]}
+
+    eklenen = int(summary.get("eklenen", 0))
+    eslesmeyen = list(summary.get("eslesmeyen") or [])
+    toplam = int(summary.get("toplam", 0))
+    warnings: list[str] = []
+    if eslesmeyen:
+        sample = ", ".join(str(k) for k in eslesmeyen[:15])
+        warnings.append(
+            f"{len(eslesmeyen)} ders kodu sistemde eşleşmedi (atlandı): {sample}"
+            + (" ..." if len(eslesmeyen) > 15 else "")
+        )
+    if eklenen == 0:
+        warnings.append("Hiçbir ders eşleşmedi. Ders kodlarını ve seçili yılı kontrol edin.")
+
+    action = "hesaplandı (önizleme — kayıt yapılmadı)" if dry_run else "üretildi ve kaydedildi"
+    return {
+        "ok": eklenen > 0,
+        "message": f"{eklenen}/{toplam} ders için kriter {action}.",
+        "import_type": "student_criteria",
+        "dry_run": dry_run,
+        "rows_loaded": toplam,
+        "rows_matched": eklenen,
+        "rows_skipped": len(eslesmeyen),
+        "performans_yazilan": int(summary.get("performans_yazilan", 0)),
+        "populerlik_yazilan": int(summary.get("populerlik_yazilan", 0)),
+        "eslesmeyen": eslesmeyen,
+        "preview_rows": list(summary.get("preview_rows") or []),
+        "warnings": warnings,
+    }
 
 
 def write_import_template(
@@ -367,6 +487,16 @@ def write_import_template(
         return {"ok": False, "message": "Geçersiz şablon türü.", "errors": ["Geçersiz şablon türü."]}
     if not target_path:
         return {"ok": False, "message": "Şablon dosya yolu seçilmedi.", "errors": ["Dosya yolu zorunlu."]}
+
+    if import_type == "student_criteria":
+        return {
+            "ok": False,
+            "message": (
+                "Bu tür için şablon oluşturulmaz. Öğrenci not veri setini "
+                "(ör. data/<yil>_ogrenci_not_veri_seti.xlsx — 'Ders Analizi' sayfası) "
+                "doğrudan 'Seç' ile yükleyin."
+            ),
+        }
 
     os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
     try:

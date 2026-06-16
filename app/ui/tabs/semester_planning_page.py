@@ -29,6 +29,15 @@ from app.repositories.curriculum_repository import (
     save_period_planning_result,
 )
 from app.services.course_curriculum_status_service import FALL, SPRING
+from app.services.planning_draft_service import (
+    ADDED_PLACEHOLDER,
+    DROP_SUGGESTED,
+    KEPT,
+    STATUS_COLOR,
+    STATUS_LABEL,
+    generate_planning_draft,
+    get_planning_scope_summary,
+)
 from app.services.semester_planning_engine import (
     generate_semester_plan,
     get_plan_run,
@@ -88,6 +97,8 @@ class SemesterPlanningPage(ttk.Frame):
         self.var_spring_max = tk.StringVar(value="4")
         self.var_respect = tk.BooleanVar(value=True)
         self.var_filter = tk.StringVar(value="Tümü")
+        self.var_draft_target = tk.StringVar(value="")
+        self._last_draft: dict[str, Any] | None = None
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -119,6 +130,7 @@ class SemesterPlanningPage(ttk.Frame):
 
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        self._build_draft_tab()
         self._build_yearly_tab()
         self._build_terms_tab()
         self._build_integrity_tab()
@@ -180,6 +192,239 @@ class SemesterPlanningPage(ttk.Frame):
         for name, (bg, fg) in _COLOR_TAGS.items():
             tree.tag_configure(name, background=bg, foreground=fg)
         return tree
+
+    def _build_draft_tab(self) -> None:
+        """§8–§11: fakülte/bölüm bazlı, son müfredat yılına göre planlama taslağı."""
+        frame = ttk.Frame(self.nb, padding=8)
+        self.nb.add(frame, text="Planlama Taslağı")
+
+        info = ttk.LabelFrame(frame, text="Kapsam ve Yıl (otomatik belirlenir)", padding=8)
+        info.pack(fill=tk.X)
+        self.draft_info_var = tk.StringVar(
+            value="Fakülte seçin; son müfredat yılı ve yeni planlama yılı otomatik belirlenir."
+        )
+        ttk.Label(
+            info,
+            textvariable=self.draft_info_var,
+            font=("Segoe UI", 10, "bold"),
+            foreground="#1E40AF",
+            wraplength=1150,
+        ).pack(anchor=tk.W)
+
+        controls = ttk.Frame(frame)
+        controls.pack(fill=tk.X, pady=(8, 4))
+        ttk.Label(controls, text="Hedef ders sayısı:").pack(side=tk.LEFT)
+        ttk.Entry(controls, textvariable=self.var_draft_target, width=6).pack(side=tk.LEFT, padx=(4, 12))
+        ttk.Button(controls, text="Taslağı Üret", command=self.generate_draft).pack(side=tk.LEFT, padx=2)
+        ttk.Button(
+            controls, text="Korunanları Müfredata Kaydet", command=self.save_draft_to_curriculum
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(
+            controls,
+            text="(Hedef > mevcut → geçici yer tutucu; hedef < mevcut → en düşük kesinleşme puanlı çıkarılır)",
+            foreground="#64748B",
+        ).pack(side=tk.LEFT, padx=8)
+
+        self.draft_summary_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=self.draft_summary_var, foreground="#334155", wraplength=1150).pack(
+            anchor=tk.W, pady=(2, 4)
+        )
+
+        columns = {
+            "term": ("Dönem", 80),
+            "code": ("Ders Kodu", 120),
+            "name": ("Ders Adı", 300),
+            "kp": ("Kesinleşme Puanı", 130),
+            "status": ("Durum", 170),
+            "reason": ("Açıklama", 380),
+        }
+        container = ttk.Frame(frame)
+        container.pack(fill=tk.BOTH, expand=True)
+        self.draft_tree = self._make_status_tree(container, columns)
+        yscroll = ttk.Scrollbar(container, orient=tk.VERTICAL, command=self.draft_tree.yview)
+        self.draft_tree.configure(yscrollcommand=yscroll.set)
+        self.draft_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        yscroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.draft_warning_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=self.draft_warning_var, foreground="#991B1B", wraplength=1150).pack(
+            anchor=tk.W, pady=(4, 0)
+        )
+
+    def _load_draft_scope(self) -> None:
+        """Kapsam değiştiğinde son müfredat yılını bulur ve mevcut müfredatı gösterir (§8/§9)."""
+        try:
+            conn = self._conn()
+            summary = get_planning_scope_summary(
+                conn, self._selected_faculty_id(), self._selected_department_id()
+            )
+        except Exception:
+            self.draft_info_var.set("Kapsam bilgisi yüklenemedi.")
+            return
+        if not summary.get("ok"):
+            self.draft_info_var.set(summary.get("message") or "Seçili kapsam için mevcut müfredat bulunamadı.")
+            self.draft_summary_var.set("")
+            self.draft_warning_var.set("")
+            self.var_draft_target.set("")
+            self.draft_tree.delete(*self.draft_tree.get_children())
+            return
+        scope_label = (
+            self.department_combo.get()
+            if self._selected_department_id() is not None
+            else self.faculty_combo.get()
+        )
+        self.draft_info_var.set(
+            f"Seçili kapsam: {scope_label}  |  Son müfredat yılı: {summary['source_year']}  |  "
+            f"Yeni planlama yılı: {summary['target_year']}  |  "
+            f"Mevcut ders: {summary['current_count']} "
+            f"(Güz {summary['fall_count']} / Bahar {summary['spring_count']})"
+        )
+        # Hedef varsayılan = mevcut sayı; mevcut müfredatı hemen göster (§9).
+        self.var_draft_target.set(str(summary["current_count"]))
+        try:
+            draft = generate_planning_draft(
+                conn,
+                self._selected_faculty_id(),
+                self._selected_department_id(),
+                target_course_count=summary["current_count"],
+            )
+            self._render_draft_result(draft)
+        except Exception:
+            self.status_var.set("Planlama taslağı yüklenemedi.")
+
+    def generate_draft(self) -> None:
+        """Kullanıcının girdiği hedef ders sayısına göre taslak üretir (§10/§11)."""
+        try:
+            target = int(self.var_draft_target.get())
+        except (TypeError, ValueError):
+            messagebox.showwarning("Planlama Taslağı", "Hedef ders sayısı için geçerli bir sayı girin.")
+            return
+        if target < 0:
+            messagebox.showwarning("Planlama Taslağı", "Hedef ders sayısı negatif olamaz.")
+            return
+        try:
+            conn = self._conn()
+            draft = generate_planning_draft(
+                conn,
+                self._selected_faculty_id(),
+                self._selected_department_id(),
+                target_course_count=target,
+            )
+        except Exception:
+            messagebox.showerror("Planlama Taslağı", self._friendly_backend_error())
+            return
+        if not draft.get("ok"):
+            messagebox.showinfo(
+                "Planlama Taslağı", draft.get("message") or "Seçili kapsam için mevcut müfredat bulunamadı."
+            )
+            return
+        self._render_draft_result(draft)
+        self.status_var.set(draft.get("message") or "Planlama taslağı üretildi.")
+
+    def _render_draft_result(self, draft: dict[str, Any]) -> None:
+        self._last_draft = draft
+        self.draft_tree.delete(*self.draft_tree.get_children())
+        items = draft.get("items") or []
+        term_label = {FALL: "Güz", SPRING: "Bahar"}
+        for it in items:
+            kp = it.get("confirmation_score")
+            kp_txt = f"{float(kp):.1f}" if isinstance(kp, (int, float)) else "— (puan yok)"
+            self.draft_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    term_label.get(it.get("term"), it.get("term")),
+                    it.get("course_code") or "",
+                    it.get("course_name") or "",
+                    kp_txt,
+                    STATUS_LABEL.get(it.get("status"), it.get("status")),
+                    it.get("reason") or "",
+                ),
+                tags=(STATUS_COLOR.get(it.get("status"), "gray"),),
+            )
+        if not items:
+            self.draft_tree.insert("", tk.END, values=("", "", "Kayıt yok / kapsam boş.", "", "", ""), tags=("gray",))
+        self.draft_summary_var.set(
+            f"{draft.get('message', '')}   →   Korunan: {draft.get('kept', 0)} | "
+            f"Geçici yer tutucu: {draft.get('added_placeholders', 0)} | "
+            f"Çıkarılması önerilen: {draft.get('dropped', 0)} | "
+            f"Planlanan dönem dağılımı (Güz {draft.get('fall_planned', 0)} / Bahar {draft.get('spring_planned', 0)})"
+        )
+        warnings = draft.get("warnings") or []
+        self.draft_warning_var.set(("⚠ " + "  ·  ".join(warnings)) if warnings else "")
+
+    def save_draft_to_curriculum(self) -> None:
+        """§12: taslaktaki KORUNAN dersleri yeni planlama yılı müfredatına yazar.
+
+        Geçici yer tutucular ve çıkarılması önerilen dersler KAYDEDİLMEZ (§10/§11).
+        Müfredat bölüm bazlı olduğundan Fakülte + Bölüm zorunludur. Yazma, ekranın
+        kendi uzun ömürlü bağlantısı üzerinden yapılır (ayrı yazıcı bağlantısı yok →
+        kilit yarışı yok).
+        """
+        draft = self._last_draft
+        if not draft or not draft.get("ok"):
+            messagebox.showinfo("Planlama Taslağı", "Önce bir taslak üretin.")
+            return
+        faculty_id = self._selected_faculty_id()
+        department_id = self._selected_department_id()
+        target_year = draft.get("target_year")
+        if faculty_id is None or department_id is None or not target_year:
+            messagebox.showwarning(
+                "Planlama Taslağı",
+                "Müfredata kaydetmek için Fakülte + Bölüm seçili olmalıdır (müfredat bölüm bazlıdır).",
+            )
+            return
+        fall_ids: list[int] = []
+        spring_ids: list[int] = []
+        for it in draft.get("items") or []:
+            if it.get("is_placeholder") or it.get("status") == DROP_SUGGESTED:
+                continue
+            cid = it.get("course_id")
+            if cid is None:
+                continue
+            if it.get("term") == FALL:
+                fall_ids.append(int(cid))
+            else:
+                spring_ids.append(int(cid))
+        if not fall_ids and not spring_ids:
+            messagebox.showinfo("Planlama Taslağı", "Kaydedilecek korunan ders bulunamadı.")
+            return
+        placeholders = int(draft.get("added_placeholders", 0))
+        dropped = int(draft.get("dropped", 0))
+        extra = ""
+        if placeholders:
+            extra += f"\n  • {placeholders} geçici yer tutucu KAYDEDİLMEZ (gerçek ders değil)."
+        if dropped:
+            extra += f"\n  • {dropped} ders (çıkarılması önerilen) müfredata alınmaz."
+        if not messagebox.askyesno(
+            "Planlama Taslağı",
+            f"{target_year} yılı {self.department_combo.get()} müfredatı, taslaktaki korunan "
+            f"derslerle oluşturulacak (Güz {len(fall_ids)}, Bahar {len(spring_ids)}).{extra}\n\n"
+            "Devam edilsin mi?",
+        ):
+            return
+        try:
+            conn = self._conn()
+            outcome = save_period_planning_result(
+                conn,
+                int(target_year),
+                faculty_id=faculty_id,
+                department_id=department_id,
+                fall_course_ids=fall_ids,
+                spring_course_ids=spring_ids,
+                plan_run_id=None,
+            )
+            conn.commit()
+            self.status_var.set(
+                f"Taslak müfredata kaydedildi (Güz {outcome['fall_written']}, Bahar {outcome['spring_written']})."
+            )
+            messagebox.showinfo("Planlama Taslağı", "Korunan dersler müfredata kaydedildi.")
+            self._load_yearly_view()
+            self._load_integrity()
+        except ValueError as exc:
+            messagebox.showwarning("Planlama Taslağı", str(exc))
+        except Exception:
+            messagebox.showerror("Planlama Taslağı", self._friendly_backend_error())
 
     def _build_yearly_tab(self) -> None:
         frame = ttk.Frame(self.nb, padding=8)
@@ -403,6 +648,7 @@ class SemesterPlanningPage(ttk.Frame):
             conn.commit()
             self._populate_filters(conn)
             self._load_current_policy()
+            self._load_draft_scope()
             self._load_yearly_view()
             self._load_integrity()
             self._load_runs()
@@ -481,6 +727,7 @@ class SemesterPlanningPage(ttk.Frame):
             cur = self._conn().cursor()
             self._populate_departments(cur)
             self._load_current_policy()
+            self._load_draft_scope()
             self._load_yearly_view()
             self._load_integrity()
             self._load_runs()
@@ -491,6 +738,7 @@ class SemesterPlanningPage(ttk.Frame):
         if self._suppress_events:
             return
         self._load_current_policy()
+        self._load_draft_scope()
         self._load_yearly_view()
         self._load_integrity()
         self._load_runs()

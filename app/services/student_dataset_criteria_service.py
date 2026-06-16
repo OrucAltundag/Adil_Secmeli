@@ -38,6 +38,7 @@ def auto_generate_criteria_from_student_dataset(
     excel_path: str | Path | None = None,
     year: int = YIL,
     replace: bool = True,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Ogrenci veri setinin 'Ders Analizi' sekmesinden ders_kriterleri uretir.
@@ -47,10 +48,12 @@ def auto_generate_criteria_from_student_dataset(
         excel_path: Excel yolu (yoksa varsayilan)
         year: hedef yil (varsayilan 2022)
         replace: True ise once o yilin satirlarini siler
+        dry_run: True ise HICBIR yazma yapmaz (DELETE/INSERT/commit yok); yalniz
+            eslesme/onizleme hesaplar. UI onay diyalogunda kullanilir.
 
     Returns:
         {'eklenen': int, 'eslesmeyen': list[str], 'toplam': int,
-         'excel_path': str, 'replace': bool}
+         'excel_path': str, 'replace': bool, 'preview_rows': list[dict]}
     """
     yol = Path(excel_path) if excel_path else _dataset_for_year(year)
     if not yol.exists():
@@ -91,7 +94,7 @@ def auto_generate_criteria_from_student_dataset(
     wb.close()
 
     cur = conn.cursor()
-    if replace:
+    if replace and not dry_run:
         # Manuel kayit ile tutarli: yilin uc tablosunu da temizle.
         cur.execute("DELETE FROM ders_kriterleri WHERE yil = ?", (int(year),))
         cur.execute("DELETE FROM performans WHERE akademik_yil = ?", (int(year),))
@@ -101,6 +104,7 @@ def auto_generate_criteria_from_student_dataset(
     KONTENJAN = 60  # veri setinde kontenjan yok; manuel kayitla ayni varsayilan
     eklenen, perf_yazilan, pop_yazilan, eslesmeyen = 0, 0, 0, []
     yazilan_ders_ids: list[int] = []
+    preview_rows: list[dict[str, Any]] = []
     for s in kayitlar:
         if not s["kod"]:
             continue
@@ -118,6 +122,23 @@ def auto_generate_criteria_from_student_dataset(
         basari_orani = (gecen / s["kayit"]) if s["kayit"] > 0 else 0.0
         doluluk_orani = min(s["kayit"] / KONTENJAN, 1.0) if KONTENJAN > 0 else 0.0
 
+        # Onizleme satiri (UI onay diyalogu icin) — yazma olsun olmasin doldurulur.
+        preview_rows.append({
+            "kod": s["kod"],
+            "donem": donem,
+            "kayit": s["kayit"],
+            "basari_orani": round(basari_orani, 3),
+            "ortalama_not": round(s["agir"], 2),
+            "doluluk_orani": round(doluluk_orani, 3),
+        })
+        eklenen += 1
+
+        if dry_run:
+            # Yazma yok: yalniz eslesme ve onizleme sayilari hesaplanir.
+            perf_yazilan += 1
+            pop_yazilan += 1
+            continue
+
         cur.execute(
             "INSERT INTO ders_kriterleri "
             "(ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, "
@@ -129,7 +150,6 @@ def auto_generate_criteria_from_student_dataset(
             (did, int(year), donem, s["kayit"], gecen,
              round(s["agir"], 2), KONTENJAN, s["kayit"], anket_kat, s["kayit"], now),
         )
-        eklenen += 1
 
         # performans — TOPSIS 'basari' kriterinin okudugu tablo
         cur.execute(
@@ -157,8 +177,8 @@ def auto_generate_criteria_from_student_dataset(
 
     # Kriter yazilan dersler artik DOLU; bu derslere ait BAYAT "zorunlu alan
     # bos" kritik dogrulama uyarilarini temizle (olgunluk skorunu haksizca
-    # dusurmesin). Tablo yoksa sessizce gec.
-    if yazilan_ders_ids:
+    # dusurmesin). Tablo yoksa sessizce gec. (dry_run'da yazma yok.)
+    if yazilan_ders_ids and not dry_run:
         try:
             ph = ",".join("?" for _ in yazilan_ders_ids)
             cur.execute(
@@ -168,7 +188,8 @@ def auto_generate_criteria_from_student_dataset(
             )
         except sqlite3.OperationalError:
             pass
-    conn.commit()
+    if not dry_run:
+        conn.commit()
     return {
         "eklenen": eklenen,
         "performans_yazilan": perf_yazilan,
@@ -177,4 +198,6 @@ def auto_generate_criteria_from_student_dataset(
         "toplam": len(kayitlar),
         "excel_path": str(yol),
         "replace": replace,
+        "dry_run": dry_run,
+        "preview_rows": preview_rows,
     }

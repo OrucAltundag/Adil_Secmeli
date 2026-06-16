@@ -94,6 +94,73 @@ def _latest_score_map(conn: sqlite3.Connection, year: int) -> dict[int, float]:
     return out
 
 
+def get_latest_curriculum_year_by_faculty(
+    conn: sqlite3.Connection,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> int | None:
+    """Seçili kapsam (fakülte / bölüm) için en son mevcut müfredat yılını döndürür.
+
+    Bölüm verilirse bölüm bazlı, yalnız fakülte verilirse fakülte bazlı, hiçbiri
+    yoksa genel en yüksek müfredat yılı döner. Müfredat yoksa ``None``.
+    """
+    scope, params = _scope_sql(
+        faculty_id=faculty_id,
+        department_id=department_id,
+        fac_col="fakulte_id",
+        dep_col="bolum_id",
+    )
+    cur = conn.cursor()
+    try:
+        cur.execute(f"SELECT MAX(akademik_yil) FROM mufredat WHERE 1=1{scope}", tuple(params))
+    except sqlite3.OperationalError:
+        return None
+    row = cur.fetchone()
+    if not row or row[0] is None:
+        return None
+    try:
+        return int(row[0])
+    except (TypeError, ValueError):
+        return None
+
+
+def get_confirmation_scores_by_scope_and_year(
+    conn: sqlite3.Connection,
+    year: int,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> dict[tuple[int, str], float]:
+    """Kapsam+yıl için ders bazlı kesinleşme puanlarını (havuz.skor) döndürür.
+
+    Anahtar: ``(ders_id, term_key)`` — term_key 'g' (güz) veya 'b' (bahar).
+    Puanı olmayan ders sözlükte yer almaz (çağıran 'puan yok' olarak yorumlar).
+    """
+    scope, params = _scope_sql(
+        faculty_id=faculty_id,
+        department_id=department_id,
+        fac_col="fakulte_id",
+        dep_col="bolum_id",
+    )
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            f"SELECT ders_id, donem, skor FROM havuz WHERE yil = ?{scope}",
+            tuple([int(year)] + params),
+        )
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[tuple[int, str], float] = {}
+    for ders_id, donem, skor in cur.fetchall():
+        if ders_id is None or skor is None:
+            continue
+        term_key = "b" if str(donem or "").strip().lower().startswith("b") else "g"
+        try:
+            out[(int(ders_id), term_key)] = float(skor)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def get_curriculum_courses_by_year(
     conn: sqlite3.Connection,
     year: int,

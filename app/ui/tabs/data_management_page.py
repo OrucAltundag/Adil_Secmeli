@@ -14,6 +14,7 @@ from typing import Any
 from app.db.session import open_sqlite_connection
 from app.services.data_management_center_service import (
     execute_import_request,
+    generate_criteria_from_student_dataset,
     get_dashboard_context,
     get_import_bundle,
     get_import_type_specs,
@@ -56,6 +57,57 @@ class DataManagementPage(ttk.Frame):
         if not path or not os.path.exists(path):
             raise FileNotFoundError(self._friendly_backend_error())
         return open_sqlite_connection(path, row_factory=True)
+
+    # ------------------------------------------------------------------
+    # Uzun ömürlü UI bağlantısını yazma işlemlerinden önce serbest bırakma.
+    #
+    # Bu ekran import/temizleme/onay için KENDİ kısa ömürlü yazıcı bağlantısını
+    # açar. Aynı anda uygulamanın uzun ömürlü `app.db.conn` bağlantısı bir
+    # okuma/işlem snapshot'ı tutuyorsa, SQLite tek-yazıcı kısıtı yüzünden
+    # yazıcı bağlantı busy_timeout (8sn) boyunca BEKLER (UI donar) ve ardından
+    # "database is locked" hatası verir. `tools_tab` aynı sorunu bu release/
+    # restore deseniyle çözüyor; aynı deseni burada da uyguluyoruz.
+    # ------------------------------------------------------------------
+    def _release_ui_db_connection(self) -> bool:
+        """Servis-seviyesi yazma işleminden önce uzun ömürlü UI bağlantısını kapatır."""
+        db = getattr(self.app, "db", None)
+        conn = getattr(db, "conn", None)
+        if db is None or conn is None:
+            return False
+        try:
+            try:
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            conn.close()
+        finally:
+            try:
+                db.conn = None
+            except Exception:
+                pass
+        return True
+
+    def _restore_ui_db_connection(self) -> None:
+        db = getattr(self.app, "db", None)
+        path = self._db_path()
+        if db is None or not path or not os.path.exists(path):
+            return
+        try:
+            db.connect(path)
+        except Exception:
+            pass
+
+    def _run_external_db_operation(self, operation: Any) -> Any:
+        """Uzun ömürlü UI bağlantısını bırakıp `operation()` çağırır; sonra geri açar."""
+        released = self._release_ui_db_connection()
+        try:
+            return operation()
+        finally:
+            if released:
+                self._restore_ui_db_connection()
 
     def _build_ui(self) -> None:
         top = ttk.Frame(self, padding=8)
@@ -195,8 +247,16 @@ class DataManagementPage(ttk.Frame):
             row=2, column=2, sticky=tk.W, padx=4, pady=4
         )
 
+        # Bu import hangi kapsama uygulanacak? (üst filtreden okunur — net görünsün)
+        self.scope_indicator_var = tk.StringVar(value="")
+        ttk.Label(form, textvariable=self.scope_indicator_var, foreground="#0B5CAD").grid(
+            row=3, column=0, columnspan=3, sticky=tk.W, padx=4, pady=(2, 0)
+        )
+        self.import_year_combo.bind("<<ComboboxSelected>>", self._update_scope_indicator)
+        self.term_combo.bind("<<ComboboxSelected>>", self._update_scope_indicator)
+
         btn_frame = ttk.Frame(form)
-        btn_frame.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=8)
+        btn_frame.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=8)
         ttk.Button(btn_frame, text="Şablon Oluştur", command=self._write_template).pack(side=tk.LEFT, padx=(0, 6))
         self._btn_import = ttk.Button(btn_frame, text="Importu Başlat", command=self._run_import, state="disabled")
         self._btn_import.pack(side=tk.LEFT, padx=(0, 6))
@@ -368,6 +428,7 @@ class DataManagementPage(ttk.Frame):
             self.department_combo.set(current_department if current_department in self._department_options else "Tumu")
         finally:
             self._suppress_filter_events = False
+        self._update_scope_indicator()
 
     def _update_dashboard(self, context: dict[str, Any]) -> None:
         coverage = context.get("coverage") or {}
@@ -452,40 +513,48 @@ class DataManagementPage(ttk.Frame):
         Önce kaç kaydın temizleneceği/korunacağı gösterilir, onay alınır; sonra
         terminal kayıtlar arşiv tablosuna taşınır. Gerçek veri silinmez.
         """
+        # Uzun ömürlü UI bağlantısını bırak: arşivleme yazıcısı kilide takılıp
+        # UI'yi dondurmasın. İşlem (önizleme + onay diyaloğu + arşivleme) boyunca
+        # bağlantı kapalı kalır, sonunda yeniden açılır.
+        released = self._release_ui_db_connection()
         try:
-            with self._connect() as conn:
-                preview = preview_cleanup(conn)
-        except Exception:
-            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
-            return
+            try:
+                with self._connect() as conn:
+                    preview = preview_cleanup(conn)
+            except Exception:
+                messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+                return
 
-        cleanable = int(preview.get("cleanable_count", 0))
-        protected = int(preview.get("protected_count", 0))
-        if cleanable == 0:
-            messagebox.showinfo(
+            cleanable = int(preview.get("cleanable_count", 0))
+            protected = int(preview.get("protected_count", 0))
+            if cleanable == 0:
+                messagebox.showinfo(
+                    "Import Geçmişini Temizle",
+                    f"Temizlenecek eski import kaydı yok.\n{protected} aktif/korunan kayıt mevcut.",
+                )
+                return
+            if not messagebox.askyesno(
                 "Import Geçmişini Temizle",
-                f"Temizlenecek eski import kaydı yok.\n{protected} aktif/korunan kayıt mevcut.",
-            )
-            return
-        if not messagebox.askyesno(
-            "Import Geçmişini Temizle",
-            "Import geçmişini temizlemek üzeresiniz. Bu işlem eski/tamamlanmış import "
-            "kayıtlarını arşivleyecek (ekrandan kaldıracak) ve ilgili işlem loglarını "
-            "temizleyecektir.\n\n"
-            f"  • Arşivlenecek kayıt : {cleanable}\n"
-            f"  • Korunacak kayıt    : {protected} (aktif / onaylı / karara bağlı)\n\n"
-            "Gerçek ders, havuz, müfredat ve skor verileri ETKİLENMEZ.\n\n"
-            "Onaylıyor musunuz?",
-            icon="warning",
-        ):
-            return
-        try:
-            with self._connect() as conn:
-                result = cleanup_import_history(conn, user="desktop-ui")
-                conn.commit()
-        except Exception:
-            messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
-            return
+                "Import geçmişini temizlemek üzeresiniz. Bu işlem eski/tamamlanmış import "
+                "kayıtlarını arşivleyecek (ekrandan kaldıracak) ve ilgili işlem loglarını "
+                "temizleyecektir.\n\n"
+                f"  • Arşivlenecek kayıt : {cleanable}\n"
+                f"  • Korunacak kayıt    : {protected} (aktif / onaylı / karara bağlı)\n\n"
+                "Gerçek ders, havuz, müfredat ve skor verileri ETKİLENMEZ.\n\n"
+                "Onaylıyor musunuz?",
+                icon="warning",
+            ):
+                return
+            try:
+                with self._connect() as conn:
+                    result = cleanup_import_history(conn, user="desktop-ui")
+                    conn.commit()
+            except Exception:
+                messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+                return
+        finally:
+            if released:
+                self._restore_ui_db_connection()
         self.refresh_center()
         self.status_var.set(result.get("message") or "Import geçmişi temizlendi.")
         messagebox.showinfo("Import Geçmişini Temizle", result.get("message") or "Import geçmişi temizlendi.")
@@ -583,15 +652,108 @@ class DataManagementPage(ttk.Frame):
         specs = {item["key"]: item for item in get_import_type_specs()}
         spec = specs.get(selected, {})
         columns = "\n  • " + "\n  • ".join(spec.get("expected_columns") or [])
+        tables = ", ".join(spec.get("affected_tables") or []) or "-"
+        rollback = "Evet (Rollback & Onay sekmesinden)" if spec.get("rollback_supported") else "Hayır (geri alınamaz)"
+        approval = (
+            "Evet — önce onay gerekir"
+            if spec.get("approval_required")
+            else "Hayır — kalite uygunsa otomatik aktif olur"
+        )
         text = (
-            f"Veri Tipi : {spec.get('label', selected)}\n"
-            f"Kapsam    : {spec.get('required_scope', '-')}\n"
+            f"Veri Tipi          : {spec.get('label', selected)}\n"
+            f"Kapsam             : {spec.get('required_scope', '-')}\n"
+            f"Etkilenen tablolar : {tables}\n"
             f"\nAçıklama:\n{spec.get('description', '-')}\n"
             f"\nBeklenen Kolonlar:{columns}\n"
-            f"\nNot: Import sonrası kalite kontrol, diff ve karar etkisi otomatik hesaplanır.\n"
-            f"     Rollback & Onay sekmesinden onaylayabilir veya geri alabilirsiniz."
+            f"\nEksik kolon olursa : {spec.get('on_missing_columns') or '-'}\n"
+            f"Import sonrası      : {spec.get('post_import') or '-'}\n"
+            f"Rollback mümkün mü  : {rollback}\n"
+            f"Onay gerekiyor mu   : {approval}"
         )
         self._set_text(self.requirements_text, text)
+        self._update_scope_indicator()
+
+    def _update_scope_indicator(self, _event: Any = None) -> None:
+        """Import'un uygulanacağı kapsamı (fakülte/bölüm/yıl/dönem) net gösterir."""
+        if not hasattr(self, "scope_indicator_var"):
+            return
+        faculty = self.faculty_combo.get() or "Tumu"
+        department = self.department_combo.get() or "Tumu"
+        year = self.import_year_combo.get() or self.year_combo.get() or "-"
+        term = self.term_combo.get() or "-"
+        selected = self._selected_import_type()
+        # Dönem yalnız dönem-duyarlı türlerde anlamlı; müfredat dosyadan okur.
+        if selected == "curriculum":
+            scope = f"➤ Bu import şu kapsama uygulanacak →  Yıl: {year}  (Fakülte/Bölüm/Dönem dosyadan okunur)"
+        elif selected == "student_criteria":
+            scope = f"➤ Bu import şu kapsama uygulanacak →  Yıl: {year}  (ders kodu ile eşleşir; tüm kapsam)"
+        else:
+            scope = (
+                f"➤ Bu import şu kapsama uygulanacak →  Fakülte: {faculty}  |  "
+                f"Bölüm: {department}  |  Yıl: {year}  |  Dönem: {term}"
+            )
+        self.scope_indicator_var.set(scope)
+
+    def _confirm_student_criteria(self, db_path: str, excel_path: str, year: int) -> bool:
+        """Öğrenci veri setinden kriter üretimini önizler ve kullanıcıdan onay alır.
+
+        Kuru çalışma (dry-run) ile hiçbir yazma yapmadan eşleşen/eşleşmeyen ders
+        sayısını ve örnek hesaplanan kriterleri gösterir.
+        """
+        try:
+            preview = self._run_external_db_operation(
+                lambda: generate_criteria_from_student_dataset(
+                    db_path=db_path, excel_path=excel_path, year=int(year), dry_run=True
+                )
+            )
+        except Exception:
+            messagebox.showerror("Kriter Önizleme", self._friendly_backend_error())
+            return False
+
+        if not preview.get("ok"):
+            messagebox.showwarning(
+                "Kriter Önizleme",
+                preview.get("message") or "Öğrenci veri setinden kriter hesaplanamadı.",
+            )
+            return False
+
+        matched = int(preview.get("rows_matched", 0))
+        skipped = int(preview.get("rows_skipped", 0))
+        total = int(preview.get("rows_loaded", 0))
+        rows = preview.get("preview_rows") or []
+        sample_lines = []
+        for r in rows[:8]:
+            sample_lines.append(
+                f"  • {r.get('kod')} ({r.get('donem')}): "
+                f"başarı {float(r.get('basari_orani') or 0):.2f}, "
+                f"ort {float(r.get('ortalama_not') or 0):.1f}, "
+                f"doluluk {float(r.get('doluluk_orani') or 0):.2f}"
+            )
+        if len(rows) > 8:
+            sample_lines.append(f"  ... ve {len(rows) - 8} ders daha")
+
+        unmatched = preview.get("eslesmeyen") or []
+        unmatched_line = ""
+        if unmatched:
+            uns = ", ".join(str(k) for k in unmatched[:10])
+            unmatched_line = (
+                f"\n⚠ Eşleşmeyen {len(unmatched)} ders kodu (atlanacak): {uns}"
+                + (" ..." if len(unmatched) > 10 else "")
+                + "\n"
+            )
+
+        message = (
+            f"Öğrenci veri setinden {year} yılı için kriterler hesaplandı (önizleme):\n\n"
+            f"  • Toplam satır     : {total}\n"
+            f"  • Eşleşen ders     : {matched}\n"
+            f"  • Atlanan (eşleşmeyen): {skipped}\n"
+            f"{unmatched_line}\n"
+            "Örnek hesaplanan kriterler:\n"
+            + ("\n".join(sample_lines) if sample_lines else "  (örnek yok)")
+            + f"\n\nBu işlem {year} yılı kriter/performans/popülerlik verilerini yeniden "
+            "yazacaktır. Devam edilsin mi?"
+        )
+        return bool(messagebox.askyesno("Öğrenci Veri Setinden Kriter Oluştur", message, icon="question"))
 
     def _run_import(self) -> None:
         path = self._db_path()
@@ -619,6 +781,10 @@ class DataManagementPage(ttk.Frame):
             )
             if not messagebox.askyesno("Müfredat Sıfırlama Onayı", uyari, icon="warning"):
                 return
+        elif import_type == "student_criteria":
+            # Önce kuru çalışma (dry-run) ile önizleme göster, sonra onayla.
+            if not self._confirm_student_criteria(path, excel_path, year):
+                return
         else:
             if not messagebox.askyesno(
                 "Import Onayı",
@@ -635,16 +801,20 @@ class DataManagementPage(ttk.Frame):
         self.update_idletasks()
 
         try:
-            result = execute_import_request(
-                db_path=path,
-                import_type=import_type,
-                excel_path=excel_path,
-                year=year,
-                faculty_id=self._selected_faculty_id(),
-                department_id=self._selected_department_id(),
-                term=self.term_combo.get() or "Guz",
-                auto_activate=bool(self.auto_activate_var.get()),
-                uploaded_by="desktop-ui",
+            # Yazıcı import, uygulamanın uzun ömürlü bağlantısıyla kilit yarışına
+            # girmesin diye UI bağlantısını bırakıp çalıştır, sonra geri aç.
+            result = self._run_external_db_operation(
+                lambda: execute_import_request(
+                    db_path=path,
+                    import_type=import_type,
+                    excel_path=excel_path,
+                    year=year,
+                    faculty_id=self._selected_faculty_id(),
+                    department_id=self._selected_department_id(),
+                    term=self.term_combo.get() or "Guz",
+                    auto_activate=bool(self.auto_activate_var.get()),
+                    uploaded_by="desktop-ui",
+                )
             )
             readable = self._format_import_result(result, import_type, year, import_filename)
             self._set_text(self.import_result_text, readable)
@@ -736,6 +906,26 @@ class DataManagementPage(ttk.Frame):
                 val = result.get(key)
                 if val is not None:
                     lines.append(f"  {label:20}: {val}")
+        elif import_type == "student_criteria":
+            lines.append("── Öğrenci Veri Setinden Kriter Üretimi ────────")
+            for key, label in (
+                ("rows_loaded", "Toplam satır"),
+                ("rows_matched", "Eşleşen ders (kriter yazıldı)"),
+                ("rows_skipped", "Atlanan (eşleşmeyen)"),
+                ("performans_yazilan", "Performans satırı"),
+                ("populerlik_yazilan", "Popülerlik satırı"),
+            ):
+                val = result.get(key)
+                if val is not None:
+                    lines.append(f"  {label:30}: {val}")
+            eslesmeyen = result.get("eslesmeyen") or []
+            if eslesmeyen:
+                lines.append("")
+                lines.append("  Eşleşmeyen ders kodları:")
+                for kod in eslesmeyen[:20]:
+                    lines.append(f"    - {kod}")
+                if len(eslesmeyen) > 20:
+                    lines.append(f"    ... ve {len(eslesmeyen) - 20} kod daha")
 
         batch_id = result.get("import_batch_id")
         if batch_id:
@@ -782,6 +972,15 @@ class DataManagementPage(ttk.Frame):
             msg += f"\nImport Batch ID: {batch_id}\n"
             msg += "Rollback & Onay sekmesinden onaylayabilirsiniz."
             return msg
+        if import_type == "student_criteria":
+            matched = result.get("rows_matched", 0)
+            skipped = result.get("rows_skipped", 0)
+            return (
+                f"{year} yılı için öğrenci veri setinden kriterler üretildi.\n\n"
+                f"  • {matched} ders için kriter/performans/popülerlik yazıldı\n"
+                f"  • {skipped} ders kodu eşleşmedi (atlandı)\n\n"
+                "Veri Kalitesi ve Karar Merkezi ekranları güncellendi."
+            )
         return f"Import tamamlandı. Batch ID: {batch_id}"
 
     def _refresh_related_views(self) -> None:
@@ -859,10 +1058,14 @@ class DataManagementPage(ttk.Frame):
         if self.selected_import_batch_id is None:
             messagebox.showinfo("Kalite", "Önce bir import seçin.")
             return
-        try:
+        def _op() -> Any:
             with self._connect() as conn:
                 quality = evaluate_import_quality(conn, self.selected_import_batch_id)
                 conn.commit()
+            return quality
+
+        try:
+            quality = self._run_external_db_operation(_op)
             self._set_text(self.quality_text, quality.as_dict())
             self.refresh_center()
         except Exception:
@@ -876,7 +1079,9 @@ class DataManagementPage(ttk.Frame):
             path = self._db_path()
             if not path:
                 raise FileNotFoundError(self._friendly_backend_error())
-            diff = recalculate_import_artifact(path, self.selected_import_batch_id, "diff")
+            diff = self._run_external_db_operation(
+                lambda: recalculate_import_artifact(path, self.selected_import_batch_id, "diff")
+            )
             self._set_text(self.diff_text, diff)
             self.refresh_center()
         except Exception:
@@ -890,7 +1095,9 @@ class DataManagementPage(ttk.Frame):
             path = self._db_path()
             if not path:
                 raise FileNotFoundError(self._friendly_backend_error())
-            impact = recalculate_import_artifact(path, self.selected_import_batch_id, "impact")
+            impact = self._run_external_db_operation(
+                lambda: recalculate_import_artifact(path, self.selected_import_batch_id, "impact")
+            )
             self._set_text(self.impact_text, impact)
             self.refresh_center()
         except Exception:
@@ -934,11 +1141,15 @@ class DataManagementPage(ttk.Frame):
         if self.selected_import_batch_id is None:
             messagebox.showinfo("Veri Yönetimi", "Önce bir import seçin.")
             return
-        try:
+        def _op() -> Any:
             with self._connect() as conn:
-                result = func(conn, self.selected_import_batch_id)
+                outcome = func(conn, self.selected_import_batch_id)
                 evaluate_import_quality(conn, self.selected_import_batch_id)
                 conn.commit()
+            return outcome
+
+        try:
+            result = self._run_external_db_operation(_op)
             messagebox.showinfo("Veri Yönetimi", success_message)
             self.refresh_center()
             self.load_selected_import()
