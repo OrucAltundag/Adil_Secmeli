@@ -18,7 +18,13 @@ from app.algorithms.clustering import (
     HierarchicalClusterer,
     KMeansClusterer,
 )
-from app.algorithms.mcdm import AHPRanker, PROMETHEERanker, TOPSISRanker, VIKORRanker
+from app.algorithms.mcdm import (
+    AHPRanker,
+    EntropyWeightRanker,
+    PROMETHEERanker,
+    TOPSISRanker,
+    VIKORRanker,
+)
 from app.algorithms.ml import (
     LogisticRegressionPredictor,
     MajorityClassPredictor,
@@ -77,6 +83,7 @@ class AlgorithmRegistry:
         self.register("TOPSIS", "mcdm", lambda: TOPSISRanker(), usage_role="production_decision", role_label="Ana karar motoru")
         self.register("VIKOR", "mcdm", lambda: VIKORRanker(), usage_role="benchmark_only", role_label="Sadece benchmark")
         self.register("PROMETHEE_II", "mcdm", lambda: PROMETHEERanker(), usage_role="benchmark_only", role_label="Sadece benchmark")
+        self.register("EntropyWeighting", "mcdm", lambda: EntropyWeightRanker(), usage_role="benchmark_only", role_label="Objektif agirlik capraz-kontrolu")
 
         # ML baseline/core/advanced
         self.register("RandomPredictor", "ml_baseline", lambda: RandomPredictor(classes=[]), usage_role="benchmark_only", role_label="Sadece benchmark")

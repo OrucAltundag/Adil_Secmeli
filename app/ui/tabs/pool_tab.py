@@ -17,7 +17,7 @@ from tkinter import messagebox, ttk
 from typing import Any
 
 from app.repositories.curriculum_repository import get_unified_pool_by_year
-from app.services.course_curriculum_status_service import FALL, SPRING
+from app.services.course_curriculum_status_service import FALL
 from app.services.yearly_curriculum_integrity_service import check_yearly_curriculum_integrity
 
 # Durum rengi jetonu -> (arka plan, yazı rengi). Servisten gelen status_color ile eşleşir.
@@ -515,7 +515,6 @@ class PoolTab(ttk.Frame):
     #  SİMÜLASYON
     # =========================================================
     def open_student_simulation(self):
-        rows = list(self.tree_fall.get_children()) + list(self.tree_spring.get_children())
         courses = []
         for tree in (self.tree_fall, self.tree_spring):
             for item in tree.get_children():

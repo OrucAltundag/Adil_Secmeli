@@ -20,7 +20,6 @@ karar akisina (decision_run_service) DOKUNMAZ; ayri, sunum/kiyas amacli katman.
 """
 from __future__ import annotations
 
-import math
 from typing import Any, Sequence
 
 import numpy as np

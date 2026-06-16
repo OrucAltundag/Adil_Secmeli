@@ -80,7 +80,7 @@ class AuthService:
         # But we only have the raw key.
         # For simplicity, we can fetch all active clients and check.
         # In a very large scale system, we'd prefix the key with client ID.
-        clients = self.db.query(ApiClient).filter(ApiClient.is_active == True).all()
+        clients = self.db.query(ApiClient).filter(ApiClient.is_active.is_(True)).all()
         for client in clients:
             if verify_api_key(raw_key, client.api_key_hash):
                 # Update last used

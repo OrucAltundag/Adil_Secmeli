@@ -14,7 +14,7 @@
 # =============================================================================
 import threading
 
-from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 
 _lock = threading.Lock()

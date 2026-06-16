@@ -26,7 +26,6 @@ from app.services.yearly_workflow import (
 from app.ui.tabs.course_analysis_tab import CourseAnalysisTab
 from app.ui.tabs.criteria_page import CriteriaPage
 from app.ui.tabs.pool_tab import PoolTab
-from app.ui.tabs.relations_tab import RelationsTab
 from app.ui.utils.validation import validate_combobox_selection
 
 # Kullanici mesaji (tam metin — spesifikasyon)
@@ -802,7 +801,6 @@ class CalcTab(ttk.Frame):
                 import os
 
                 from app.services.calculation import (
-                    run_all_algorithms_for_year,
                     run_all_algorithms_for_year_dual,
                 )
 

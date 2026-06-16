@@ -1304,7 +1304,8 @@ class CriteriaPage:
 
     def on_course_select(self, event):
         sel = self.tree.selection()
-        if not sel: return
+        if not sel:
+            return
 
         item = self.tree.item(sel[0])
         values = item['values']
@@ -1427,14 +1428,20 @@ class CriteriaPage:
         """Formu güvenli şekilde temizler"""
         self._current_survey_record = None
         self._current_criteria_import_summary = None
-        self.ent_toplam_ogrenci.delete(0, tk.END); self.ent_toplam_ogrenci.insert(0, "0")
-        self.ent_gecen_ogrenci.delete(0, tk.END); self.ent_gecen_ogrenci.insert(0, "0")
-        self.ent_ortalama.delete(0, tk.END); self.ent_ortalama.insert(0, "0.0")
-        self.ent_kontenjan.delete(0, tk.END); self.ent_kontenjan.insert(0, "0")
-        self.ent_kayitli.delete(0, tk.END); self.ent_kayitli.insert(0, "0")
+        self.ent_toplam_ogrenci.delete(0, tk.END)
+        self.ent_toplam_ogrenci.insert(0, "0")
+        self.ent_gecen_ogrenci.delete(0, tk.END)
+        self.ent_gecen_ogrenci.insert(0, "0")
+        self.ent_ortalama.delete(0, tk.END)
+        self.ent_ortalama.insert(0, "0.0")
+        self.ent_kontenjan.delete(0, tk.END)
+        self.ent_kontenjan.insert(0, "0")
+        self.ent_kayitli.delete(0, tk.END)
+        self.ent_kayitli.insert(0, "0")
         self._set_entry_value(self.ent_anket_katilimci, "0", state="normal")
         self.ent_anket_katilimci.config(state="disabled")
-        self.ent_anket_dersi_secen.delete(0, tk.END); self.ent_anket_dersi_secen.insert(0, "0")
+        self.ent_anket_dersi_secen.delete(0, tk.END)
+        self.ent_anket_dersi_secen.insert(0, "0")
         self.lbl_anket_sonuc.config(text="-")
         if getattr(self, "lbl_criteria_source_info", None):
             self.lbl_criteria_source_info.config(text="Aktif kriter dosyasi: -")

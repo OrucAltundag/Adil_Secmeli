@@ -554,7 +554,8 @@ Tavsiyeler:
         for item in self.missing_tree.get_children():
             self.missing_tree.delete(item)
 
-        mark = lambda v: "✓" if v else "✗"
+        def mark(v):
+            return "✓" if v else "✗"
         for r in rows:
             crit = bool(r.get("criteria"))
             label = f"{r.get('kod','')} {r.get('ad','')}".strip() or f"#{r.get('ders_id')}"
