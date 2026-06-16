@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 
 from app.services.calculation import run_all_algorithms_for_year_dual
 

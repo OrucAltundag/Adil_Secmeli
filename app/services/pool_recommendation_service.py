@@ -79,7 +79,6 @@ def _cosine_benzerlik_boost(
         if not aday_rows:
             return {}
 
-        aktif_ids   = [int(r[0]) for r in aktif_rows]
         aktif_metni = [str(r[1]) for r in aktif_rows]
         aday_id_lst = [int(r[0]) for r in aday_rows]
         aday_metni  = [str(r[1]) for r in aday_rows]

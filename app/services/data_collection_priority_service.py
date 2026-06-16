@@ -147,7 +147,6 @@ def generate_collection_priorities(
         if not faculty_id and not department_id:
             faculties = session.query(Fakülte).all()
             for fak in faculties:
-                dept_count = session.query(Bolum).filter(Bolum.fakulte_id == fak.fakulte_id).count()
                 for dept in session.query(Bolum).filter(Bolum.fakulte_id == fak.fakulte_id):
                     low_priority = session.query(DataCollectionPriority).filter(
                         DataCollectionPriority.faculty_id == fak.fakulte_id,

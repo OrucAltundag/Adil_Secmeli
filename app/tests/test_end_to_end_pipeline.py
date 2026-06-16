@@ -15,7 +15,6 @@ import os
 import sqlite3
 import tempfile
 
-from app.db.schema_compat import ensure_decision_governance_schema
 from app.services.acilabilirlik_service import list_recommended_courses
 from app.services.decision_run_service import record_decision_run_for_faculty_year
 from app.services.semester_planning_engine import (

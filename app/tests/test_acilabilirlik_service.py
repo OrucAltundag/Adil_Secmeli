@@ -6,8 +6,6 @@ from __future__ import annotations
 import sqlite3
 
 from app.services.acilabilirlik_service import (
-    DEFAULT_DONEM_UYGUNLUK,
-    DEFAULT_KAYNAK_UYGUNLUK,
     KATEGORI_DINLENME,
     KATEGORI_GUCLU,
     KATEGORI_HAVUZ,

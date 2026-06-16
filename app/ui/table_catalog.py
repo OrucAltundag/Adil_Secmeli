@@ -20,7 +20,6 @@ genel aciklama uretir (bilinmeyen tablo cokmeye yol acmaz).
 """
 from __future__ import annotations
 
-from typing import Any
 
 # Kategori etiketleri
 G_KAYNAK = "Kaynak Veri"

@@ -2,8 +2,7 @@
 """Standardized API error responses and exception handlers."""
 
 from typing import Any
-from fastapi import HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
 
 

@@ -263,9 +263,9 @@ class AllocationFairnessPage(ttk.Frame):
         self.chart.plot(fairness_rows, "algorithm", "seat_fill_rate", color=COLORS["green"])
 
         self.metric_cards["average_rank"].set_value(best.get("average_rank", "—"))
-        self.metric_cards["top_k_satisfaction"].set_value(best.get("top_k_satisfaction", "—"))
+        self.metric_cards["top_k_satisfaction"].set_value(_fmt_ratio_pct(best.get("top_k_satisfaction", "—")))
         self.metric_cards["envy_score"].set_value(best.get("envy_score", "—"))
-        self.metric_cards["seat_fill_rate"].set_value(best.get("seat_fill_rate", "—"))
+        self.metric_cards["seat_fill_rate"].set_value(_fmt_ratio_pct(best.get("seat_fill_rate", "—")))
         self.metric_cards["capacity_violations"].set_value(best.get("capacity_violations", 0))
         self.metric_cards["unassigned"].set_value(best.get("unassigned", 0))
         transfer = view["transfer"]
@@ -414,6 +414,22 @@ def _first_number(metrics: dict[str, Any], comparison_row: dict[str, Any], *keys
             if value not in {None, ""}:
                 return value
     return None
+
+
+def _fmt_ratio_pct(value: Any) -> Any:
+    """0-1 araligindaki oran metriklerini kullaniciya yuzde olarak gosterir.
+
+    Sayisal olmayan ('—' gibi) veya zaten yuzde (>1.5) degerleri oldugu gibi birakir.
+    """
+    if value is None or (isinstance(value, str) and value in {"", "—"}):
+        return "—"
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return value
+    if num > 1.5:  # zaten yuzde olarak gelmis olabilir
+        return f"{num:.0f}%"
+    return f"{num * 100:.0f}%"
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:

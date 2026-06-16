@@ -14,14 +14,9 @@ from app.core.config import load_app_config
 from app.db.backend import is_sqlite_url
 from app.db.schema_compat import ensure_reporting_schema
 from app.db.sqlite_connection import connect_sqlite
-from app.api.error_responses import ApiException, ErrorCode, create_error_response
 from app.schemas.criteria import (
     CompletionValidateRequest,
-    CompletionTaskCreateRequest,
-    CompletionTaskUpdateRequest,
-    CompletionOverrideRequest,
     CompletionOverrideApproveRequest,
-    CompletionOverrideRejectRequest,
 )
 from app.schemas.ahp import (
     AHPApprovalRequest,
