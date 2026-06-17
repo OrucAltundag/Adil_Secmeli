@@ -517,15 +517,21 @@ def get_missing_data_matrix(
               EXISTS(SELECT 1 FROM populerlik o
                      WHERE o.ders_id=d.ders_id AND o.akademik_yil=?
                            AND o.doluluk_orani IS NOT NULL),
-              EXISTS(SELECT 1 FROM anket_sonuclari a
-                     WHERE a.ders_id=d.ders_id AND a.oy_sayisi>0),
+              -- Anket tiki kapsama ozetiyle TUTARLI olmali: yeni anket importu
+              -- ders_kriterleri.anket_dersi_secen'e yazar; eski veri anket_sonuclari'nda
+              -- olabilir. Ikisinden BIRI varsa anket vardir (aksi halde "girili ama tik yok").
+              (EXISTS(SELECT 1 FROM ders_kriterleri ak
+                      WHERE ak.ders_id=d.ders_id AND ak.yil=?
+                            AND COALESCE(ak.anket_dersi_secen, 0) > 0)
+               OR EXISTS(SELECT 1 FROM anket_sonuclari a
+                         WHERE a.ders_id=d.ders_id AND a.oy_sayisi>0)),
               (SELECT COUNT(DISTINCT akademik_yil) FROM performans p2
                      WHERE p2.ders_id=d.ders_id) >= 2
             FROM ders d
             WHERE 1=1 {fac}
             ORDER BY d.kod, d.ad
             """,
-            (int(year), int(year), int(year)),
+            (int(year), int(year), int(year), int(year)),
         )
         rows = cur.fetchall()
     except sqlite3.OperationalError as exc:

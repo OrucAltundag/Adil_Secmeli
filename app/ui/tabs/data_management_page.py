@@ -14,6 +14,7 @@ from typing import Any
 from app.db.session import open_sqlite_connection
 from app.services.data_management_center_service import (
     execute_import_request,
+    export_student_criteria_dataset,
     generate_criteria_from_student_dataset,
     get_dashboard_context,
     get_import_bundle,
@@ -21,6 +22,7 @@ from app.services.data_management_center_service import (
     recalculate_import_artifact,
     write_import_template,
 )
+from app.services.criteria_import_service import apply_pending_criteria_import
 from app.services.import_audit_service import (
     activate_import,
     approve_import,
@@ -115,6 +117,15 @@ class DataManagementPage(ttk.Frame):
 
         ttk.Label(top, text="Veri Yönetimi Merkezi", style="Header.TLabel").pack(side=tk.LEFT)
         ttk.Button(top, text="Yenile", command=self.refresh_center).pack(side=tk.RIGHT, padx=4)
+        # §7: Teknik sekmeler (Import Detayı / Satır Sonuçları) varsayılan gizli;
+        # geliştirici/admin görünümünde açılır. Bilgi silinmez, yalnız gizlenir.
+        self.developer_view_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            top,
+            text="Geliştirici görünümü",
+            variable=self.developer_view_var,
+            command=self._apply_developer_view,
+        ).pack(side=tk.RIGHT, padx=8)
         self.status_var = tk.StringVar(value="Veri yönetimi yükleniyor.")
         ttk.Label(top, textvariable=self.status_var).pack(side=tk.RIGHT, padx=8)
 
@@ -162,6 +173,26 @@ class DataManagementPage(ttk.Frame):
         self._build_import_tab()
         self._build_history_tab()
         self._build_text_tabs()
+        self._apply_developer_view()
+
+    def _apply_developer_view(self) -> None:
+        """§7: Import Detayı + Satır Sonuçları sekmelerini geliştirici görünümüne göre aç/gizle."""
+        state = "normal" if self.developer_view_var.get() else "hidden"
+        for tab in (getattr(self, "detail_tab", None), getattr(self, "rows_tab", None)):
+            if tab is None:
+                continue
+            try:
+                self.nb.tab(tab, state=state)
+            except Exception:
+                pass
+
+    def _select_inspect_tab(self) -> None:
+        """İncele/aç sonrası: geliştirici görünümünde Detay, normalde Kalite sekmesini seç."""
+        target = self.detail_tab if self.developer_view_var.get() else self.quality_tab
+        try:
+            self.nb.select(target)
+        except Exception:
+            pass
 
     def _build_dashboard_tab(self) -> None:
         cards = ttk.LabelFrame(self.dashboard_tab, text="Veri Durumu", padding=10)
@@ -233,14 +264,12 @@ class DataManagementPage(ttk.Frame):
         self._file_entry.grid(row=1, column=1, sticky=tk.EW, padx=4, pady=4)
         ttk.Button(form, text="Seç", command=self._select_import_file).grid(row=1, column=2, sticky=tk.W, padx=4, pady=4)
 
-        ttk.Label(form, text="Yıl").grid(row=2, column=0, sticky=tk.W, padx=4, pady=4)
+        # Import artık YILLIK çalışır; ayrı Güz/Bahar dönem seçimi kaldırıldı.
+        # Dönem bilgisi (gerekliyse) dosyadan okunur veya backend varsayılanını
+        # kullanır; eski kayıtlar etkilenmez.
+        ttk.Label(form, text="Akademik yıl").grid(row=2, column=0, sticky=tk.W, padx=4, pady=4)
         self.import_year_combo = ttk.Combobox(form, width=10, state="readonly")
         self.import_year_combo.grid(row=2, column=1, sticky=tk.W, padx=4, pady=4)
-
-        ttk.Label(form, text="Dönem").grid(row=2, column=1, sticky=tk.W, padx=(120, 4), pady=4)
-        self.term_combo = ttk.Combobox(form, width=10, state="readonly", values=("Guz", "Bahar"))
-        self.term_combo.current(0)
-        self.term_combo.grid(row=2, column=1, sticky=tk.W, padx=(170, 4), pady=4)
 
         self.auto_activate_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(form, text="Kalite uygunsa aktif yap", variable=self.auto_activate_var).grid(
@@ -253,11 +282,15 @@ class DataManagementPage(ttk.Frame):
             row=3, column=0, columnspan=3, sticky=tk.W, padx=4, pady=(2, 0)
         )
         self.import_year_combo.bind("<<ComboboxSelected>>", self._update_scope_indicator)
-        self.term_combo.bind("<<ComboboxSelected>>", self._update_scope_indicator)
 
         btn_frame = ttk.Frame(form)
         btn_frame.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=8)
-        ttk.Button(btn_frame, text="Şablon Oluştur", command=self._write_template).pack(side=tk.LEFT, padx=(0, 6))
+        self._btn_template = ttk.Button(btn_frame, text="Şablon Oluştur", command=self._write_template)
+        self._btn_template.pack(side=tk.LEFT, padx=(0, 6))
+        # §3: öğrenci-kriter modunda gösterilen özel buton (başlangıçta gizli).
+        self._btn_student_dataset = ttk.Button(
+            btn_frame, text="Kriter Veri Seti İndir", command=self._export_student_criteria
+        )
         self._btn_import = ttk.Button(btn_frame, text="Importu Başlat", command=self._run_import, state="disabled")
         self._btn_import.pack(side=tk.LEFT, padx=(0, 6))
         self._import_status_lbl = ttk.Label(btn_frame, text="", foreground="#64748b")
@@ -280,7 +313,7 @@ class DataManagementPage(ttk.Frame):
         toolbar = ttk.Frame(self.history_tab)
         toolbar.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(toolbar, text="Geçmişi Yenile", command=self.refresh_imports).pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Seçili Importu Aç", command=self.load_selected_import).pack(side=tk.LEFT, padx=4)
+        ttk.Button(toolbar, text="Import Kaydını İncele", command=self.load_selected_import).pack(side=tk.LEFT, padx=4)
         ttk.Button(toolbar, text="Import Geçmişini Temizle", command=self.cleanup_import_history_action).pack(side=tk.RIGHT)
         ttk.Label(
             toolbar,
@@ -592,6 +625,11 @@ class DataManagementPage(ttk.Frame):
     def _selected_import_type(self) -> str:
         return self._import_type_options.get(self.import_type_combo.get(), "criteria")
 
+    def _import_term(self) -> str | None:
+        """Import artık yıllık; dönem seçimi yok. Dönem dosyadan ya da backend
+        varsayılanından (``term or "Guz"``) gelir."""
+        return None
+
     def _on_file_path_change(self, *_args: Any) -> None:
         path = self.file_path_var.get().strip()
         has_file = bool(path and os.path.exists(path))
@@ -637,7 +675,7 @@ class DataManagementPage(ttk.Frame):
                 year=self._selected_import_year(),
                 faculty_id=self._selected_faculty_id(),
                 department_id=self._selected_department_id(),
-                term=self.term_combo.get() or "Guz",
+                term=self._import_term() or "Guz",
             )
             self._set_text(self.import_result_text, result)
             if result.get("ok"):
@@ -672,25 +710,76 @@ class DataManagementPage(ttk.Frame):
         )
         self._set_text(self.requirements_text, text)
         self._update_scope_indicator()
+        self._update_template_button_state(selected)
+
+    def _update_template_button_state(self, selected: str) -> None:
+        """§2/§3: Öğrenci-veri-setinden-kriter modunda klasik şablon üretimi anlamsız;
+        klasik buton pasifleşir ve yerine 'Kriter Veri Seti İndir' butonu gelir."""
+        btn = getattr(self, "_btn_template", None)
+        student_btn = getattr(self, "_btn_student_dataset", None)
+        if btn is None:
+            return
+        if selected == "student_criteria":
+            btn.configure(state="disabled")
+            if student_btn is not None and student_btn.winfo_manager() != "pack":
+                student_btn.pack(side=tk.LEFT, padx=(0, 6), after=btn)
+            lbl = getattr(self, "_import_status_lbl", None)
+            if lbl and not self.file_path_var.get().strip():
+                lbl.configure(
+                    text="Bu modda klasik şablon indirilemez. Öğrenci verisinden kriter veri seti üretip indirin.",
+                    foreground="#64748b",
+                )
+        else:
+            btn.configure(state="normal")
+            if student_btn is not None and student_btn.winfo_manager() == "pack":
+                student_btn.pack_forget()
+
+    def _export_student_criteria(self) -> None:
+        """§3: Öğrenci verisinden kriter veri setini üretip indirilebilir Excel'e yazar (uygulama YOK)."""
+        excel_path = self.file_path_var.get().strip()
+        if not excel_path or not os.path.exists(excel_path):
+            messagebox.showwarning("Kriter Veri Seti", "Önce öğrenci not veri seti dosyasını 'Seç' ile yükleyin.")
+            return
+        year = self._selected_import_year()
+        target = filedialog.asksaveasfilename(
+            title="Kriter veri setini kaydet",
+            defaultextension=".xlsx",
+            initialfile=f"kriter_veri_seti_{year}.xlsx",
+            filetypes=[("Excel dosyaları", "*.xlsx")],
+        )
+        if not target:
+            return
+        try:
+            result = export_student_criteria_dataset(excel_path=excel_path, year=year, target_path=target)
+        except Exception:
+            messagebox.showerror("Kriter Veri Seti", self._friendly_backend_error())
+            return
+        self._set_text(self.import_result_text, result)
+        if result.get("ok"):
+            messagebox.showinfo(
+                "Kriter Veri Seti",
+                f"{result.get('message')}\n\nDosya:\n{result.get('path')}\n\n"
+                "Bu dosyayı 'Kriter / Performans / Popülerlik' türünü seçerek (onaylı) içe aktarabilirsiniz.",
+            )
+        else:
+            messagebox.showwarning("Kriter Veri Seti", result.get("message") or "Kriter veri seti üretilemedi.")
 
     def _update_scope_indicator(self, _event: Any = None) -> None:
-        """Import'un uygulanacağı kapsamı (fakülte/bölüm/yıl/dönem) net gösterir."""
+        """Import'un uygulanacağı kapsamı (fakülte/bölüm/yıl) net gösterir. Yıllık çalışır."""
         if not hasattr(self, "scope_indicator_var"):
             return
         faculty = self.faculty_combo.get() or "Tumu"
         department = self.department_combo.get() or "Tumu"
         year = self.import_year_combo.get() or self.year_combo.get() or "-"
-        term = self.term_combo.get() or "-"
         selected = self._selected_import_type()
-        # Dönem yalnız dönem-duyarlı türlerde anlamlı; müfredat dosyadan okur.
         if selected == "curriculum":
-            scope = f"➤ Bu import şu kapsama uygulanacak →  Yıl: {year}  (Fakülte/Bölüm/Dönem dosyadan okunur)"
+            scope = f"➤ Bu import şu kapsama uygulanacak →  Akademik yıl: {year}  (Fakülte/Bölüm/Dönem dosyadan okunur)"
         elif selected == "student_criteria":
-            scope = f"➤ Bu import şu kapsama uygulanacak →  Yıl: {year}  (ders kodu ile eşleşir; tüm kapsam)"
+            scope = f"➤ Bu import şu kapsama uygulanacak →  Akademik yıl: {year}  (ders kodu ile eşleşir; tüm kapsam)"
         else:
             scope = (
                 f"➤ Bu import şu kapsama uygulanacak →  Fakülte: {faculty}  |  "
-                f"Bölüm: {department}  |  Yıl: {year}  |  Dönem: {term}"
+                f"Bölüm: {department}  |  Akademik yıl: {year}  (yıllık)"
             )
         self.scope_indicator_var.set(scope)
 
@@ -785,6 +874,15 @@ class DataManagementPage(ttk.Frame):
             # Önce kuru çalışma (dry-run) ile önizleme göster, sonra onayla.
             if not self._confirm_student_criteria(path, excel_path, year):
                 return
+        elif import_type == "criteria":
+            if not messagebox.askyesno(
+                "Kriter Import Onayı",
+                f"Seçili kriter dosyası ({import_filename}) yüklensin mi?\n\nYıl: {year}\n\n"
+                "Kriterler HEMEN uygulanmaz; import 'Onay Bekliyor' durumunda kalır. "
+                "Mevcut aktif kriterler değişmez. Uygulamak için 'Rollback & Onay' "
+                "sekmesinden 'Aktif Yap' butonunu kullanın.",
+            ):
+                return
         else:
             if not messagebox.askyesno(
                 "Import Onayı",
@@ -811,9 +909,12 @@ class DataManagementPage(ttk.Frame):
                     year=year,
                     faculty_id=self._selected_faculty_id(),
                     department_id=self._selected_department_id(),
-                    term=self.term_combo.get() or "Guz",
+                    term=self._import_term() or "Guz",
                     auto_activate=bool(self.auto_activate_var.get()),
                     uploaded_by="desktop-ui",
+                    # §5: Kriter importu DIREKT uygulanmaz; onay bekler. Diğer türler
+                    # mevcut davranışla anında uygulanır.
+                    apply_now=(import_type != "criteria"),
                 )
             )
             readable = self._format_import_result(result, import_type, year, import_filename)
@@ -822,7 +923,7 @@ class DataManagementPage(ttk.Frame):
             if batch_id:
                 self.selected_import_batch_id = int(batch_id)
                 self.load_selected_import()
-                self.nb.select(self.detail_tab)
+                self._select_inspect_tab()
             self.refresh_center()
             self._refresh_related_views()
             if result.get("ok"):
@@ -1015,7 +1116,7 @@ class DataManagementPage(ttk.Frame):
             return
         self.selected_import_batch_id = int(values[0])
         self.load_selected_import()
-        self.nb.select(self.detail_tab)
+        self._select_inspect_tab()
 
     def _on_history_select(self, _event: Any = None) -> None:
         selected = self.history_tree.selection()
@@ -1025,6 +1126,117 @@ class DataManagementPage(ttk.Frame):
         if not values:
             return
         self.selected_import_batch_id = int(values[0])
+
+    @staticmethod
+    def _pct(value: Any) -> str:
+        try:
+            return f"%{float(value) * 100:.0f}"
+        except (TypeError, ValueError):
+            return "-"
+
+    @classmethod
+    def _format_quality_text(cls, q: dict[str, Any] | None) -> str:
+        """§8: sayısal kalite skorunu okunabilir, kullanıcı dostu bir özete çevirir."""
+        if not q or not isinstance(q, dict):
+            return "Bu import için henüz kalite raporu yok. 'Kaliteyi Yeniden Hesapla' butonunu kullanın."
+        score = float(q.get("quality_score") or 0.0)
+        level = str(q.get("quality_level") or "")
+        level_tr = {"high": "Çok iyi", "medium": "Kullanılabilir", "low": "Riskli"}.get(level, level or "-")
+        verdict = {
+            "high": "Evet — bu veri karar algoritmasında güvenle kullanılabilir.",
+            "medium": "Evet, ancak işaretlenen eksik/aykırı alanları gözden geçirin.",
+            "low": "Önerilmez — önce kritik sorunları düzeltin.",
+        }.get(level, "Belirsiz.")
+        req_ok = q.get("required_columns_ok")
+        req_ok = (req_ok in (1, "1", True, "True", "true")) if not isinstance(req_ok, bool) else req_ok
+        lines = [
+            f"GENEL VERİ KALİTE SKORU: %{score * 100:.0f}  ({level_tr})",
+            f"Karar algoritmasında kullanılabilir mi? → {verdict}",
+            "",
+            "── Skor Bileşenleri ─────────────────────────────",
+            f"  Zorunlu kolonlar tam mı     : {'Evet' if req_ok else 'Hayır'}",
+            f"  Başarılı satır oranı        : {cls._pct(q.get('successful_row_ratio'))}",
+            f"  Ders eşleşme oranı          : {cls._pct(q.get('matched_course_ratio'))}",
+            f"  Sayısal değer geçerliliği   : {cls._pct(q.get('valid_numeric_ratio'))}",
+            "",
+            "── Tespit Edilen Sorunlar ───────────────────────",
+            f"  Eksik zorunlu alan          : {int(q.get('missing_required_count') or 0)}",
+            f"  Eşleşmeyen kayıt            : {int(q.get('unmatched_row_count') or 0)}",
+            f"  Geçersiz sayısal değer      : {int(q.get('invalid_numeric_count') or 0)}",
+            f"  Aralık dışı değer           : {int(q.get('out_of_range_count') or 0)}",
+            f"  Tekrarlı kayıt              : {int(q.get('duplicate_row_count') or 0)}",
+            f"  Uyarı / Hata                : {int(q.get('warning_count') or 0)} / {int(q.get('error_count') or 0)}",
+        ]
+        summary = q.get("summary") if isinstance(q.get("summary"), dict) else {}
+        itc = (summary or {}).get("issue_type_counts") or {}
+        if itc:
+            lines.append("")
+            lines.append("── Sorun Türü Dağılımı ──────────────────────────")
+            for key, val in itc.items():
+                lines.append(f"  {key}: {val}")
+        rc = (summary or {}).get("row_count")
+        if rc:
+            lines.append("")
+            lines.append(f"İncelenen satır sayısı: {rc}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_diff_text(diff: Any) -> str:
+        """§9: diff sonucunu 'bu import uygulanırsa ne değişir' özetine çevirir."""
+        if not diff or not isinstance(diff, dict):
+            return "Bu import için henüz diff raporu yok. 'Diff Hesapla' butonunu kullanın."
+        added = int(diff.get("added_count") or 0)
+        removed = int(diff.get("removed_count") or 0)
+        changed = int(diff.get("changed_count") or 0)
+        unchanged = int(diff.get("unchanged_count") or 0)
+        lines = [
+            "DEĞİŞİKLİK KARŞILAŞTIRMASI (DIFF)",
+            f"Bu import uygulanırsa {added + removed + changed} kayıt etkilenecek:",
+            f"  • Eklenecek kayıt    : {added}",
+            f"  • Güncellenecek      : {changed}",
+            f"  • Çıkarılacak/pasif  : {removed}",
+            f"  • Değişmeyen         : {unchanged}",
+        ]
+        items = diff.get("items") or []
+        detail = [it for it in items if it.get("change_type") in ("changed", "added", "removed")]
+        if detail:
+            label = {"changed": "GÜNCELLENDİ", "added": "EKLENDİ", "removed": "ÇIKARILDI"}
+            lines.append("")
+            lines.append("── Alan Bazlı Değişiklikler (ilk 30) ────────────")
+            for it in detail[:30]:
+                ct = label.get(it.get("change_type"), str(it.get("change_type")))
+                key = it.get("entity_key") or it.get("course_id") or ""
+                field = it.get("field_name")
+                if field:
+                    lines.append(f"  [{ct}] {key} · {field}: {it.get('before_value')} → {it.get('after_value')}")
+                else:
+                    lines.append(f"  [{ct}] {key}")
+            if len(detail) > 30:
+                lines.append(f"  ... ve {len(detail) - 30} değişiklik daha")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_impact_text(impact: Any) -> str:
+        """§11: karar etkisi sonucunu okunabilir özete çevirir."""
+        if not impact or not isinstance(impact, dict):
+            return "Bu import için henüz karar etkisi raporu yok. 'Etki Raporu Hesapla' butonunu kullanın."
+        lines = ["KARAR ETKİSİ"]
+        if impact.get("summary_text"):
+            lines.append(str(impact.get("summary_text")))
+        lines.extend([
+            "",
+            "── Özet ─────────────────────────────────────────",
+            f"  Kararı değişen ders          : {int(impact.get('changed_decision_count') or 0)}",
+            f"  Müfredattan havuza düşen     : {int(impact.get('curriculum_to_pool_count') or 0)}",
+            f"  Havuzdan müfredata çıkan     : {int(impact.get('pool_to_curriculum_count') or 0)}",
+            f"  Dinlendirme adayı            : {int(impact.get('rest_candidate_count') or 0)}",
+            f"  İptal adayı                  : {int(impact.get('cancel_candidate_count') or 0)}",
+            f"  Anlamlı skor değişimi        : {int(impact.get('significant_score_change_count') or 0)}",
+            f"  Veri güveni artan / azalan   : "
+            f"{int(impact.get('data_confidence_improved_count') or 0)} / "
+            f"{int(impact.get('data_confidence_decreased_count') or 0)}",
+        ])
+        return "\n".join(lines)
 
     def load_selected_import(self) -> None:
         import_batch_id = self.selected_import_batch_id
@@ -1044,13 +1256,10 @@ class DataManagementPage(ttk.Frame):
             bundle = get_import_bundle(path, int(import_batch_id))
             self._set_text(self.detail_text, bundle.get("batch") or {})
             self._set_text(self.rows_text, {"rows": bundle.get("rows") or [], "issues": bundle.get("issues") or []})
-            self._set_text(self.quality_text, bundle.get("quality") or {})
-            self._set_text(
-                self.diff_text,
-                bundle.get("diff") or "Bu import için henüz diff raporu yok. 'Diff Hesapla' butonunu kullanın.",
-            )
+            self._set_text(self.quality_text, self._format_quality_text(bundle.get("quality")))
+            self._set_text(self.diff_text, self._format_diff_text(bundle.get("diff")))
             self._set_text(self.rollback_text, bundle.get("rollback") or {})
-            self._set_text(self.impact_text, bundle.get("impact") or "Bu import için henüz karar etkisi raporu yok.")
+            self._set_text(self.impact_text, self._format_impact_text(bundle.get("impact")))
         except Exception:
             messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
 
@@ -1066,7 +1275,7 @@ class DataManagementPage(ttk.Frame):
 
         try:
             quality = self._run_external_db_operation(_op)
-            self._set_text(self.quality_text, quality.as_dict())
+            self._set_text(self.quality_text, self._format_quality_text(quality.as_dict()))
             self.refresh_center()
         except Exception:
             messagebox.showerror("Kalite", self._friendly_backend_error())
@@ -1082,7 +1291,7 @@ class DataManagementPage(ttk.Frame):
             diff = self._run_external_db_operation(
                 lambda: recalculate_import_artifact(path, self.selected_import_batch_id, "diff")
             )
-            self._set_text(self.diff_text, diff)
+            self._set_text(self.diff_text, self._format_diff_text(diff))
             self.refresh_center()
         except Exception:
             messagebox.showerror("Diff", self._friendly_backend_error())
@@ -1098,7 +1307,7 @@ class DataManagementPage(ttk.Frame):
             impact = self._run_external_db_operation(
                 lambda: recalculate_import_artifact(path, self.selected_import_batch_id, "impact")
             )
-            self._set_text(self.impact_text, impact)
+            self._set_text(self.impact_text, self._format_impact_text(impact))
             self.refresh_center()
         except Exception:
             messagebox.showerror("Karar Etkisi", self._friendly_backend_error())
@@ -1118,7 +1327,16 @@ class DataManagementPage(ttk.Frame):
         self._status_action(lambda conn, batch_id: approve_import(conn, batch_id, approved_by="desktop-ui"), "Import onaylandı.")
 
     def activate_selected(self) -> None:
-        self._status_action(lambda conn, batch_id: activate_import(conn, batch_id, user="desktop-ui"), "Import aktif yapıldı.")
+        # §5: Onay bekleyen (staged) kriter importu ise canlı uygula; değilse normal aktive et.
+        self._status_action(self._activate_or_apply, "Import aktif yapıldı / kriterler uygulandı.")
+
+    @staticmethod
+    def _activate_or_apply(conn: sqlite3.Connection, batch_id: int) -> Any:
+        result = apply_pending_criteria_import(conn, batch_id, user="desktop-ui")
+        if isinstance(result, dict) and result.get("ok"):
+            return result
+        # Kriter importu değil ya da uygulanacak staged satır yok → normal aktive.
+        return activate_import(conn, batch_id, user="desktop-ui")
 
     def reject_selected(self) -> None:
         self._status_action(

@@ -980,19 +980,30 @@ def apply_criteria_import(
     template_version: str = CRITERIA_TEMPLATE_VERSION,
     notes: str | None = None,
     import_batch_id: int | None = None,
+    apply_to_live: bool = True,
 ) -> dict[str, Any]:
+    """Kriter satirlarini stage eder ve (apply_to_live=True ise) canli tablolara uygular.
+
+    apply_to_live=False (ERTELEME): yalniz onizleme/kalite icin criteria_import_rows'a
+    stage eder; ders_kriterleri/performans/populerlik'e DOKUNMAZ ve kapsam SIFIRLANMAZ.
+    Boylece kriter importu onaylanana kadar algoritmalari etkilemez (§5). Onayda bu
+    fonksiyon yeniden (apply_to_live=True ile) cagrilarak canli uygulama yapilir.
+    """
     ensure_criteria_import_schema(conn, commit=False)
     cur = conn.cursor()
     normalized_term = normalize_term_label(term)
     now = _now_utc()
 
-    replace_stats = replace_existing_criteria_scope(
-        conn=conn,
-        faculty_id=int(faculty_id),
-        year=int(year),
-        term=normalized_term,
-        department_id=int(department_id) if department_id is not None else None,
-    )
+    if apply_to_live:
+        replace_stats = replace_existing_criteria_scope(
+            conn=conn,
+            faculty_id=int(faculty_id),
+            year=int(year),
+            term=normalized_term,
+            department_id=int(department_id) if department_id is not None else None,
+        )
+    else:
+        replace_stats = {}
 
     version = _next_scope_version(
         cur=cur,
@@ -1001,11 +1012,12 @@ def apply_criteria_import(
         term=normalized_term,
         department_id=int(department_id) if department_id is not None else None,
     )
+    criteria_status = "applied" if apply_to_live else "staged"
     cur.execute(
         """
         INSERT INTO criteria_import
             (fakulte_id, bolum_id, yil, donem, source_filename, template_version, notes, imported_at, status, version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             int(faculty_id),
@@ -1016,6 +1028,7 @@ def apply_criteria_import(
             template_version,
             notes,
             now,
+            criteria_status,
             int(version),
         ),
     )
@@ -1092,6 +1105,11 @@ def apply_criteria_import(
                     "UPDATE criteria_import_rows SET issue_count = COALESCE(issue_count, 0) + 1 WHERE row_id = ?",
                     (int(import_row_id),),
                 )
+
+        # ERTELEME: apply_to_live=False ise satir stage edildi; canli tablolara
+        # (ders_kriterleri/performans/populerlik) yazma yapilmaz. Onayda uygulanir.
+        if not apply_to_live:
+            continue
 
         if row.matched_ders_id is None:
             continue
@@ -1256,12 +1274,15 @@ def apply_criteria_import(
                     deactivate_existing=True,
                 )
 
-    status_result = mark_criteria_status(
-        conn=conn,
-        yil=int(year),
-        fakulte_id=int(faculty_id),
-        bolum_id=int(department_id) if department_id is not None else None,
-    )
+    if apply_to_live:
+        status_result = mark_criteria_status(
+            conn=conn,
+            yil=int(year),
+            fakulte_id=int(faculty_id),
+            bolum_id=int(department_id) if department_id is not None else None,
+        )
+    else:
+        status_result = {}
 
     return {
         "ok": True,
@@ -1273,6 +1294,7 @@ def apply_criteria_import(
         "applied_course_count": len(applied_course_ids),
         "replace": replace_stats,
         "status": status_result,
+        "staged": not apply_to_live,
     }
 
 
@@ -1286,6 +1308,7 @@ def import_criteria_excel(
     source_filename: str | None = None,
     auto_activate: bool = True,
     uploaded_by: str | None = None,
+    apply_now: bool = True,
 ) -> dict[str, Any]:
     resolved_db_path = resolve_sqlite_db_path(db_path)
     if not resolved_db_path.exists():
@@ -1456,6 +1479,7 @@ def import_criteria_excel(
             template_version=str(parsed.get("template_version") or CRITERIA_TEMPLATE_VERSION),
             notes=(parsed.get("meta") or {}).get("aciklama"),
             import_batch_id=import_batch_id,
+            apply_to_live=apply_now,
         )
         link_source_import(
             conn,
@@ -1466,7 +1490,12 @@ def import_criteria_excel(
             file_size=batch.get("file_size"),
         )
         quality = evaluate_import_quality(conn, import_batch_id)
-        status = "pending_review" if quality.quality_level == "low" else "validated"
+        # ERTELEME (§5): apply_now=False ise kriterler henuz uygulanmadi; import
+        # onay bekler. Aksi halde mevcut davranis (dusuk kalite -> pending).
+        if not apply_now:
+            status = "pending_review"
+        else:
+            status = "pending_review" if quality.quality_level == "low" else "validated"
         update_import_status(
             conn,
             import_batch_id,
@@ -1476,9 +1505,10 @@ def import_criteria_excel(
                 "matched_count": int(matched.get("matched_count") or 0),
                 "unmatched_count": int(matched.get("unmatched_count") or 0),
                 "warnings": warnings,
+                "staged": not apply_now,
             },
         )
-        if auto_activate and quality.quality_level != "low":
+        if apply_now and auto_activate and quality.quality_level != "low":
             from app.services.import_audit_service import activate_import
 
             activate_import(conn, import_batch_id, user=uploaded_by)
@@ -1492,12 +1522,20 @@ def import_criteria_excel(
             pass
         conn.commit()
 
-        return {
-            "ok": True,
-            "message": (
+        if apply_now:
+            message = (
                 "Kriter belgesi basariyla yuklendi. "
                 f"Versiyon: v{applied['version']} | Uygulanan ders: {applied['applied_course_count']}."
-            ),
+            )
+        else:
+            message = (
+                f"Kriter belgesi yuklendi ve ONAY BEKLIYOR (eslesen ders: {int(matched.get('matched_count') or 0)}). "
+                "Kriterler henuz uygulanmadi; 'Rollback & Onay' sekmesinden 'Aktif Yap' ile uygulayin."
+            )
+        return {
+            "ok": True,
+            "message": message,
+            "staged": not apply_now,
             "faculty_id": int(faculty_id),
             "department_id": int(department_id) if department_id is not None else None,
             "year": int(year),
@@ -1515,7 +1553,7 @@ def import_criteria_excel(
             "unmatched_rows": [],
             "import_id": int(applied["import_id"]),
             "import_batch_id": import_batch_id,
-            "import_status": "active" if auto_activate and quality.quality_level != "low" else status,
+            "import_status": "active" if apply_now and auto_activate and quality.quality_level != "low" else status,
             "quality_score": quality.quality_score,
             "quality_level": quality.quality_level,
             "duplicate": bool(batch.get("duplicate")),
@@ -1539,6 +1577,89 @@ def import_criteria_excel(
         }
     finally:
         conn.close()
+
+
+def apply_pending_criteria_import(
+    conn: sqlite3.Connection,
+    import_batch_id: int,
+    user: str | None = None,
+) -> dict[str, Any]:
+    """§5: Onay bekleyen (staged) bir kriter importunu canli tablolara uygular.
+
+    import sirasinda ``apply_to_live=False`` ile yalniz stage edilen satirlari
+    (``criteria_import_rows.normalized_row_json``) yeniden kurar ve
+    ``apply_criteria_import``'u ``apply_to_live=True`` ile cagirarak
+    ders_kriterleri/performans/populerlik'e uygular; ardindan importu aktive eder.
+    Caller commit eder. Staged satir yoksa ``ok=False`` doner (UI bunu activate'e cevirir).
+    """
+    from app.services.import_audit_service import activate_import, get_import_batch
+
+    ensure_criteria_import_schema(conn, commit=False)
+    batch = get_import_batch(conn, int(import_batch_id))
+    if not batch:
+        return {"ok": False, "message": "Import kaydi bulunamadi."}
+    if str(batch.get("import_type")) != "criteria":
+        return {"ok": False, "message": "Bu islem yalniz kriter importlari icindir."}
+    if str(batch.get("status") or "").lower() in ("active", "applied", "rejected", "rolled_back"):
+        return {"ok": False, "message": "Import zaten uygulanmis/aktif veya kapali."}
+
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT normalized_row_json FROM criteria_import_rows WHERE import_batch_id = ? ORDER BY row_no",
+        (int(import_batch_id),),
+    )
+    staged_payloads = [r[0] for r in cur.fetchall() if r and r[0]]
+    if not staged_payloads:
+        return {"ok": False, "message": "Uygulanacak stage edilmis kriter satiri yok."}
+
+    rows: list[CriteriaImportRowResult] = []
+    for payload in staged_payloads:
+        try:
+            rows.append(CriteriaImportRowResult(**json.loads(payload)))
+        except Exception:
+            continue
+    if not rows:
+        return {"ok": False, "message": "Stage edilmis satirlar cozumlenemedi."}
+
+    faculty_id = int(batch.get("faculty_id"))
+    department_id = batch.get("department_id")
+    year = int(batch.get("year"))
+    term = normalize_term_label(batch.get("semester") or "Guz")
+
+    # Eski staged kayitlari temizle; apply yeniden temiz stage edip uygulasin (kopya olmasin).
+    cur.execute("DELETE FROM criteria_import_rows WHERE import_batch_id = ?", (int(import_batch_id),))
+    cur.execute("DELETE FROM criteria_import WHERE import_batch_id = ?", (int(import_batch_id),))
+
+    applied = apply_criteria_import(
+        conn=conn,
+        faculty_id=faculty_id,
+        year=year,
+        term=term,
+        rows=rows,
+        source_filename=batch.get("original_filename"),
+        department_id=int(department_id) if department_id is not None else None,
+        import_batch_id=int(import_batch_id),
+        apply_to_live=True,
+    )
+    link_source_import(
+        conn,
+        import_batch_id=int(import_batch_id),
+        source_table="criteria_import",
+        source_import_id=int(applied["import_id"]),
+        file_hash_sha256=batch.get("file_hash_sha256"),
+        file_size=batch.get("file_size"),
+    )
+    activate_import(conn, int(import_batch_id), user=user)
+    try:
+        recalculate_import_impact(conn, int(import_batch_id))
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "message": f"Kriterler uygulandi ve aktive edildi. Uygulanan ders: {int(applied.get('applied_course_count') or 0)}.",
+        "applied_course_count": int(applied.get("applied_course_count") or 0),
+        "import_batch_id": int(import_batch_id),
+    }
 
 
 def _criteria_import_row_to_summary(row: sqlite3.Row | tuple[Any, ...] | None) -> dict[str, Any] | None:

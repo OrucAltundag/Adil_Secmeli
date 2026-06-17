@@ -30,6 +30,7 @@ from app.services.import_quality_service import summarize_quality
 from app.services.import_rollback_service import get_rollback_plan
 from app.services.student_dataset_criteria_service import (
     auto_generate_criteria_from_student_dataset,
+    build_student_criteria_dataset,
 )
 from app.services.survey_import_service import import_survey_excel, write_survey_template_excel
 
@@ -358,6 +359,7 @@ def execute_import_request(
     term: str | None = None,
     auto_activate: bool = True,
     uploaded_by: str | None = None,
+    apply_now: bool = True,
 ) -> dict[str, Any]:
     import_type = str(import_type or "").strip().lower()
     if import_type not in IMPORT_TYPE_SPECS:
@@ -378,12 +380,13 @@ def execute_import_request(
             source_filename=os.path.basename(excel_path),
             auto_activate=auto_activate,
             uploaded_by=uploaded_by,
+            apply_now=apply_now,
         )
-        # OTOMATIK MOD: kriter importu basariliysa ve otomatik mod aciksa, ilgili
-        # fakulte icin sonraki yil mufredatini uretip ders onerisi Excel'ini yaz.
-        # Kriter kapisi (cift-donem) generate icinde uygulandigi icin eksik donemde
-        # uretim sessizce atlanir; hata olusursa ana import sonucu etkilenmez.
-        if criteria_result.get("ok"):
+        # OTOMATIK MOD: kriter importu UYGULANDIYSA (apply_now) ve otomatik mod aciksa,
+        # ilgili fakulte icin sonraki yil mufredatini uretip ders onerisi Excel'ini yaz.
+        # Erteleme modunda (staged) kriterler henuz uygulanmadigi icin pipeline tetiklenmez;
+        # onay sonrasi calistirilir.
+        if apply_now and criteria_result.get("ok"):
             _maybe_run_auto_pipeline(db_path, year=int(year), faculty_id=int(faculty_id), result=criteria_result)
         return criteria_result
 
@@ -414,6 +417,42 @@ def execute_import_request(
         auto_activate=auto_activate,
         uploaded_by=uploaded_by,
     )
+
+
+def export_student_criteria_dataset(
+    excel_path: str,
+    year: int,
+    target_path: str,
+) -> dict[str, Any]:
+    """§3: Öğrenci not veri setinden kriter veri setini üretip indirilebilir Excel'e yazar.
+
+    Veritabanına HİÇBİR ŞEY yazmaz. Üretilen dosya kriter import şablonu formatındadır;
+    kullanıcı isterse normal (onaylı) kriter import akışından içeri alabilir.
+    """
+    if not excel_path or not os.path.exists(excel_path):
+        return {"ok": False, "message": "Öğrenci veri seti dosyası bulunamadı.", "errors": ["Dosya yok."]}
+    if not target_path:
+        return {"ok": False, "message": "Hedef dosya yolu seçilmedi.", "errors": ["Hedef yol zorunlu."]}
+    try:
+        rows = build_student_criteria_dataset(excel_path=excel_path, year=int(year))
+    except (FileNotFoundError, ValueError) as exc:
+        return {"ok": False, "message": str(exc), "errors": [str(exc)]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "message": f"Kriter veri seti üretilemedi: {exc}", "errors": [str(exc)]}
+    if not rows:
+        return {"ok": False, "message": "Üretilecek kriter satırı bulunamadı (dosya boş veya ders kodu yok).", "errors": ["Boş"]}
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+        with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
+            pd.DataFrame(rows).to_excel(writer, sheet_name="Kriter", index=False)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "message": f"Dosya yazılamadı: {exc}", "errors": [str(exc)]}
+    return {
+        "ok": True,
+        "message": f"{len(rows)} ders için kriter veri seti üretildi ve kaydedildi.",
+        "path": target_path,
+        "row_count": len(rows),
+    }
 
 
 def generate_criteria_from_student_dataset(

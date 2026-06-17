@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import html as _html
 import os
 import tkinter as tk
+import webbrowser
 from datetime import datetime
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from app.core.config import load_app_config
 from app.services.data_quality_integration_service import (
@@ -57,7 +59,8 @@ class DataQualityPage(ttk.Frame):
         self.faculty_combo.pack(side=tk.LEFT, padx=(4, 12))
         self._populate_faculties()
 
-        ttk.Button(ctrl_frame, text="Raporla Oluştur", command=self._generate_report).pack(side=tk.LEFT, padx=4)
+        ttk.Button(ctrl_frame, text="Rapor Oluştur", command=self._generate_report).pack(side=tk.LEFT, padx=4)
+        ttk.Button(ctrl_frame, text="Raporu İndir (HTML)", command=self._download_report).pack(side=tk.LEFT, padx=4)
         ttk.Button(ctrl_frame, text="Yenile", command=self._refresh).pack(side=tk.LEFT)
 
         # Notebook: Sekmeleri ayır
@@ -276,13 +279,20 @@ class DataQualityPage(ttk.Frame):
             renk="#E65100",
         )
 
+        # §13: severity özet satırı (kaç kritik / uyarı / bilgi)
+        self.issues_summary_var = tk.StringVar(value="")
+        tk.Label(
+            content, textvariable=self.issues_summary_var,
+            font=("Segoe UI", 10, "bold"), fg="#991B1B", anchor=tk.W, justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 4))
+
         # Issue list
-        cols = ("ID", "Tür", "Şiddet", "Mesaj", "İçin Gerekli", "Durum")
+        cols = ("ID", "Tür", "Şiddet", "Mesaj", "İçin Gerekli", "Nasıl Düzeltilir")
         self.issues_tree = ttk.Treeview(content, columns=cols[1:], height=16)
         self.issues_tree.column("#0", width=40, anchor=tk.CENTER)
         self.issues_tree.heading("#0", text=cols[0])
 
-        widths = [80, 80, 400, 100, 100]
+        widths = [150, 70, 320, 90, 300]
         for i, col in enumerate(cols[1:]):
             self.issues_tree.column(col, width=widths[i], anchor=tk.W)
             self.issues_tree.heading(col, text=col)
@@ -370,6 +380,126 @@ class DataQualityPage(ttk.Frame):
 
         except Exception as e:
             messagebox.showerror("Rapor Hatası", str(e))
+
+    def _download_report(self):
+        """§14: Mevcut kalite raporunu indirilebilir HTML dosyası olarak kaydeder ve açar."""
+        self._refresh_db_path()
+        year_str = self.year_combo.get()
+        if not year_str:
+            messagebox.showwarning(
+                "Veri Kalitesi",
+                "Rapor indirmek için önce akademik yıl seçin. (Veri yoksa önce müfredat/kriter içe aktarın.)",
+            )
+            return
+        try:
+            year = int(year_str)
+            faculty_id = self._get_selected_faculty_id()
+            db_path = self._require_db_path()
+            report = build_quality_report(db_path, year, faculty_id)
+        except Exception as exc:
+            messagebox.showerror("Rapor Hatası", f"Rapor verisi hazırlanamadı: {exc}")
+            return
+
+        html_doc = self._build_report_html(report, year, self.faculty_combo.get() or "Tümü")
+        target = filedialog.asksaveasfilename(
+            title="Kalite raporunu kaydet",
+            defaultextension=".html",
+            initialfile=f"veri_kalite_raporu_{year}.html",
+            filetypes=[("HTML rapor", "*.html"), ("Tüm dosyalar", "*.*")],
+        )
+        if not target:
+            return
+        try:
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(html_doc)
+        except Exception as exc:
+            messagebox.showerror("Rapor Hatası", f"Rapor dosyaya yazılamadı: {exc}")
+            return
+        try:
+            webbrowser.open("file:///" + os.path.abspath(target).replace(os.sep, "/"))
+        except Exception:
+            pass
+        messagebox.showinfo(
+            "Veri Kalitesi",
+            f"Rapor oluşturuldu ve kaydedildi:\n{target}\n\nVarsayılan tarayıcıda açıldı.",
+        )
+
+    @staticmethod
+    def _build_report_html(report: dict, year: int, faculty_label: str) -> str:
+        """build_quality_report çıktısından kullanıcı dostu HTML rapor üretir."""
+        esc = _html.escape
+        cov = report.get("coverage", {}) or {}
+        rd = report.get("readiness", {}) or {}
+        issues = report.get("validation_issues", []) or []
+        md = report.get("missing_data", []) or []
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        total = int(cov.get("total_courses", 0) or 0)
+
+        def row(label, value):
+            return f"<tr><td>{esc(str(label))}</td><td><b>{esc(str(value))}</b></td></tr>"
+
+        sev_counts: dict[str, int] = {}
+        for it in issues:
+            sev = str(it.get("severity", "") or "").lower()
+            sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+        issue_rows = "".join(
+            f"<tr class='{esc(str(it.get('severity','')).lower())}'>"
+            f"<td>{esc(str(it.get('severity','')))}</td>"
+            f"<td>{esc(str(it.get('issue_type','')))}</td>"
+            f"<td>{esc(str(it.get('message','')))}</td></tr>"
+            for it in issues[:200]
+        ) or "<tr><td colspan='3'>Doğrulama sorunu yok.</td></tr>"
+
+        missing_rows = "".join(
+            f"<tr><td>{esc(str(r.get('kod','')))} {esc(str(r.get('ad','')))}</td>"
+            f"<td>{'✓' if r.get('criteria') else '✗'}</td>"
+            f"<td>{'✓' if r.get('performance') else '✗'}</td>"
+            f"<td>{'✓' if r.get('popularity') else '✗'}</td>"
+            f"<td>{'✓' if r.get('survey') else '✗'}</td></tr>"
+            for r in md[:300]
+        ) or "<tr><td colspan='5'>Tüm dersler tam.</td></tr>"
+
+        return f"""<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8">
+<title>Veri Kalite Raporu {year}</title>
+<style>
+ body{{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#1f2937;}}
+ h1{{color:#0B5CAD;}} h2{{color:#1E40AF;border-bottom:1px solid #e5e7eb;padding-bottom:4px;margin-top:28px;}}
+ table{{border-collapse:collapse;width:100%;margin:8px 0;}}
+ td,th{{border:1px solid #e5e7eb;padding:6px 10px;text-align:left;}}
+ th{{background:#f1f5f9;}}
+ tr.critical{{background:#FFCDD2;}} tr.warning{{background:#FFF3CD;}}
+ .muted{{color:#64748b;font-size:13px;}}
+</style></head><body>
+<h1>Veri Kalite Raporu</h1>
+<p class="muted">Akademik yıl: <b>{year}</b> &nbsp;|&nbsp; Kapsam: <b>{esc(faculty_label)}</b> &nbsp;|&nbsp; Oluşturma: {now}</p>
+
+<h2>Genel Durum</h2>
+<table>
+{row("Olgunluk skoru", f"{float(rd.get('readiness_score', 0) or 0):.1f}/100")}
+{row("Hazırlık seviyesi", rd.get("readiness_level", "-"))}
+{row("Toplam (müfredat) ders", cov.get("required_courses", total))}
+{row("Genel kapsama", f"{float(cov.get('coverage_percentage', 0) or 0):.1f}%")}
+</table>
+
+<h2>Kapsama</h2>
+<table>
+{row("Kriter verili ders", cov.get("courses_with_criteria", 0))}
+{row("Performans verili ders", cov.get("courses_with_performance", 0))}
+{row("Popülerlik verili ders", cov.get("courses_with_popularity", 0))}
+{row("Anket verili ders (bilgi amaçlı)", cov.get("courses_with_survey", 0))}
+</table>
+
+<h2>Doğrulama Sorunları ({len(issues)})</h2>
+<p class="muted">Kritik: {sev_counts.get('critical',0)} &nbsp; Uyarı: {sev_counts.get('warning',0)} &nbsp; Bilgi: {sev_counts.get('info',0)}</p>
+<table><tr><th>Şiddet</th><th>Tür</th><th>Mesaj</th></tr>{issue_rows}</table>
+
+<h2>Eksik Veri Matrisi (ilk 300)</h2>
+<table><tr><th>Ders</th><th>Kriter</th><th>Performans</th><th>Popülerlik</th><th>Anket</th></tr>{missing_rows}</table>
+
+<p class="muted">Bu rapor Adil Seçmeli Karar Destek Sistemi tarafından üretilmiştir.</p>
+</body></html>"""
 
     def _update_summary(self, readiness: dict, coverage: dict):
         """Summary sekmesini güncelle"""
@@ -575,30 +705,62 @@ Tavsiyeler:
                 values=("✓", "✓", "✓", "✓", "✓"),
             )
 
+    # §13: sorun türü -> (anlaşılır ad, nasıl düzeltilir)
+    _ISSUE_HELP = {
+        "missing_required_column": ("Zorunlu kolon eksik", "Eksik kolonu Excel şablonuna ekleyip yeniden yükleyin."),
+        "empty_required_value": ("Zorunlu alan boş", "İlgili satırlardaki boş zorunlu alanları doldurun."),
+        "invalid_numeric_value": ("Geçersiz sayısal değer", "Sayısal alanlardaki metin/boş değerleri sayıya çevirin."),
+        "out_of_range": ("Aralık dışı değer", "Değeri beklenen aralığa getirin (ör. oran 0–100, skor 0–1)."),
+        "course_not_matched": ("Ders eşleşmedi", "Ders kodunu sistemdeki kodla eşleştirin; yoksa dersi tanımlayın."),
+        "duplicate_row": ("Tekrarlı kayıt", "Aynı ders/satırın tekrar eden kopyalarını kaldırın."),
+        "invalid_scope": ("Kapsam uyumsuz", "Fakülte/bölüm/yıl bilgisini doğru kapsama göre düzeltin."),
+        "invalid_header": ("Başlık/şema hatası", "Kolon başlıklarını beklenen şablona göre düzeltin."),
+    }
+    _SEVERITY_TR = {"critical": "Kritik", "error": "Kritik", "warning": "Uyarı", "info": "Bilgi"}
+    _SEVERITY_RANK = {"critical": 0, "error": 0, "warning": 1, "info": 2}
+
     def _update_validation_issues(self, rows: list[dict], year: int):
-        """Doğrulama Sorunları sekmesini doldur (servis verisiyle)."""
+        """§13: Doğrulama sorunlarını gruplu, anlaşılır ve düzeltme önerili gösterir."""
         for item in self.issues_tree.get_children():
             self.issues_tree.delete(item)
 
         if not rows:
+            self.issues_summary_var.set(f"✓ {year} yılı için doğrulama sorunu yok.")
             self.issues_tree.insert(
                 "", tk.END, text="—",
-                values=("", "TEMIZ", f"{year} yılı için doğrulama sorunu yok.", "", ""),
+                values=("Temiz", "—", f"{year} yılı için doğrulama sorunu yok.", "", ""),
             )
             return
 
+        counts: dict[str, int] = {}
         for r in rows:
-            severity = str(r.get("severity", ""))
+            sev = str(r.get("severity", "")).lower()
+            counts[sev] = counts.get(sev, 0) + 1
+        critical = counts.get("critical", 0) + counts.get("error", 0)
+        self.issues_summary_var.set(
+            f"Toplam {len(rows)} sorun  →  Kritik: {critical}   Uyarı: {counts.get('warning', 0)}   "
+            f"Bilgi: {counts.get('info', 0)}   "
+            + ("(Kritik sorunlar düzeltilmeden algoritma güvenilir çalışmaz.)" if critical else "")
+        )
+
+        ordered = sorted(rows, key=lambda r: self._SEVERITY_RANK.get(str(r.get("severity", "")).lower(), 3))
+        for r in ordered:
+            severity = str(r.get("severity", "")).lower()
+            issue_type = str(r.get("issue_type", ""))
+            friendly, suggestion = self._ISSUE_HELP.get(issue_type, (issue_type or "Sorun", "Veri Yönetimi'nden düzeltip yeniden yükleyin."))
             iid = self.issues_tree.insert(
                 "", tk.END, text=str(r.get("id", "")),
                 values=(
-                    r.get("issue_type", ""), severity, r.get("message", ""),
-                    r.get("key", ""), r.get("created_at", ""),
+                    friendly,
+                    self._SEVERITY_TR.get(severity, severity or "-"),
+                    r.get("message", ""),
+                    r.get("key", ""),
+                    suggestion,
                 ),
             )
-            if severity.lower() == "critical":
+            if severity in ("critical", "error"):
                 self.issues_tree.item(iid, tags=("critical",))
-            elif severity.lower() == "warning":
+            elif severity == "warning":
                 self.issues_tree.item(iid, tags=("warning",))
         self.issues_tree.tag_configure("critical", background="#FFCDD2")
         self.issues_tree.tag_configure("warning", background="#FFF3CD")

@@ -32,6 +32,71 @@ def _dataset_for_year(year: int) -> Path:
     return DATA_DIR / f"{int(year)}_ogrenci_not_veri_seti.xlsx"
 
 
+def _read_ders_analizi(excel_path: str | Path) -> list[dict[str, Any]]:
+    """Ogrenci not veri setinin 'Ders Analizi' sayfasini okur (ham kayitlar).
+
+    Sadece okuma yapar; hicbir DB erisimi/yazma yoktur. Kolon eksikse hata verir.
+    """
+    yol = Path(excel_path)
+    if not yol.exists():
+        raise FileNotFoundError(f"Ogrenci veri seti bulunamadi: {yol}")
+    wb = openpyxl.load_workbook(str(yol), read_only=True)
+    if "Ders Analizi" not in wb.sheetnames:
+        wb.close()
+        raise ValueError("Excel dosyasinda 'Ders Analizi' sekmesi yok.")
+    ws = wb["Ders Analizi"]
+    it = ws.iter_rows(min_row=1, values_only=True)
+    hdr = list(next(it))
+    j = {str(k): i for i, k in enumerate(hdr)}
+    gerekli = {"ders_kodu", "donem", "kayit_sayisi", "gecme_orani_%", "ort_agirlikli", "ort_katilim_yuzde"}
+    if not gerekli.issubset(set(j.keys())):
+        wb.close()
+        raise ValueError(f"Excel 'Ders Analizi' sekmesinde gerekli sutunlar eksik: {gerekli - set(j.keys())}")
+    kayitlar: list[dict[str, Any]] = []
+    for r in it:
+        kayitlar.append({
+            "kod": str(r[j["ders_kodu"]]).strip(),
+            "donem": str(r[j["donem"]]).strip(),
+            "kayit": int(r[j["kayit_sayisi"]] or 0),  # type: ignore[arg-type]
+            "gecme": float(r[j["gecme_orani_%"]] or 0),  # type: ignore[arg-type]
+            "agir": float(r[j["ort_agirlikli"]] or 0),  # type: ignore[arg-type]
+            "katilim": float(r[j["ort_katilim_yuzde"]] or 0),  # type: ignore[arg-type]
+        })
+    wb.close()
+    return kayitlar
+
+
+def build_student_criteria_dataset(
+    excel_path: str | Path | None = None,
+    year: int = YIL,
+) -> list[dict[str, Any]]:
+    """§3: Ogrenci not veri setinden KRITER IMPORT SABLONU formatinda satirlar uretir.
+
+    Cikti dogrudan veritabanina yazilmaz; indirilebilir Excel'e donusturulup
+    normal kriter import akisindan (onayli) iceri alinabilir. Kolonlar criteria
+    import sablonuyla uyumludur.
+    """
+    yol = Path(excel_path) if excel_path else _dataset_for_year(year)
+    kayitlar = _read_ders_analizi(yol)
+    KONTENJAN = 60  # veri setinde kontenjan yok; manuel kayitla ayni varsayilan
+    rows: list[dict[str, Any]] = []
+    for s in kayitlar:
+        if not s["kod"]:
+            continue
+        toplam = int(s["kayit"])
+        gecen = round(toplam * s["gecme"] / 100.0)
+        rows.append({
+            "ders_kodu": s["kod"],
+            "donem": s["donem"],
+            "toplam_ogrenci": toplam,
+            "gecen_ogrenci": gecen,
+            "basari_ortalamasi": round(s["agir"], 2),
+            "kontenjan": KONTENJAN,
+            "kayitli_ogrenci": toplam,
+        })
+    return rows
+
+
 def auto_generate_criteria_from_student_dataset(
     conn: sqlite3.Connection,
     *,
