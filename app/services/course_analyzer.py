@@ -390,23 +390,90 @@ def _fetch_gecmis_trend(cur: sqlite3.Cursor, course_id: int, base_year: int) -> 
 # ---------------------------------------------------------------------------
 # Algoritma adımları
 # ---------------------------------------------------------------------------
-def _run_ahp(criteria: dict) -> dict:
+def _run_ahp(
+    criteria: dict,
+    cur: sqlite3.Cursor | None = None,
+    faculty_id: Optional[int] = None,
+    department_id: Optional[int] = None,
+    year: Optional[int] = None,
+    semester: str = "G",
+) -> dict:
     """AHP ağırlıklarını ve CR'yi döner."""
     t0 = time.perf_counter()
     try:
         motor = KararMotoru()
+        if cur is not None:
+            try:
+                from app.services.ahp_profile_service import (
+                    DEFAULT_CRITERIA_KEYS,
+                    resolve_ahp_profile,
+                )
+
+                profile = resolve_ahp_profile(
+                    cur.connection,
+                    faculty_id=faculty_id,
+                    department_id=department_id,
+                    year=year,
+                    semester=semester,
+                )
+                weights_dict = dict(profile.get("weights") or {})
+                weights = [float(weights_dict.get(key, 0.0)) for key in DEFAULT_CRITERIA_KEYS]
+                total = sum(weights) or 1.0
+                weights = [value / total for value in weights]
+
+                matrix = profile.get("pairwise_matrix") or None
+                cr = profile.get("consistency_ratio")
+                valid = bool(profile.get("is_consistent", True))
+                lambda_max = profile.get("lambda_max")
+                if matrix:
+                    try:
+                        cr_calc, valid_calc, lambda_calc = motor.ahp_tutarlilik_kontrolu(
+                            matris=matrix,
+                            agirliklar=weights,
+                        )
+                        cr = cr_calc
+                        valid = valid_calc
+                        lambda_max = lambda_calc
+                    except Exception:
+                        pass
+
+                return {
+                    "weights": {
+                        "basari": weights[0],
+                        "trend": weights[1],
+                        "populerlik": weights[2],
+                        "anket": weights[3],
+                    },
+                    "CR": _safe_float(cr),
+                    "valid": valid,
+                    "lambda_max": _safe_float(lambda_max),
+                    "profile": {
+                        "id": profile.get("id"),
+                        "name": profile.get("name") or profile.get("profile_name"),
+                        "version": profile.get("version"),
+                        "scope_type": profile.get("scope_type"),
+                        "source": profile.get("source"),
+                    },
+                    "source": "active_profile",
+                    "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                }
+            except Exception as profile_exc:
+                logger.warning("Aktif AHP profili cozumlenemedi, legacy matrise dusuldu: %s", profile_exc)
+
         weights = motor.ahp_calistir()
         cr, valid, lmax = motor.ahp_tutarlilik_kontrolu(agirliklar=weights)
         return {
             "weights": {
-                "basari":    round(weights[0], 4),
-                "trend":     round(weights[1], 4),
-                "populerlik": round(weights[2], 4),
-                "anket":     round(weights[3], 4),
+                "basari":    float(weights[0]),
+                "trend":     float(weights[1]),
+                "populerlik": float(weights[2]),
+                "anket":     float(weights[3]),
             },
-            "CR":     round(cr, 4),
+            "CR":     float(cr),
             "valid":  valid,
-            "lambda_max": round(lmax, 4),
+            "lambda_max": float(lmax),
+            "source": "legacy_matrix",
+            "fallback_used": True,
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
     except Exception as exc:
@@ -444,6 +511,7 @@ def _run_topsis_single(
             akademik_yil=int(year),
             donem=donem,
             include_course_ids={int(course_id)},
+            strict_ahp=True,
         )
         if not pack.get("ok"):
             return {
@@ -468,8 +536,8 @@ def _run_topsis_single(
         metric = (pack.get("metric_map") or {}).get(int(course_id), {})
         return {
             "status": "ok",
-            "raw_score_01": round(score_100 / 100.0, 6),
-            "score_100": round(score_100, 2),
+            "raw_score_01": score_100 / 100.0,
+            "score_100": score_100,
             "inputs": {
                 "basari": round(_safe_float(metric.get("basari")), 4),
                 "trend": round(_safe_float(metric.get("trend")), 4),
@@ -477,6 +545,10 @@ def _run_topsis_single(
                 "anket": round(_safe_float(metric.get("anket"), 0.5), 4),
             },
             "universe_size": len(pack.get("scores", {})),
+            "score_method": (pack.get("score_methods") or {}).get(int(course_id)),
+            "ahp_profile": pack.get("ahp_profile"),
+            "ahp_fallback_used": bool(pack.get("ahp_fallback_used")),
+            "ahp_fallback_reason": pack.get("ahp_fallback_reason"),
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
     except Exception as exc:
@@ -781,7 +853,7 @@ def _build_dt_reason(criteria: dict, topsis: dict, in_mufredat: bool,
     raw_skor = topsis.get("score_100")
     score_available = raw_skor is not None and not (isinstance(raw_skor, float) and math.isnan(raw_skor))
     skor = _safe_float(raw_skor) if score_available else None
-    skor_txt = f"{skor:.1f}" if score_available else "henuz hesaplanmadi"
+    skor_txt = f"{skor:.4f}" if score_available else "henuz hesaplanmadi"
     prev_statu = prev_pool.get("statu", 0)
     prev_sayac = prev_pool.get("sayac", 0)
     drop_reasons = list(topsis.get("drop_reasons") or [])
@@ -938,14 +1010,23 @@ def analyze_single_course(
             result["errors"].append(f"Onceki yil havuz kaydi alinamadi: {exc}")
 
         observed_state = _fetch_observed_state(cur, course_id, year)
+        fakulte_id = _resolve_course_faculty_id(cur, result["course"], course_id, year)
+        result["course"]["fakulte_id"] = fakulte_id
 
         # ------------------------------------------------------------------
         # 5. AHP
         # ------------------------------------------------------------------
-        ahp_result = _run_ahp(criteria)
+        ahp_result = _run_ahp(
+            criteria,
+            cur=cur,
+            faculty_id=fakulte_id,
+            department_id=result["course"].get("bolum_id"),
+            year=int(year),
+            semester="G",
+        )
         if criteria_missing and "error" not in ahp_result:
             ahp_result["note"] = (
-                "AHP agirliklari global karar matrisinden gelir; ders kriteri eksik olsa da gosterildi."
+                "AHP agirliklari aktif AHP profilinden gelir; ders kriteri eksik olsa da gosterildi."
             )
         result["steps"]["ahp"] = ahp_result
         if "error" in ahp_result:
@@ -964,8 +1045,6 @@ def analyze_single_course(
         # ------------------------------------------------------------------
         # 7. TOPSIS
         # ------------------------------------------------------------------
-        fakulte_id = _resolve_course_faculty_id(cur, result["course"], course_id, year)
-        result["course"]["fakulte_id"] = fakulte_id
         topsis_result = _run_topsis_single(
             cur=cur,
             course_id=int(course_id),
@@ -1094,7 +1173,7 @@ def analyze_single_course(
         # 12. Karar paketi
         # ------------------------------------------------------------------
         result["decision"] = {
-            "score_final": round(skor_final or 0.0, 2) if score_available else None,
+            "score_final": float(skor_final or 0.0) if score_available else None,
             "in_mufredat_this_year": in_mufredat,
             "is_ground_truth": is_ground_truth,
             "criteria_missing": criteria_missing,

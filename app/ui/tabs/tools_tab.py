@@ -33,6 +33,14 @@ from app.services.curriculum_import_service import (
     import_curriculum_excel as run_curriculum_import,
 )
 from app.services.havuz_karar import mufredat_durumunu_esitle
+from app.services.report_upload_service import (
+    REPORT_LABELS,
+    TEMPLATE_LABELS,
+    export_report,
+    list_report_types,
+    list_template_types,
+    write_template,
+)
 from app.services.reporting_service import build_report_snapshot, ensure_report_scores
 from app.services.survey_import_service import import_survey_excel as run_survey_import
 from app.services.survey_import_service import (
@@ -252,6 +260,33 @@ class ToolsTab(ttk.Frame):
         )
         self.lbl_import_state.pack(side=tk.LEFT)
 
+        # ---------- Zone A2: Şablon İndirme (§13/§14) ----------
+        # Tek akademik yıl + 'donem' kolonu ile güz/bahar birlikte; üretilen
+        # şablonlar sistem tarafından yeniden içe aktarılabilir.
+        tpl_zone = ttk.LabelFrame(self, text="A2) Şablon İndirme (yeniden içe aktarılabilir)", padding=10)
+        tpl_zone.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(
+            tpl_zone,
+            text="Seçili yıl ve kapsam kullanılır; dönem ayrımı 'donem' kolonuyla yapılır.",
+            foreground="#64748b",
+        ).pack(anchor=tk.W, pady=(0, 6))
+        tpl_btns = ttk.Frame(tpl_zone)
+        tpl_btns.pack(fill=tk.X)
+        for ttype, label in list_template_types():
+            ttk.Button(
+                tpl_btns, text=label, command=lambda t=ttype: self._download_template(t)
+            ).pack(side=tk.LEFT, padx=(0, 6), pady=2)
+
+        # ---------- Zone A3: Rapor İndirme (§13/§15) ----------
+        rep_zone = ttk.LabelFrame(self, text="A3) Rapor İndirme (Güz+Bahar ayrı sayfalar, aynı dosya)", padding=10)
+        rep_zone.pack(fill=tk.X, pady=(0, 8))
+        rep_btns = ttk.Frame(rep_zone)
+        rep_btns.pack(fill=tk.X)
+        for rtype, label in list_report_types():
+            ttk.Button(
+                rep_btns, text=label, command=lambda r=rtype: self._download_report(r)
+            ).pack(side=tk.LEFT, padx=(0, 6), pady=2)
+
         # ---------- Zone B: Reporting ----------
         report_zone = ttk.LabelFrame(self, text="B) Raporlama", padding=8)
         report_zone.pack(fill=tk.BOTH, expand=True)
@@ -349,6 +384,69 @@ class ToolsTab(ttk.Frame):
             self.tree_pool.delete(*self.tree_pool.get_children())
         if self.tree_curr:
             self.tree_curr.delete(*self.tree_curr.get_children())
+
+    def _download_template(self, template_type: str):
+        """§13/§14: Seçili tür için yeniden içe aktarılabilir şablon Excel'i indir."""
+        label = TEMPLATE_LABELS.get(template_type, template_type)
+        faculty_id, _fac, year = self._selected_faculty_scope()
+        if year is None:
+            year = 2023
+        target = filedialog.asksaveasfilename(
+            title=f"{label} kaydet",
+            defaultextension=".xlsx",
+            initialfile=f"{template_type}_sablon_{year}.xlsx",
+            filetypes=[("Excel dosyalari", "*.xlsx")],
+        )
+        if not target:
+            return
+        try:
+            res = write_template(
+                template_type,
+                target,
+                db_path=self.db_path,
+                year=int(year),
+                faculty_id=faculty_id,
+                department_id=self._selected_department_id(),
+                term=self.cb_donem.get() if self.cb_donem else None,
+            )
+        except Exception as exc:
+            messagebox.showerror("Sablon", self._format_operation_error(exc))
+            return
+        if res.get("ok"):
+            self.log(f"Sablon olusturuldu: {res.get('path')}")
+            messagebox.showinfo("Sablon", res.get("message") or "Sablon olusturuldu.")
+        else:
+            messagebox.showwarning("Sablon", res.get("message") or "Sablon olusturulamadi.")
+
+    def _download_report(self, report_type: str):
+        """§13/§15: Seçili kapsam için raporu indirilebilir Excel'e yazar (güz+bahar ayrı sayfa)."""
+        label = REPORT_LABELS.get(report_type, report_type)
+        faculty_id, _fac, year = self._selected_faculty_scope()
+        target = filedialog.asksaveasfilename(
+            title=f"{label} kaydet",
+            defaultextension=".xlsx",
+            initialfile=f"{report_type}_raporu_{year or 'tum'}.xlsx",
+            filetypes=[("Excel dosyalari", "*.xlsx")],
+        )
+        if not target:
+            return
+        try:
+            res = export_report(
+                report_type,
+                target,
+                db_path=self.db_path or "",
+                year=year,
+                faculty_id=faculty_id,
+                department_id=self._selected_department_id(),
+            )
+        except Exception as exc:
+            messagebox.showerror("Rapor", self._format_operation_error(exc))
+            return
+        if res.get("ok"):
+            self.log(f"Rapor olusturuldu: {res.get('path')} ({res.get('row_count')} satir)")
+            messagebox.showinfo("Rapor", res.get("message") or "Rapor olusturuldu.")
+        else:
+            messagebox.showwarning("Rapor", res.get("message") or "Rapor olusturulamadi.")
 
     def _parse_year_text(self, raw: str | None) -> int | None:
         text = str(raw or "").strip()
@@ -557,7 +655,7 @@ class ToolsTab(ttk.Frame):
         if self.tree_pool:
             self.tree_pool.delete(*self.tree_pool.get_children())
             for row in self._last_pool_rows:
-                score_text = "-" if row.get("skor") is None else f"{float(row['skor']):.2f}"
+                score_text = "-" if row.get("skor") is None else f"{float(row['skor']):.6f}"
                 self.tree_pool.insert(
                     "",
                     tk.END,
@@ -575,7 +673,7 @@ class ToolsTab(ttk.Frame):
         if self.tree_curr:
             self.tree_curr.delete(*self.tree_curr.get_children())
             for row in self._last_curr_rows:
-                score_text = "-" if row.get("skor") is None else f"{float(row['skor']):.2f}"
+                score_text = "-" if row.get("skor") is None else f"{float(row['skor']):.6f}"
                 self.tree_curr.insert(
                     "",
                     tk.END,
@@ -587,7 +685,7 @@ class ToolsTab(ttk.Frame):
             self.lbl_pool_total.config(text=f"Havuz Toplam: {stats.get('total', 0)}")
         if self.lbl_pool_avg:
             avg_score = stats.get("avg_score")
-            self.lbl_pool_avg.config(text=f"Ortalama Skor: {'-' if avg_score is None else f'{float(avg_score):.2f}'}")
+            self.lbl_pool_avg.config(text=f"Ortalama Skor: {'-' if avg_score is None else f'{float(avg_score):.6f}'}")
         if self.lbl_pool_rest:
             self.lbl_pool_rest.config(text=f"Dinlenmede(-1): {stats.get('rest_count', 0)}")
         if self.lbl_pool_chosen:

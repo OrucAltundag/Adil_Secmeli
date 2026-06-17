@@ -160,7 +160,7 @@ def _drop_item(c: dict[str, Any]) -> dict[str, Any]:
         "reason": (
             "Kesinleşme puanı yok; çıkarma için manuel inceleme."
             if score is None
-            else f"En düşük kesinleşme puanlılardan ({score:.1f}); çıkarılması önerilir."
+            else f"En düşük kesinleşme puanlılardan ({score:.6f}); çıkarılması önerilir."
         ),
     }
 

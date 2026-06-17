@@ -293,10 +293,10 @@ class KararMotoru:
             sonuclar.append({
                 "ders_id": int(row["ders_id"]) if "ders_id" in row else 0,
                 "Ders": row.get("ders", ""),
-                "AHP_TOPSIS_Skor": round(ci, 6),
-                "Kesinlesme_Puani": round(skor_100, 2),
-                "S+": round(s_plus, 6),
-                "S-": round(s_minus, 6),
+                "AHP_TOPSIS_Skor": float(ci),
+                "Kesinlesme_Puani": float(skor_100),
+                "S+": float(s_plus),
+                "S-": float(s_minus),
             })
 
         df_sonuc = pd.DataFrame(sonuclar).sort_values(by="AHP_TOPSIS_Skor", ascending=False)
@@ -1255,6 +1255,11 @@ def get_faculty_year_topsis_results(
             ahp_fallback_used = True
             ahp_fallback_reason = "Profil kriter anahtarlari beklenen 4 kriteri kapsamiyor."
             agirliklar = motor.ahp_calistir()
+        if strict_ahp and ahp_fallback_used:
+            raise RuntimeError(
+                ahp_fallback_reason
+                or "Aktif AHP profili kullanilamadi; strict mod legacy matrise izin vermez."
+            )
         # Strict modda tutarsiz profili kabul etme (kullanici aksini istemediyse).
         if strict_ahp and ahp_profile and not bool(ahp_profile.get("is_consistent", True)):
             raise RuntimeError(
@@ -1319,7 +1324,7 @@ def get_faculty_year_topsis_results(
                     kp = r.get("Kesinlesme_Puani")
                     if kp is None or (isinstance(kp, float) and math.isnan(kp)):
                         kp = _safe_float2(r.get("AHP_TOPSIS_Skor"), 0.0) * 100.0
-                    skor_map[d_id] = round(_safe_float2(kp, 0.0), 2)
+                    skor_map[d_id] = _safe_float2(kp, 0.0)
                     score_methods[d_id] = "topsis"
     else:
         # Fallback: bu fakulte+yil icin mufredatta hic aday ders yok; TOPSIS calismaz,
@@ -1335,7 +1340,7 @@ def get_faculty_year_topsis_results(
     # Mufredat disi: TOPSIS'e hic girmez; yalnizca anket ile 50+-10.
     for d_id in pool_courses:
         anket_val = (metric_map.get(d_id) or {}).get("anket")
-        skor_map[d_id] = round(_pool_course_score_anket_only(anket_val), 2)
+        skor_map[d_id] = _pool_course_score_anket_only(anket_val)
         score_methods[d_id] = "pool_anket_only"
 
     logger.debug(
@@ -1491,7 +1496,7 @@ def persist_faculty_year_topsis_scores(cur, fakulte_id, akademik_yil, skor_map, 
         meta = ders_meta.get(int(ders_id), {})
         bolum_id = meta.get("bolum_id")
         ders_adi = str(meta.get("ad") or "")
-        score_val = round(_safe_float2(score, 0.0), 2)
+        score_val = _safe_float2(score, 0.0)
 
         update_sql = """
             UPDATE havuz
@@ -3098,6 +3103,7 @@ def auto_generate_next_year_curricula(db_path=None, donem="G"):
             fakulte_id=fakulte_id,
             akademik_yil=aday_yil,
             donem=donem,
+            strict_ahp=True,
         )
 
         if result.get("ok"):

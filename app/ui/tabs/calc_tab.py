@@ -635,19 +635,55 @@ class CalcTab(ttk.Frame):
 
             # 2) AHP
             elif algo_id == "ahp":
-                _, fac_name, yctx = self._algo_scope()
+                fid, fac_name, yctx = self._algo_scope()
                 from app.services.calculation import KararMotoru
+                from app.services.ahp_profile_service import (
+                    DEFAULT_CRITERIA_KEYS,
+                    resolve_ahp_profile,
+                )
+
+                conn = getattr(self.db, "conn", None)
+                if conn is None:
+                    raise ValueError("Veritabani baglantisi yok.")
+
+                profile = resolve_ahp_profile(
+                    conn,
+                    faculty_id=fid,
+                    department_id=None,
+                    year=yctx,
+                )
+                weights_dict = dict(profile.get("weights") or {})
+                agirliklar = [float(weights_dict.get(key, 0.0)) for key in DEFAULT_CRITERIA_KEYS]
+                total = sum(agirliklar) or 1.0
+                agirliklar = [value / total for value in agirliklar]
+
                 motor = KararMotoru()
-                agirliklar = motor.ahp_calistir()
-                cr, gecerli, lambda_max = motor.ahp_tutarlilik_kontrolu(agirliklar=agirliklar)
+                cr = float(profile.get("consistency_ratio") or 0.0)
+                gecerli = bool(profile.get("is_consistent", True))
+                lambda_max = 0.0
+                matrix = profile.get("pairwise_matrix") or None
+                if matrix:
+                    try:
+                        cr, gecerli, lambda_max = motor.ahp_tutarlilik_kontrolu(
+                            matris=matrix,
+                            agirliklar=agirliklar,
+                        )
+                    except Exception:
+                        lambda_max = 0.0
 
                 sonuc_metni = f"Kapsam: {fac_name} | yil {yctx}\n\n"
+                sonuc_metni += (
+                    "Aktif AHP Profili:\n"
+                    "==================\n"
+                    f"ID: {profile.get('id')} | Ad: {profile.get('name') or profile.get('profile_name')} | "
+                    f"Versiyon: {profile.get('version')} | Kapsam: {profile.get('scope_type')}\n\n"
+                )
                 sonuc_metni += "AHP Matrisi ve Kriter Ağırlıkları:\n==================================\n"
-                sonuc_metni += f"1. Performans (Başarı): {agirliklar[0]:.4f} (%{agirliklar[0]*100:.1f})\n"
-                sonuc_metni += f"2. Trend:               {agirliklar[1]:.4f} (%{agirliklar[1]*100:.1f})\n"
-                sonuc_metni += f"3. Popülerlik:          {agirliklar[2]:.4f} (%{agirliklar[2]*100:.1f})\n"
-                sonuc_metni += f"4. Anket:               {agirliklar[3]:.4f} (%{agirliklar[3]*100:.1f})\n\n"
-                sonuc_metni += f"Tutarlılık Oranı (CR): {cr:.4f} (λmax={lambda_max:.2f})\n"
+                sonuc_metni += f"1. Performans (Başarı): {agirliklar[0]:.6f} (%{agirliklar[0]*100:.3f})\n"
+                sonuc_metni += f"2. Trend:               {agirliklar[1]:.6f} (%{agirliklar[1]*100:.3f})\n"
+                sonuc_metni += f"3. Popülerlik:          {agirliklar[2]:.6f} (%{agirliklar[2]*100:.3f})\n"
+                sonuc_metni += f"4. Anket:               {agirliklar[3]:.6f} (%{agirliklar[3]*100:.3f})\n\n"
+                sonuc_metni += f"Tutarlılık Oranı (CR): {cr:.6f} (λmax={lambda_max:.6f})\n"
                 sonuc_metni += f"CR < 0.10: {'✅ Geçerli' if gecerli else '⚠️ Dikkat: Matris tutarsız olabilir'}\n"
 
             # 3) TREND
@@ -703,98 +739,62 @@ class CalcTab(ttk.Frame):
             # 4) TOPSIS
             elif algo_id == "topsis":
                 fid, fac_name, yctx = self._algo_scope()
-                from app.services.calculation import KararMotoru
+                from app.services.calculation import get_faculty_year_topsis_results
 
-                motor = KararMotoru()
+                conn = getattr(self.db, "conn", None)
+                if conn is None:
+                    raise ValueError("Veritabani baglantisi yok.")
 
-                sorgu = """
-                    SELECT
-                        d.ders_id, d.ad as ders,
-                        p.akademik_yil, p.basari_orani,
-                        pop.doluluk_orani as populerlik,
-                        pop.kontenjan, pop.talep_sayisi
-                    FROM ders d
-                    LEFT JOIN performans p ON d.ders_id = p.ders_id AND p.akademik_yil = ?
-                    LEFT JOIN populerlik pop ON d.ders_id = pop.ders_id
-                        AND pop.akademik_yil = p.akademik_yil
-                    WHERE p.basari_orani IS NOT NULL
-                      AND EXISTS (
-                          SELECT 1 FROM mufredat_ders md
-                          JOIN mufredat m ON md.mufredat_id = m.mufredat_id
-                          JOIN bolum b ON m.bolum_id = b.bolum_id
-                          WHERE md.ders_id = d.ders_id AND b.fakulte_id = ?
-                            AND m.akademik_yil = ?
-                      )
-                    ORDER BY d.ders_id, p.akademik_yil DESC;
-                """
-                ham_veri = self.db.read_df(sorgu, params=(yctx, fid, yctx))
-                if ham_veri.empty:
+                pack = get_faculty_year_topsis_results(
+                    cur=conn.cursor(),
+                    fakulte_id=fid,
+                    akademik_yil=yctx,
+                    donem="G",
+                    strict_ahp=True,
+                )
+                if not pack.get("ok"):
                     sonuc_metni = (
                         f"Kapsam: {fac_name} | yil {yctx}\n"
-                        "Bu fakulte ve yil icin TOPSIS girdileri yok.\n"
+                        f"TOPSIS hesaplanamadi: {pack.get('error')}\n"
                     )
                     basarili_mi = False
                 else:
-                    anket_map = {}
-                    try:
-                        _, anket_rows = self.db.run_sql(
-                            """SELECT ders_id,
-                                      CASE WHEN anket_katilimci > 0
-                                           THEN MIN(1.0, MAX(0.0, CAST(anket_dersi_secen AS REAL) / anket_katilimci))
-                                           ELSE 0.5 END as anket_orani
-                               FROM ders_kriterleri
-                               WHERE anket_katilimci > 0 AND yil = ?
-                               GROUP BY ders_id
-                               ORDER BY yil DESC""",
-                            (yctx,),
-                        )
-                        for r in (anket_rows or []):
-                            did = int(r[0])
-                            if did not in anket_map:
-                                anket_map[did] = float(r[1])
-                    except Exception:
-                        pass
-
-                    islenmis = []
-                    for _, grup in ham_veri.groupby("ders_id"):
-                        ders_adi = grup.iloc[0]["ders"]
-                        yillik = grup.groupby("akademik_yil")["basari_orani"].mean().reset_index()
-                        yillik = yillik.sort_values("akademik_yil", ascending=False)
-                        gecmis = [{"yil": int(r["akademik_yil"]), "oran": float(r["basari_orani"])} for _, r in yillik.iterrows()]
-
-                        trend_skoru, _ = motor.gecmis_trend_hesapla(gecmis) if hasattr(motor, "gecmis_trend_hesapla") else (0, "")
-                        son_basari = gecmis[0]["oran"] if gecmis else 0.0
-
-                        pop_val = grup["populerlik"].dropna()
-                        pop_norm = float(pop_val.iloc[0]) if len(pop_val) > 0 else 0.5
-                        pop_norm = max(0.0, min(1.0, pop_norm))
-
-                        ders_id_val = int(grup["ders_id"].iloc[0])
-                        anket_val = anket_map.get(ders_id_val, 0.5)
-
-                        islenmis.append({
-                            "ders_id": ders_id_val,
-                            "ders": ders_adi,
-                            "basari": son_basari,
-                            "trend": trend_skoru,
-                            "populerlik": pop_norm,
-                            "anket": anket_val,
-                        })
-
-                    df_final = pd.DataFrame(islenmis)
-                    if "ders_id" not in df_final.columns and len(islenmis) > 0:
-                        df_final["ders_id"] = [r["ders_id"] for r in islenmis]
-                    agirliklar = motor.ahp_calistir()
-                    df_sonuc, meta = motor.topsis_calistir(df_final, agirliklar)
-
+                    profile = pack.get("ahp_profile") or {}
+                    meta = pack.get("meta") or {}
                     sonuc_metni = f"Kapsam: {fac_name} | yil {yctx}\n"
-                    sonuc_metni += "--- NİHAİ KARAR MATRİSİ (TOPSIS) ---\n"
-                    sonuc_metni += "Girdiler: Başarı + Trend + Popülerlik + Anket\n\n"
-                    if not df_sonuc.empty:
-                        cols = [c for c in ["Ders", "AHP_TOPSIS_Skor", "Kesinlesme_Puani", "S+", "S-"] if c in df_sonuc.columns]
-                        sonuc_metni += df_sonuc[cols].head(20).to_string(index=False, float_format="%.4f")
+                    sonuc_metni += "--- NİHAİ KARAR MATRİSİ (AHP + TOPSIS) ---\n"
+                    sonuc_metni += "Girdiler: Başarı + Trend + Popülerlik + Anket\n"
+                    sonuc_metni += (
+                        f"AHP profili: #{profile.get('id', '—')} "
+                        f"{profile.get('name') or profile.get('profile_name') or ''} "
+                        f"v{profile.get('version', '—')}\n"
+                    )
+                    if meta.get("agirliklar"):
+                        sonuc_metni += "Ağırlıklar: " + ", ".join(
+                            f"{key}={float(value):.6f}"
+                            for key, value in zip(meta.get("sutunlar", []), meta.get("agirliklar", []))
+                        ) + "\n"
+                    sonuc_metni += "\n"
+
+                    df_sonuc = pack.get("df_sonuc")
+                    if df_sonuc is not None and not df_sonuc.empty:
+                        cols = [
+                            c for c in ["Ders", "AHP_TOPSIS_Skor", "Kesinlesme_Puani", "S+", "S-"]
+                            if c in df_sonuc.columns
+                        ]
+                        sonuc_metni += df_sonuc[cols].head(20).to_string(index=False, float_format="%.6f")
                     else:
-                        sonuc_metni += "Hesaplama sonucu boş döndü."
+                        scores = sorted(
+                            dict(pack.get("scores") or {}).items(),
+                            key=lambda item: float(item[1]),
+                            reverse=True,
+                        )
+                        if scores:
+                            sonuc_metni += "TOPSIS evreni boş; havuz/anket skorlari:\n"
+                            for ders_id, score in scores[:20]:
+                                sonuc_metni += f"- Ders {ders_id}: {float(score):.6f}\n"
+                        else:
+                            sonuc_metni += "Hesaplama sonucu boş döndü."
 
             # 5) Sonraki yil mufredat uretimi (fakulte bazli, kriter tamlık kontrolu ile)
             elif algo_id == "next_year":

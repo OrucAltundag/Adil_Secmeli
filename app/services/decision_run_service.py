@@ -452,6 +452,41 @@ def mark_decision_run_failed(cur: sqlite3.Cursor, run_id: int, error_message: st
     )
 
 
+def _supersede_prior_runs(
+    cur: sqlite3.Cursor,
+    year: int,
+    faculty_id: int | None,
+    department_id: int | None,
+    semester: str | None,
+    keep_run_id: int,
+) -> int:
+    """§10: Aynı kapsam (yıl+fakülte+bölüm+dönem) için yeni bir karar çalışması
+    yapıldığında eski (tamamlanmış) run'ları ``stale_flag=1`` ile işaretler.
+
+    Böylece kapsam başına TEK aktif (stale olmayan) run kalır. Veri tabloları
+    (mufredat/havuz/skor) zaten yerinde güncellendiği (idempotent) için bu adım
+    yalnız audit/geçmiş katmanında "tek aktif sonuç" garantisini sağlar. ``stale_flag``
+    yalnız bilgi amaçlı okunduğundan (algorithm_activity / ahp_profile) güvenlidir.
+    """
+    try:
+        cur.execute(
+            """
+            UPDATE decision_runs
+            SET stale_flag = 1
+            WHERE id != ?
+              AND year = ?
+              AND IFNULL(faculty_id, -1) = IFNULL(?, -1)
+              AND IFNULL(department_id, -1) = IFNULL(?, -1)
+              AND LOWER(SUBSTR(TRIM(COALESCE(semester, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
+              AND COALESCE(stale_flag, 0) = 0
+            """,
+            (int(keep_run_id), int(year), faculty_id, department_id, _normalize_semester(semester)),
+        )
+        return int(cur.rowcount or 0)
+    except sqlite3.OperationalError:
+        return 0
+
+
 def record_decision_run_for_faculty_year(
     conn: sqlite3.Connection,
     year: int,
@@ -503,6 +538,7 @@ def record_decision_run_for_faculty_year(
         fakulte_id=int(faculty_id) if faculty_id is not None else 0,
         akademik_yil=int(year),
         donem=semester or "Guz",
+        strict_ahp=True,
     )
     if not score_pack.get("ok"):
         raise RuntimeError(score_pack.get("error", "TOPSIS skorlari uretilemedi."))
@@ -593,6 +629,9 @@ def record_decision_run_for_faculty_year(
             ahp_profile_status_at_run=str(ahp_profile.get("status") or ""),
             ahp_profile_source=str(ahp_profile.get("source") or ""),
         )
+
+        # §10: Aynı kapsam için eski run'ları stale işaretle → tek aktif sonuç.
+        _supersede_prior_runs(cur, int(year), faculty_id, department_id, semester, int(run_id))
 
         criteria_keys = [key for key in ahp_profile.get("criteria_keys", DEFAULT_CRITERIA_KEYS) if key in DEFAULT_CRITERIA_KEYS]
         if not criteria_keys:

@@ -159,7 +159,8 @@ class PoolTab(ttk.Frame):
         tk.Label(spring_box, text="BAHAR MÜFREDATI", bg="#fef9c3", font=("Segoe UI", 10, "bold")).pack(fill=tk.X)
         self.tree_spring = self._build_curr_tree(spring_box)
 
-        ttk.Button(right, text="Örnek Öğrenci Seçimi Başlat", command=self.open_student_simulation).pack(fill=tk.X, pady=4, padx=4)
+        # §1.3: "Örnek Öğrenci Seçimi" modülü kaldırıldı (gereksiz). Yöntem
+        # open_student_simulation kod tabanında bırakıldı (çağrısız), ileride temizlenebilir.
 
     def _build_legend(self):
         legend = tk.Frame(self, bg="#f8fafc")

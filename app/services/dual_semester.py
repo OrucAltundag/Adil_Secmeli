@@ -141,6 +141,7 @@ def _scores_for_term(
         akademik_yil=int(year),
         donem=normalize_semester(term),
         include_course_ids=include_ids,
+        strict_ahp=True,
     )
     if not pack.get("ok"):
         return {}

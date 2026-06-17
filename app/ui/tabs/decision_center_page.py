@@ -1068,7 +1068,7 @@ class DecisionCenterPage(ttk.Frame):
                 values=(
                     row["id"], row.get("course_code") or "", row.get("course_name") or row.get("course_id"),
                     _status_text(row.get("old_status")), _status_text(row.get("recommended_status")),
-                    _status_text(row.get("final_status")), f"{float(row.get('topsis_score') or 0):.1f}",
+                    _status_text(row.get("final_status")), f"{float(row.get('topsis_score') or 0):.4f}",
                     row.get("trend_label") or "", f"{float(row.get('data_confidence_score') or 0):.2f}",
                     row.get("decision_stability") or "", "Evet" if row.get("approval_required") else "Hayır",
                     row.get("main_reason") or "",
@@ -1090,7 +1090,7 @@ class DecisionCenterPage(ttk.Frame):
                     row.get("course_name") or row.get("course_id"),
                     row.get("oneri_kategori") or "",
                     f"{float(row.get('acilabilirlik') or 0):.1f}",
-                    f"{float(row.get('topsis_score') or 0):.1f}",
+                    f"{float(row.get('topsis_score') or 0):.4f}",
                     row.get("trend_label") or "",
                     f"{float(row.get('data_confidence_score') or 0):.2f}",
                     _status_text(row.get("final_status")),
@@ -1328,7 +1328,7 @@ class DecisionCenterPage(ttk.Frame):
                         _status_text(row.get("recommended_status")),
                         _status_text(row.get("final_status")),
                         _lifecycle_text(row.get("lifecycle_label")),
-                        f"{float(row.get('topsis_score') or 0):.1f}",
+                        f"{float(row.get('topsis_score') or 0):.4f}",
                         row.get("trend_label") or "",
                         f"{float(row.get('data_confidence_score') or 0):.2f}",
                         "Evet" if row.get("approval_required") else "Hayır",
@@ -1380,7 +1380,7 @@ class DecisionCenterPage(ttk.Frame):
             f"Final statü: {_status_text(row.get('final_status'))}",
             f"Yaşam döngüsü etiketi: {_lifecycle_text(row.get('lifecycle_label'))}",
             f"Kural: {row.get('rule_applied') or ''}",
-            f"Skor / trend / veri güveni: {float(row.get('topsis_score') or 0):.1f} / {row.get('trend_label') or ''} / {float(row.get('data_confidence_score') or 0):.2f}",
+            f"Skor / trend / veri güveni: {float(row.get('topsis_score') or 0):.4f} / {row.get('trend_label') or ''} / {float(row.get('data_confidence_score') or 0):.2f}",
             f"Sayaç: {row.get('counter_before')} -> {row.get('counter_after')}",
             f"Onay: {row.get('approval_status') or 'not_required'}",
             "",
@@ -1569,10 +1569,10 @@ class DecisionCenterPage(ttk.Frame):
             lines.append(f"  - {s:<14}: {c:>4}  (%{c / n * 100:.1f})")
         lines += [
             "",
-            f"Ortalama TOPSIS skoru     : {ort(skorlar):.2f}  (std {std(skorlar):.2f})",
-            f"  Mufredatta kalan ort.   : {ort(mufredat):.2f}  (n={len(mufredat)})",
-            f"  Havuz/dinlenme ort.     : {ort(havuz):.2f}  (n={len(havuz)})",
-            f"  >> Skor ayrimi (separation): {ayrim:.2f}  "
+            f"Ortalama TOPSIS skoru     : {ort(skorlar):.4f}  (std {std(skorlar):.4f})",
+            f"  Mufredatta kalan ort.   : {ort(mufredat):.4f}  (n={len(mufredat)})",
+            f"  Havuz/dinlenme ort.     : {ort(havuz):.4f}  (n={len(havuz)})",
+            f"  >> Skor ayrimi (separation): {ayrim:.4f}  "
             f"({'iyi ayrisma' if ayrim >= 10 else 'zayif ayrisma — esikleri gozden gecirin'})",
             "",
             f"Ortalama veri guveni      : {ort(guven):.3f}  "
@@ -1625,7 +1625,7 @@ class DecisionCenterPage(ttk.Frame):
         contrib = json.loads(row["contribution_json"] or "{}") if row["contribution_json"] else {}
         lines = [
             f"{row['kod'] or ''} {row['ad'] or ''}",
-            f"TOPSIS skoru: {float(row['topsis_score'] or 0):.1f}",
+            f"TOPSIS skoru: {float(row['topsis_score'] or 0):.4f}",
             f"Trend: {row['trend_label'] or ''} ({float(row['trend_score'] or 0):.2f})",
             f"Veri güveni: {float(row['data_confidence_score'] or 0):.2f}",
             f"Kararlılık: {row['decision_stability'] or ''}",

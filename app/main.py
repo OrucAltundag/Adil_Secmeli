@@ -285,7 +285,6 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.data_quality_page import DataQualityPage
         from app.ui.tabs.decision_center_page import DecisionCenterPage
         from app.ui.tabs.overview_page import OverviewPage
-        from app.ui.tabs.security_readiness_page import SecurityReadinessPage
         from app.ui.tabs.semester_planning_page import SemesterPlanningPage
         from app.ui.tabs.system_health_page import SystemHealthPage
         from app.ui.tabs.tools_tab import ToolsTab
@@ -357,8 +356,8 @@ class AdilSecmeliApp(tk.Tk):
         self.tab_system_health = SystemHealthPage(self._nb_sistem, app=self)
         self._nb_sistem.add(self.tab_system_health, text="🏥 Sistem Sağlığı")
 
-        self.tab_security_readiness = SecurityReadinessPage(self._nb_sistem)
-        self._nb_sistem.add(self.tab_security_readiness, text="🔐 Güvenlik & Hazırlık")
+        # §4: "Güvenlik & Hazırlık" sayfası arayüzden kaldırıldı (kullanıcı isteği).
+        # Sınıf (SecurityReadinessPage) kod tabanında kalır; yalnız sekme oluşturulmaz.
 
         self.tab_view = ViewTab(self._nb_sistem, app=self)
         self._nb_sistem.add(self.tab_view, text="📂 Veritabanı Görüntüle")
@@ -682,8 +681,6 @@ class AdilSecmeliApp(tk.Tk):
                 inner = self._nb_sistem.tab(self._nb_sistem.index("current"), "text")
                 if "Sağlık" in inner:
                     self.tab_system_health.refresh()
-                elif "Güvenlik" in inner:
-                    self.tab_security_readiness.refresh_data()
             elif "Karar Süreci" in outer:
                 inner = self._nb_karar.tab(self._nb_karar.index("current"), "text")
                 if "Kriter" in inner:
@@ -721,8 +718,6 @@ class AdilSecmeliApp(tk.Tk):
                 inner = self._nb_sistem.tab(self._nb_sistem.index("current"), "text")
                 if "Sağlık" in inner:
                     self.tab_system_health.refresh()
-                elif "Güvenlik" in inner:
-                    self.tab_security_readiness.refresh_data()
             elif "Karar Süreci" in selected:
                 inner = self._nb_karar.tab(self._nb_karar.index("current"), "text")
                 if "Kriter" in inner:
@@ -751,8 +746,6 @@ class AdilSecmeliApp(tk.Tk):
             if group == "sistem":
                 if "Sağlık" in selected:
                     self.tab_system_health.refresh()
-                elif "Güvenlik" in selected:
-                    self.tab_security_readiness.refresh_data()
             elif group == "karar":
                 if "Kriter" in selected:
                     self.tab_calc.refresh()

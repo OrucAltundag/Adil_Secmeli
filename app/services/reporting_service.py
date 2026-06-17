@@ -171,6 +171,7 @@ def ensure_report_scores(db, faculty_id: int, year: int, term: str) -> dict[str,
         fakulte_id=int(faculty_id),
         akademik_yil=int(year),
         donem=normalize_term(term),
+        strict_ahp=True,
     )
     if not pack.get("ok"):
         return {"ok": False, "reason": pack.get("error", "score_generation_failed")}
@@ -394,7 +395,7 @@ def build_report_snapshot(
             for ders_id, ders_adi, skor in (curr_rows_raw or [])
         ]
 
-    avg_score = round(sum(scores) / len(scores), 2) if scores else None
+    avg_score = (sum(scores) / len(scores)) if scores else None
     criteria_import_summary = (
         summarize_report_criteria_scope(
             conn=conn,
@@ -406,6 +407,16 @@ def build_report_snapshot(
         if conn is not None
         else {"mode": "missing", "active_import": None, "display": "Aktif kriter dosyasi yok."}
     )
+    try:
+        active_ahp_summary = get_active_ahp_profile_summary(
+            conn,
+            year=int(year),
+            faculty_id=int(faculty_id),
+            department_id=department_id,
+            semester=normalized_term,
+        ) if conn is not None else {}
+    except Exception:
+        active_ahp_summary = {}
 
     notes = [
         f"Skor kaynaklari: mufredattaki dersler AHP+TOPSIS, mufredat disi dersler anket bazli {POOL_DEFAULT_SCORE:.0f}+-{POOL_ANKET_SCORE_SPREAD:.0f}.",
@@ -413,6 +424,14 @@ def build_report_snapshot(
         f"Rapor kapsami: Fakulte={faculty_name}, Yil={year}, Donem={normalized_term}" + (f", Bolum={department_name}" if department_name else ""),
         f"Kriter dosyasi: {criteria_import_summary.get('display')}",
     ]
+    if active_ahp_summary:
+        profile_info = active_ahp_summary.get("profile") or active_ahp_summary
+        notes.append(
+            "Aktif AHP profili: "
+            f"#{profile_info.get('id')} "
+            f"{profile_info.get('name') or profile_info.get('profile_name') or ''} "
+            f"v{profile_info.get('version')}"
+        )
 
     return {
         "pool_rows": pool_rows,

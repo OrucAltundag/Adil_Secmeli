@@ -24,10 +24,12 @@ from typing import Any
 from app.repositories.curriculum_repository import (
     get_courses_status_batch,
     get_curriculum_courses_by_year,
+    get_curriculum_courses_by_year_and_term,
     get_period_planning_summary,
     get_pool_courses_with_curriculum_status,
     save_period_planning_result,
 )
+from app.services.course_swap_service import swap_pool_curriculum_course
 from app.services.course_curriculum_status_service import FALL, SPRING
 from app.services.planning_draft_service import (
     ADDED_PLACEHOLDER,
@@ -42,6 +44,13 @@ from app.services.semester_planning_engine import (
     generate_semester_plan,
     get_plan_run,
     list_plan_runs,
+)
+from app.services.semester_plan_governance_service import (
+    activate_plan_run,
+    delete_plan_run,
+    get_active_plan,
+    get_plan_decision_status,
+    set_plan_decision,
 )
 from app.services.semester_planning_policy_service import create_policy, resolve_policy, seed_default_policy
 from app.services.semester_planning_reporting_service import (
@@ -99,6 +108,7 @@ class SemesterPlanningPage(ttk.Frame):
         self.var_filter = tk.StringVar(value="Tümü")
         self.var_draft_target = tk.StringVar(value="")
         self._last_draft: dict[str, Any] | None = None
+        self._yearly_by_iid: dict[str, dict[str, Any]] = {}
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -121,6 +131,11 @@ class SemesterPlanningPage(ttk.Frame):
         header = ttk.Frame(self, padding=8)
         header.pack(fill=tk.X)
         ttk.Label(header, text="Dönem Planlama", style="Header.TLabel").pack(side=tk.LEFT)
+        # §2.1: Başlıkta aktif planı göster (AHP'deki aktif-profil göstergesi gibi).
+        self.active_plan_var = tk.StringVar(value="")
+        ttk.Label(header, textvariable=self.active_plan_var, foreground="#166534", font=("Segoe UI", 9, "bold")).pack(
+            side=tk.LEFT, padx=12
+        )
         ttk.Button(header, text="Yenile", command=self.refresh).pack(side=tk.RIGHT)
         self.status_var = tk.StringVar(value="Kapsam seçin; yıllık görünüm yüklenecek.")
         ttk.Label(header, textvariable=self.status_var).pack(side=tk.RIGHT, padx=8)
@@ -214,7 +229,12 @@ class SemesterPlanningPage(ttk.Frame):
         controls = ttk.Frame(frame)
         controls.pack(fill=tk.X, pady=(8, 4))
         ttk.Label(controls, text="Hedef ders sayısı:").pack(side=tk.LEFT)
-        ttk.Entry(controls, textvariable=self.var_draft_target, width=6).pack(side=tk.LEFT, padx=(4, 12))
+        target_entry = ttk.Entry(controls, textvariable=self.var_draft_target, width=6)
+        target_entry.pack(side=tk.LEFT, padx=(4, 12))
+        # §1.2: Sayı değiştirince taslak güvenilir biçimde yeniden üretilsin
+        # (Enter veya alandan çıkınca). Geçersiz/boş girişte inline uyarı, popup yok.
+        target_entry.bind("<Return>", lambda _e: self._commit_draft_target())
+        target_entry.bind("<FocusOut>", lambda _e: self._commit_draft_target())
         ttk.Button(controls, text="Taslağı Üret", command=self.generate_draft).pack(side=tk.LEFT, padx=2)
         ttk.Button(
             controls, text="Korunanları Müfredata Kaydet", command=self.save_draft_to_curriculum
@@ -292,6 +312,16 @@ class SemesterPlanningPage(ttk.Frame):
         except Exception:
             self.status_var.set("Planlama taslağı yüklenemedi.")
 
+    def _commit_draft_target(self) -> None:
+        """§1.2: Hedef sayı değişimini güvenli uygula (boş/geçersizde inline uyarı)."""
+        raw = (self.var_draft_target.get() or "").strip()
+        if not raw:
+            return
+        if not raw.isdigit():
+            self.draft_warning_var.set("⚠ Hedef ders sayısı pozitif tam sayı olmalı.")
+            return
+        self.generate_draft()
+
     def generate_draft(self) -> None:
         """Kullanıcının girdiği hedef ders sayısına göre taslak üretir (§10/§11)."""
         try:
@@ -328,7 +358,7 @@ class SemesterPlanningPage(ttk.Frame):
         term_label = {FALL: "Güz", SPRING: "Bahar"}
         for it in items:
             kp = it.get("confirmation_score")
-            kp_txt = f"{float(kp):.1f}" if isinstance(kp, (int, float)) else "— (puan yok)"
+            kp_txt = f"{float(kp):.6f}" if isinstance(kp, (int, float)) else "— (puan yok)"
             self.draft_tree.insert(
                 "",
                 tk.END,
@@ -436,6 +466,7 @@ class SemesterPlanningPage(ttk.Frame):
         filter_combo = ttk.Combobox(toolbar, textvariable=self.var_filter, values=_FILTERS, width=18, state="readonly")
         filter_combo.pack(side=tk.LEFT, padx=(4, 12))
         filter_combo.bind("<<ComboboxSelected>>", lambda _e: self._render_yearly_table())
+        ttk.Button(toolbar, text="Müfredata Ekle (Takas)", command=self._open_swap_dialog).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(
             toolbar,
             text="Renkler: yeşil=müfredatta · mavi=havuzda · mor=yeni öneri · kırmızı=çakışma/tekrar eklenemez",
@@ -533,6 +564,7 @@ class SemesterPlanningPage(ttk.Frame):
         btns.grid(row=3, column=0, columnspan=10, sticky=tk.W, pady=(6, 0))
         ttk.Button(btns, text="Adayları Kontrol Et", command=self.preview_plan).pack(side=tk.LEFT, padx=2)
         ttk.Button(btns, text="Plan Üret", command=self.generate_plan).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btns, text="Tüm Fakülteler İçin Üret", command=self.generate_all_faculties).pack(side=tk.LEFT, padx=2)
         ttk.Button(btns, text="Alternatifleri Üret", command=self.generate_alternatives).pack(side=tk.LEFT, padx=2)
         ttk.Button(btns, text="Politikayı Kaydet", command=self.save_policy).pack(side=tk.LEFT, padx=2)
         ttk.Button(btns, text="Planı Müfredata Kaydet", command=self.save_plan_to_curriculum).pack(side=tk.LEFT, padx=2)
@@ -626,15 +658,23 @@ class SemesterPlanningPage(ttk.Frame):
         toolbar.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(toolbar, text="Geçmişi Yenile", command=self._load_runs).pack(side=tk.LEFT)
         ttk.Button(toolbar, text="Seçili Planı Aç", command=self.load_selected_run).pack(side=tk.LEFT, padx=4)
+        # §2.3 onay + §2.1 sürümleme
+        ttk.Button(toolbar, text="Onayla", command=lambda: self._decide_selected_run("approved")).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Reddet", command=lambda: self._decide_selected_run("rejected")).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Aktifleştir", command=self._activate_selected_run).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Sil", command=self._delete_selected_run).pack(side=tk.LEFT, padx=2)
         self.run_tree = ttk.Treeview(
-            frame, columns=("id", "year", "faculty", "department", "fall", "spring", "score", "status"), show="headings"
+            frame,
+            columns=("id", "year", "faculty", "department", "fall", "spring", "score", "decision", "active"),
+            show="headings",
         )
-        for col, text in {
-            "id": "Run ID", "year": "Yıl", "faculty": "Fakülte", "department": "Bölüm",
-            "fall": "Güz", "spring": "Bahar", "score": "Skor", "status": "Durum",
-        }.items():
+        for col, text, width in (
+            ("id", "Run ID", 70), ("year", "Yıl", 60), ("faculty", "Fakülte", 90), ("department", "Bölüm", 90),
+            ("fall", "Güz", 60), ("spring", "Bahar", 60), ("score", "Skor", 70),
+            ("decision", "Onay", 110), ("active", "Aktif", 70),
+        ):
             self.run_tree.heading(col, text=text)
-            self.run_tree.column(col, width=100, anchor=tk.W)
+            self.run_tree.column(col, width=width, anchor=tk.W)
         self.run_tree.pack(fill=tk.BOTH, expand=True)
         self.run_tree.bind("<<TreeviewSelect>>", lambda _event: self.load_selected_run())
 
@@ -645,6 +685,8 @@ class SemesterPlanningPage(ttk.Frame):
         try:
             conn = self._conn()
             seed_default_policy(conn)
+            from app.services.semester_plan_governance_service import ensure_plan_governance_schema
+            ensure_plan_governance_schema(conn)  # §2.1/§2.3 kolonları (additive)
             conn.commit()
             self._populate_filters(conn)
             self._load_current_policy()
@@ -652,6 +694,7 @@ class SemesterPlanningPage(ttk.Frame):
             self._load_yearly_view()
             self._load_integrity()
             self._load_runs()
+            self._update_active_plan_header()
             self.status_var.set("Hazır. Yıllık görünüm yüklendi.")
         except Exception:
             messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
@@ -831,29 +874,121 @@ class SemesterPlanningPage(ttk.Frame):
     def _render_yearly_table(self) -> None:
         tree = self.yearly_tree
         tree.delete(*tree.get_children())
+        self._yearly_by_iid = {}
         flt = self.var_filter.get()
         shown = 0
         for row in self._yearly_rows:
             if not self._filter_match(row, flt):
                 continue
-            tree.insert(
-                "",
-                tk.END,
-                values=(
-                    row.get("course_code") or row.get("course_id"),
-                    row.get("course_name") or "",
-                    self._round(row.get("score")),
-                    "Evet" if row.get("in_pool") else "Hayır",
-                    "✓" if row.get("in_fall_curriculum") else "—",
-                    "✓" if row.get("in_spring_curriculum") else "—",
-                    row.get("status_label") or "",
-                    row.get("recommendation") or "",
-                ),
-                tags=(row.get("status_color") or "gray",),
+            cid = row.get("course_id")
+            values = (
+                row.get("course_code") or row.get("course_id"),
+                row.get("course_name") or "",
+                self._round(row.get("score")),
+                "Evet" if row.get("in_pool") else "Hayır",
+                "✓" if row.get("in_fall_curriculum") else "—",
+                "✓" if row.get("in_spring_curriculum") else "—",
+                row.get("status_label") or "",
+                row.get("recommendation") or "",
             )
+            tags = (row.get("status_color") or "gray",)
+            if cid is not None:
+                iid = f"c{cid}"
+                self._yearly_by_iid[iid] = row
+                tree.insert("", tk.END, iid=iid, values=values, tags=tags)
+            else:
+                tree.insert("", tk.END, values=values, tags=tags)
             shown += 1
         if shown == 0:
             tree.insert("", tk.END, values=("", "Kayıt yok / kapsam boş.", "", "", "", "", "", ""), tags=("gray",))
+
+    # ------------------------------------------------------------------
+    # §2.4 Ders takas (swap): havuzdaki öneri dersini müfredata al, karşılığında
+    # seçilen müfredat dersini havuza gönder.
+    # ------------------------------------------------------------------
+    def _open_swap_dialog(self) -> None:
+        sel = self.yearly_tree.selection()
+        row = self._yearly_by_iid.get(sel[0]) if sel else None
+        if not row:
+            messagebox.showinfo("Müfredata Ekle", "Önce listeden havuzdaki (önerilen) bir ders seçin.")
+            return
+        if row.get("in_yearly_curriculum"):
+            messagebox.showinfo("Müfredata Ekle", "Bu ders zaten müfredatta. Lütfen havuzdaki (önerilen) bir ders seçin.")
+            return
+        year = self._selected_year()
+        faculty_id = self._selected_faculty_id()
+        department_id = self._selected_department_id()
+        if year <= 0 or faculty_id is None or department_id is None:
+            messagebox.showwarning(
+                "Müfredata Ekle",
+                "Takas için Yıl + Fakülte + Bölüm seçili olmalıdır (müfredat bölüm bazlıdır).",
+            )
+            return
+        incoming_id = int(row["course_id"])
+        incoming_label = f"{row.get('course_code') or ''} {row.get('course_name') or ''}".strip()
+
+        dlg = tk.Toplevel(self)
+        dlg.title("Müfredata Ekle (Takas)")
+        dlg.transient(self.winfo_toplevel())
+        dlg.resizable(False, False)
+        ttk.Label(dlg, text=f"Eklenecek (havuz) ders:\n{incoming_label}", font=("Segoe UI", 10, "bold")).pack(
+            anchor=tk.W, padx=12, pady=(12, 6)
+        )
+
+        term_var = tk.StringVar(value="Güz")
+        term_row = ttk.Frame(dlg)
+        term_row.pack(fill=tk.X, padx=12, pady=4)
+        ttk.Label(term_row, text="Dönem:").pack(side=tk.LEFT)
+        ttk.Radiobutton(term_row, text="Güz", variable=term_var, value="Güz").pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(term_row, text="Bahar", variable=term_var, value="Bahar").pack(side=tk.LEFT, padx=4)
+
+        ttk.Label(dlg, text="Havuza gönderilecek müfredat dersi (takas):").pack(anchor=tk.W, padx=12, pady=(8, 2))
+        out_var = tk.StringVar()
+        out_combo = ttk.Combobox(dlg, textvariable=out_var, width=46, state="readonly")
+        out_combo.pack(fill=tk.X, padx=12)
+        out_map: dict[str, int | None] = {}
+
+        def _reload_outgoing(*_a: Any) -> None:
+            out_map.clear()
+            out_map["(takas yok — sadece ekle)"] = None
+            try:
+                term = FALL if term_var.get() == "Güz" else SPRING
+                rows = get_curriculum_courses_by_year_and_term(self._conn(), year, term, faculty_id, department_id)
+                for c in rows:
+                    out_map[f"{c.get('course_code') or c['course_id']} {c.get('course_name') or ''}".strip()] = int(c["course_id"])
+            except Exception:
+                pass
+            out_combo["values"] = list(out_map.keys())
+            out_combo.current(0)
+
+        term_var.trace_add("write", _reload_outgoing)
+        _reload_outgoing()
+
+        def _do_swap() -> None:
+            outgoing_id = out_map.get(out_var.get())
+            try:
+                conn = self._conn()
+                result = swap_pool_curriculum_course(
+                    conn, year, faculty_id, department_id,
+                    term=term_var.get(), incoming_course_id=incoming_id, outgoing_course_id=outgoing_id,
+                )
+                conn.commit()
+            except ValueError as exc:
+                messagebox.showwarning("Müfredata Ekle", str(exc), parent=dlg)
+                return
+            except Exception:
+                messagebox.showerror("Müfredata Ekle", self._friendly_backend_error(), parent=dlg)
+                return
+            dlg.destroy()
+            self.status_var.set(result.get("message") or "Takas tamamlandı.")
+            messagebox.showinfo("Müfredata Ekle", result.get("message") or "Takas tamamlandı.")
+            self._load_yearly_view()
+            self._load_integrity()
+
+        btns = ttk.Frame(dlg)
+        btns.pack(fill=tk.X, padx=12, pady=12)
+        ttk.Button(btns, text="Takas / Ekle", command=_do_swap).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btns, text="İptal", command=dlg.destroy).pack(side=tk.LEFT, padx=4)
 
     def _render_term_panels(self, rows: list[dict[str, Any]]) -> None:
         for tree, term in ((self.fall_status_tree, FALL), (self.spring_status_tree, SPRING)):
@@ -1019,6 +1154,58 @@ class SemesterPlanningPage(ttk.Frame):
     def generate_alternatives(self) -> None:
         self._run_planning(persist=True, generate_alternatives=True, success_message="Dönem planı ve alternatif senaryolar üretildi.")
 
+    def generate_all_faculties(self) -> None:
+        """§2.2: Tüm fakülteler için tek tek plan üretir (her biri ayrı transaction)."""
+        year = self._selected_year()
+        if year <= 0:
+            messagebox.showwarning("Dönem Planlama", "Plan üretmek için geçerli bir yıl seçiniz.")
+            return
+        if not messagebox.askyesno(
+            "Dönem Planlama",
+            f"{year} yılı için TÜM fakültelere plan üretilsin mi? Her fakülte için ayrı bir "
+            "plan kaydı (Onay Bekliyor) oluşturulur.",
+        ):
+            return
+        try:
+            conn = self._conn()
+            faculties = self._fetch_faculties(conn.cursor())
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
+            return
+        done, failed, empty = 0, 0, 0
+        for fac_id, _name in faculties:
+            try:
+                result = generate_semester_plan(
+                    conn,
+                    year=year,
+                    faculty_id=int(fac_id),
+                    department_id=None,
+                    persist=True,
+                    generate_alternatives=False,
+                    created_by="desktop-ui-bulk",
+                    respect_existing_curriculum=bool(self.var_respect.get()),
+                )
+                conn.commit()
+                selected = len(result.get("fall_courses") or []) + len(result.get("spring_courses") or [])
+                if selected == 0:
+                    empty += 1
+                else:
+                    done += 1
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                failed += 1
+        self._load_runs()
+        self.status_var.set(f"Toplu üretim bitti: {done} başarılı, {empty} boş, {failed} hatalı.")
+        messagebox.showinfo(
+            "Dönem Planlama",
+            f"Tüm fakülteler için plan üretimi tamamlandı.\n\n"
+            f"  • Başarılı : {done}\n  • Aday yok : {empty}\n  • Hatalı   : {failed}\n\n"
+            "Planlar 'Plan Geçmişi' sekmesinde 'Onay Bekliyor' durumundadır.",
+        )
+
     def _run_planning(self, *, persist: bool, generate_alternatives: bool, success_message: str) -> None:
         year = self._selected_year()
         if year <= 0:
@@ -1149,7 +1336,7 @@ class SemesterPlanningPage(ttk.Frame):
     @staticmethod
     def _round(value: Any) -> str:
         try:
-            return f"{float(value or 0.0):.2f}"
+            return f"{float(value or 0.0):.6f}"
         except (TypeError, ValueError):
             return "0.00"
 
@@ -1168,6 +1355,24 @@ class SemesterPlanningPage(ttk.Frame):
             messagebox.showwarning(
                 "Dönem Planlama",
                 "Planı müfredata kaydetmek için Yıl + Fakülte + Bölüm seçili olmalıdır (müfredat bölüm bazlıdır).",
+            )
+            return
+        # §2.3: Onay kapısı — yalnız ONAYLANMIŞ plan müfredata uygulanabilir.
+        if self._last_run_id is None:
+            messagebox.showwarning(
+                "Dönem Planlama",
+                "Önce 'Plan Üret' ile planı geçmişe kaydedin, sonra 'Plan Geçmişi'nden 'Onayla'.",
+            )
+            return
+        try:
+            decision = get_plan_decision_status(self._conn(), self._last_run_id).get("decision_status")
+        except Exception:
+            decision = None
+        if decision != "approved":
+            messagebox.showwarning(
+                "Dönem Planlama",
+                "Bu plan henüz ONAYLANMADI. Müfredata kaydetmeden önce 'Plan Geçmişi' sekmesinden "
+                "planı 'Onayla'. (Karar onay mekanizması — onaysız plan uygulanamaz.)",
             )
             return
         fall_ids = [int(c) for c in result.get("fall_course_ids", [])]
@@ -1192,13 +1397,17 @@ class SemesterPlanningPage(ttk.Frame):
                 spring_course_ids=spring_ids,
                 plan_run_id=self._last_run_id,
             )
+            # §2.1: Uygulanan (onaylı) plan, yıl+kapsam için aktif sürüm olur.
+            activate_plan_run(conn, self._last_run_id)
             conn.commit()
             self.status_var.set(
                 f"Plan müfredata kaydedildi (Güz {outcome['fall_written']}, Bahar {outcome['spring_written']})."
             )
-            messagebox.showinfo("Dönem Planlama", "Plan müfredata kaydedildi.")
+            messagebox.showinfo("Dönem Planlama", "Plan müfredata kaydedildi ve aktif sürüm yapıldı.")
             self._load_yearly_view()
             self._load_integrity()
+            self._load_runs()
+            self._update_active_plan_header()
         except ValueError as exc:
             messagebox.showwarning("Dönem Planlama", str(exc))
         except Exception:
@@ -1219,14 +1428,16 @@ class SemesterPlanningPage(ttk.Frame):
                 department_id=self._selected_department_id(),
             )
             if not rows:
-                self.run_tree.insert("", tk.END, values=("", "", "", "", "", "", "", "Henüz plan yok"))
+                self.run_tree.insert("", tk.END, values=("", "", "", "", "", "", "", "Henüz plan yok", ""))
                 return
+            decision_tr = {"approved": "Onaylı", "rejected": "Reddedildi", "pending_review": "Onay Bekliyor"}
             for row in rows:
                 raw_id = row.get("id")
                 if raw_id is None:
                     continue
                 iid = str(raw_id)
                 self._run_rows[iid] = int(raw_id)
+                dec = str(row.get("decision_status") or "pending_review")
                 self.run_tree.insert(
                     "",
                     tk.END,
@@ -1239,11 +1450,95 @@ class SemesterPlanningPage(ttk.Frame):
                         row.get("fall_count"),
                         row.get("spring_count"),
                         self._round(row.get("plan_score")),
-                        row.get("status"),
+                        decision_tr.get(dec, dec),
+                        "★ AKTİF" if int(row.get("is_active") or 0) == 1 else "",
                     ),
                 )
         except Exception:
             self.status_var.set("Plan geçmişi yüklenemedi.")
+
+    def _selected_run_id(self) -> int | None:
+        sel = self.run_tree.selection()
+        if not sel:
+            return None
+        return self._run_rows.get(sel[0])
+
+    def _decide_selected_run(self, decision: str) -> None:
+        """§2.3: Seçili planı onayla/reddet (Karar Merkezi onay mantığı)."""
+        run_id = self._selected_run_id()
+        if not run_id:
+            messagebox.showinfo("Dönem Planlama", "Önce geçmişten bir plan seçin.")
+            return
+        reason = None
+        if decision == "rejected":
+            reason = "Kullanıcı tarafından reddedildi (dönem planlama ekranı)."
+        try:
+            conn = self._conn()
+            result = set_plan_decision(conn, run_id, decision, user="desktop-ui", reason=reason)
+            conn.commit()
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
+            return
+        self.status_var.set(result.get("message") or "")
+        if not result.get("ok"):
+            messagebox.showwarning("Dönem Planlama", result.get("message") or "İşlem yapılamadı.")
+        self._load_runs()
+
+    def _activate_selected_run(self) -> None:
+        """§2.1: Seçili (onaylı) planı yıl+kapsam için aktif yap."""
+        run_id = self._selected_run_id()
+        if not run_id:
+            messagebox.showinfo("Dönem Planlama", "Önce geçmişten bir plan seçin.")
+            return
+        try:
+            conn = self._conn()
+            result = activate_plan_run(conn, run_id)
+            conn.commit()
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
+            return
+        if result.get("ok"):
+            self.status_var.set(result.get("message") or "Plan aktifleştirildi.")
+        else:
+            messagebox.showwarning("Dönem Planlama", result.get("message") or "Aktifleştirilemedi.")
+        self._load_runs()
+        self._update_active_plan_header()
+
+    def _delete_selected_run(self) -> None:
+        """§2.1: Seçili (aktif olmayan) planı sil."""
+        run_id = self._selected_run_id()
+        if not run_id:
+            messagebox.showinfo("Dönem Planlama", "Önce geçmişten bir plan seçin.")
+            return
+        if not messagebox.askyesno("Dönem Planlama", f"#{run_id} planı silinsin mi? Bu işlem geri alınamaz."):
+            return
+        try:
+            conn = self._conn()
+            result = delete_plan_run(conn, run_id)
+            conn.commit()
+        except Exception:
+            messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
+            return
+        if not result.get("ok"):
+            messagebox.showwarning("Dönem Planlama", result.get("message") or "Silinemedi.")
+        self.status_var.set(result.get("message") or "")
+        self._load_runs()
+
+    def _update_active_plan_header(self) -> None:
+        """§2.1: Başlıkta aktif planı göster (AHP'deki aktif-profil göstergesi gibi)."""
+        try:
+            conn = self._conn()
+            active = get_active_plan(conn, self._selected_year(), self._selected_faculty_id(), self._selected_department_id())
+        except Exception:
+            self.active_plan_var.set("")
+            return
+        if active:
+            self.active_plan_var.set(
+                f"★ Aktif plan: #{active['id']} {active.get('run_name') or ''} (skor {self._round(active.get('plan_score'))})"
+            )
+        else:
+            self.active_plan_var.set("Aktif plan yok")
+
 
     def load_selected_run(self) -> None:
         selection = self.run_tree.selection()

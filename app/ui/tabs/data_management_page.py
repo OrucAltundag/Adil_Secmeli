@@ -313,7 +313,7 @@ class DataManagementPage(ttk.Frame):
         toolbar = ttk.Frame(self.history_tab)
         toolbar.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(toolbar, text="Geçmişi Yenile", command=self.refresh_imports).pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Import Kaydını İncele", command=self.load_selected_import).pack(side=tk.LEFT, padx=4)
+        ttk.Button(toolbar, text="Import Kaydını İncele", command=self._inspect_selected_import).pack(side=tk.LEFT, padx=4)
         ttk.Button(toolbar, text="Import Geçmişini Temizle", command=self.cleanup_import_history_action).pack(side=tk.RIGHT)
         ttk.Label(
             toolbar,
@@ -360,7 +360,7 @@ class DataManagementPage(ttk.Frame):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.history_tree.configure(yscrollcommand=scrollbar.set)
         self.history_tree.bind("<<TreeviewSelect>>", self._on_history_select)
-        self.history_tree.bind("<Double-1>", lambda _event: self.load_selected_import())
+        self.history_tree.bind("<Double-1>", lambda _event: self._inspect_selected_import())
 
     def _build_text_tabs(self) -> None:
         self.detail_text = self._make_text(self.detail_tab)
@@ -1238,16 +1238,30 @@ class DataManagementPage(ttk.Frame):
         ])
         return "\n".join(lines)
 
+    def _inspect_selected_import(self) -> None:
+        """§1.1: Seçili importu yükle ve görünür inceleme sekmesine geç (buton/çift-tık)."""
+        self.load_selected_import()
+        if self.selected_import_batch_id is not None:
+            self._select_inspect_tab()
+
     def load_selected_import(self) -> None:
         import_batch_id = self.selected_import_batch_id
         if import_batch_id is None:
             selected = self.history_tree.selection()
+            # §1.1: Seçim yoksa otomatik en üstteki (en yeni) importu seç — buton
+            # "hiçbir şey yapmıyor" görünmesin.
+            if not selected:
+                children = self.history_tree.get_children()
+                if children:
+                    self.history_tree.selection_set(children[0])
+                    self.history_tree.see(children[0])
+                    selected = (children[0],)
             if selected:
                 values = self.history_tree.item(selected[0], "values")
                 import_batch_id = int(values[0]) if values else None
                 self.selected_import_batch_id = import_batch_id
         if import_batch_id is None:
-            messagebox.showinfo("Veri Yönetimi", "Önce bir import seçin.")
+            messagebox.showinfo("Veri Yönetimi", "Görüntülenecek import kaydı yok. Önce bir import yapın.")
             return
         try:
             path = self._db_path()

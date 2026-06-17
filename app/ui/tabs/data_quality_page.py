@@ -498,8 +498,51 @@ class DataQualityPage(ttk.Frame):
 <h2>Eksik Veri Matrisi (ilk 300)</h2>
 <table><tr><th>Ders</th><th>Kriter</th><th>Performans</th><th>Popülerlik</th><th>Anket</th></tr>{missing_rows}</table>
 
+{DataQualityPage._algorithm_docs_html()}
+
 <p class="muted">Bu rapor Adil Seçmeli Karar Destek Sistemi tarafından üretilmiştir.</p>
 </body></html>"""
+
+    @staticmethod
+    def _algorithm_docs_html() -> str:
+        """§3: Kalite kontrol ve ders sıralama algoritmalarının teorik açıklaması (rapora gömülür)."""
+        return """
+<h2>Kullanılan Algoritmalar (Teorik Açıklama)</h2>
+
+<h3>1) Veri Kalitesi Skoru (ağırlıklı bileşen modeli)</h3>
+<p>Her import için 7 bileşenli, 0–1 aralığında ağırlıklı bir kalite skoru hesaplanır:</p>
+<p style="font-family:Consolas,monospace;background:#f8fafc;padding:8px;">
+Q = 0.20·R + 0.20·S<sub>row</sub> + 0.20·M + 0.15·V + 0.10·(1−D) + 0.10·C<sub>scope</sub> + 0.05·C<sub>comp</sub>
+</p>
+<table>
+<tr><th>Bileşen</th><th>Anlamı</th><th>Formül</th></tr>
+<tr><td>R — Şema</td><td>Zorunlu kolon/başlık tamlığı</td><td>tam ise 1, değilse 0</td></tr>
+<tr><td>S<sub>row</sub> — Başarılı satır</td><td>İşlenebilir satır oranı</td><td>başarılı / toplam</td></tr>
+<tr><td>M — Referans bütünlüğü</td><td>Ders kodu eşleşmesi</td><td>eşleşen / toplam</td></tr>
+<tr><td>V — Tip/aralık</td><td>Geçerli sayısal değer</td><td>1 − (geçersiz+aralık dışı)/toplam</td></tr>
+<tr><td>D — Tekrar cezası</td><td>Yinelenen kayıt</td><td>min(1, tekrar/toplam)</td></tr>
+<tr><td>C<sub>scope</sub> — Kapsam</td><td>Fakülte/bölüm/yıl tutarlılığı</td><td>sorun varsa 0, yoksa 1</td></tr>
+<tr><td>C<sub>comp</sub> — Tamlık</td><td>Eksik zorunlu + eşleşmeyen</td><td>1 − (eksik+eşleşmeyen)/toplam</td></tr>
+</table>
+<p>Sınıflandırma: Q ≥ 0.80 "Çok iyi", 0.55 ≤ Q < 0.80 "Kullanılabilir", Q < 0.55 "Riskli".
+Aykırı değer tespiti için Z-skoru (|z| = |(x−μ)/σ| > 3) veya IQR ([Q1−1.5·IQR, Q3+1.5·IQR] dışı) kullanılabilir.</p>
+
+<h3>2) Önerilen Derslerin Sıralaması (AHP + TOPSIS)</h3>
+<p>Sıralama iki katmanlıdır: <b>AHP</b> kriter ağırlıklarını, <b>TOPSIS</b> ders skorunu (kesinleşme puanı) üretir.</p>
+<p><b>AHP:</b> İkili karşılaştırma matrisi A'dan ağırlık vektörü w = baş özvektör (normalize).
+Tutarlılık: CI = (λ<sub>max</sub> − n)/(n − 1), CR = CI/RI; CR < 0.10 kabul edilir.
+Tipik kriterler ve ağırlıklar: başarı ≈ 0.41, trend ≈ 0.20, anket ≈ 0.19, popülerlik ≈ 0.19.</p>
+<p><b>TOPSIS adımları:</b></p>
+<ol>
+<li>Normalizasyon: r<sub>ij</sub> = x<sub>ij</sub> / √(Σ<sub>i</sub> x<sub>ij</sub>²)</li>
+<li>Ağırlıklı matris: v<sub>ij</sub> = w<sub>j</sub> · r<sub>ij</sub></li>
+<li>İdeal A⁺ = {max v<sub>ij</sub>}, anti-ideal A⁻ = {min v<sub>ij</sub>}</li>
+<li>Uzaklıklar: S<sub>i</sub>⁺ = √(Σ(v<sub>ij</sub>−v<sub>j</sub>⁺)²), S<sub>i</sub>⁻ = √(Σ(v<sub>ij</sub>−v<sub>j</sub>⁻)²)</li>
+<li>Yakınlık (skor): C<sub>i</sub> = S<sub>i</sub>⁻ / (S<sub>i</sub>⁺ + S<sub>i</sub>⁻) ∈ [0,1]; büyük C<sub>i</sub> üst sıra.</li>
+</ol>
+<p>Not: Varyansı sıfır (dejenere) kriterler sıralamaya katkı sağlamaz; bu kriterler "ayırt edici değil"
+olarak değerlendirilmelidir.</p>
+"""
 
     def _update_summary(self, readiness: dict, coverage: dict):
         """Summary sekmesini güncelle"""

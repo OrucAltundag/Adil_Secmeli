@@ -1011,11 +1011,19 @@ class CourseAnalysisTab(ttk.Frame):
         if self._running:
             return
 
+        # §6: Hangi görünümde olursak olalım, analiz için Tek Ders Analizi'ne geç.
+        if getattr(self, "_current_mode", "single") != "single":
+            self._switch_mode("single")
+
         ders_adi = self.cb_ders.get()
         yil_str  = self.cb_yil.get()
 
-        if not ders_adi or not yil_str:
-            messagebox.showwarning("Eksik Secim", "Lutfen ders ve yil secin.")
+        # §6: Ayrı, anlaşılır eksik-bilgi mesajları.
+        if not ders_adi:
+            messagebox.showwarning("Eksik Seçim", "Lütfen analiz için bir ders seçin.")
+            return
+        if not yil_str:
+            messagebox.showwarning("Eksik Seçim", "Analiz için yıl bilgisi seçilmelidir.")
             return
 
         ders_id = getattr(self, "_ders_map", {}).get(ders_adi)
@@ -1151,16 +1159,26 @@ class CourseAnalysisTab(ttk.Frame):
             w = ahp.get("weights", {})
             cr = ahp.get("CR", 0)
             valid_str = "GECERLI" if ahp.get("valid") else "DIKKAT: CR > 0.10"
+            profile = ahp.get("profile") or {}
+            profile_line = ""
+            if profile:
+                profile_line = (
+                    f"Aktif AHP Profili: #{profile.get('id', '—')} "
+                    f"{profile.get('name') or ''} v{profile.get('version', '—')}\n"
+                )
             txt = (
+                f"{profile_line}"
                 f"Agirliklar:\n"
-                f"  Basari   : {w.get('basari',0):.4f} (%{w.get('basari',0)*100:.1f})\n"
-                f"  Trend    : {w.get('trend',0):.4f} (%{w.get('trend',0)*100:.1f})\n"
-                f"  Populerlik: {w.get('populerlik',0):.4f} (%{w.get('populerlik',0)*100:.1f})\n"
-                f"  Anket    : {w.get('anket',0):.4f} (%{w.get('anket',0)*100:.1f})\n"
-                f"CR = {cr:.4f}  [{valid_str}]\n"
-                f"lambda_max = {ahp.get('lambda_max',0):.4f}  |  "
+                f"  Basari   : {w.get('basari',0):.6f} (%{w.get('basari',0)*100:.3f})\n"
+                f"  Trend    : {w.get('trend',0):.6f} (%{w.get('trend',0)*100:.3f})\n"
+                f"  Populerlik: {w.get('populerlik',0):.6f} (%{w.get('populerlik',0)*100:.3f})\n"
+                f"  Anket    : {w.get('anket',0):.6f} (%{w.get('anket',0)*100:.3f})\n"
+                f"CR = {cr:.6f}  [{valid_str}]\n"
+                f"lambda_max = {ahp.get('lambda_max',0):.6f}  |  "
                 f"Sure: {ahp.get('elapsed_ms',0):.1f} ms"
             )
+            if ahp.get("fallback_used"):
+                txt += "\nUyari: Aktif profil kullanilamadi; legacy AHP matrisi kullanildi."
             if ahp.get("note"):
                 txt += f"\nNot: {ahp.get('note')}"
             self._set_step_state("ahp", "ok", txt)
@@ -1203,14 +1221,25 @@ class CourseAnalysisTab(ttk.Frame):
             self._set_step_state("topsis", "ok", txt)
         else:
             inp = topsis.get("inputs", {})
+            profile = topsis.get("ahp_profile") or {}
+            profile_line = ""
+            if profile:
+                profile_line = (
+                    f"AHP Profili: #{profile.get('id', '—')} "
+                    f"{profile.get('name') or profile.get('profile_name') or ''} "
+                    f"v{profile.get('version', '—')}\n"
+                )
             txt = (
+                f"{profile_line}"
                 f"Girisler (normalize):\n"
                 f"  Basari: {inp.get('basari',0):.4f}  Trend: {inp.get('trend',0):.4f}\n"
                 f"  Doluluk: {inp.get('doluluk',0):.4f}  Anket: {inp.get('anket',0):.4f}\n"
                 f"Yakinlik  (0-1) : {topsis.get('raw_score_01',0):.6f}\n"
-                f"Kesinlesme (0-100): {topsis.get('score_100',0):.2f}\n"
+                f"Kesinlesme (0-100): {topsis.get('score_100',0):.6f}\n"
                 f"Sure: {topsis.get('elapsed_ms',0):.1f} ms"
             )
+            if topsis.get("ahp_fallback_used"):
+                txt += f"\nAHP uyarisi: {topsis.get('ahp_fallback_reason') or 'legacy matrise dusuldu'}"
             if topsis.get("message"):
                 txt += f"\nNot: {topsis.get('message')}"
             self._set_step_state("topsis", "ok", txt)
@@ -1299,7 +1328,7 @@ class CourseAnalysisTab(ttk.Frame):
         sayac  = decision.get("next", {}).get("sayac", 0)
         label  = decision.get("label", "?")
         skor   = decision.get("score_final")
-        skor_txt = f"{float(skor):.2f} / 100" if isinstance(skor, (int, float)) else "Henuz hesaplanmadi"
+        skor_txt = f"{float(skor):.6f} / 100" if isinstance(skor, (int, float)) else "Henuz hesaplanmadi"
         in_muf = decision.get("in_mufredat_this_year", False)
         is_gt  = decision.get("is_ground_truth", False)
         sm     = decision.get("sm_note", "")
@@ -1501,6 +1530,62 @@ class CourseAnalysisTab(ttk.Frame):
         self._bulk_tree.tag_configure("ilk_kez", background="#dbeafe")
         self._bulk_tree.tag_configure("hesaplanmadi", background="#f1f5f9")
 
+        # §5: Bir derse çift tıklayınca üst bardaki tek-ders filtrelerini (yıl/
+        # fakülte/ders) o dersle doldur. Sonra "Analizi Başlat" → Tek Ders Analizi.
+        self._bulk_tree.bind("<Double-1>", self._on_bulk_double_click)
+
+    def _on_bulk_double_click(self, _event=None):
+        """§5: Toplu tabloda derse çift tıklayınca üst bar filtrelerini doldur.
+
+        Satırdaki gerçek ID değerlerini kullanır (görünen metne değil): kolon
+        sırası _BULK_COLUMNS = (ders_id, kod, ad, fakulte, yil, donem, ...).
+        """
+        sel = self._bulk_tree.selection()
+        if not sel:
+            return
+        vals = self._bulk_tree.item(sel[0], "values")
+        if not vals or len(vals) < 5:
+            return
+        try:
+            ders_id = int(vals[0])
+        except (ValueError, TypeError):
+            return
+        ders_ad = str(vals[2] or "")
+        fakulte_adi = str(vals[3] or "").strip()
+        yil = str(vals[4] or "").strip()
+        self._apply_single_selection(ders_id, ders_ad, fakulte_adi, yil)
+
+    def _apply_single_selection(self, ders_id: int, ders_ad: str, fakulte_adi: str, yil: str):
+        """Üst bardaki yıl/fakülte/ders filtrelerini verilen ders için ayarlar (§5)."""
+        try:
+            # Fakülte: listede varsa seç → ders listesi o fakülte için yenilenir.
+            if fakulte_adi:
+                fvals = list(self.cb_fakulte.cget("values") or [])
+                if fakulte_adi in fvals:
+                    self.cb_fakulte.set(fakulte_adi)
+                    self._on_faculty_change(None)
+                else:
+                    self._reset_right_panel("Dersin fakülte bilgisi listede bulunamadı; ders id ile devam edilecek.")
+            # Yıl: satırdaki yılı uygula → ders listesi o yıl için yenilenir.
+            if yil:
+                yvals = list(self.cb_yil.cget("values") or [])
+                if yil not in yvals:
+                    self.cb_yil.config(values=sorted(set(yvals) | {yil}))
+                self.cb_yil.set(yil)
+                self._on_year_change(None)
+            # Ders: önce ders_id ile _ders_map'ten eşle; yoksa "id — ad" biçimine düş
+            # (_start_analysis bu önekten ders_id'yi ayrıştırabiliyor).
+            display = next((d for d, cid in getattr(self, "_ders_map", {}).items() if int(cid) == ders_id), None)
+            if display is None:
+                display = f"{ders_id} — {ders_ad}".strip()
+            self.cb_ders.set(display)
+            try:
+                self._on_ders_selected()
+            except Exception:
+                pass
+        except Exception as exc:  # noqa: BLE001 - UI etkileşimi; bozulmamalı
+            print(f"[CourseAnalysisTab] cift-tik secim hatasi: {exc}")
+
     def _sync_bulk_filters_from_topbar(self):
         """Tek-ders üst barından filtreleri toplu görünüme kopyala (spec madde 26).
 
@@ -1696,7 +1781,7 @@ class CourseAnalysisTab(ttk.Frame):
             for donem in donem_kodlari:
                 try:
                     res = get_faculty_year_topsis_results(
-                        cur, fak_id, int(yil), donem=donem
+                        cur, fak_id, int(yil), donem=donem, strict_ahp=True
                     )
                 except Exception:
                     continue
@@ -1742,8 +1827,8 @@ class CourseAnalysisTab(ttk.Frame):
                         "yil": int(yil),
                         "donem": "Güz" if donem == "G" else "Bahar",
                         "durum": durum,
-                        "eski_kp": "—" if eski_kp is None else f"{eski_kp:.2f}",
-                        "yeni_kp": f"{float(yeni_kp):.2f}",
+                        "eski_kp": "—" if eski_kp is None else f"{eski_kp:.6f}",
+                        "yeni_kp": f"{float(yeni_kp):.6f}",
                         "degisim": degisim,
                         "basari": f"{float(m.get('basari', 0.0)):.3f}",
                         "trend": f"{float(m.get('trend', 0.0)):.3f}",
@@ -1773,11 +1858,11 @@ class CourseAnalysisTab(ttk.Frame):
         except (TypeError, ValueError):
             return "İlk kez hesaplandı", "ilk_kez"
         diff = yeni_f - eski_f
-        if abs(diff) < 0.01:
-            return f"Değişmedi (={yeni_f:.2f})", ""
+        if abs(diff) < 0.000001:
+            return f"Değişmedi (={yeni_f:.6f})", ""
         if diff > 0:
-            return f"Arttı (+{diff:.2f})", "artti"
-        return f"Azaldı ({diff:.2f})", "azaldi"
+            return f"Arttı (+{diff:.6f})", "artti"
+        return f"Azaldı ({diff:.6f})", "azaldi"
 
     @staticmethod
     def _compute_decision(kp):
