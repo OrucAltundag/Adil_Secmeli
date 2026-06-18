@@ -729,12 +729,20 @@ class DataManagementPage(ttk.Frame):
     def _on_file_path_change(self, *_args: Any) -> None:
         path = self.file_path_var.get().strip()
         has_file = bool(path and os.path.exists(path))
+        is_student = self._selected_import_type() == "student_criteria"
         btn = getattr(self, "_btn_import", None)
         if btn:
-            btn.configure(state="normal" if has_file else "disabled")
+            # student_criteria modunda 'Importu Baslat' devre disi: bu mod yalniz
+            # 'Kriter Veri Seti Indir' icindir; DB'ye yazma/onay kuyrugu yok.
+            btn.configure(state="disabled" if is_student else ("normal" if has_file else "disabled"))
         lbl = getattr(self, "_import_status_lbl", None)
         if lbl:
-            if has_file:
+            if is_student:
+                lbl.configure(
+                    text="Bu modda Importu Başlat kullanılmaz; 'Kriter Veri Seti İndir' ile Excel üretin.",
+                    foreground="#64748b",
+                )
+            elif has_file:
                 lbl.configure(text="Dosya hazır. 'Importu Başlat' butonuna basın.", foreground="#16a34a")
             elif path:
                 lbl.configure(text="Dosya bulunamadı.", foreground="#dc2626")
@@ -813,26 +821,35 @@ class DataManagementPage(ttk.Frame):
         self._update_template_button_state(selected)
 
     def _update_template_button_state(self, selected: str) -> None:
-        """§2/§3: Öğrenci-veri-setinden-kriter modunda klasik şablon üretimi anlamsız;
-        klasik buton pasifleşir ve yerine 'Kriter Veri Seti İndir' butonu gelir."""
+        """§2/§3: Öğrenci-veri-setinden-kriter modunda klasik şablon üretimi ve
+        klasik import anlamsız; klasik 'Şablon Oluştur' ve 'Importu Başlat' butonları
+        pasifleşir, yerine 'Kriter Veri Seti İndir' butonu gelir."""
         btn = getattr(self, "_btn_template", None)
         student_btn = getattr(self, "_btn_student_dataset", None)
+        import_btn = getattr(self, "_btn_import", None)
         if btn is None:
             return
         if selected == "student_criteria":
             btn.configure(state="disabled")
+            if import_btn is not None:
+                import_btn.configure(state="disabled")
             if student_btn is not None and student_btn.winfo_manager() != "pack":
                 student_btn.pack(side=tk.LEFT, padx=(0, 6), after=btn)
             lbl = getattr(self, "_import_status_lbl", None)
-            if lbl and not self.file_path_var.get().strip():
+            if lbl:
                 lbl.configure(
-                    text="Bu modda klasik şablon indirilemez. Öğrenci verisinden kriter veri seti üretip indirin.",
+                    text="Bu modda yalnız 'Kriter Veri Seti İndir' butonu kullanılır. Sisteme yansımaz.",
                     foreground="#64748b",
                 )
         else:
             btn.configure(state="normal")
             if student_btn is not None and student_btn.winfo_manager() == "pack":
                 student_btn.pack_forget()
+            # Import butonunu dosya durumuna gore yeniden hesapla
+            if import_btn is not None:
+                path = self.file_path_var.get().strip()
+                has_file = bool(path and os.path.exists(path))
+                import_btn.configure(state="normal" if has_file else "disabled")
 
     def _export_student_criteria(self) -> None:
         """§3: Öğrenci verisinden kriter veri setini üretip indirilebilir Excel'e yazar (uygulama YOK)."""

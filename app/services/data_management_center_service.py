@@ -118,10 +118,12 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
         label="Öğrenci Veri Setinden Kriter Oluştur",
         description=(
             "Öğrenci not veri setinden (kayıt/geçme/ortalama/katılım) ders bazlı\n"
-            "kriterleri otomatik HESAPLAR ve normal kriter import akışına ekler.\n"
-            "Veritabanına DOĞRUDAN YAZMAZ — üretilen kriter satırları 'Rollback &\n"
-            "Onay' kuyruğuna düşer; uygulanması için onaylanmalıdır.\n"
-            "Dersler ders koduyla eşleşir; eşleşmeyen ders için yeni ders açılmaz."
+            "kriter satırlarını HESAPLAYIP indirilebilir Excel'e yazar.\n"
+            "Veritabanına DOKUNMAZ, onay kuyruğuna eklenmez, filtreleri etkilemez.\n"
+            "Üretilen dosyayı 'Kriter / Performans / Popülerlik' türünden ayrıca\n"
+            "yükleyerek (onaylı) içe aktarabilirsiniz.\n"
+            "Bu modda 'Importu Başlat' kullanılamaz; yalnızca 'Kriter Veri Seti\n"
+            "İndir' butonu aktiftir."
         ),
         required_scope="Yıl zorunlu. Dosya 'Ders Analizi' sayfasını içermelidir.",
         expected_columns=(
@@ -132,11 +134,11 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
             "ort_agirlikli",
             "ort_katilim_yuzde",
         ),
-        affected_tables=("(onay sonrası) ders_kriterleri, performans, populerlik",),
-        on_missing_columns="'Ders Analizi' sayfası veya zorunlu kolon yoksa işlem durur; eşleşmeyen ders kodu atlanır.",
-        post_import="Kriter satırları kriter importu olarak STAGED kuyruğa alınır; onaylandığında uygulanır.",
-        rollback_supported=True,
-        approval_required=True,
+        affected_tables=("(hiçbiri — yalnız Excel üretir)",),
+        on_missing_columns="'Ders Analizi' sayfası veya zorunlu kolon yoksa işlem durur.",
+        post_import="Sadece indirilebilir Excel üretilir; sisteme yansımaz.",
+        rollback_supported=False,
+        approval_required=False,
     ),
 }
 
@@ -419,17 +421,20 @@ def execute_import_request(
         )
 
     if import_type == "student_criteria":
-        # §3 (revize): Ogrenci veri seti importu artik dogrudan ders_kriterleri
-        # tablosuna yazmaz. Kriter satirlarini hesaplar, kriter_import sablonu
-        # formatinda gecici Excel uretir ve onu kriter importu olarak STAGED
-        # (apply_now=False) calistirir; kullanici Rollback & Onay sekmesinden
-        # uygular. Boylece tum kriter girisi tek bir onayli akistan gecer.
-        return _import_student_criteria_via_criteria_pipeline(
-            db_path=db_path,
-            excel_path=excel_path,
-            year=int(year),
-            uploaded_by=uploaded_by,
-        )
+        # §3 (revize 2): Ogrenci veri seti importu HIC DB'ye dokunmaz, kuyruga
+        # da girmez. Bu mod yalnizca 'Kriter Veri Seti Indir' butonuyla Excel
+        # uretmek icindir. 'Importu Baslat' bu modda kullanici tarafindan
+        # kullanilamaz (UI'da pasiflesir); buraya gelirse aciklayici hata
+        # dondururuz.
+        return {
+            "ok": False,
+            "message": (
+                "Bu modda 'Importu Başlat' kullanılmaz. "
+                "Üretmek için 'Kriter Veri Seti İndir' butonunu kullanın."
+            ),
+            "errors": ["student_criteria modunda dogrudan import devre disi."],
+            "import_type": "student_criteria",
+        }
 
     return import_curriculum_excel(
         db_path=db_path,
@@ -439,54 +444,6 @@ def execute_import_request(
         uploaded_by=uploaded_by,
         apply_now=apply_now,
     )
-
-
-def _import_student_criteria_via_criteria_pipeline(
-    db_path: str,
-    excel_path: str,
-    year: int,
-    uploaded_by: str | None,
-) -> dict[str, Any]:
-    """Ogrenci veri setini kriter sablonu formatinda gecici Excel'e cevirip
-    standart kriter import (staged) akisina yonlendirir. DB'ye dogrudan yazma yok;
-    sonuc 'Rollback & Onay' kuyruguna duser."""
-    import tempfile
-
-    try:
-        raw_rows = build_student_criteria_dataset(excel_path=excel_path, year=int(year))
-    except (FileNotFoundError, ValueError) as exc:
-        return {"ok": False, "message": str(exc), "errors": [str(exc)]}
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "message": f"Kriter veri seti üretilemedi: {exc}", "errors": [str(exc)]}
-    if not raw_rows:
-        return {
-            "ok": False,
-            "message": "Üretilecek kriter satırı bulunamadı (dosya boş veya ders kodu yok).",
-            "errors": ["Boş"],
-        }
-    enriched = _enrich_student_rows_with_scope(db_path, int(year), raw_rows)
-
-    with tempfile.TemporaryDirectory(prefix="adil_ogr_kriter_") as temp_dir:
-        temp_excel = os.path.join(temp_dir, f"ogrenci_kriter_{int(year)}.xlsx")
-        with pd.ExcelWriter(temp_excel, engine="openpyxl") as writer:
-            pd.DataFrame(enriched).to_excel(writer, sheet_name="Kriter", index=False)
-        result = import_criteria_excel(
-            db_path=db_path,
-            excel_path=temp_excel,
-            faculty_id=None,
-            year=int(year),
-            term="",
-            department_id=None,
-            source_filename=f"ogrenci_veri_seti_kriter_{int(year)}.xlsx",
-            auto_activate=False,
-            uploaded_by=uploaded_by,
-            apply_now=False,
-        )
-    result.setdefault("warnings", []).append(
-        "Öğrenci veri setinden üretildi; canlı tablolara yazılmadı. 'Rollback & Onay' sekmesinden onaylayın."
-    )
-    result["import_type"] = "student_criteria"
-    return result
 
 
 def _enrich_student_rows_with_scope(
