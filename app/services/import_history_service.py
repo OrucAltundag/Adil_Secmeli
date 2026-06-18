@@ -18,6 +18,7 @@ from typing import Any
 from app.repositories.import_repository import (
     archive_import_history,
     count_protected_import_batches,
+    delete_rejected_import_history,
     get_cleanable_import_batches,
     get_import_history,
 )
@@ -75,3 +76,8 @@ def cleanup_import_history(
 def list_history(conn: sqlite3.Connection, limit: int = 500) -> list[dict[str, Any]]:
     """Aktif import geçmişi listesi (UI yenileme için)."""
     return get_import_history(conn, limit=limit)
+
+
+def delete_rejected_import(conn: sqlite3.Connection, import_batch_id: int) -> dict[str, Any]:
+    """Reddedilmiş ve karara bağlı olmayan seçili importu geçmişten kaldırır."""
+    return delete_rejected_import_history(conn, int(import_batch_id))

@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter.scrolledtext import ScrolledText
 from typing import Any
 
@@ -22,16 +22,13 @@ from app.services.data_management_center_service import (
     recalculate_import_artifact,
     write_import_template,
 )
-from app.services.criteria_import_service import apply_pending_criteria_import
 from app.services.import_audit_service import (
-    activate_import,
-    approve_import,
     list_import_batches,
-    reject_import,
 )
-from app.services.import_history_service import cleanup_import_history, preview_cleanup
+from app.services.import_history_service import cleanup_import_history, delete_rejected_import, preview_cleanup
 from app.services.import_quality_service import evaluate_import_quality
 from app.services.import_rollback_service import get_rollback_plan, rollback_import
+from app.services.pending_import_service import apply_pending_import, reject_pending_import
 
 
 class DataManagementPage(ttk.Frame):
@@ -165,7 +162,6 @@ class DataManagementPage(ttk.Frame):
         self.nb.add(self.detail_tab, text="Import Detayı")
         self.nb.add(self.rows_tab, text="Satır Sonuçları")
         self.nb.add(self.quality_tab, text="Kalite Kontrol")
-        self.nb.add(self.diff_tab, text="Diff / Karşılaştırma")
         self.nb.add(self.rollback_tab, text="Rollback & Onay")
         self.nb.add(self.impact_tab, text="Karar Etkisi")
 
@@ -271,10 +267,12 @@ class DataManagementPage(ttk.Frame):
         self.import_year_combo = ttk.Combobox(form, width=10, state="readonly")
         self.import_year_combo.grid(row=2, column=1, sticky=tk.W, padx=4, pady=4)
 
-        self.auto_activate_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(form, text="Kalite uygunsa aktif yap", variable=self.auto_activate_var).grid(
-            row=2, column=2, sticky=tk.W, padx=4, pady=4
-        )
+        self.auto_activate_var = tk.BooleanVar(value=False)
+        ttk.Label(
+            form,
+            text="Dosya önce onay kuyruğuna alınır; onay verilmeden canlı veriler değişmez.",
+            foreground="#166534",
+        ).grid(row=2, column=2, sticky=tk.W, padx=4, pady=4)
 
         # Bu import hangi kapsama uygulanacak? (üst filtreden okunur — net görünsün)
         self.scope_indicator_var = tk.StringVar(value="")
@@ -314,6 +312,7 @@ class DataManagementPage(ttk.Frame):
         toolbar.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(toolbar, text="Geçmişi Yenile", command=self.refresh_imports).pack(side=tk.LEFT)
         ttk.Button(toolbar, text="Import Kaydını İncele", command=self._inspect_selected_import).pack(side=tk.LEFT, padx=4)
+        ttk.Button(toolbar, text="Reddedilen Kaydı Sil", command=self.delete_rejected_history_action).pack(side=tk.LEFT, padx=4)
         ttk.Button(toolbar, text="Import Geçmişini Temizle", command=self.cleanup_import_history_action).pack(side=tk.RIGHT)
         ttk.Label(
             toolbar,
@@ -371,19 +370,38 @@ class DataManagementPage(ttk.Frame):
         ttk.Button(quality_top, text="Kaliteyi Yeniden Hesapla", command=self.recalculate_quality).pack(side=tk.LEFT)
         self.quality_text = self._make_text(self.quality_tab)
 
-        diff_top = ttk.Frame(self.diff_tab)
-        diff_top.pack(fill=tk.X)
-        ttk.Button(diff_top, text="Diff Hesapla", command=self.recalculate_diff).pack(side=tk.LEFT)
         self.diff_text = self._make_text(self.diff_tab)
 
         rb_top = ttk.Frame(self.rollback_tab)
         rb_top.pack(fill=tk.X)
-        ttk.Button(rb_top, text="Onayla", command=self.approve_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(rb_top, text="Aktif Yap", command=self.activate_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(rb_top, text="Onayla ve Sisteme Uygula", command=self.approve_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Reddet", command=self.reject_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Rollback Planı", command=self.load_rollback_plan).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Geri Al", command=self.rollback_selected).pack(side=tk.LEFT, padx=2)
-        self.rollback_text = self._make_text(self.rollback_tab)
+        ttk.Label(
+            rb_top,
+            text="Bekleyen importlar onaylanana kadar müfredat, kriter ve anket tablolarını değiştirmez.",
+            foreground="#475569",
+        ).pack(side=tk.LEFT, padx=12)
+        queue_box = ttk.LabelFrame(self.rollback_tab, text="Onay Bekleyen Importlar", padding=6)
+        queue_box.pack(fill=tk.BOTH, expand=True, pady=(6, 4))
+        queue_cols = ("id", "type", "file", "scope", "quality", "status", "uploaded")
+        self.pending_tree = ttk.Treeview(queue_box, columns=queue_cols, show="headings", height=9)
+        for col, title, width in (
+            ("id", "ID", 55), ("type", "Tür", 100), ("file", "Dosya", 280),
+            ("scope", "Kapsam", 230), ("quality", "Kalite", 90),
+            ("status", "Durum", 130), ("uploaded", "Yükleme", 170),
+        ):
+            self.pending_tree.heading(col, text=title)
+            self.pending_tree.column(col, width=width, anchor=tk.W)
+        self.pending_tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        pending_scroll = ttk.Scrollbar(queue_box, orient=tk.VERTICAL, command=self.pending_tree.yview)
+        pending_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.pending_tree.configure(yscrollcommand=pending_scroll.set)
+        self.pending_tree.bind("<<TreeviewSelect>>", self._on_pending_select)
+        detail_box = ttk.LabelFrame(self.rollback_tab, text="Seçili Import Özeti", padding=6)
+        detail_box.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        self.rollback_text = self._make_text(detail_box, height=10)
 
         impact_top = ttk.Frame(self.impact_tab)
         impact_top.pack(fill=tk.X)
@@ -513,6 +531,7 @@ class DataManagementPage(ttk.Frame):
             with self._connect() as conn:
                 rows = list_import_batches(conn, limit=500)
             if not rows:
+                self._refresh_pending_queue([])
                 self.status_var.set("Henüz import kaydı yok.")
                 return
             for row in rows:
@@ -535,10 +554,84 @@ class DataManagementPage(ttk.Frame):
                         "Evet" if row.get("duplicate_of_import_batch_id") else "",
                     ),
                 )
+            self._refresh_pending_queue(rows)
             self.status_var.set(f"{len(rows)} import kaydı listelendi.")
         except Exception:
             self.status_var.set("Import geçmişi yüklenemedi.")
             messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+
+    def _refresh_pending_queue(self, rows: list[dict[str, Any]]) -> None:
+        if not hasattr(self, "pending_tree"):
+            return
+        self.pending_tree.delete(*self.pending_tree.get_children())
+        for row in rows:
+            if str(row.get("status") or "") not in {"pending_review", "validated", "approved"}:
+                continue
+            batch_id = int(row.get("id") or 0)
+            scope = " / ".join(
+                str(value) for value in (row.get("year"), row.get("faculty_id"), row.get("department_id"))
+                if value not in (None, "")
+            )
+            quality = row.get("quality_score")
+            quality_text = f"%{float(quality) * 100:.0f}" if quality is not None else "—"
+            self.pending_tree.insert(
+                "", tk.END, iid=str(batch_id),
+                values=(
+                    batch_id, row.get("import_type") or "", row.get("original_filename") or "",
+                    scope or "Genel", quality_text, "Onay bekliyor",
+                    row.get("uploaded_at") or row.get("created_at") or "",
+                ),
+            )
+
+    def _on_pending_select(self, _event: Any = None) -> None:
+        selected = self.pending_tree.selection()
+        if not selected:
+            return
+        self.selected_import_batch_id = int(selected[0])
+        self.load_selected_import()
+
+    def delete_rejected_history_action(self) -> None:
+        """Geçmişte seçili reddedilmiş importu ve yalnız ona ait staging/logları siler."""
+        selected = self.history_tree.selection()
+        if not selected:
+            messagebox.showinfo("Import Geçmişi", "Önce geçmiş tablosundan reddedilmiş bir kayıt seçin.")
+            return
+        values = self.history_tree.item(selected[0], "values")
+        if not values:
+            return
+        batch_id = int(values[0])
+        status = str(values[7] or "").lower()
+        if status != "rejected":
+            messagebox.showwarning("Import Geçmişi", "Yalnız 'rejected' durumundaki kayıtlar silinebilir.")
+            return
+        if not messagebox.askyesno(
+            "Reddedilen Import Kaydını Sil",
+            f"ID {batch_id} reddedilmiş import kaydı geçmişten kalıcı olarak silinsin mi?\n\n"
+            "Canlı sistem verileri değişmeyecek; yalnız import kaydı, staging verisi ve işlem logları silinecek.",
+            icon="warning",
+        ):
+            return
+        released = self._release_ui_db_connection()
+        try:
+            with self._connect() as conn:
+                result = delete_rejected_import(conn, batch_id)
+                if result.get("ok"):
+                    conn.commit()
+                else:
+                    conn.rollback()
+        except Exception:
+            messagebox.showerror("Import Geçmişi", self._friendly_backend_error())
+            return
+        finally:
+            if released:
+                self._restore_ui_db_connection()
+        if not result.get("ok"):
+            messagebox.showwarning("Import Geçmişi", result.get("message") or "Kayıt silinemedi.")
+            return
+        if self.selected_import_batch_id == batch_id:
+            self.selected_import_batch_id = None
+        self.refresh_center()
+        messagebox.showinfo("Import Geçmişi", result.get("message") or "Reddedilmiş import kaydı silindi.")
 
     def cleanup_import_history_action(self) -> None:
         """Import geçmişini güvenli şekilde temizler (arşivler).
@@ -874,14 +967,14 @@ class DataManagementPage(ttk.Frame):
         # Müfredat importu: yılın eski müfredatı sıfırlanacak — kullanıcıya uyar
         if import_type == "curriculum":
             uyari = (
-                f"DİKKAT: Bu işlem {year} yılına ait mevcut müfredat bağlantılarını\n"
-                f"sıfırlayacak ve dosyadaki yeni verilerle değiştirecektir.\n\n"
+                f"{year} yılı müfredat dosyası doğrulanıp onay kuyruğuna alınacaktır.\n"
+                f"Bu aşamada mevcut müfredat DEĞİŞMEYECEKTİR.\n\n"
                 f"  • Seçilen yıl  : {year}\n"
                 f"  • Dosya        : {import_filename}\n"
-                f"  • Diğer yıllar : ETKİLENMEZ\n\n"
-                f"Devam etmek istiyor musunuz?"
+                f"  • Canlı uygulama: Rollback & Onay sekmesinde kullanıcı onayı sonrası\n\n"
+                f"Dosya onay kuyruğuna alınsın mı?"
             )
-            if not messagebox.askyesno("Müfredat Sıfırlama Onayı", uyari, icon="warning"):
+            if not messagebox.askyesno("Müfredatı Önizle ve Kuyruğa Al", uyari, icon="question"):
                 return
         elif import_type == "student_criteria":
             # Önce kuru çalışma (dry-run) ile önizleme göster, sonra onayla.
@@ -891,15 +984,16 @@ class DataManagementPage(ttk.Frame):
             if not messagebox.askyesno(
                 "Kriter Import Onayı",
                 f"Seçili kriter dosyası ({import_filename}) yüklensin mi?\n\nYıl: {year}\n\n"
-                "Kriterler HEMEN uygulanmaz; import 'Onay Bekliyor' durumunda kalır. "
+                "Kriterler hemen uygulanmaz; import 'Onay Bekliyor' durumunda kalır. "
                 "Mevcut aktif kriterler değişmez. Uygulamak için 'Rollback & Onay' "
-                "sekmesinden 'Aktif Yap' butonunu kullanın.",
+                "sekmesinden 'Onayla ve Sisteme Uygula' butonunu kullanın.",
             ):
                 return
         else:
             if not messagebox.askyesno(
                 "Import Onayı",
-                f"Seçili dosya ({import_filename}) veritabanına aktarılsın mı?\n\nYıl: {year}",
+                f"Seçili dosya ({import_filename}) doğrulanıp onay kuyruğuna alınsın mı?\n\n"
+                f"Yıl: {year}\n\nOnay verilmeden canlı veriler değişmeyecektir.",
             ):
                 return
 
@@ -922,12 +1016,12 @@ class DataManagementPage(ttk.Frame):
                     year=year,
                     faculty_id=self._selected_faculty_id(),
                     department_id=self._selected_department_id(),
-                    term=self._import_term() or "Guz",
-                    auto_activate=bool(self.auto_activate_var.get()),
+                    term=self._import_term(),
+                    auto_activate=False,
                     uploaded_by="desktop-ui",
-                    # §5: Kriter importu DIREKT uygulanmaz; onay bekler. Diğer türler
-                    # mevcut davranışla anında uygulanır.
-                    apply_now=(import_type != "criteria"),
+                    # Dosya önce staging'e alınır. Canlı tablolar yalnız Rollback & Onay
+                    # sekmesindeki açık kullanıcı onayıyla değiştirilir.
+                    apply_now=False,
                 )
             )
             readable = self._format_import_result(result, import_type, year, import_filename)
@@ -936,7 +1030,7 @@ class DataManagementPage(ttk.Frame):
             if batch_id:
                 self.selected_import_batch_id = int(batch_id)
                 self.load_selected_import()
-                self._select_inspect_tab()
+                self.nb.select(self.rollback_tab)
             self.refresh_center()
             self._refresh_related_views()
             if result.get("ok"):
@@ -1079,6 +1173,14 @@ class DataManagementPage(ttk.Frame):
             added = result.get("links_added", 0)
             removed = result.get("links_removed", 0)
             reset = result.get("criteria_rows_deleted", 0)
+            if result.get("staged"):
+                return (
+                    f"{year} yılı müfredat dosyası doğrulandı ve onay kuyruğuna alındı.\n\n"
+                    f"  • {sc} kapsam hazırlandı\n"
+                    f"  • Canlı müfredat henüz değiştirilmedi\n\n"
+                    f"Import Batch ID: {batch_id}\n"
+                    "Rollback & Onay sekmesinden onaylayabilir veya reddedebilirsiniz."
+                )
             msg = f"{year} yılı müfredatı başarıyla güncellendi.\n\n"
             msg += f"  • {sc} kapsam işlendi, {added} ders eklendi, {removed} ders çıkarıldı\n"
             if reset > 0:
@@ -1094,6 +1196,11 @@ class DataManagementPage(ttk.Frame):
                 f"  • {matched} ders için kriter/performans/popülerlik yazıldı\n"
                 f"  • {skipped} ders kodu eşleşmedi (atlandı)\n\n"
                 "Veri Kalitesi ve Karar Merkezi ekranları güncellendi."
+            )
+        if result.get("staged"):
+            return (
+                f"Import doğrulandı ve onay kuyruğuna alındı. Batch ID: {batch_id}\n\n"
+                "Canlı veriler henüz değiştirilmedi. Rollback & Onay sekmesinden karar verin."
             )
         return f"Import tamamlandı. Batch ID: {batch_id}"
 
@@ -1163,7 +1270,7 @@ class DataManagementPage(ttk.Frame):
         req_ok = q.get("required_columns_ok")
         req_ok = (req_ok in (1, "1", True, "True", "true")) if not isinstance(req_ok, bool) else req_ok
         lines = [
-            f"GENEL VERİ KALİTE SKORU: %{score * 100:.0f}  ({level_tr})",
+            f"TEKNİK IMPORT KALİTE SKORU: %{score * 100:.0f}  ({level_tr})",
             f"Karar algoritmasında kullanılabilir mi? → {verdict}",
             "",
             "── Skor Bileşenleri ─────────────────────────────",
@@ -1190,7 +1297,22 @@ class DataManagementPage(ttk.Frame):
         rc = (summary or {}).get("row_count")
         if rc:
             lines.append("")
-            lines.append(f"İncelenen satır sayısı: {rc}")
+            lines.append(f"Kapsamda incelenen satır sayısı: {rc}")
+        declared = (summary or {}).get("declared_file_row_count")
+        if declared is not None:
+            lines.append(f"Kaynak dosyadaki toplam satır: {declared}")
+        excluded = int((summary or {}).get("excluded_by_scope_count") or 0)
+        if excluded:
+            lines.append(f"Seçili kapsam dışında bırakılan satır: {excluded}")
+        gate_status = str((summary or {}).get("hard_gate_status") or "")
+        gate_reason = (summary or {}).get("hard_gate_reason")
+        if gate_status:
+            gate_tr = {"passed": "Geçti", "pending_review": "İnceleme gerekli", "failed": "Başarısız"}.get(
+                gate_status, gate_status
+            )
+            lines.append(f"Sert doğrulama kapısı: {gate_tr}")
+        if gate_reason:
+            lines.append(f"Kapı gerekçesi: {gate_reason}")
         return "\n".join(lines)
 
     @staticmethod
@@ -1351,23 +1473,30 @@ class DataManagementPage(ttk.Frame):
             messagebox.showerror("Rollback", self._friendly_backend_error())
 
     def approve_selected(self) -> None:
-        self._status_action(lambda conn, batch_id: approve_import(conn, batch_id, approved_by="desktop-ui"), "Import onaylandı.")
-
-    def activate_selected(self) -> None:
-        # §5: Onay bekleyen (staged) kriter importu ise canlı uygula; değilse normal aktive et.
-        self._status_action(self._activate_or_apply, "Import aktif yapıldı / kriterler uygulandı.")
-
-    @staticmethod
-    def _activate_or_apply(conn: sqlite3.Connection, batch_id: int) -> Any:
-        result = apply_pending_criteria_import(conn, batch_id, user="desktop-ui")
-        if isinstance(result, dict) and result.get("ok"):
-            return result
-        # Kriter importu değil ya da uygulanacak staged satır yok → normal aktive.
-        return activate_import(conn, batch_id, user="desktop-ui")
+        if self.selected_import_batch_id is None:
+            messagebox.showinfo("Import Onayı", "Önce onay bekleyen bir import seçin.")
+            return
+        if not messagebox.askyesno(
+            "Importu Onayla ve Uygula",
+            "Seçili import doğrulandıktan sonra canlı sistem tablolarına uygulanacak. Devam edilsin mi?",
+        ):
+            return
+        self._status_action(
+            lambda conn, batch_id: apply_pending_import(conn, batch_id, user="desktop-ui"),
+            "Import onaylandı ve canlı sisteme uygulandı.",
+        )
 
     def reject_selected(self) -> None:
+        if self.selected_import_batch_id is None:
+            messagebox.showinfo("Import Reddi", "Önce onay bekleyen bir import seçin.")
+            return
+        reason = simpledialog.askstring("Import Reddi", "Red gerekçesi:", parent=self)
+        if not reason or not reason.strip():
+            return
         self._status_action(
-            lambda conn, batch_id: reject_import(conn, batch_id, reason="UI uzerinden reddedildi.", rejected_by="desktop-ui"),
+            lambda conn, batch_id: reject_pending_import(
+                conn, batch_id, reason=reason.strip(), user="desktop-ui"
+            ),
             "Import reddedildi.",
         )
 
@@ -1395,6 +1524,13 @@ class DataManagementPage(ttk.Frame):
 
         try:
             result = self._run_external_db_operation(_op)
+            if isinstance(result, dict) and not result.get("ok", True):
+                messagebox.showwarning(
+                    "Veri Yönetimi",
+                    result.get("message") or "İşlem uygulanamadı.",
+                )
+                self.refresh_center()
+                return
             messagebox.showinfo("Veri Yönetimi", success_message)
             self.refresh_center()
             self.load_selected_import()

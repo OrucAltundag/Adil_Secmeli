@@ -12,6 +12,7 @@ import pytest
 from app.repositories.import_repository import (
     archive_import_history,
     count_protected_import_batches,
+    delete_rejected_import_history,
     ensure_import_archive_schema,
     get_cleanable_import_batches,
     get_import_history,
@@ -135,6 +136,23 @@ def test_cleanup_idempotent_second_run(conn):
     conn.commit()
     assert second["archived"] == 0
     assert "Temizlenecek eski import kaydı yok" in second["message"]
+
+
+def test_delete_rejected_history_removes_only_rejected_record_and_children(conn):
+    result = delete_rejected_import_history(conn, 6)
+    conn.commit()
+
+    assert result["ok"] is True
+    assert conn.execute("SELECT 1 FROM import_batches WHERE id = 6").fetchone() is None
+    assert conn.execute("SELECT 1 FROM import_quality_checks WHERE import_batch_id = 6").fetchone() is None
+    assert conn.execute("SELECT 1 FROM import_batches WHERE id = 5").fetchone() is not None
+
+
+def test_delete_rejected_history_refuses_active_record(conn):
+    result = delete_rejected_import_history(conn, 5)
+
+    assert result["ok"] is False
+    assert conn.execute("SELECT 1 FROM import_batches WHERE id = 5").fetchone() is not None
 
 
 def test_archive_survives_schema_drift(conn):

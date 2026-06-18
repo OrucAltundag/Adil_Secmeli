@@ -23,7 +23,8 @@ from app.services.import_audit_service import (
 )
 from app.services.import_impact_service import recalculate_import_impact
 from app.services.import_lineage_service import record_value_source
-from app.services.import_quality_service import evaluate_import_quality
+from app.services.import_quality_service import evaluate_import_quality, recommended_import_status
+from app.services.import_staging_service import get_staged_payload, mark_staging_decision, stage_import
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
     reset_year_workflow_for_import,
@@ -451,12 +452,96 @@ class ImportResult:
         return asdict(self)
 
 
+def _apply_curriculum_scopes(
+    conn: sqlite3.Connection,
+    *,
+    scope_courses: dict[tuple[int, int, int, str], set[int]],
+    scope_names: dict[tuple[int, int, int, str], tuple[str, str]],
+    target_year: int,
+    import_batch_id: int,
+) -> dict[str, Any]:
+    """Doğrulanmış müfredat staging kapsamlarını canlı tablolara uygular."""
+    cur = conn.cursor()
+    created = 0
+    updated = 0
+    unchanged = 0
+    links_added = 0
+    links_removed = 0
+    compare: list[dict[str, Any]] = []
+    for scope, incoming_courses in sorted(scope_courses.items()):
+        faculty_id, department_id, year, term = scope
+        mufredat_id = _get_or_create_scope_mufredat_id(cur, faculty_id, department_id, year, term)
+        existing_courses = _fetch_scope_courses(cur, mufredat_id)
+        to_add = sorted(incoming_courses - existing_courses)
+        to_remove = sorted(existing_courses - incoming_courses)
+        if not existing_courses and incoming_courses:
+            created += 1
+        elif to_add or to_remove:
+            updated += 1
+        else:
+            unchanged += 1
+        for ders_id in to_remove:
+            cur.execute(
+                "DELETE FROM mufredat_ders WHERE mufredat_id = ? AND ders_id = ?",
+                (int(mufredat_id), int(ders_id)),
+            )
+            links_removed += int(cur.rowcount or 0)
+        for ders_id in to_add:
+            cur.execute(
+                "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
+                (int(mufredat_id), int(ders_id)),
+            )
+            links_added += int(cur.rowcount or 0)
+        for ders_id in sorted(incoming_courses):
+            record_value_source(
+                conn=conn,
+                course_id=int(ders_id),
+                year=int(year),
+                field_name="curriculum_membership",
+                value=term,
+                source_type="curriculum_import",
+                faculty_id=int(faculty_id),
+                department_id=int(department_id),
+                source_import_batch_id=int(import_batch_id),
+                is_locked=True,
+                deactivate_existing=False,
+            )
+        faculty_name, department_name = scope_names.get(scope, (str(faculty_id), str(department_id)))
+        compare.append(
+            {
+                "fakulte": faculty_name,
+                "bolum": department_name,
+                "yil": year,
+                "donem": term,
+                "same": not to_add and not to_remove,
+                "added_count": len(to_add),
+                "removed_count": len(to_remove),
+            }
+        )
+    reset_stats = reset_criteria_for_import(
+        conn=conn,
+        target_year=int(target_year),
+        scope_courses=scope_courses,
+    )
+    return {
+        "scopes_total": len(scope_courses),
+        "scopes_created": created,
+        "scopes_updated": updated,
+        "scopes_unchanged": unchanged,
+        "links_added": links_added,
+        "links_removed": links_removed,
+        "compare": compare,
+        **reset_stats,
+    }
+
+
 def import_curriculum_excel(
     db_path: str,
     excel_path: str,
     target_year: int = 2022,
     auto_activate: bool = True,
     uploaded_by: str | None = None,
+    apply_now: bool = True,
 ) -> dict[str, Any]:
     resolved_db_path = resolve_sqlite_db_path(db_path)
     if not resolved_db_path.exists():
@@ -651,77 +736,81 @@ def import_curriculum_excel(
                 "quality_level": quality.quality_level,
             }
 
-        created = 0
-        updated = 0
-        unchanged = 0
-        links_added = 0
-        links_removed = 0
-        compare: list[dict[str, Any]] = []
-
-        for scope, incoming_courses in sorted(scope_courses.items()):
-            faculty_id, department_id, year, term = scope
-            mufredat_id = _get_or_create_scope_mufredat_id(cur, faculty_id, department_id, year, term)
-            existing_courses = _fetch_scope_courses(cur, mufredat_id)
-
-            to_add = sorted(incoming_courses - existing_courses)
-            to_remove = sorted(existing_courses - incoming_courses)
-
-            if not existing_courses and incoming_courses:
-                created += 1
-            elif to_add or to_remove:
-                updated += 1
-            else:
-                unchanged += 1
-
-            for ders_id in to_remove:
-                cur.execute(
-                    "DELETE FROM mufredat_ders WHERE mufredat_id = ? AND ders_id = ?",
-                    (int(mufredat_id), int(ders_id)),
-                )
-                links_removed += int(cur.rowcount or 0)
-
-            for ders_id in to_add:
-                cur.execute(
-                    "INSERT OR IGNORE INTO mufredat_ders (mufredat_id, ders_id) VALUES (?, ?)",
-                    (int(mufredat_id), int(ders_id)),
-                )
-                links_added += int(cur.rowcount or 0)
-
-            for ders_id in sorted(incoming_courses):
-                record_value_source(
-                    conn=conn,
-                    course_id=int(ders_id),
-                    year=int(year),
-                    field_name="curriculum_membership",
-                    value=term,
-                    source_type="curriculum_import",
-                    faculty_id=int(faculty_id),
-                    department_id=int(department_id),
-                    source_import_batch_id=int(import_batch_id),
-                    is_locked=True,
-                    deactivate_existing=False,
-                )
-
-            faculty_name, department_name = scope_names.get(scope, (str(faculty_id), str(department_id)))
-            compare.append(
+        if not apply_now:
+            staged_scopes = [
                 {
-                    "fakulte": faculty_name,
-                    "bolum": department_name,
-                    "yil": year,
-                    "donem": term,
-                    "same": len(to_add) == 0 and len(to_remove) == 0,
-                    "added_count": len(to_add),
-                    "removed_count": len(to_remove),
+                    "faculty_id": f_id,
+                    "department_id": d_id,
+                    "year": year,
+                    "term": term,
+                    "course_ids": sorted(course_ids),
+                    "faculty_name": scope_names[(f_id, d_id, year, term)][0],
+                    "department_name": scope_names[(f_id, d_id, year, term)][1],
                 }
+                for (f_id, d_id, year, term), course_ids in sorted(scope_courses.items())
+            ]
+            staged_rows = [
+                {
+                    "row_no": index,
+                    "course_id": course_id,
+                    "matched_ders_id": course_id,
+                    "row_status": "matched",
+                }
+                for index, scope in enumerate(staged_scopes, start=1)
+                for course_id in scope["course_ids"]
+            ]
+            stage_import(
+                conn,
+                import_batch_id=import_batch_id,
+                import_type="curriculum",
+                payload={"target_year": int(target_year), "scopes": staged_scopes},
+                rows=staged_rows,
             )
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(
+                conn,
+                import_batch_id,
+                "pending_review",
+                validation_summary={
+                    "ok": True,
+                    "staged": True,
+                    "scope_count": len(scope_courses),
+                    "course_count": len(staged_rows),
+                    "warnings": warnings,
+                },
+            )
+            conn.commit()
+            return ImportResult(
+                True,
+                f"Müfredat doğrulandı; {len(staged_rows)} ders onay kuyruğuna alındı. Canlı müfredat değiştirilmedi.",
+                target_year=target_year,
+                scopes_total=len(scope_courses),
+                warnings=warnings,
+                errors=[],
+            ).as_dict() | {
+                "staged": True,
+                "import_batch_id": import_batch_id,
+                "import_status": "pending_review",
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
+            }
 
-        reset_stats = reset_criteria_for_import(
-            conn=conn,
-            target_year=int(target_year),
+        applied_stats = _apply_curriculum_scopes(
+            conn,
             scope_courses=scope_courses,
+            scope_names=scope_names,
+            target_year=int(target_year),
+            import_batch_id=int(import_batch_id),
         )
+        created = int(applied_stats["scopes_created"])
+        updated = int(applied_stats["scopes_updated"])
+        unchanged = int(applied_stats["scopes_unchanged"])
+        links_added = int(applied_stats["links_added"])
+        links_removed = int(applied_stats["links_removed"])
+        compare = list(applied_stats["compare"])
+        reset_stats = applied_stats
         quality = evaluate_import_quality(conn, import_batch_id)
-        status = "pending_review" if quality.quality_level == "low" else "validated"
+        status = recommended_import_status(quality)
         update_import_status(
             conn,
             import_batch_id,
@@ -734,7 +823,7 @@ def import_curriculum_excel(
                 "links_removed": links_removed,
             },
         )
-        if auto_activate and quality.quality_level != "low":
+        if auto_activate and status == "validated":
             from app.services.import_audit_service import activate_import
 
             activate_import(conn, import_batch_id, user=uploaded_by)
@@ -770,7 +859,7 @@ def import_curriculum_excel(
             compare=compare,
         ).as_dict() | {
             "import_batch_id": import_batch_id,
-            "import_status": "active" if auto_activate and quality.quality_level != "low" else status,
+            "import_status": "active" if auto_activate and status == "validated" else status,
             "quality_score": quality.quality_score,
             "quality_level": quality.quality_level,
             "duplicate": bool(batch.get("duplicate")),
@@ -794,6 +883,57 @@ def import_curriculum_excel(
         ).as_dict()
     finally:
         conn.close()
+
+
+def apply_pending_curriculum_import(
+    conn: sqlite3.Connection,
+    import_batch_id: int,
+    user: str | None = None,
+) -> dict[str, Any]:
+    """Onay bekleyen müfredat staging kaydını canlı müfredata uygular."""
+    from app.services.import_audit_service import activate_import, get_import_batch
+
+    batch = get_import_batch(conn, int(import_batch_id))
+    staged = get_staged_payload(conn, int(import_batch_id))
+    if not batch or str(batch.get("import_type")) != "curriculum" or not staged:
+        return {"ok": False, "message": "Bekleyen müfredat staging kaydı bulunamadı."}
+    if staged.get("staging_status") != "pending":
+        return {"ok": False, "message": "Müfredat staging kaydı artık beklemede değil."}
+    payload = staged.get("payload") or {}
+    scope_courses: dict[tuple[int, int, int, str], set[int]] = {}
+    scope_names: dict[tuple[int, int, int, str], tuple[str, str]] = {}
+    for item in payload.get("scopes") or []:
+        scope = (
+            int(item["faculty_id"]),
+            int(item["department_id"]),
+            int(item["year"]),
+            str(item["term"]),
+        )
+        scope_courses[scope] = {int(value) for value in item.get("course_ids") or []}
+        scope_names[scope] = (
+            str(item.get("faculty_name") or scope[0]),
+            str(item.get("department_name") or scope[1]),
+        )
+    if not scope_courses:
+        return {"ok": False, "message": "Staging kaydında uygulanacak müfredat kapsamı yok."}
+    stats = _apply_curriculum_scopes(
+        conn,
+        scope_courses=scope_courses,
+        scope_names=scope_names,
+        target_year=int(payload.get("target_year") or batch.get("year")),
+        import_batch_id=int(import_batch_id),
+    )
+    mark_staging_decision(conn, int(import_batch_id), "applied", user=user)
+    activate_import(conn, int(import_batch_id), user=user)
+    return {
+        "ok": True,
+        "message": (
+            f"Müfredat onaylandı; {stats['links_added']} ders eklendi, "
+            f"{stats['links_removed']} ders çıkarıldı."
+        ),
+        "import_batch_id": int(import_batch_id),
+        **stats,
+    }
 
 
 def import_curriculum_2022(db_path: str, excel_path: str) -> dict[str, Any]:

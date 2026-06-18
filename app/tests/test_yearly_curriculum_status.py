@@ -223,11 +223,15 @@ def test_unified_pool_bundle(conn):
     assert {r["course_id"] for r in bundle["spring_curriculum"]} == {102, 103}
     assert bundle["summary"]["conflict_count"] == 1
     pool_by_id = {r["course_id"]: r for r in bundle["pool_courses"]}
+    assert set(pool_by_id) == {101, 102, 103, 104, 105}
     # kredi/akts + bayraklar + öneri/karar alanları mevcut
     assert pool_by_id[101]["credit"] == 3
     assert pool_by_id[101]["ects"] == 5
     assert pool_by_id[101]["final_decision"] == "Güz müfredatında mevcut"
     assert pool_by_id[104]["recommendation_status"] == "Müfredata önerilebilir"
+    assert pool_by_id[105]["catalog_candidate"] is True
+    assert pool_by_id[105]["pool_status"] == 0
+    assert pool_by_id[105]["recommendation_status"] == "Müfredata önerilebilir"
     assert "explanation" in pool_by_id[101]
 
 

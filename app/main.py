@@ -274,10 +274,8 @@ class AdilSecmeliApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        from app.ui.benchmark import BenchmarkPanel
         from app.ui.style import apply_style
         from app.ui.tabs.ahp_weight_page import AHPWeightPage
-        from app.ui.tabs.analysis_tab import AnalysisTab
         from app.ui.tabs.calc_tab import CalcTab
         from app.ui.tabs.data_management_page import DataManagementPage
         from app.ui.tabs.data_quality_page import DataQualityPage
@@ -295,6 +293,7 @@ class AdilSecmeliApp(tk.Tk):
         configure_logging(self.app_config)
         self.user_context = UserContext.demo_admin(self.app_config)
         self.config_data = load_config()
+        self.show_benchmark_lab = bool(self.config_data.get("show_benchmark_lab", False))
         self.auto_algorithm_trigger_var = tk.BooleanVar(
             value=bool(self.config_data.get("auto_pipeline_enabled", False))
         )
@@ -419,9 +418,6 @@ class AdilSecmeliApp(tk.Tk):
         self._nb_rapor.bind("<<NotebookTabChanged>>",
                             lambda e: self._on_inner_tab_change(e, "rapor"))
 
-        self.tab_analysis = AnalysisTab(self._nb_rapor, app=self)
-        self._nb_rapor.add(self.tab_analysis, text="📊 Analiz & Grafik")
-
         self.tab_trend_vis = TrendVisualizationPage(self._nb_rapor, app=self)
         self._nb_rapor.add(self.tab_trend_vis, text="📈 Trend Görselleştirme")
 
@@ -429,10 +425,13 @@ class AdilSecmeliApp(tk.Tk):
         self._nb_rapor.add(self.tab_tools, text="📄 Rapor & Yükleme")
 
         # ── GRUP 5: BENCHMARK LAB ─────────────────────────────────────
-        _g_bench = ttk.Frame(self.nb)
-        self.nb.add(_g_bench, text="🔬 Benchmark Lab")
-        self.tab_benchmark = BenchmarkPanel(_g_bench, app=self)
-        self.tab_benchmark.pack(fill=tk.BOTH, expand=True)
+        if self.show_benchmark_lab:
+            from app.ui.benchmark import BenchmarkPanel
+
+            _g_bench = ttk.Frame(self.nb)
+            self.nb.add(_g_bench, text="🔬 Benchmark Lab")
+            self.tab_benchmark = BenchmarkPanel(_g_bench, app=self)
+            self.tab_benchmark.pack(fill=tk.BOTH, expand=True)
 
         # Otomatik Bağlan
         self.auto_connect()
@@ -775,8 +774,8 @@ class AdilSecmeliApp(tk.Tk):
                     self.tab_semester_planning.refresh()
             elif "Raporlama" in outer:
                 inner = self._nb_rapor.tab(self._nb_rapor.index("current"), "text")
-                if "Analiz" in inner:
-                    self.tab_analysis.refresh()
+                if "Trend" in inner:
+                    self.tab_trend_vis.refresh()
                 elif "Rapor" in inner:
                     self.tab_tools.refresh()
             elif "Benchmark" in outer:
@@ -814,8 +813,8 @@ class AdilSecmeliApp(tk.Tk):
                     self.tab_semester_planning.refresh()
             elif "Raporlama" in selected:
                 inner = self._nb_rapor.tab(self._nb_rapor.index("current"), "text")
-                if "Analiz" in inner:
-                    self.tab_analysis.refresh()
+                if "Trend" in inner:
+                    self.tab_trend_vis.refresh()
                 elif "Rapor" in inner:
                     self.tab_tools.refresh()
             elif "Benchmark" in selected:
@@ -842,9 +841,7 @@ class AdilSecmeliApp(tk.Tk):
                 elif "Dönem" in selected:
                     self.tab_semester_planning.refresh()
             elif group == "rapor":
-                if "Analiz" in selected:
-                    self.tab_analysis.refresh()
-                elif "Trend" in selected:
+                if "Trend" in selected:
                     self.tab_trend_vis.refresh()
                 elif "Rapor" in selected:
                     self.tab_tools.refresh()

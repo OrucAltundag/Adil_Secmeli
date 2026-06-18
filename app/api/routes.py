@@ -179,13 +179,11 @@ from app.services.governed_benchmark_service import (
 )
 from app.services.import_audit_service import (
     activate_import,
-    approve_import,
     get_import_batch,
     list_import_batches,
     list_import_issues,
     list_import_rows,
     preview_import,
-    reject_import,
     save_upload_to_temp,
     validate_import,
 )
@@ -1413,7 +1411,15 @@ def import_validate(import_batch_id: int):
 def import_approve(import_batch_id: int, payload: ApprovalRequest = Body(default_factory=ApprovalRequest)):
     conn = _open_connection()
     try:
-        result = approve_import(conn, int(import_batch_id), approved_by=payload.approved_by or payload.actor or payload.user)
+        from app.services.pending_import_service import apply_pending_import
+
+        result = apply_pending_import(
+            conn,
+            int(import_batch_id),
+            user=payload.approved_by or payload.actor or payload.user,
+        )
+        if not result.get("ok"):
+            raise HTTPException(status_code=409, detail=result.get("message") or "Import uygulanamadı")
         conn.commit()
         return result
     finally:
@@ -1424,7 +1430,14 @@ def import_approve(import_batch_id: int, payload: ApprovalRequest = Body(default
 def import_reject(import_batch_id: int, payload: ReasonRequest):
     conn = _open_connection()
     try:
-        result = reject_import(conn, int(import_batch_id), reason=payload.reason, rejected_by=payload.rejected_by)
+        from app.services.pending_import_service import reject_pending_import
+
+        result = reject_pending_import(
+            conn,
+            int(import_batch_id),
+            reason=payload.reason,
+            user=payload.rejected_by,
+        )
         conn.commit()
         return result
     finally:

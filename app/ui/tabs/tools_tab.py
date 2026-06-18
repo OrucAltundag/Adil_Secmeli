@@ -60,7 +60,6 @@ class ToolsTab(ttk.Frame):
         self.cb_fakulte: ttk.Combobox | None = None
         self.cb_bolum: ttk.Combobox | None = None
         self.cb_yil: ttk.Combobox | None = None
-        self.cb_donem: ttk.Combobox | None = None
 
         self.btn_import: ttk.Button | None = None
         self.btn_criteria_import: ttk.Button | None = None
@@ -209,12 +208,6 @@ class ToolsTab(ttk.Frame):
         self.cb_yil.bind("<FocusOut>", self._commit_year_input)
         self.cb_yil.bind("<KeyRelease>", lambda _e: self._update_import_state())
 
-        ttk.Label(top, text="Donem:").pack(side=tk.LEFT, padx=(0, 6))
-        self.cb_donem = ttk.Combobox(top, state="readonly", width=10, values=["Guz", "Bahar"])
-        self.cb_donem.pack(side=tk.LEFT, padx=(0, 12))
-        self.cb_donem.current(0)
-        self.cb_donem.bind("<<ComboboxSelected>>", lambda _e: self.load_report())
-
         ttk.Button(top, text="Rapor Getir", command=self.load_report).pack(side=tk.LEFT, padx=4)
         ttk.Button(top, text="Statu/Yil Esitle", command=self.sync_status_year).pack(side=tk.LEFT, padx=4)
         ttk.Button(top, text="DB Yedekle", command=self.backup_db).pack(side=tk.LEFT, padx=4)
@@ -313,16 +306,17 @@ class ToolsTab(ttk.Frame):
         paned = tk.PanedWindow(report_zone, orient=tk.HORIZONTAL, sashwidth=6)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        left = ttk.LabelFrame(paned, text="Havuz (Filtreli)", padding=6)
-        right = ttk.LabelFrame(paned, text="Mufredat (Filtreli)", padding=6)
+        left = ttk.LabelFrame(paned, text="Fakülte Havuzu (Güz+Bahar)", padding=6)
+        right = ttk.LabelFrame(paned, text="Müfredat (Güz+Bahar)", padding=6)
         paned.add(left, stretch="always")
         paned.add(right, stretch="always")
 
-        pool_cols = ("ders_id", "ders_adi", "skor", "kaynak", "sayac", "statu", "yil")
+        pool_cols = ("ders_id", "ders_adi", "donem", "skor", "kaynak", "sayac", "statu", "yil")
         self.tree_pool = ttk.Treeview(left, columns=pool_cols, show="headings", height=16)
         self.tree_pool.pack(fill=tk.BOTH, expand=True)
         self.tree_pool.heading("ders_id", text="ID")
         self.tree_pool.heading("ders_adi", text="Ders Adi")
+        self.tree_pool.heading("donem", text="Dönem")
         self.tree_pool.heading("skor", text="Skor")
         self.tree_pool.heading("kaynak", text="Skor Kaynagi")
         self.tree_pool.heading("sayac", text="Sayac")
@@ -330,6 +324,7 @@ class ToolsTab(ttk.Frame):
         self.tree_pool.heading("yil", text="Yil")
         self.tree_pool.column("ders_id", width=80, anchor="center")
         self.tree_pool.column("ders_adi", width=250)
+        self.tree_pool.column("donem", width=75, anchor="center")
         self.tree_pool.column("skor", width=80, anchor="center")
         self.tree_pool.column("kaynak", width=120, anchor="center")
         self.tree_pool.column("sayac", width=70, anchor="center")
@@ -339,15 +334,19 @@ class ToolsTab(ttk.Frame):
         self.tree_pool.configure(yscrollcommand=sb_pool.set)
         sb_pool.pack(side=tk.RIGHT, fill=tk.Y)
 
-        curr_cols = ("ders_id", "ders_adi", "skor", "kaynak")
+        curr_cols = ("ders_id", "ders_adi", "bolum", "donem", "skor", "kaynak")
         self.tree_curr = ttk.Treeview(right, columns=curr_cols, show="headings", height=16)
         self.tree_curr.pack(fill=tk.BOTH, expand=True)
         self.tree_curr.heading("ders_id", text="ID")
         self.tree_curr.heading("ders_adi", text="Ders Adi")
+        self.tree_curr.heading("bolum", text="Bölüm")
+        self.tree_curr.heading("donem", text="Dönem")
         self.tree_curr.heading("skor", text="Skor")
         self.tree_curr.heading("kaynak", text="Skor Kaynagi")
         self.tree_curr.column("ders_id", width=80, anchor="center")
         self.tree_curr.column("ders_adi", width=260)
+        self.tree_curr.column("bolum", width=180)
+        self.tree_curr.column("donem", width=75, anchor="center")
         self.tree_curr.column("skor", width=90, anchor="center")
         self.tree_curr.column("kaynak", width=120, anchor="center")
         sb_curr = ttk.Scrollbar(right, orient="vertical", command=self.tree_curr.yview)
@@ -412,7 +411,7 @@ class ToolsTab(ttk.Frame):
                 year=int(year),
                 faculty_id=faculty_id,
                 department_id=self._selected_department_id(),
-                term=self.cb_donem.get() if self.cb_donem else None,
+                term=None,
             )
         except Exception as exc:
             messagebox.showerror("Sablon", self._format_operation_error(exc))
@@ -616,7 +615,6 @@ class ToolsTab(ttk.Frame):
 
         faculty_name = self.cb_fakulte.get()
         year_raw = self.cb_yil.get()
-        term = self.cb_donem.get() if self.cb_donem else "Guz"
         department_name = self._selected_department_name()
 
         if not faculty_name or not year_raw:
@@ -636,19 +634,41 @@ class ToolsTab(ttk.Frame):
             self.log(f"Fakulte cozumleme hatasi: {exc}")
             return
 
-        score_result = ensure_report_scores(self.db, faculty_id, year, term)
-        if not score_result.get("ok"):
-            self.log(f"Skor guncelleme uyarisi: {score_result.get('reason')}")
-
         try:
-            snapshot = build_report_snapshot(
-                db=self.db,
-                faculty_id=faculty_id,
-                faculty_name=faculty_name,
-                year=year,
-                term=term,
-                department_name=department_name or None,
-            )
+            snapshots = []
+            for term in ("Guz", "Bahar"):
+                score_result = ensure_report_scores(self.db, faculty_id, year, term)
+                if not score_result.get("ok"):
+                    self.log(f"{term} skor guncelleme uyarisi: {score_result.get('reason')}")
+                snapshots.append(build_report_snapshot(
+                    db=self.db,
+                    faculty_id=faculty_id,
+                    faculty_name=faculty_name,
+                    year=year,
+                    term=term,
+                    department_name=department_name or None,
+                ))
+            pool_rows = [row for snapshot in snapshots for row in snapshot.get("pool_rows", [])]
+            curriculum_rows = [row for snapshot in snapshots for row in snapshot.get("curriculum_rows", [])]
+            scores = [float(row["skor"]) for row in pool_rows if row.get("skor") is not None]
+            snapshot = {
+                "pool_rows": pool_rows,
+                "curriculum_rows": curriculum_rows,
+                "stats": {
+                    "total": len(pool_rows),
+                    "avg_score": (sum(scores) / len(scores)) if scores else None,
+                    "rest_count": sum(int(s.get("stats", {}).get("rest_count", 0)) for s in snapshots),
+                    "chosen_count": sum(int(s.get("stats", {}).get("chosen_count", 0)) for s in snapshots),
+                    "cancelled_count": sum(int(s.get("stats", {}).get("cancelled_count", 0)) for s in snapshots),
+                },
+                "criteria_import_summary": {
+                    "display": " | ".join(
+                        f"{term}: {snapshots[index].get('criteria_import_summary', {}).get('display', '-')}"
+                        for index, term in enumerate(("Güz", "Bahar"))
+                    )
+                },
+                "notes": [note for s in snapshots for note in s.get("notes", [])],
+            }
         except Exception as exc:
             self.log(f"Rapor olusturma hatasi: {exc}")
             return
@@ -668,6 +688,7 @@ class ToolsTab(ttk.Frame):
                     values=(
                         row.get("ders_id"),
                         row.get("ders_adi"),
+                        row.get("donem"),
                         score_text,
                         row.get("kaynak"),
                         row.get("sayac"),
@@ -683,7 +704,10 @@ class ToolsTab(ttk.Frame):
                 self.tree_curr.insert(
                     "",
                     tk.END,
-                    values=(row.get("ders_id"), row.get("ders_adi"), score_text, row.get("kaynak")),
+                    values=(
+                        row.get("ders_id"), row.get("ders_adi"), row.get("bolum"),
+                        row.get("donem"), score_text, row.get("kaynak"),
+                    ),
                 )
 
         stats = snapshot.get("stats") or {}
@@ -716,13 +740,12 @@ class ToolsTab(ttk.Frame):
         faculty_id, faculty_name, year = self._selected_faculty_scope()
         department_id = self._selected_department_id()
         department_name = self._selected_department_name()
-        term = self.cb_donem.get() if self.cb_donem else "Guz"
         if faculty_id is None or year is None or not faculty_name:
             messagebox.showwarning("Uyari", "Once fakulte ve akademik yil seciniz.")
             return
 
         scope_label = department_name or FACULTY_SCOPE_LABEL
-        default_name = f"kriter_sablonu_{faculty_name}_{scope_label}_{year}_{term}.xlsx".replace(" ", "_")
+        default_name = f"kriter_sablonu_{faculty_name}_{scope_label}_{year}.xlsx".replace(" ", "_")
         target_path = filedialog.asksaveasfilename(
             title="Kriter Sablonunu Kaydet",
             defaultextension=".xlsx",
@@ -739,7 +762,7 @@ class ToolsTab(ttk.Frame):
                     faculty_name=faculty_name,
                     department_name=department_name,
                     year=year,
-                    term=term,
+                    term=None,
                     db_path=self.db_path,
                     faculty_id=faculty_id,
                     department_id=department_id,
@@ -762,7 +785,6 @@ class ToolsTab(ttk.Frame):
         faculty_id, faculty_name, year = self._selected_faculty_scope()
         department_id = self._selected_department_id()
         department_name = self._selected_department_name()
-        term = self.cb_donem.get() if self.cb_donem else "Guz"
         if faculty_id is None or year is None or not faculty_name:
             messagebox.showwarning("Uyari", "Once fakulte ve akademik yil seciniz.")
             return
@@ -782,7 +804,7 @@ class ToolsTab(ttk.Frame):
                     excel_path=excel_path,
                     faculty_id=faculty_id,
                     year=year,
-                    term=term,
+                    term=None,
                     department_id=department_id,
                     source_filename=os.path.basename(excel_path),
                 )
@@ -796,7 +818,7 @@ class ToolsTab(ttk.Frame):
             self.log("Kriter yukleme basarili:")
             self.log(result.get("message", ""))
             self.log(
-                f" - Kapsam: {faculty_name} / {scope_text} / {year} / {term}"
+                f" - Kapsam: {faculty_name} / {scope_text} / {year} / Güz+Bahar"
             )
             self.log(
                 f" - Eslesen ders: {result.get('matched_count', 0)} | "
@@ -1180,8 +1202,7 @@ class ToolsTab(ttk.Frame):
         # diğer sayfaların refresh()'ini çağır (varsa); ardından bu sayfayı yenile.
         for attr in (
             "tab_calc", "tab_data_management", "tab_data_quality",
-            "tab_semester_planning", "tab_ahp_weight", "tab_decision_center",
-            "tab_analysis", "tab_trend_vis", "tab_view",
+            "tab_semester_planning", "tab_ahp_weight", "tab_decision_center", "tab_view",
         ):
             target = getattr(self.app, attr, None)
             if target is None:
@@ -1194,6 +1215,13 @@ class ToolsTab(ttk.Frame):
                     except Exception:
                         pass
                     break
+        # CalcTab normal yenilemede mevcut filtreleri koruyup Havuz sayfasını
+        # atlayabilir. Yeniden oluşturulan seçmeli havuzu burada zorunlu tazele.
+        try:
+            self.app.tab_calc.page_pool.refresh(select_latest_year=True)
+            self.app.tab_calc._pool_initialized = True
+        except Exception:
+            pass
         self.refresh()
         messagebox.showinfo("Sistemi Sıfırla", result.get("message") or "Sıfırlama tamamlandı.")
 

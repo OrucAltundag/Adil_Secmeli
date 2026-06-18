@@ -113,6 +113,9 @@ class PoolTab(ttk.Frame):
 
         ttk.Button(top, text="Yenile", command=self.load_pool_data).pack(side=tk.LEFT, padx=14)
         ttk.Button(top, text="Yıllık Bütünlük / Sağlık", command=self.run_pool_health_check).pack(side=tk.LEFT)
+        # Sıfırlama veya yeni yıl başlatma sonrası: seçmeli dersleri (DersTipi='Seçmeli')
+        # mevcut katalogdan seçili fakülte+yıl havuzuna ekler (idempotent).
+        ttk.Button(top, text="Seçmelileri Havuza Ekle", command=self.seed_pool_from_electives).pack(side=tk.LEFT, padx=8)
 
         # Arama + filtre + havuz statü aksiyonları
         actions = tk.Frame(self, bg="#e2e8f0", pady=5, padx=8)
@@ -322,9 +325,11 @@ class PoolTab(ttk.Frame):
             params: list = [int(year) + 1]
             scope = ""
             if department_id is not None:
-                scope = " AND m.bolum_id = ?"; params.append(int(department_id))
+                scope = " AND m.bolum_id = ?"
+                params.append(int(department_id))
             elif faculty_id is not None:
-                scope = " AND b.fakulte_id = ?"; params.append(int(faculty_id))
+                scope = " AND b.fakulte_id = ?"
+                params.append(int(faculty_id))
             cur.execute(
                 "SELECT 1 FROM mufredat m "
                 "JOIN bolum b ON b.bolum_id=m.bolum_id "
@@ -356,6 +361,76 @@ class PoolTab(ttk.Frame):
                 lbl.pack_forget()
             if frame.winfo_manager() != "pack":
                 frame.pack(side=tk.LEFT)
+
+    def seed_pool_from_electives(self):
+        """Seçili fakülte + yıl için katalogdaki seçmeli dersleri havuza ekler.
+
+        Sıfırlama veya yeni yıl başlatma sonrası havuzu doldurmak için. Yıl yoksa
+        kullanıcıdan istenir (4 haneli sayı). İdempotent: zaten havuzda olan
+        dersler atlanır.
+        """
+        from tkinter import messagebox, simpledialog
+        from app.services.havuz_seed_service import preview_seed, seed_havuz_from_electives
+
+        fakulte = self.cb_fakulte.get()
+        if not fakulte:
+            messagebox.showwarning("Havuza Ekle", "Önce bir fakülte seçin.")
+            return
+        faculty_id = self._faculty_id(fakulte)
+        if faculty_id is None:
+            messagebox.showwarning("Havuza Ekle", "Seçili fakülte tanımlanamadı.")
+            return
+        yil_str = (self.cb_yil.get() or "").strip()
+        if not yil_str:
+            yil_str = simpledialog.askstring(
+                "Havuza Ekle",
+                "Hangi akademik yıl için seçmeli dersler eklensin? (örn. 2024)",
+                parent=self,
+            ) or ""
+            yil_str = yil_str.strip()
+        if not yil_str.isdigit():
+            messagebox.showwarning("Havuza Ekle", "Geçerli bir akademik yıl girin (ör. 2024).")
+            return
+        year = int(yil_str)
+
+        conn = getattr(self.db, "conn", None)
+        if conn is None:
+            messagebox.showerror("Havuza Ekle", "Veritabanı bağlantısı yok.")
+            return
+        try:
+            prev = preview_seed(conn, year, faculty_id=int(faculty_id))
+        except Exception as exc:
+            messagebox.showerror("Havuza Ekle", f"Önizleme alınamadı: {exc}")
+            return
+        if prev["to_be_added"] == 0:
+            messagebox.showinfo(
+                "Havuza Ekle",
+                f"Eklenecek seçmeli ders yok.\n"
+                f"({prev['elective_total']} seçmeli dersin tamamı zaten {year} havuzunda.)",
+            )
+            return
+        if not messagebox.askyesno(
+            "Havuza Ekle",
+            f"{fakulte} fakültesi için {year} havuzuna "
+            f"{prev['to_be_added']} seçmeli ders eklenecek "
+            f"({prev['already_in_pool']} zaten havuzda). Devam edilsin mi?",
+        ):
+            return
+        try:
+            result = seed_havuz_from_electives(conn, year, faculty_id=int(faculty_id))
+            conn.commit()
+        except Exception as exc:
+            messagebox.showerror("Havuza Ekle", f"Ekleme başarısız: {exc}")
+            return
+        messagebox.showinfo("Havuza Ekle", result.get("message") or "Tamam.")
+        # Yıl listesini de yenile (yeni yıl eklendi olabilir) + ekranı tazele.
+        try:
+            self._refresh_years_for_faculty(int(faculty_id), force_latest_year=False)
+            if str(year) in (self.cb_yil["values"] or ()):
+                self.cb_yil.set(str(year))
+        except Exception:
+            pass
+        self.load_pool_data()
 
     def load_pool_data(self):
         fakulte = self.cb_fakulte.get()
@@ -408,7 +483,7 @@ class PoolTab(ttk.Frame):
         if flt == "Tümü":
             return True
         if flt == "Havuzda":
-            return bool(row.get("in_pool")) and not bool(row.get("in_yearly_curriculum"))
+            return bool(row.get("in_pool") or row.get("catalog_candidate")) and not bool(row.get("in_yearly_curriculum"))
         if flt == "Müfredatta":
             return bool(row.get("in_yearly_curriculum"))
         if flt == "Güzde":
@@ -420,7 +495,7 @@ class PoolTab(ttk.Frame):
         if flt == "Tekrar eklenemez":
             return bool(row.get("in_yearly_curriculum"))
         if flt == "Yeni öneri":
-            return bool(row.get("in_pool")) and not bool(row.get("in_yearly_curriculum"))
+            return bool(row.get("in_pool") or row.get("catalog_candidate")) and not bool(row.get("in_yearly_curriculum"))
         return True
 
     def _render_pool_table(self):
@@ -436,7 +511,7 @@ class PoolTab(ttk.Frame):
             conf_txt = f"{float(confidence):.2f}" if confidence is not None else "-"
             # Yeni öneri ise renk morumsu olsun (havuz adayı, müfredatta değil)
             color = row.get("status_color") or "gray"
-            if color == "blue" and row.get("in_pool") and not row.get("in_yearly_curriculum"):
+            if color == "blue" and (row.get("in_pool") or row.get("catalog_candidate")) and not row.get("in_yearly_curriculum"):
                 color = "purple"
             tree.insert(
                 "",

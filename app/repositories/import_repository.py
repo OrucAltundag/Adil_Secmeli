@@ -29,6 +29,8 @@ PROTECTED_STATUSES = ("uploaded", "validated", "pending_review", "approved", "ac
 # import_batch_id kolonu olan ve temizlenmesi güvenli log/staging tabloları.
 # decision_run_import_sources KASITEN dışarıda: karar bağı koruma sebebidir.
 _CHILD_TABLES_BY_BATCH = (
+    "import_staging_rows",
+    "import_staging_payloads",
     "survey_import_rows",
     "survey_import",
     "criteria_import_rows",
@@ -230,3 +232,19 @@ def delete_import_history(conn: sqlite3.Connection, batch_ids: list[int]) -> dic
     placeholders = ",".join("?" for _ in ids)
     cur.execute(f"DELETE FROM import_batches WHERE id IN ({placeholders})", tuple(ids))
     return {"deleted": cur.rowcount or 0, "logs_removed": logs_removed, "batch_ids": ids}
+
+
+def delete_rejected_import_history(conn: sqlite3.Connection, import_batch_id: int) -> dict[str, Any]:
+    """Karara kaynak olmayan reddedilmiş tek bir import kaydını kalıcı siler."""
+    batch_id = int(import_batch_id)
+    cur = conn.cursor()
+    cur.execute("SELECT status FROM import_batches WHERE id = ?", (batch_id,))
+    row = cur.fetchone()
+    if not row:
+        return {"ok": False, "message": "Import kaydı bulunamadı."}
+    if str(row[0] or "").lower() != "rejected":
+        return {"ok": False, "message": "Yalnız reddedilmiş import kayıtları geçmişten silinebilir."}
+    if batch_id in _protected_by_decision_ids(cur):
+        return {"ok": False, "message": "Bir karar çalıştırmasına bağlı import kaydı silinemez."}
+    result = delete_import_history(conn, [batch_id])
+    return {"ok": bool(result.get("deleted")), "message": "Reddedilmiş import kaydı silindi.", **result}

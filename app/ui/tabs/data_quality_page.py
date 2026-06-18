@@ -509,22 +509,21 @@ class DataQualityPage(ttk.Frame):
         return """
 <h2>Kullanılan Algoritmalar (Teorik Açıklama)</h2>
 
-<h3>1) Veri Kalitesi Skoru (ağırlıklı bileşen modeli)</h3>
-<p>Her import için 7 bileşenli, 0–1 aralığında ağırlıklı bir kalite skoru hesaplanır:</p>
+<h3>1) Teknik Import Kalitesi (ağırlıklı bileşen modeli)</h3>
+<p>Önce zorunlu kolon, kapsam ve temel sayısal geçerlilik sert doğrulama kapılarından geçer. Ardından her import için 6 bileşenli, 0–1 aralığında ağırlıklı teknik kalite skoru hesaplanır:</p>
 <p style="font-family:Consolas,monospace;background:#f8fafc;padding:8px;">
-Q = 0.20·R + 0.20·S<sub>row</sub> + 0.20·M + 0.15·V + 0.10·(1−D) + 0.10·C<sub>scope</sub> + 0.05·C<sub>comp</sub>
+Q = 0.25·M + 0.20·S<sub>row</sub> + 0.20·V + 0.15·C<sub>comp</sub> + 0.10·U + 0.10·C<sub>scope</sub>
 </p>
 <table>
 <tr><th>Bileşen</th><th>Anlamı</th><th>Formül</th></tr>
-<tr><td>R — Şema</td><td>Zorunlu kolon/başlık tamlığı</td><td>tam ise 1, değilse 0</td></tr>
 <tr><td>S<sub>row</sub> — Başarılı satır</td><td>İşlenebilir satır oranı</td><td>başarılı / toplam</td></tr>
 <tr><td>M — Referans bütünlüğü</td><td>Ders kodu eşleşmesi</td><td>eşleşen / toplam</td></tr>
 <tr><td>V — Tip/aralık</td><td>Geçerli sayısal değer</td><td>1 − (geçersiz+aralık dışı)/toplam</td></tr>
-<tr><td>D — Tekrar cezası</td><td>Yinelenen kayıt</td><td>min(1, tekrar/toplam)</td></tr>
+<tr><td>U — Benzersizlik</td><td>Tekrarsız kayıt oranı</td><td>1 − min(1, tekrar/toplam)</td></tr>
 <tr><td>C<sub>scope</sub> — Kapsam</td><td>Fakülte/bölüm/yıl tutarlılığı</td><td>sorun varsa 0, yoksa 1</td></tr>
 <tr><td>C<sub>comp</sub> — Tamlık</td><td>Eksik zorunlu + eşleşmeyen</td><td>1 − (eksik+eşleşmeyen)/toplam</td></tr>
 </table>
-<p>Sınıflandırma: Q ≥ 0.80 "Çok iyi", 0.55 ≤ Q < 0.80 "Kullanılabilir", Q < 0.55 "Riskli".
+<p>Payda, dosyanın global satır sayısı değil seçili fakülte/bölüm kapsamında gerçekten denetlenen satır sayısıdır. Zorunlu kolon/başlık hatası, kapsam hatası veya sayısal alanların tamamen geçersiz olması puanla telafi edilemez. Sınıflandırma: Q ≥ 0.80 "Çok iyi", 0.55 ≤ Q < 0.80 "Kullanılabilir", Q < 0.55 "Riskli".
 Aykırı değer tespiti için Z-skoru (|z| = |(x−μ)/σ| > 3) veya IQR ([Q1−1.5·IQR, Q3+1.5·IQR] dışı) kullanılabilir.</p>
 
 <h3>2) Önerilen Derslerin Sıralaması (AHP + TOPSIS)</h3>

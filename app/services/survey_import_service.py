@@ -32,10 +32,11 @@ from app.services.import_audit_service import (
 from app.services.import_diff_service import recalculate_import_diff
 from app.services.import_impact_service import recalculate_import_impact
 from app.services.import_lineage_service import record_value_source
-from app.services.import_quality_service import evaluate_import_quality
+from app.services.import_quality_service import evaluate_import_quality, recommended_import_status
+from app.services.import_staging_service import get_staged_payload, mark_staging_decision, stage_import
 
 SURVEY_TEMPLATE_VERSION = "survey-import-v1"
-SURVEY_TEMPLATE_SHEET_NAME = "Ders Veri Giriş Şablonu Oluştur"
+SURVEY_TEMPLATE_SHEET_NAME = "AnketSonuclari"
 
 
 @dataclass
@@ -879,6 +880,7 @@ def _import_survey_all_faculties(
     source_filename: str | None = None,
     auto_activate: bool = True,
     uploaded_by: str | None = None,
+    apply_now: bool = True,
 ) -> dict[str, Any]:
     """Belgede gecen tum fakulteleri ayri ayri import eder (Fakulte = 'Tumu' secimi).
 
@@ -939,6 +941,7 @@ def _import_survey_all_faculties(
             source_filename=source_filename,
             auto_activate=auto_activate,
             uploaded_by=uploaded_by,
+            apply_now=apply_now,
         )
         faculty_results.append({"fakulte_adi": name, "faculty_id": int(fid), "result": result})
         total_matched += int(result.get("matched_count") or 0)
@@ -986,6 +989,7 @@ def import_survey_excel(
     source_filename: str | None = None,
     auto_activate: bool = True,
     uploaded_by: str | None = None,
+    apply_now: bool = True,
 ) -> dict[str, Any]:
     resolved_db_path = resolve_sqlite_db_path(db_path)
     if not resolved_db_path.exists():
@@ -1002,6 +1006,7 @@ def import_survey_excel(
             source_filename=source_filename,
             auto_activate=auto_activate,
             uploaded_by=uploaded_by,
+            apply_now=apply_now,
         )
 
     try:
@@ -1187,6 +1192,54 @@ def import_survey_excel(
                 "quality_level": quality.quality_level,
             }
 
+        if not apply_now:
+            staged_rows = [asdict(row) for row in matched_rows]
+            stage_import(
+                conn,
+                import_batch_id=import_batch_id,
+                import_type="survey",
+                payload={
+                    "faculty_id": int(faculty_id),
+                    "year": int(year),
+                    "rows": staged_rows,
+                    "source_filename": source_filename or os.path.basename(excel_path),
+                    "template_version": str(parsed.get("template_version") or SURVEY_TEMPLATE_VERSION),
+                    "notes": meta.get("aciklama"),
+                    "total_participants": int(participants),
+                },
+                rows=staged_rows,
+            )
+            quality = evaluate_import_quality(conn, import_batch_id)
+            update_import_status(
+                conn,
+                import_batch_id,
+                "pending_review",
+                validation_summary={
+                    "ok": True,
+                    "staged": True,
+                    "matched_count": len(matched_rows),
+                    "unmatched_count": 0,
+                    "warnings": warnings,
+                },
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "staged": True,
+                "message": (
+                    f"Anket belgesi doğrulandı; {len(matched_rows)} satır onay kuyruğuna alındı. "
+                    "Canlı kriter verileri henüz değiştirilmedi."
+                ),
+                "faculty_id": int(faculty_id),
+                "year": int(year),
+                "matched_count": len(matched_rows),
+                "unmatched_count": 0,
+                "import_batch_id": import_batch_id,
+                "import_status": "pending_review",
+                "quality_score": quality.quality_score,
+                "quality_level": quality.quality_level,
+            }
+
         conn.execute("BEGIN")
         applied = apply_survey_to_criteria(
             conn=conn,
@@ -1208,7 +1261,7 @@ def import_survey_excel(
             file_size=batch.get("file_size"),
         )
         quality = evaluate_import_quality(conn, import_batch_id)
-        status = "pending_review" if quality.quality_level == "low" else "validated"
+        status = recommended_import_status(quality)
         update_import_status(
             conn,
             import_batch_id,
@@ -1220,7 +1273,7 @@ def import_survey_excel(
                 "warnings": warnings,
             },
         )
-        if auto_activate and quality.quality_level != "low":
+        if auto_activate and status == "validated":
             from app.services.import_audit_service import activate_import
 
             activate_import(conn, import_batch_id, user=uploaded_by)
@@ -1254,7 +1307,7 @@ def import_survey_excel(
             "unmatched_rows": [],
             "import_id": int(applied["import_id"]),
             "import_batch_id": import_batch_id,
-            "import_status": "active" if auto_activate and quality.quality_level != "low" else status,
+            "import_status": "active" if auto_activate and status == "validated" else status,
             "quality_score": quality.quality_score,
             "quality_level": quality.quality_level,
             "duplicate": bool(batch.get("duplicate")),
@@ -1279,14 +1332,59 @@ def import_survey_excel(
         conn.close()
 
 
+def apply_pending_survey_import(
+    conn: sqlite3.Connection,
+    import_batch_id: int,
+    user: str | None = None,
+) -> dict[str, Any]:
+    """Onaylanmış staging anketini canlı kriter tablolarına uygular."""
+    from app.services.import_audit_service import activate_import, get_import_batch
+
+    batch = get_import_batch(conn, int(import_batch_id))
+    staged = get_staged_payload(conn, int(import_batch_id))
+    if not batch or str(batch.get("import_type")) != "survey" or not staged:
+        return {"ok": False, "message": "Bekleyen anket staging kaydı bulunamadı."}
+    if staged.get("staging_status") != "pending":
+        return {"ok": False, "message": "Anket staging kaydı artık beklemede değil."}
+    payload = staged.get("payload") or {}
+    rows = [SurveyImportRowResult(**row) for row in (payload.get("rows") or [])]
+    applied = apply_survey_to_criteria(
+        conn=conn,
+        faculty_id=int(payload["faculty_id"]),
+        year=int(payload["year"]),
+        rows=rows,
+        source_filename=payload.get("source_filename"),
+        template_version=payload.get("template_version") or SURVEY_TEMPLATE_VERSION,
+        notes=payload.get("notes"),
+        import_batch_id=int(import_batch_id),
+        total_participants_override=int(payload.get("total_participants") or 0),
+    )
+    link_source_import(
+        conn,
+        import_batch_id=int(import_batch_id),
+        source_table="survey_import",
+        source_import_id=int(applied["import_id"]),
+        file_hash_sha256=batch.get("file_hash_sha256"),
+        file_size=batch.get("file_size"),
+    )
+    mark_staging_decision(conn, int(import_batch_id), "applied", user=user)
+    activate_import(conn, int(import_batch_id), user=user)
+    return {
+        "ok": True,
+        "message": f"Anket verileri onaylandı ve {len(rows)} satır canlı sisteme uygulandı.",
+        "import_batch_id": int(import_batch_id),
+        "applied_course_count": len(rows),
+    }
+
+
 SURVEY_TEMPLATE_COLUMNS = (
     "fakulte_adi",
     "yil",
-    "donem",
     "ders_kodu",
     "ders_adi",
     "toplam_katilimci",
     "tercih_sayisi",
+    "aciklama",
 )
 
 
@@ -1298,11 +1396,11 @@ def _survey_template_row(
     return {
         "fakulte_adi": faculty_text,
         "yil": year_value,
-        "donem": course.get("donem"),
         "ders_kodu": course.get("ders_kodu"),
         "ders_adi": course.get("ders_adi"),
         "toplam_katilimci": None,
         "tercih_sayisi": None,
+        "aciklama": None,
     }
 
 
@@ -1320,62 +1418,17 @@ def write_survey_template_excel(
     - db_path yoksa: ornek satirlardan olusan bos sablon yazilir.
 
     Kolon duzeni gercek anket veri seti ile birebir ayni:
-    fakulte_adi | yil | donem | ders_kodu | ders_adi | toplam_katilimci | tercih_sayisi
+    fakulte_adi | yil | ders_kodu | ders_adi | toplam_katilimci | tercih_sayisi | aciklama
     """
-    year_value = int(year or datetime.now().year)
-    survey_rows: list[dict[str, Any]] = []
-    multi_faculty = False
-
-    if db_path and faculty_id is not None and year is not None:
-        context = load_survey_template_context(
-            db_path=db_path,
-            faculty_id=int(faculty_id),
-            year=int(year),
-        )
-        faculty_name = str(context.get("faculty_name") or faculty_name or "")
-        template_courses = list(context.get("courses") or [])
-        if not template_courses:
-            raise ValueError("Secili fakulte ve yil icin havuzda uygun secmeli ders bulunamadi.")
-        survey_rows = [_survey_template_row(faculty_name, year_value, c) for c in template_courses]
-    elif db_path and faculty_id is None and year is not None:
-        # "Tumu": tum fakulteleri tek dosyada birlestir.
-        contexts = load_all_faculties_template_context(db_path=db_path, year=int(year))
-        if not contexts:
-            raise ValueError("Secili yil icin hicbir fakultenin havuzunda uygun secmeli ders bulunamadi.")
-        multi_faculty = True
-        for ctx in contexts:
-            fac = str(ctx.get("faculty_name") or "")
-            for course in list(ctx.get("courses") or []):
-                survey_rows.append(_survey_template_row(fac, year_value, course))
-    else:
-        faculty_text = faculty_name or "Ornek Fakultesi"
-        survey_rows = [
-            _survey_template_row(faculty_text, year_value, {"ders_kodu": "SEC101", "ders_adi": "Ornek Secmeli Ders 1", "donem": "Güz"}),
-            _survey_template_row(faculty_text, year_value, {"ders_kodu": "SEC102", "ders_adi": "Ornek Secmeli Ders 2", "donem": "Bahar"}),
-        ]
-
-    survey_df = pd.DataFrame(survey_rows, columns=list(SURVEY_TEMPLATE_COLUMNS))
+    # Paylasilan 2022 anket veri setiyle birebir kolon duzeni. Sablonda ornek
+    # veri bulunmaz; kullanici satirlari kendisi ekler.
+    survey_df = pd.DataFrame(columns=list(SURVEY_TEMPLATE_COLUMNS))
 
     with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
         survey_df.to_excel(writer, sheet_name=SURVEY_TEMPLATE_SHEET_NAME, index=False)
         worksheet = writer.sheets[SURVEY_TEMPLATE_SHEET_NAME]
         header_columns = list(survey_df.columns)
-        pref_col_idx = header_columns.index("tercih_sayisi") + 1
-        ders_adi_col_idx = header_columns.index("ders_adi") + 1
-        first_data_row = 2
-        last_data_row = len(survey_rows) + 1
-        pref_letter = _excel_column_letter(pref_col_idx)
-
-        # Cok-fakulteli sablonda tek bir genel TOPLAM anlamsiz olur; yalnizca tek
-        # fakulte sablonunda toplam satiri eklenir.
-        if not multi_faculty and survey_rows:
-            total_row = last_data_row + 1
-            worksheet.cell(row=total_row, column=ders_adi_col_idx, value="TOPLAM")
-            worksheet.cell(
-                row=total_row,
-                column=pref_col_idx,
-                value=f"=SUM({pref_letter}{first_data_row}:{pref_letter}{last_data_row})",
-            )
-            worksheet.cell(row=total_row, column=ders_adi_col_idx).font = Font(bold=True)
-            worksheet.cell(row=total_row, column=pref_col_idx).font = Font(bold=True)
+        for col_idx, header in enumerate(header_columns, start=1):
+            worksheet.cell(row=1, column=col_idx).font = Font(bold=True)
+            worksheet.column_dimensions[_excel_column_letter(col_idx)].width = max(16, len(header) + 2)
     return target_path

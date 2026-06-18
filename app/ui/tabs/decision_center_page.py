@@ -44,6 +44,7 @@ from app.services.decision_run_service import (
 )
 from app.services.decision_run_override_service import (
     approve_decision_run_override,
+    cancel_decision_run_override,
     list_decision_run_overrides,
     reject_decision_run_override,
     request_decision_run_override,
@@ -230,7 +231,7 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Label(row2, text="Karar Çalıştırması:").pack(side=tk.LEFT)
         self.cb_run = ttk.Combobox(row2, width=52, state="readonly")
         self.cb_run.pack(side=tk.LEFT, padx=(4, 8))
-        self.cb_run.bind("<<ComboboxSelected>>", lambda _e: self._load_run_related())
+        self.cb_run.bind("<<ComboboxSelected>>", self._on_run_combo_selected)
 
         ttk.Button(row2, text="⚡ Yeni Çalıştır", command=self._jump_to_runs_tab).pack(side=tk.LEFT, padx=(0, 12))
 
@@ -328,7 +329,7 @@ class DecisionCenterPage(ttk.Frame):
         paned.pack(fill=tk.BOTH, expand=True)
         self.txt_readiness = tk.Text(paned, height=12, wrap=tk.WORD)
         style_text_widget(self.txt_readiness)
-        paned.add(self.txt_readiness, weight=3)
+        paned.add(self.txt_readiness, weight=1)
 
         # Override (istisna) onay/red paneli — talep eden ≠ onaylayan (Roller Ayrılığı).
         override_panel = ttk.LabelFrame(
@@ -365,18 +366,26 @@ class DecisionCenterPage(ttk.Frame):
             paned, text="Bekleyen Karar Engelleme Talepleri", padding=6
         )
         paned.add(run_override_panel, weight=2)
-        self.tree_run_overrides = self._tree(
-            run_override_panel,
-            ("id", "karar", "kapsam", "talep_eden", "gerekçe", "durum", "tarih"),
-        )
         run_override_actions = ttk.Frame(run_override_panel)
-        run_override_actions.pack(fill=tk.X, pady=(4, 0))
+        run_override_actions.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(
+            run_override_actions,
+            text="Talebi seçin; onay, red veya geri çekme işlemi uygulayın.",
+        ).pack(side=tk.LEFT, padx=(4, 12))
         ttk.Button(
             run_override_actions, text="Engellemeyi Onayla", command=self._approve_run_override
         ).pack(side=tk.LEFT, padx=4)
         ttk.Button(
             run_override_actions, text="Engellemeyi Reddet", command=self._reject_run_override
         ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(
+            run_override_actions, text="Talebi Geri Çek", command=self._cancel_run_override
+        ).pack(side=tk.LEFT, padx=4)
+        self.tree_run_overrides = self._tree(
+            run_override_panel,
+            ("id", "karar", "kapsam", "talep_eden", "gerekçe", "durum", "tarih"),
+        )
+        self.tree_run_overrides.bind("<Delete>", lambda _event: self._cancel_run_override())
 
     def _build_policy_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
@@ -972,6 +981,14 @@ class DecisionCenterPage(ttk.Frame):
                     hint += f"  ·  son: {last_started}"
                 self.lbl_scope_status.config(text=hint, foreground="#15803d")
 
+    def _on_run_combo_selected(self, _event=None):
+        """Üst seçim değişince eski tablo seçiminin hedefi gölgelemesini önle."""
+        if hasattr(self, "tree_runs"):
+            selected = self.tree_runs.selection()
+            if selected:
+                self.tree_runs.selection_remove(*selected)
+        self._load_run_related()
+
     def _jump_to_runs_tab(self):
         """Hazırlık Kontrolü içindeki karar çalıştırmaları paneline geçer."""
         try:
@@ -1225,9 +1242,14 @@ class DecisionCenterPage(ttk.Frame):
             return
         try:
             actor = self._current_username("decision_center") + ":requester"
-            request_decision_run_override(self._conn(), int(run_id), reason.strip(), actor)
+            request = request_decision_run_override(self._conn(), int(run_id), reason.strip(), actor)
             self._conn().commit()
             self._load_run_overrides()
+            request_iid = str(request.get("id") or "")
+            if request_iid and self.tree_run_overrides.exists(request_iid):
+                self.tree_run_overrides.selection_set(request_iid)
+                self.tree_run_overrides.focus(request_iid)
+                self.tree_run_overrides.see(request_iid)
             messagebox.showinfo("Kararı Engelle", "Talep onay kuyruğuna alındı.")
         except ValueError as exc:
             messagebox.showwarning("Kararı Engelle", str(exc))
@@ -1306,6 +1328,28 @@ class DecisionCenterPage(ttk.Frame):
         except Exception:
             logger.exception("Karar engelleme reddi uygulanamadı")
             messagebox.showerror("Engelleme Reddi", self._friendly_backend_error())
+
+    def _cancel_run_override(self):
+        request_id = self._selected_run_override_id()
+        if request_id is None:
+            messagebox.showwarning("Talebi Geri Çek", "Önce bekleyen bir talep seçin.")
+            return
+        if not messagebox.askyesno(
+            "Talebi Geri Çek",
+            f"#{request_id} numaralı engelleme talebi kuyruktan kaldırılsın mı?\n\n"
+            "Karar çalıştırması ve üretilen sonuçlar silinmeyecektir.",
+        ):
+            return
+        try:
+            cancel_decision_run_override(self._conn(), request_id)
+            self._conn().commit()
+            self._load_run_overrides()
+            messagebox.showinfo("Talebi Geri Çek", "Bekleyen talep kuyruktan kaldırıldı.")
+        except ValueError as exc:
+            messagebox.showwarning("Talebi Geri Çek", str(exc))
+        except Exception:
+            logger.exception("Karar engelleme talebi geri çekilemedi")
+            messagebox.showerror("Talebi Geri Çek", self._friendly_backend_error())
 
     def _load_course_decisions(self, run_id):
         self._clear(self.tree_courses)
@@ -2228,14 +2272,19 @@ class DecisionCenterPage(ttk.Frame):
         self.txt_course_detail.insert(tk.END, "\n".join(lines))
 
     def _selected_run_id(self):
+        # Kullanıcı karar tablosunda bir satıra tıkladıysa işlem doğrudan o
+        # satıra uygulanır. Eski davranış combobox değerini öncelediği için,
+        # Bahar satırı seçilse bile Güz kararına tekrar işlem yapılıyordu.
+        selected = self.tree_runs.selection()
+        if selected:
+            return int(selected[0])
         label = self.cb_run.get()
         # Boş-kapsam placeholder'ı seçili olduğunda run_id yok say.
         if label == self._RUN_EMPTY_PLACEHOLDER:
             return None
         if label in self._run_ids:
             return self._run_ids[label]
-        selected = self.tree_runs.selection()
-        return int(selected[0]) if selected else None
+        return None
 
     def _select_run_from_tree(self):
         selected = self.tree_runs.selection()

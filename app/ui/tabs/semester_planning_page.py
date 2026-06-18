@@ -17,6 +17,7 @@ Tüm veriler gerçek veritabanı kayıtlarından gelir.
 
 from __future__ import annotations
 
+import sqlite3
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
@@ -1232,6 +1233,49 @@ class SemesterPlanningPage(ttk.Frame):
     def generate_alternatives(self) -> None:
         self._run_planning(persist=True, generate_alternatives=True, success_message="Dönem planı ve alternatif senaryolar üretildi.")
 
+    def _policy_from_plan_form(self, conn: sqlite3.Connection, year: int) -> dict[str, Any]:
+        """Aktif politikayı, kullanıcının ekranda değiştirdiği plan değerleriyle birleştirir."""
+        policy = dict(
+            resolve_policy(
+                conn,
+                year=int(year),
+                faculty_id=self._selected_faculty_id(),
+                department_id=self._selected_department_id(),
+            )
+            or {}
+        )
+        target = int(self.var_target.get())
+        fall_min = int(self.var_fall_min.get())
+        fall_max = int(self.var_fall_max.get())
+        spring_min = int(self.var_spring_min.get())
+        spring_max = int(self.var_spring_max.get())
+        if min(target, fall_min, fall_max, spring_min, spring_max) < 0:
+            raise ValueError("Plan hedefleri negatif olamaz.")
+        if fall_min > fall_max or spring_min > spring_max:
+            raise ValueError("Dönem minimum değeri maksimum değerden büyük olamaz.")
+        if target < fall_min + spring_min or target > fall_max + spring_max:
+            raise ValueError("Hedef ders sayısı, Güz/Bahar minimum ve maksimum toplamlarıyla uyumlu olmalıdır.")
+        policy.update(
+            {
+                "total_elective_target": target,
+                "fall_min": fall_min,
+                "fall_max": fall_max,
+                "spring_min": spring_min,
+                "spring_max": spring_max,
+                "max_semester_imbalance": abs(fall_max - spring_max),
+            }
+        )
+        return policy
+
+    def _clear_plan_result_views(self) -> None:
+        """Yeni üretim başlamadan önce önceki planın tüm alt sonuçlarını ekrandan kaldırır."""
+        for tree_name in ("fall_tree", "spring_tree", "unassigned_tree", "violation_tree", "scenario_tree"):
+            tree = getattr(self, tree_name, None)
+            if tree is not None:
+                tree.delete(*tree.get_children())
+        self._set_plan_summary(selected="-", fall="-", spring="-", unassigned="-", violations="-", score="-")
+        self._last_plan_result = None
+
     def generate_all_faculties(self) -> None:
         """§2.2: Tüm fakülteler için tek tek plan üretir (her biri ayrı transaction)."""
         year = self._selected_year()
@@ -1289,13 +1333,18 @@ class SemesterPlanningPage(ttk.Frame):
         if year <= 0:
             messagebox.showwarning("Dönem Planlama", "Plan üretmek için geçerli bir yıl seçiniz.")
             return
+        self._clear_plan_result_views()
+        self.status_var.set("Yeni plan üretiliyor...")
+        self.update_idletasks()
         try:
             conn = self._conn()
+            policy = self._policy_from_plan_form(conn, year)
             result = generate_semester_plan(
                 conn,
                 year=year,
                 faculty_id=self._selected_faculty_id(),
                 department_id=self._selected_department_id(),
+                policy=policy,
                 persist=persist,
                 generate_alternatives=generate_alternatives,
                 created_by="desktop-ui" if persist else None,
@@ -1322,7 +1371,11 @@ class SemesterPlanningPage(ttk.Frame):
                 return
             self.status_var.set(success_message)
             messagebox.showinfo("Dönem Planlama", success_message)
+        except ValueError as exc:
+            self.status_var.set("Plan ayarları geçersiz.")
+            messagebox.showwarning("Dönem Planlama", str(exc))
         except Exception:
+            self.status_var.set("Plan üretilemedi.")
             messagebox.showerror("Dönem Planlama", self._friendly_backend_error())
 
     def _load_plan_result(self, result: dict[str, Any]) -> None:

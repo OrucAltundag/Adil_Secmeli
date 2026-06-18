@@ -481,7 +481,7 @@ def test_faculty_reimport_preserves_department_override_metrics():
         _cleanup(db_path, faculty_v1, department_v1, faculty_v2)
 
 
-def test_write_criteria_template_scopes_department_courses():
+def test_write_criteria_template_matches_flat_dataset_schema():
     db_path = _build_db()
     fd, target_path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
@@ -495,15 +495,11 @@ def test_write_criteria_template_scopes_department_courses():
             term="Guz",
         )
 
-        meta_df = pd.read_excel(target_path, sheet_name="Meta")
-        data_df = pd.read_excel(target_path, sheet_name="Kriter Veri Giris Sablonu")
-
-        assert meta_df.iloc[0]["fakulte_adi"] == "Muhendislik"
-        assert meta_df.iloc[0]["bolum_adi"] == "Bilgisayar"
-        assert int(meta_df.iloc[0]["yil"]) == 2024
-        assert str(meta_df.iloc[0]["donem"]) == "Güz"
-        assert list(data_df["ders_kodu"]) == ["C101"]
-        assert list(data_df["ders_adi"]) == ["Algoritmalar"]
-        assert list(data_df["bolum_adi"]) == ["Bilgisayar"]
+        data_df = pd.read_excel(target_path, sheet_name="Kriter")
+        assert list(data_df.columns) == [
+            "ders_kodu", "donem", "toplam_ogrenci", "gecen_ogrenci",
+            "basari_ortalamasi", "kontenjan", "kayitli_ogrenci",
+        ]
+        assert data_df.empty
     finally:
         _cleanup(db_path, target_path)

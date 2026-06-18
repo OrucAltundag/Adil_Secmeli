@@ -124,6 +124,58 @@ def test_import_quality_high_and_low():
         )
         low_quality = evaluate_import_quality(conn, low["id"])
         assert low_quality.quality_level == "low"
+        assert low_quality.summary["hard_gate_status"] == "failed"
+    finally:
+        conn.close()
+
+
+def test_import_quality_uses_actual_scope_rows_not_global_file_count():
+    _path, conn = _db()
+    try:
+        batch = create_import_batch(conn, "criteria", row_count=71, faculty_id=1, year=2026)
+        for index in range(16):
+            _insert_criteria_row(
+                conn,
+                batch["id"],
+                index + 2,
+                1000 + index,
+                f"SEC{index:03d}",
+                80 + index,
+            )
+
+        quality = evaluate_import_quality(conn, batch["id"])
+
+        assert quality.successful_row_ratio == 1.0
+        assert quality.matched_course_ratio == 1.0
+        assert quality.quality_score == 1.0
+        assert quality.summary["row_count"] == 16
+        assert quality.summary["declared_file_row_count"] == 71
+        assert quality.summary["excluded_by_scope_count"] == 55
+        assert quality.summary["quality_model_version"] == "weighted_quality_v2_scope_aware"
+    finally:
+        conn.close()
+
+
+def test_invalid_scope_is_a_hard_quality_gate():
+    _path, conn = _db()
+    try:
+        batch = create_import_batch(conn, "criteria", row_count=1, faculty_id=1, year=2026)
+        _insert_criteria_row(conn, batch["id"], 2, 101, "BLM101", 90)
+        record_import_issue(
+            conn,
+            import_batch_id=batch["id"],
+            row_number=2,
+            severity="error",
+            issue_type="invalid_scope",
+            message="Fakülte kapsamı uyuşmuyor.",
+        )
+
+        quality = evaluate_import_quality(conn, batch["id"])
+
+        assert quality.quality_level == "low"
+        assert quality.quality_score < 0.55
+        assert quality.summary["hard_gate_status"] == "pending_review"
+        assert quality.summary["recommended_import_status"] == "pending_review"
     finally:
         conn.close()
 
@@ -250,6 +302,47 @@ def test_real_criteria_import_creates_audit_batch():
         assert row[0] == "active"
         assert row[1]
         assert row[2] in {"high", "medium"}
+    finally:
+        for path in (db_path, excel_path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+def test_staged_criteria_import_waits_for_approval_before_live_write():
+    from app.services.pending_import_service import apply_pending_import
+
+    db_path = _criteria_import_db()
+    excel_path = _write_criteria_excel(
+        [{
+            "ders_kodu": "C101", "ders_adi": "Algoritmalar", "toplam_ogrenci": 40,
+            "gecen_ogrenci": 35, "basari_ortalamasi": 82, "kontenjan": 50,
+            "kayitli_ogrenci": 45, "fakulte_adi": "Muhendislik",
+            "bolum_adi": "Bilgisayar", "yil": 2024, "donem": "Guz",
+        }],
+        meta_department="Bilgisayar",
+    )
+    try:
+        result = import_criteria_excel(
+            db_path, excel_path, faculty_id=1, department_id=10, year=2024,
+            term="Guz", auto_activate=False, apply_now=False,
+        )
+        assert result["ok"] is True
+        assert result["staged"] is True
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        batch_id = int(result["import_batch_id"])
+        assert conn.execute("SELECT status FROM import_batches WHERE id=?", (batch_id,)).fetchone()[0] == "pending_review"
+        assert conn.execute("SELECT COUNT(*) FROM ders_kriterleri WHERE yil=2024").fetchone()[0] == 0
+
+        approved = apply_pending_import(conn, batch_id, user="tester")
+        conn.commit()
+        assert approved["ok"] is True, approved
+        assert conn.execute("SELECT status FROM import_batches WHERE id=?", (batch_id,)).fetchone()[0] == "active"
+        assert conn.execute("SELECT COUNT(*) FROM ders_kriterleri WHERE yil=2024").fetchone()[0] > 0
+        conn.close()
     finally:
         for path in (db_path, excel_path):
             try:

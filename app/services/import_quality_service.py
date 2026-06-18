@@ -17,6 +17,17 @@ from app.services.import_audit_service import (
 )
 
 
+QUALITY_MODEL_VERSION = "weighted_quality_v2_scope_aware"
+QUALITY_WEIGHTS = {
+    "matched_course_ratio": 0.25,
+    "successful_row_ratio": 0.20,
+    "valid_numeric_ratio": 0.20,
+    "completeness_score": 0.15,
+    "uniqueness_score": 0.10,
+    "scope_consistency": 0.10,
+}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -47,6 +58,15 @@ class ImportQualityResult:
         return asdict(self)
 
 
+def recommended_import_status(result: ImportQualityResult) -> str:
+    """Kalite modeli ve sert kapılara göre kalıcı import durumunu döndürür."""
+    summary = result.summary or {}
+    status = str(summary.get("recommended_import_status") or "")
+    if status in {"failed", "pending_review", "validated"}:
+        return status
+    return "pending_review" if result.quality_level == "low" else "validated"
+
+
 def _quality_level(score: float) -> str:
     if score >= 0.80:
         return "high"
@@ -75,7 +95,12 @@ def evaluate_import_quality(conn: sqlite3.Connection, import_batch_id: int) -> I
     rows = list_import_rows(conn, int(import_batch_id), limit=100000)
     issues = list_import_issues(conn, int(import_batch_id), limit=100000)
     declared_row_count = int(batch.get("row_count") or 0)
-    total_rows = max(len(rows), declared_row_count, 1)
+    actual_row_count = len(rows)
+    # Kalite hangi kapsam için hesaplanıyorsa payda o kapsamda gerçekten
+    # denetlenen satır sayısıdır. Çok fakülteli dosyanın global metadata satır
+    # sayısı fakülte batch'inin oranlarını yapay olarak düşürmemelidir.
+    total_rows = actual_row_count if actual_row_count > 0 else max(declared_row_count, 1)
+    excluded_by_scope_count = max(0, declared_row_count - actual_row_count) if actual_row_count else 0
 
     issue_type_counts: dict[str, int] = {}
     severity_counts: dict[str, int] = {}
@@ -119,24 +144,55 @@ def evaluate_import_quality(conn: sqlite3.Connection, import_batch_id: int) -> I
     scope_consistency = 0.0 if int(issue_type_counts.get("invalid_scope", 0)) else 1.0
     completeness_score = max(0.0, 1.0 - ((missing_required_count + unmatched_row_count) / total_rows))
 
+    uniqueness_score = 1.0 - duplicate_penalty
     score = (
-        (0.20 if required_columns_ok else 0.0)
-        + 0.20 * successful_row_ratio
-        + 0.20 * matched_course_ratio
-        + 0.15 * valid_numeric_ratio
-        + 0.10 * (1.0 - duplicate_penalty)
-        + 0.10 * scope_consistency
-        + 0.05 * completeness_score
+        QUALITY_WEIGHTS["matched_course_ratio"] * matched_course_ratio
+        + QUALITY_WEIGHTS["successful_row_ratio"] * successful_row_ratio
+        + QUALITY_WEIGHTS["valid_numeric_ratio"] * valid_numeric_ratio
+        + QUALITY_WEIGHTS["completeness_score"] * completeness_score
+        + QUALITY_WEIGHTS["uniqueness_score"] * uniqueness_score
+        + QUALITY_WEIGHTS["scope_consistency"] * scope_consistency
     )
+
+    # Sert doğrulama kapıları: yapısal/kapsamsal kritik hata, diğer iyi
+    # bileşenlerle telafi edilip otomatik aktivasyona geçemez.
+    invalid_header_count = int(issue_type_counts.get("invalid_header", 0))
+    invalid_scope_count = int(issue_type_counts.get("invalid_scope", 0))
+    numeric_fully_invalid = (invalid_numeric_count + out_of_range_count) >= total_rows
+    if not required_columns_ok or invalid_header_count:
+        hard_gate_status = "failed"
+        hard_gate_reason = "Zorunlu kolon veya başlık doğrulaması başarısız."
+    elif invalid_scope_count:
+        hard_gate_status = "pending_review"
+        hard_gate_reason = "Fakülte/bölüm/yıl kapsamı tutarsız."
+    elif numeric_fully_invalid:
+        hard_gate_status = "pending_review"
+        hard_gate_reason = "Kapsamdaki sayısal değerlerin tamamı geçersiz veya aralık dışında."
+    else:
+        hard_gate_status = "passed"
+        hard_gate_reason = None
+    if hard_gate_status != "passed":
+        score = min(score, 0.5499)
     score = max(0.0, min(1.0, round(score, 4)))
     level = _quality_level(score)
     summary = {
         "row_count": total_rows,
-        "actual_row_count": len(rows),
+        "actual_row_count": actual_row_count,
+        "declared_file_row_count": declared_row_count,
+        "excluded_by_scope_count": excluded_by_scope_count,
         "issue_type_counts": issue_type_counts,
         "severity_counts": severity_counts,
         "required_columns_ok": required_columns_ok,
         "quality_level": level,
+        "quality_model_name": "Ağırlıklı Teknik Import Kalitesi",
+        "quality_model_version": QUALITY_MODEL_VERSION,
+        "quality_weights": QUALITY_WEIGHTS,
+        "hard_gate_status": hard_gate_status,
+        "hard_gate_reason": hard_gate_reason,
+        "recommended_import_status": (
+            hard_gate_status if hard_gate_status != "passed"
+            else ("pending_review" if level == "low" else "validated")
+        ),
     }
 
     result = ImportQualityResult(
@@ -236,4 +292,8 @@ def summarize_quality(conn: sqlite3.Connection, import_batch_id: int) -> dict[st
         data["summary"] = json.loads(data.get("summary_json") or "{}")
     except Exception:
         data["summary"] = {}
+    if data["summary"].get("quality_model_version") != QUALITY_MODEL_VERSION:
+        refreshed = evaluate_import_quality(conn, int(import_batch_id)).as_dict()
+        conn.commit()
+        return refreshed
     return data

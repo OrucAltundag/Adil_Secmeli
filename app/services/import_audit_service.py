@@ -626,7 +626,12 @@ def list_import_rows(conn: sqlite3.Connection, import_batch_id: int, limit: int 
         return []
     table = _source_row_table(batch.get("import_type"))
     if table is None:
-        return []
+        try:
+            from app.services.import_staging_service import list_staged_rows
+
+            return list_staged_rows(conn, import_batch_id, limit)
+        except sqlite3.DatabaseError:
+            return []
     cur = conn.cursor()
     if not _table_exists(cur, table):
         return []
@@ -638,7 +643,15 @@ def list_import_rows(conn: sqlite3.Connection, import_batch_id: int, limit: int 
         if source_import_id is None:
             return []
         cur.execute(f"SELECT * FROM {table} WHERE import_id = ? ORDER BY row_no LIMIT ?", (int(source_import_id), int(limit)))
-    return [_row_to_dict(row) for row in cur.fetchall()]
+    rows = [_row_to_dict(row) for row in cur.fetchall()]
+    if rows:
+        return rows
+    try:
+        from app.services.import_staging_service import list_staged_rows
+
+        return list_staged_rows(conn, import_batch_id, limit)
+    except sqlite3.DatabaseError:
+        return []
 
 
 def list_import_issues(conn: sqlite3.Connection, import_batch_id: int, limit: int = 500) -> list[dict[str, Any]]:

@@ -268,6 +268,15 @@ def test_ui_smoke_import_and_widget():
         root.withdraw()
         page = SemesterPlanningPage(root, app=type("App", (), {"db": type("DB", (), {"conn": _conn()})()})())
         assert page is not None
+        for tree in (page.fall_tree, page.spring_tree, page.unassigned_tree, page.violation_tree, page.scenario_tree):
+            tree.insert("", "end", values=("eski",))
+        page._last_plan_result = {"fall_courses": [{"course_id": 1}]}
+        page._clear_plan_result_views()
+        assert page._last_plan_result is None
+        assert all(
+            not tree.get_children()
+            for tree in (page.fall_tree, page.spring_tree, page.unassigned_tree, page.violation_tree, page.scenario_tree)
+        )
         root.destroy()
     except tk.TclError:
         pytest.skip("Tk display yok; UI smoke testi atlandı.")

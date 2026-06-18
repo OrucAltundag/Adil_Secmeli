@@ -262,7 +262,7 @@ def test_total_participants_computed():
     assert total == 100
 
 
-def test_write_survey_template_prefills_active_pool_courses():
+def test_write_survey_template_matches_flat_dataset_schema():
     db_path = _build_db()
     fd, template_path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
@@ -309,16 +309,12 @@ def test_write_survey_template_prefills_active_pool_courses():
         workbook = load_workbook(template_path, data_only=False)
         worksheet = workbook[SURVEY_TEMPLATE_SHEET_NAME]
 
-        assert survey_df["fakulte_adi"].dropna().unique().tolist() == ["Guzel Sanatlar Fakultesi"]
-        assert survey_df["yil"].dropna().astype(int).unique().tolist() == [2022]
-        assert set(survey_df["ders_kodu"].dropna().tolist()) == {"GST101", "GST102", "GST103", "GST104"}
-        assert "GST105" not in set(survey_df["ders_kodu"].dropna().tolist())
-        assert "GST106" not in set(survey_df["ders_kodu"].dropna().tolist())
-        assert "GST107" not in set(survey_df["ders_kodu"].dropna().tolist())
-        # Kolon duzeni: fakulte_adi|yil|donem|ders_kodu|ders_adi|toplam_katilimci|tercih_sayisi
-        # ders_adi -> E sutunu, tercih_sayisi -> G sutunu
-        assert worksheet["E6"].value == "TOPLAM"
-        assert worksheet["G6"].value == "=SUM(G2:G5)"
+        assert list(survey_df.columns) == [
+            "fakulte_adi", "yil", "ders_kodu", "ders_adi",
+            "toplam_katilimci", "tercih_sayisi", "aciklama",
+        ]
+        assert survey_df.empty
+        assert worksheet.max_row == 1
     finally:
         for path in (db_path, template_path):
             try:
@@ -327,7 +323,7 @@ def test_write_survey_template_prefills_active_pool_courses():
                 pass
 
 
-def test_write_survey_template_handles_legacy_ders_schema_without_kod():
+def test_write_survey_template_does_not_require_course_rows():
     db_path = _build_legacy_db_without_kod()
     fd, template_path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
@@ -350,14 +346,8 @@ def test_write_survey_template_handles_legacy_ders_schema_without_kod():
         workbook = load_workbook(template_path, data_only=False)
         worksheet = workbook[SURVEY_TEMPLATE_SHEET_NAME]
 
-        assert "kod" in columns
-        assert survey_df["ders_adi"].dropna().tolist() == [
-            "Antik Mutfaklar",
-            "Modern Sunum Teknikleri",
-            "TOPLAM",
-        ]
-        # tercih_sayisi -> G sutunu (yeni kolon duzeni)
-        assert worksheet["G4"].value == "=SUM(G2:G3)"
+        assert survey_df.empty
+        assert worksheet.max_row == 1
     finally:
         for path in (db_path, template_path):
             try:

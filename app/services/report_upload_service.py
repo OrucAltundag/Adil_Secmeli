@@ -45,19 +45,12 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
     "ogrenci": {
-        "sheet": "Ogrenci",
-        "rows": [
-            {
-                "student_id": "20230001", "fakulte": "Örnek Fakültesi", "bolum": "Örnek Bölüm",
-                "akademik_yil": 2023, "donem": "Guz", "ders_kodu": "SEC101",
-                "not": 75, "basari_durumu": "Geçti", "kayit_sayisi": 50, "kontenjan": 60,
-            },
-            {
-                "student_id": "20230002", "fakulte": "Örnek Fakültesi", "bolum": "Örnek Bölüm",
-                "akademik_yil": 2023, "donem": "Bahar", "ders_kodu": "SEC102",
-                "not": 60, "basari_durumu": "Geçti", "kayit_sayisi": 45, "kontenjan": 60,
-            },
+        "sheet": "Ders Analizi",
+        "columns": [
+            "ders_kodu", "donem", "kayit_sayisi", "gecme_orani_%",
+            "ort_agirlikli", "ort_katilim_yuzde",
         ],
+        "rows": [],
     },
     "ders": {
         "sheet": "Ders",
@@ -70,29 +63,17 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
     },
     "yillik_mufredat": {
         "sheet": "Mufredat",
-        # §15: aynı akademik yıl için hem Güz hem Bahar örnek satırı.
-        "rows": [
-            {
-                "fakulte": "Örnek Fakültesi", "bolum": "Örnek Bölüm", "yil": 2023, "donem": "Guz",
-                "ders_kodu": "SEC101", "ders_adi": "Örnek Seçmeli (Güz)", "kredi": 3, "akts": 5, "durum": "Resmi",
-            },
-            {
-                "fakulte": "Örnek Fakültesi", "bolum": "Örnek Bölüm", "yil": 2023, "donem": "Bahar",
-                "ders_kodu": "SEC102", "ders_adi": "Örnek Seçmeli (Bahar)", "kredi": 3, "akts": 5, "durum": "Resmi",
-            },
-        ],
+        "columns": ["Fakulte", "Bolum", "Yil", "Donem", "Ders Kodu", "Ders Adi"],
+        "rows": [],
     },
 }
 
 # UI'da gösterilecek dostça etiketler
 TEMPLATE_LABELS: dict[str, str] = {
-    "curriculum": "Müfredat Şablonu",
     "yillik_mufredat": "Güz+Bahar Yıllık Müfredat Şablonu",
-    "havuz": "Havuz Şablonu",
     "criteria": "Kriter Şablonu",
     "survey": "Anket / Tercih Şablonu",
     "ogrenci": "Öğrenci Veri Seti Şablonu",
-    "ders": "Ders Veri Seti Şablonu",
 }
 
 
@@ -141,7 +122,9 @@ def write_template(
                 if ycol in r:
                     r[ycol] = int(year)
         with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
-            pd.DataFrame(rows).to_excel(writer, sheet_name=spec["sheet"], index=False)
+            pd.DataFrame(rows, columns=spec.get("columns")).to_excel(
+                writer, sheet_name=spec["sheet"], index=False
+            )
             # Açıklama sayfası (§14: zorunlu kolonlar + veri tipi beklentisi)
             note = pd.DataFrame(
                 {
@@ -149,14 +132,14 @@ def write_template(
                         "Bu şablon sistem tarafından yeniden içe aktarılabilir.",
                         "Kolon adlarını DEĞİŞTİRMEYİN.",
                         "Güz/Bahar ayrımı 'donem' kolonuyla yapılır (tek akademik yıl).",
-                        "Örnek satırları kendi verinizle değiştirin.",
+                        "Verileri başlık satırının altına ekleyin.",
                     ]
                 }
             )
             note.to_excel(writer, sheet_name="Aciklama", index=False)
         return {
             "ok": True,
-            "message": f"{TEMPLATE_LABELS.get(template_type, template_type)} oluşturuldu ({len(rows)} örnek satır).",
+            "message": f"{TEMPLATE_LABELS.get(template_type, template_type)} oluşturuldu (boş veri şablonu).",
             "path": target_path,
         }
     except Exception as exc:  # noqa: BLE001
@@ -180,6 +163,17 @@ REPORT_LABELS: dict[str, str] = {
     "trend": "Trend Raporu",
     "donemsel_planlama": "Dönemsel Planlama Raporu",
     "import_hata": "Import Hata Raporu",
+}
+
+REPORT_SOURCES: dict[str, tuple[str, str]] = {
+    "mufredat": ("Dönem Planlama / Müfredat", "mufredat, mufredat_ders, ders"),
+    "yillik_mufredat": ("Dönem Planlama / Müfredat", "mufredat, mufredat_ders, ders"),
+    "havuz": ("Karar Süreci / Fakülte Havuzu", "havuz, ders"),
+    "kesinlesme": ("Karar Merkezi / Kesinleşme Puanları", "havuz, ders"),
+    "ahp_topsis": ("Karar Süreci / AHP ve TOPSIS", "skor, ders"),
+    "trend": ("Kriter ve Performans Verileri", "performans, ders"),
+    "donemsel_planlama": ("Dönem Planlama", "semester_plan_runs, semester_plan_course_assignments, ders"),
+    "import_hata": ("Veri Yönetimi / Import Geçmişi", "import_row_issues"),
 }
 
 
@@ -281,13 +275,18 @@ def export_report(
             )
             p = params
         elif report_type == "donemsel_planlama":
-            scope, params = _scope_and(col_fac="faculty_id", col_dep="department_id",
+            scope, params = _scope_and(col_fac="r.faculty_id", col_dep="r.department_id",
                                        faculty_id=faculty_id, department_id=department_id)
             sql = (
-                "SELECT id AS run_id, year AS yil, faculty_id, department_id, "
-                "fall_count AS guz_ders, spring_count AS bahar_ders, plan_score, status, created_at "
-                "FROM semester_plan_runs WHERE 1=1" + (" AND year=?" if yr is not None else "") + scope +
-                " ORDER BY id DESC"
+                "SELECT r.id AS run_id, r.year AS yil, r.run_name, r.faculty_id, r.department_id, "
+                "a.assigned_semester AS donem, d.kod AS ders_kodu, d.ad AS ders_adi, "
+                "a.assignment_type, a.course_score, a.expected_demand, a.expected_capacity, "
+                "a.constraint_status, a.explanation, r.plan_score, r.status, r.created_at "
+                "FROM semester_plan_runs r "
+                "LEFT JOIN semester_plan_course_assignments a ON a.plan_run_id=r.id "
+                "LEFT JOIN ders d ON d.ders_id=a.course_id "
+                "WHERE 1=1" + (" AND r.year=?" if yr is not None else "") + scope +
+                " ORDER BY r.id DESC, a.assigned_semester, d.kod"
             )
             p = ([yr] if yr is not None else []) + params
         else:  # import_hata
@@ -323,6 +322,17 @@ def export_report(
                     df.to_excel(writer, sheet_name="Rapor", index=False)
             else:
                 df.to_excel(writer, sheet_name="Rapor", index=False)
+            page_name, tables = REPORT_SOURCES[report_type]
+            pd.DataFrame(
+                [
+                    {"Alan": "Rapor", "Deger": REPORT_LABELS[report_type]},
+                    {"Alan": "Sistem sayfasi", "Deger": page_name},
+                    {"Alan": "Canli veri kaynagi", "Deger": tables},
+                    {"Alan": "Akademik yil", "Deger": yr if yr is not None else "Tum yillar"},
+                    {"Alan": "Fakulte ID", "Deger": faculty_id if faculty_id is not None else "Tumu"},
+                    {"Alan": "Bolum ID", "Deger": department_id if department_id is not None else "Tumu"},
+                ]
+            ).to_excel(writer, sheet_name="Kaynak Bilgisi", index=False)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "message": f"Rapor dosyaya yazılamadı: {exc}"}
 

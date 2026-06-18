@@ -24,6 +24,7 @@ from app.services.course_curriculum_status_service import (
     get_yearly_curriculum_term_map,
 )
 from app.services.course_semester_availability_service import normalize_semester
+from app.services.course_type import build_elective_predicate
 
 
 class CurriculumRepository:
@@ -545,6 +546,98 @@ def get_pool_courses_with_curriculum_flags(
     return out
 
 
+def get_elective_catalog_with_curriculum_flags(
+    conn: sqlite3.Connection,
+    year: int,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Kapsamdaki tüm seçmelileri havuz ve yıllık müfredat bayraklarıyla döndürür.
+
+    Birleşik Havuz ekranının evreni yalnız ``havuz`` tablosuna daha önce yazılmış
+    satırlar değildir. Katalogdaki seçmeli dersler de listelenir; henüz fiziksel
+    havuz kaydı olmayanlar ``catalog_candidate`` olarak işaretlenir.
+    """
+    cur = conn.cursor()
+    elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    scope, params = _scope_sql(
+        faculty_id=faculty_id,
+        department_id=department_id,
+        fac_col="COALESCE(d.fakulte_id, b.fakulte_id)",
+        dep_col="d.bolum_id",
+    )
+    try:
+        cur.execute(
+            f"""
+            SELECT d.ders_id, d.kod, d.ad, d.bolum_id,
+                   COALESCE(d.fakulte_id, b.fakulte_id) AS fakulte_id,
+                   d.kontenjan, d.kredi, d.akts
+            FROM ders d
+            LEFT JOIN bolum b ON b.bolum_id = d.bolum_id
+            WHERE {elective_predicate}{scope}
+            ORDER BY d.kod, d.ad, d.ders_id
+            """,
+            tuple(params),
+        )
+    except sqlite3.OperationalError:
+        return get_pool_courses_with_curriculum_flags(conn, year, faculty_id, department_id)
+
+    catalog_rows = cur.fetchall()
+    course_ids = [int(row[0]) for row in catalog_rows if row and row[0] is not None]
+    if not course_ids:
+        return []
+
+    pool_map = {
+        int(row["course_id"]): row
+        for row in get_pool_courses_by_year(conn, year, faculty_id, department_id)
+    }
+    status_map = get_courses_status_batch(
+        conn, year, course_ids, faculty_id=faculty_id, department_id=department_id
+    )
+    decision_map = _latest_decision_map(conn, year, faculty_id, department_id)
+    score_map = _latest_score_map(conn, year)
+    out: list[dict[str, Any]] = []
+    for ders_id, kod, ad, bolum_id, fakulte_id, kontenjan, kredi, akts in catalog_rows:
+        if ders_id is None:
+            continue
+        cid = int(ders_id)
+        actual_pool_row = pool_map.get(cid)
+        base = actual_pool_row or {
+            "course_id": cid,
+            "course_code": kod or str(cid),
+            "course_name": ad or str(cid),
+            "pool_term": None,
+            "pool_status": 0,
+            "pool_counter": 0,
+            "department_id": bolum_id,
+            "faculty_id": fakulte_id,
+            "capacity": kontenjan,
+            "credit": kredi,
+            "ects": akts,
+            "score": score_map.get(cid, 0.0),
+        }
+        status = status_map.get(cid, {})
+        row = {**base, **status}
+        row["is_elective_catalog"] = True
+        row["catalog_candidate"] = actual_pool_row is None
+        row["eligible_for_pool"] = not bool(row.get("in_yearly_curriculum"))
+        if row["catalog_candidate"] and not row.get("in_yearly_curriculum"):
+            row.update(
+                status_code="in_pool",
+                status_label="Havuzda",
+                status_color="blue",
+                recommendation="Müfredata önerilebilir",
+            )
+        row.update(
+            recommendation_status=row.get("recommendation"),
+            final_decision=row.get("status_label"),
+            confidence_score=decision_map.get(cid),
+            explanation=_pool_explanation(row),
+        )
+        out.append(row)
+    return out
+
+
 def get_unified_pool_by_year(
     conn: sqlite3.Connection,
     year: int,
@@ -554,7 +647,7 @@ def get_unified_pool_by_year(
     """Havuz Yönetimi tek-ekran paketi: birleşik havuz + güz/bahar müfredatı + özet."""
     return {
         "year": int(year),
-        "pool_courses": get_pool_courses_with_curriculum_flags(conn, year, faculty_id, department_id),
+        "pool_courses": get_elective_catalog_with_curriculum_flags(conn, year, faculty_id, department_id),
         "fall_curriculum": get_fall_curriculum_courses(conn, year, faculty_id, department_id),
         "spring_curriculum": get_spring_curriculum_courses(conn, year, faculty_id, department_id),
         "summary": get_period_planning_summary(conn, year, faculty_id, department_id),
@@ -665,4 +758,3 @@ def save_period_planning_result(
         "fall_written": written[FALL],
         "spring_written": written[SPRING],
     }
-

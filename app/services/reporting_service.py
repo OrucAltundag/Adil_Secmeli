@@ -249,13 +249,14 @@ def _fetch_pool_rows(db, faculty_id: int, year: int, term: str):
             h.skor,
             h.sayac,
             h.statu,
-            h.yil
+            h.yil,
+            COALESCE(h.donem, ?) AS donem
         FROM havuz h
         LEFT JOIN ders d ON CAST(h.ders_id AS INTEGER) = d.ders_id
         WHERE h.fakulte_id = ? AND h.yil = ?
           AND {elective_predicate}
     """
-    params: list[Any] = [int(faculty_id), int(year)]
+    params: list[Any] = [normalize_term(term), int(faculty_id), int(year)]
     if use_term:
         query += " AND LOWER(SUBSTR(TRIM(COALESCE(h.donem, '')), 1, 1)) = ?"
         params.append(term_key(term))
@@ -311,7 +312,7 @@ def build_report_snapshot(
     chosen_count = 0
     cancelled_count = 0
 
-    for ders_id, ders_adi, skor, sayac, statu, row_year in pool_rows_raw:
+    for ders_id, ders_adi, skor, sayac, statu, row_year, row_term in pool_rows_raw:
         if ders_id is None:
             continue
         ders_id_int = int(ders_id)
@@ -338,6 +339,7 @@ def build_report_snapshot(
                 "statu": status_label(status),
                 "yil": int(row_year),
                 "kaynak": source,
+                "donem": normalize_term(row_term),
             }
         )
 
@@ -350,13 +352,20 @@ def build_report_snapshot(
     )
 
     curriculum_rows = []
-    if department_name:
+    if conn is not None:
+        department_filter = " AND b.ad = ?" if department_name else ""
+        params: list[Any] = [int(faculty_id)]
+        if department_name:
+            params.append(department_name)
+        params.extend([int(year), term_key(normalized_term)])
         _, curr_rows_raw = db.run_sql(
             f"""
             SELECT DISTINCT
                 d.ders_id,
                 d.ad,
-                h.skor
+                h.skor,
+                m.donem,
+                b.ad
             FROM mufredat m
             JOIN mufredat_ders md ON m.mufredat_id = md.mufredat_id
             JOIN ders d ON md.ders_id = d.ders_id
@@ -374,7 +383,7 @@ def build_report_snapshot(
                 LIMIT 1
             )
             WHERE b.fakulte_id = ?
-              AND b.ad = ?
+              {department_filter}
               AND m.akademik_yil = ?
               AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = ?
               AND {elective_predicate}
@@ -383,7 +392,7 @@ def build_report_snapshot(
                 h.skor DESC,
                 d.ad
             """,
-            (int(faculty_id), department_name, int(year), term_key(normalized_term)),
+            tuple(params),
         )
         curriculum_rows = [
             {
@@ -391,8 +400,10 @@ def build_report_snapshot(
                 "ders_adi": ders_adi,
                 "skor": score_map.get(int(ders_id), float(skor) if skor is not None else None),
                 "kaynak": "TOPSIS",
+                "donem": normalize_term(donem),
+                "bolum": bolum_adi,
             }
-            for ders_id, ders_adi, skor in (curr_rows_raw or [])
+            for ders_id, ders_adi, skor, donem, bolum_adi in (curr_rows_raw or [])
         ]
 
     avg_score = (sum(scores) / len(scores)) if scores else None

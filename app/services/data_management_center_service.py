@@ -390,7 +390,7 @@ def execute_import_request(
             faculty_id=int(faculty_id),
             department_id=int(department_id) if department_id is not None else None,
             year=int(year),
-            term=term or "Guz",
+            term=term or "",
             source_filename=os.path.basename(excel_path),
             auto_activate=auto_activate,
             uploaded_by=uploaded_by,
@@ -414,6 +414,7 @@ def execute_import_request(
             source_filename=os.path.basename(excel_path),
             auto_activate=auto_activate,
             uploaded_by=uploaded_by,
+            apply_now=apply_now,
         )
 
     if import_type == "student_criteria":
@@ -430,6 +431,7 @@ def execute_import_request(
         target_year=int(year),
         auto_activate=auto_activate,
         uploaded_by=uploaded_by,
+        apply_now=apply_now,
     )
 
 

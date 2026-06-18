@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -33,11 +34,11 @@ from app.services.import_audit_service import (
 from app.services.import_diff_service import recalculate_import_diff
 from app.services.import_impact_service import recalculate_import_impact
 from app.services.import_lineage_service import record_value_source
-from app.services.import_quality_service import evaluate_import_quality
+from app.services.import_quality_service import evaluate_import_quality, recommended_import_status
 from app.services.yearly_workflow import mark_criteria_status
 
 CRITERIA_TEMPLATE_VERSION = "criteria-import-v1"
-CRITERIA_TEMPLATE_SHEET_NAME = "Kriter Veri Giris Sablonu"
+CRITERIA_TEMPLATE_SHEET_NAME = "Kriter"
 FACULTY_SCOPE_LABEL = "Fakulte Geneli"
 
 
@@ -488,75 +489,21 @@ def write_criteria_template_excel(
     faculty_id: int | None = None,
     department_id: int | None = None,
 ) -> str:
-    template_courses: list[dict[str, Any]] = []
-    if db_path and faculty_id is not None and year is not None and term is not None:
-        context = load_criteria_template_context(
-            db_path=db_path,
-            faculty_id=int(faculty_id),
-            year=int(year),
-            term=normalize_term_label(term),
-            department_id=int(department_id) if department_id is not None else None,
-        )
-        faculty_name = str(context.get("faculty_name") or faculty_name or "")
-        department_name = str(context.get("department_name") or department_name or "") or None
-        template_courses = list(context.get("courses") or [])
-
-    faculty_text = faculty_name or "Ornek Fakultesi"
-    department_text = normalize_department_scope_name(department_name)
-    year_value = int(year or datetime.now().year)
-    term_value = normalize_term_label(term)
-
-    if template_courses:
-        rows = [
-            {
-                "fakulte_adi": faculty_text,
-                "bolum_adi": course.get("bolum_adi") or department_text or FACULTY_SCOPE_LABEL,
-                "yil": year_value,
-                "donem": term_value,
-                "ders_kodu": course.get("ders_kodu"),
-                "ders_adi": course.get("ders_adi"),
-                "toplam_ogrenci": None,
-                "gecen_ogrenci": None,
-                "basari_ortalamasi": None,
-                "kontenjan": None,
-                "kayitli_ogrenci": None,
-                "aciklama": None,
-            }
-            for course in template_courses
-        ]
-    else:
-        rows = [
-            {
-                "fakulte_adi": faculty_text,
-                "bolum_adi": department_text or FACULTY_SCOPE_LABEL,
-                "yil": year_value,
-                "donem": term_value,
-                "ders_kodu": "SEC101",
-                "ders_adi": "Ornek Secmeli Ders",
-                "toplam_ogrenci": None,
-                "gecen_ogrenci": None,
-                "basari_ortalamasi": None,
-                "kontenjan": None,
-                "kayitli_ogrenci": None,
-                "aciklama": None,
-            }
-        ]
-
-    meta_df = pd.DataFrame(
-        [
-            {
-                "fakulte_adi": faculty_text,
-                "bolum_adi": department_text or FACULTY_SCOPE_LABEL,
-                "yil": year_value,
-                "donem": term_value,
-                "aciklama": None,
-            }
+    # Paylasilan kriter veri setiyle birebir ayni, yillik ve sade kolon yapisi.
+    # Donem her satirda dosyadan okunur; arayuzde ayrica donem secilmez.
+    data_df = pd.DataFrame(
+        columns=[
+            "ders_kodu",
+            "donem",
+            "toplam_ogrenci",
+            "gecen_ogrenci",
+            "basari_ortalamasi",
+            "kontenjan",
+            "kayitli_ogrenci",
         ]
     )
-    data_df = pd.DataFrame(rows)
 
     with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
-        meta_df.to_excel(writer, sheet_name="Meta", index=False)
         data_df.to_excel(writer, sheet_name=CRITERIA_TEMPLATE_SHEET_NAME, index=False)
         worksheet = writer.sheets[CRITERIA_TEMPLATE_SHEET_NAME]
         for col_idx, header in enumerate(list(data_df.columns), start=1):
@@ -1310,6 +1257,61 @@ def import_criteria_excel(
     uploaded_by: str | None = None,
     apply_now: bool = True,
 ) -> dict[str, Any]:
+    if not str(term or "").strip():
+        try:
+            source_df = pd.read_excel(excel_path, sheet_name=0, dtype=object)
+            term_column = _find_col(list(source_df.columns), "donem", "term", "semester")
+            if not term_column:
+                return {
+                    "ok": False,
+                    "message": "Yillik kriter dosyasinda 'donem' kolonu bulunamadi.",
+                    "errors": ["donem kolonu zorunludur."],
+                }
+            results: list[dict[str, Any]] = []
+            with tempfile.TemporaryDirectory(prefix="adil_kriter_") as temp_dir:
+                for term_label in ("Guz", "Bahar"):
+                    mask = source_df[term_column].map(
+                        lambda value: term_key(normalize_term_label(value)) == term_key(term_label)
+                    )
+                    part = source_df[mask].copy()
+                    if part.empty:
+                        continue
+                    part_path = os.path.join(temp_dir, f"kriter_{term_label.lower()}.xlsx")
+                    part.to_excel(part_path, sheet_name="Kriter", index=False)
+                    results.append(
+                        import_criteria_excel(
+                            db_path=db_path,
+                            excel_path=part_path,
+                            faculty_id=faculty_id,
+                            year=year,
+                            term=term_label,
+                            department_id=department_id,
+                            source_filename=source_filename or os.path.basename(excel_path),
+                            auto_activate=auto_activate,
+                            uploaded_by=uploaded_by,
+                            apply_now=apply_now,
+                        )
+                    )
+            if not results:
+                return {
+                    "ok": False,
+                    "message": "Dosyada Güz veya Bahar kriter satiri bulunamadi.",
+                    "errors": ["donem degerleri Guz/Bahar olmalidir."],
+                }
+            errors = [err for result in results for err in result.get("errors", [])]
+            return {
+                "ok": all(result.get("ok") for result in results),
+                "message": "Yillik kriter yukleme tamamlandi (Guz+Bahar).",
+                "period_results": results,
+                "matched_count": sum(int(result.get("matched_count") or 0) for result in results),
+                "updated_course_count": sum(int(result.get("updated_course_count") or 0) for result in results),
+                "created_course_count": sum(int(result.get("created_course_count") or 0) for result in results),
+                "errors": errors,
+                "warnings": [warning for result in results for warning in result.get("warnings", [])],
+            }
+        except Exception as exc:
+            return {"ok": False, "message": f"Yillik kriter dosyasi okunamadi: {exc}", "errors": [str(exc)]}
+
     resolved_db_path = resolve_sqlite_db_path(db_path)
     if not resolved_db_path.exists():
         return {"ok": False, "message": "Veritabani bulunamadi.", "errors": ["Veritabani bulunamadi."]}
@@ -1495,7 +1497,7 @@ def import_criteria_excel(
         if not apply_now:
             status = "pending_review"
         else:
-            status = "pending_review" if quality.quality_level == "low" else "validated"
+            status = recommended_import_status(quality)
         update_import_status(
             conn,
             import_batch_id,
@@ -1508,7 +1510,7 @@ def import_criteria_excel(
                 "staged": not apply_now,
             },
         )
-        if apply_now and auto_activate and quality.quality_level != "low":
+        if apply_now and auto_activate and status == "validated":
             from app.services.import_audit_service import activate_import
 
             activate_import(conn, import_batch_id, user=uploaded_by)
@@ -1553,7 +1555,7 @@ def import_criteria_excel(
             "unmatched_rows": [],
             "import_id": int(applied["import_id"]),
             "import_batch_id": import_batch_id,
-            "import_status": "active" if apply_now and auto_activate and quality.quality_level != "low" else status,
+            "import_status": "active" if apply_now and auto_activate and status == "validated" else status,
             "quality_score": quality.quality_score,
             "quality_level": quality.quality_level,
             "duplicate": bool(batch.get("duplicate")),

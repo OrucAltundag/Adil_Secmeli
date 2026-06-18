@@ -62,10 +62,11 @@ class TrendVisualizationPage(ttk.Frame):
         tk.Label(bar, text="Yıl:", bg="#e2e8f0").pack(side=tk.LEFT, padx=(10, 2), pady=6)
         self.cb_yil = ttk.Combobox(bar, width=8, state="readonly")
         self.cb_yil.pack(side=tk.LEFT, padx=2)
+        self.cb_yil.bind("<<ComboboxSelected>>", self._on_scope_change)
         tk.Label(bar, text="Fakülte:", bg="#e2e8f0").pack(side=tk.LEFT, padx=(10, 2))
         self.cb_fakulte = ttk.Combobox(bar, width=32, state="readonly")
         self.cb_fakulte.pack(side=tk.LEFT, padx=2)
-        self.cb_fakulte.bind("<<ComboboxSelected>>", self._on_faculty_change)
+        self.cb_fakulte.bind("<<ComboboxSelected>>", self._on_scope_change)
         tk.Label(bar, text="Ders:", bg="#e2e8f0").pack(side=tk.LEFT, padx=(10, 2))
         self.cb_ders = ttk.Combobox(bar, width=40, state="readonly")
         self.cb_ders.pack(side=tk.LEFT, padx=2)
@@ -113,7 +114,7 @@ class TrendVisualizationPage(ttk.Frame):
         self._load_faculties()
         if prev_fak and prev_fak in self._fakulte_map:
             self.cb_fakulte.set(prev_fak)
-            self._on_faculty_change(None)
+            self._load_curriculum_courses()
             if prev_ders and prev_ders in self._ders_map:
                 self.cb_ders.set(prev_ders)
 
@@ -155,37 +156,44 @@ class TrendVisualizationPage(ttk.Frame):
             if self._fakulte_map and not self.cb_fakulte.get():
                 first = next(iter(self._fakulte_map))
                 self.cb_fakulte.set(first)
-                self._on_faculty_change(None)
+                self._load_curriculum_courses()
         except Exception as exc:  # noqa: BLE001
             print(f"[TrendVis] _load_faculties hata: {exc}")
 
-    def _on_faculty_change(self, _event):
+    def _on_scope_change(self, _event=None):
+        self._load_curriculum_courses()
+
+    def _load_curriculum_courses(self):
         if not self._conn_ready():
             return
         fak = self.cb_fakulte.get()
         fid = self._fakulte_map.get(fak)
-        if fid is None:
+        try:
+            year = int(self.cb_yil.get())
+        except (TypeError, ValueError):
+            year = None
+        if fid is None or year is None:
+            self._ders_map = {}
+            self.cb_ders["values"] = ()
+            self.cb_ders.set("")
             return
-        rows = []
         try:
             _, rows = self.db.run_sql(
-                "SELECT ders_id, ad FROM ders WHERE fakulte_id = ? ORDER BY ad", (int(fid),)
+                """
+                SELECT DISTINCT d.ders_id, d.ad
+                FROM mufredat m
+                JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+                JOIN ders d ON d.ders_id = md.ders_id
+                LEFT JOIN bolum b ON b.bolum_id = m.bolum_id
+                WHERE m.akademik_yil = ?
+                  AND (b.fakulte_id = ? OR m.fakulte_id = ?)
+                ORDER BY d.ad, d.ders_id
+                """,
+                (int(year), int(fid), int(fid)),
             )
-        except Exception:
+        except Exception as exc:
+            print(f"[TrendVis] mufredat dersleri yuklenemedi: {exc}")
             rows = []
-        if not rows:
-            # bolum üzerinden fallback
-            try:
-                _, rows = self.db.run_sql(
-                    """
-                    SELECT d.ders_id, d.ad FROM ders d
-                    JOIN bolum b ON b.bolum_id = d.bolum_id
-                    WHERE b.fakulte_id = ? ORDER BY d.ad
-                    """,
-                    (int(fid),),
-                )
-            except Exception:
-                rows = []
         self._ders_map = {str(r[1]): int(r[0]) for r in (rows or []) if r and r[1]}
         self.cb_ders["values"] = tuple(self._ders_map.keys())
         self.cb_ders.set("")

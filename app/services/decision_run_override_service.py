@@ -99,6 +99,30 @@ def list_decision_run_overrides(conn: sqlite3.Connection, status: str | None = N
     return [dict(row) for row in cur.fetchall()]
 
 
+def cancel_decision_run_override(
+    conn: sqlite3.Connection,
+    request_id: int,
+) -> dict[str, Any]:
+    """Henüz incelenmemiş engelleme talebini kuyruktan kaldırır.
+
+    Onaylanmış/reddedilmiş kayıtlar denetim izi olduğundan silinemez. Yalnızca
+    ``pending`` talep geri çekilebilir; karar çalıştırması ve çıktıları korunur.
+    """
+    ensure_decision_run_override_schema(conn)
+    request = get_decision_run_override(conn, request_id)
+    if not request:
+        raise ValueError("Engelleme talebi bulunamadi.")
+    if request.get("status") != "pending":
+        raise ValueError("Yalniz bekleyen engelleme talepleri geri cekilebilir.")
+    cur = conn.execute(
+        "DELETE FROM decision_run_override_requests WHERE id=? AND status='pending'",
+        (int(request_id),),
+    )
+    if int(cur.rowcount or 0) != 1:
+        raise ValueError("Engelleme talebi artik beklemede degil; listeyi yenileyin.")
+    return request
+
+
 def _execute_optional(cur: sqlite3.Cursor, sql: str, params: tuple[Any, ...]) -> None:
     """Şema sürümleri arasında bulunmayan tablo/kolonu atla; gerçek DB hatasını yutma."""
 
