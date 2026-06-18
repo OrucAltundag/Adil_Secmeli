@@ -199,23 +199,23 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
     if not os.path.exists(excel_path):
         raise FileNotFoundError(f"Kriter dosyasi bulunamadi: {excel_path}")
 
-    xls = pd.ExcelFile(excel_path)
-    meta = _read_meta_sheet(xls)
-    data_sheet = next(
-        (
-            name
-            for name in xls.sheet_names
-            if normalize_course_text(str(name)) in {"kriter", "kriterler", "criteria", "criterion"}
-        ),
-        None,
-    )
-    if data_sheet is None:
-        non_meta = [name for name in xls.sheet_names if normalize_course_text(str(name)) != "meta"]
-        if not non_meta:
-            raise ValueError("Kriter veri sayfasi bulunamadi.")
-        data_sheet = non_meta[0]
+    with pd.ExcelFile(excel_path) as xls:
+        meta = _read_meta_sheet(xls)
+        data_sheet = next(
+            (
+                name
+                for name in xls.sheet_names
+                if normalize_course_text(str(name)) in {"kriter", "kriterler", "criteria", "criterion"}
+            ),
+            None,
+        )
+        if data_sheet is None:
+            non_meta = [name for name in xls.sheet_names if normalize_course_text(str(name)) != "meta"]
+            if not non_meta:
+                raise ValueError("Kriter veri sayfasi bulunamadi.")
+            data_sheet = non_meta[0]
 
-    df = pd.read_excel(xls, sheet_name=data_sheet)
+        df = pd.read_excel(xls, sheet_name=data_sheet)
     df.columns = [str(col).strip() for col in df.columns]
     columns = list(df.columns)
 
@@ -479,6 +479,88 @@ def load_criteria_template_context(
         conn.close()
 
 
+CRITERIA_TEMPLATE_COLUMNS = [
+    "fakulte",
+    "bolum",
+    "yil",
+    "donem",
+    "ders_kodu",
+    "ders_adi",
+    "toplam_ogrenci",
+    "gecen_ogrenci",
+    "basari_ortalamasi",
+    "kontenjan",
+    "kayitli_ogrenci",
+]
+
+
+def _load_scope_rows_for_template(
+    db_path: str,
+    faculty_id: int | None,
+    department_id: int | None,
+    year: int | None,
+) -> list[dict[str, Any]]:
+    """Sablona DB'den ders satirlari doldurur (fakulte/bolum/yil/donem/ders_kodu)."""
+    if db_path is None or year is None:
+        return []
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    conn = connect_sqlite(str(resolved_db_path))
+    try:
+        cur = conn.cursor()
+        predicate = _elective_predicate(cur=cur, alias="d")
+        params: list[Any] = [int(year)]
+        scope_clause = ""
+        if faculty_id is not None:
+            scope_clause += " AND b.fakulte_id = ?"
+            params.append(int(faculty_id))
+        if department_id is not None:
+            scope_clause += " AND b.bolum_id = ?"
+            params.append(int(department_id))
+        cur.execute(
+            f"""
+            SELECT DISTINCT
+                f.ad AS fakulte_adi,
+                b.ad AS bolum_adi,
+                m.akademik_yil AS yil,
+                m.donem AS donem,
+                NULLIF(TRIM(COALESCE(d.kod, '')), '') AS ders_kodu,
+                COALESCE(NULLIF(TRIM(d.ad), ''), 'Ders ' || d.ders_id) AS ders_adi
+            FROM mufredat m
+            JOIN bolum b ON b.bolum_id = m.bolum_id
+            JOIN fakulte f ON f.fakulte_id = b.fakulte_id
+            JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
+            JOIN ders d ON d.ders_id = md.ders_id
+            WHERE m.akademik_yil = ?
+              {scope_clause}
+              AND {predicate}
+            ORDER BY f.ad, b.ad, m.donem, d.ad
+            """,
+            tuple(params),
+        )
+        for row in cur.fetchall():
+            rows.append(
+                {
+                    "fakulte": str(row[0] or ""),
+                    "bolum": str(row[1] or ""),
+                    "yil": int(row[2]) if row[2] is not None else int(year),
+                    "donem": normalize_term_label(row[3]),
+                    "ders_kodu": str(row[4] or ""),
+                    "ders_adi": str(row[5] or ""),
+                    "toplam_ogrenci": "",
+                    "gecen_ogrenci": "",
+                    "basari_ortalamasi": "",
+                    "kontenjan": "",
+                    "kayitli_ogrenci": "",
+                }
+            )
+    finally:
+        conn.close()
+    return rows
+
+
 def write_criteria_template_excel(
     target_path: str,
     faculty_name: str | None = None,
@@ -489,19 +571,21 @@ def write_criteria_template_excel(
     faculty_id: int | None = None,
     department_id: int | None = None,
 ) -> str:
-    # Paylasilan kriter veri setiyle birebir ayni, yillik ve sade kolon yapisi.
-    # Donem her satirda dosyadan okunur; arayuzde ayrica donem secilmez.
-    data_df = pd.DataFrame(
-        columns=[
-            "ders_kodu",
-            "donem",
-            "toplam_ogrenci",
-            "gecen_ogrenci",
-            "basari_ortalamasi",
-            "kontenjan",
-            "kayitli_ogrenci",
-        ]
+    """Kriter sablonu — fakulte/bolum/yil/donem dahil tum tanimlayici kolonlarla.
+
+    Kapsam (db_path + year) verildiyse DB'den ders satirlari doldurulur, sayisal
+    alanlar bos birakilir. Kapsam yoksa yalniz basliklar yazilir.
+    """
+    rows = _load_scope_rows_for_template(
+        db_path=db_path,
+        faculty_id=faculty_id,
+        department_id=department_id,
+        year=year,
     )
+    if rows:
+        data_df = pd.DataFrame(rows, columns=CRITERIA_TEMPLATE_COLUMNS)
+    else:
+        data_df = pd.DataFrame(columns=CRITERIA_TEMPLATE_COLUMNS)
 
     with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
         data_df.to_excel(writer, sheet_name=CRITERIA_TEMPLATE_SHEET_NAME, index=False)
@@ -1245,10 +1329,128 @@ def apply_criteria_import(
     }
 
 
+def _resolve_faculty_id_by_name(cur: sqlite3.Cursor, faculty_name: str) -> int | None:
+    text = str(faculty_name or "").strip()
+    if not text:
+        return None
+    cur.execute("SELECT fakulte_id FROM fakulte WHERE lower(trim(ad)) = lower(trim(?)) LIMIT 1", (text,))
+    row = cur.fetchone()
+    if row:
+        return int(row[0])
+    cur.execute("SELECT fakulte_id FROM fakulte WHERE lower(ad) LIKE lower(?) LIMIT 1", (f"%{text}%",))
+    row = cur.fetchone()
+    return int(row[0]) if row else None
+
+
+def _import_criteria_multi_faculty(
+    db_path: str,
+    excel_path: str,
+    year: int,
+    term: str,
+    department_id: int | None,
+    source_filename: str | None,
+    auto_activate: bool,
+    uploaded_by: str | None,
+    apply_now: bool,
+) -> dict[str, Any]:
+    """Fakulte secilmemis ('Tumu') ise belgeyi `fakulte` kolonuna gore boler,
+    her fakulteyi ayri batch olarak import_criteria_excel'a yonlendirir."""
+    try:
+        source_df = pd.read_excel(excel_path, sheet_name=0, dtype=object)
+    except Exception as exc:
+        return {"ok": False, "message": f"Kriter dosyasi okunamadi: {exc}", "errors": [str(exc)]}
+
+    faculty_column = _find_col(list(source_df.columns), "fakulte_adi", "fakulte", "faculty")
+    if not faculty_column:
+        return {
+            "ok": False,
+            "message": "Fakulte secilmedi ve dosyada 'fakulte' kolonu yok.",
+            "errors": ["Coklu fakulte importu icin dosyada 'fakulte' kolonu olmali."],
+        }
+
+    resolved_db_path = resolve_sqlite_db_path(db_path)
+    if not resolved_db_path.exists():
+        return {"ok": False, "message": "Veritabani bulunamadi.", "errors": ["Veritabani bulunamadi."]}
+
+    conn = connect_sqlite(str(resolved_db_path))
+    try:
+        cur = conn.cursor()
+        unique_names = [
+            str(value).strip()
+            for value in source_df[faculty_column].dropna().unique().tolist()
+            if str(value).strip()
+        ]
+        if not unique_names:
+            return {
+                "ok": False,
+                "message": "Dosyadaki 'fakulte' kolonunda dolu satir yok.",
+                "errors": ["Fakulte degerleri bos."],
+            }
+        resolved: dict[str, int] = {}
+        unresolved: list[str] = []
+        for name in unique_names:
+            faculty_id = _resolve_faculty_id_by_name(cur, name)
+            if faculty_id is None:
+                unresolved.append(name)
+            else:
+                resolved.setdefault(name, faculty_id)
+    finally:
+        conn.close()
+
+    if not resolved:
+        return {
+            "ok": False,
+            "message": "Dosyadaki hicbir fakulte sistemde eslesmedi.",
+            "errors": [f"Eslesmeyen fakulteler: {', '.join(unresolved)}"],
+        }
+
+    results: list[dict[str, Any]] = []
+    with tempfile.TemporaryDirectory(prefix="adil_kriter_fak_") as temp_dir:
+        for name, fac_id in resolved.items():
+            mask = source_df[faculty_column].map(
+                lambda value, target=name: str(value or "").strip().lower() == target.strip().lower()
+            )
+            part = source_df[mask].copy()
+            if part.empty:
+                continue
+            safe_name = "".join(ch if ch.isalnum() else "_" for ch in name)[:40] or "fakulte"
+            part_path = os.path.join(temp_dir, f"kriter_{safe_name}_{fac_id}.xlsx")
+            part.to_excel(part_path, sheet_name="Kriter", index=False)
+            results.append(
+                import_criteria_excel(
+                    db_path=db_path,
+                    excel_path=part_path,
+                    faculty_id=int(fac_id),
+                    year=year,
+                    term=term,
+                    department_id=department_id,
+                    source_filename=source_filename or os.path.basename(excel_path),
+                    auto_activate=auto_activate,
+                    uploaded_by=uploaded_by,
+                    apply_now=apply_now,
+                )
+            )
+
+    errors = [err for result in results for err in result.get("errors", [])]
+    warnings = [warn for result in results for warn in result.get("warnings", [])]
+    if unresolved:
+        warnings.append(f"Eslesmeyen fakulte(ler) atlandi: {', '.join(unresolved)}")
+    return {
+        "ok": bool(results) and all(result.get("ok") for result in results),
+        "message": f"Coklu fakulte kriter yukleme tamamlandi ({len(results)} fakulte).",
+        "faculty_results": results,
+        "matched_count": sum(int(result.get("matched_count") or 0) for result in results),
+        "updated_course_count": sum(int(result.get("updated_course_count") or 0) for result in results),
+        "created_course_count": sum(int(result.get("created_course_count") or 0) for result in results),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
 def import_criteria_excel(
     db_path: str,
     excel_path: str,
-    faculty_id: int,
+    faculty_id: int | None,
     year: int,
     term: str,
     department_id: int | None = None,
@@ -1257,6 +1459,18 @@ def import_criteria_excel(
     uploaded_by: str | None = None,
     apply_now: bool = True,
 ) -> dict[str, Any]:
+    if faculty_id is None:
+        return _import_criteria_multi_faculty(
+            db_path=db_path,
+            excel_path=excel_path,
+            year=year,
+            term=term,
+            department_id=department_id,
+            source_filename=source_filename,
+            auto_activate=auto_activate,
+            uploaded_by=uploaded_by,
+            apply_now=apply_now,
+        )
     if not str(term or "").strip():
         try:
             source_df = pd.read_excel(excel_path, sheet_name=0, dtype=object)

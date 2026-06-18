@@ -853,7 +853,9 @@ class DataManagementPage(ttk.Frame):
         if not target:
             return
         try:
-            result = export_student_criteria_dataset(excel_path=excel_path, year=year, target_path=target)
+            result = export_student_criteria_dataset(
+                excel_path=excel_path, year=year, target_path=target, db_path=self._db_path()
+            )
         except Exception:
             messagebox.showerror("Kriter Veri Seti", self._friendly_backend_error())
             return

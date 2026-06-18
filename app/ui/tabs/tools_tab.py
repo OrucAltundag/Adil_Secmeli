@@ -807,6 +807,8 @@ class ToolsTab(ttk.Frame):
                     term=None,
                     department_id=department_id,
                     source_filename=os.path.basename(excel_path),
+                    auto_activate=False,
+                    apply_now=False,
                 )
             )
         except Exception as exc:
@@ -933,6 +935,8 @@ class ToolsTab(ttk.Frame):
                     db_path=db_path,
                     excel_path=excel_path,
                     target_year=target_year,
+                    auto_activate=False,
+                    apply_now=False,
                 )
             )
         except Exception as exc:
@@ -993,6 +997,8 @@ class ToolsTab(ttk.Frame):
                     faculty_id=faculty_id,
                     year=year,
                     source_filename=os.path.basename(excel_path),
+                    auto_activate=False,
+                    apply_now=False,
                 )
             )
         except Exception as exc:

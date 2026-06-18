@@ -827,6 +827,8 @@ class CriteriaPage:
                 term=term,
                 department_id=int(department_id) if department_id is not None else None,
                 source_filename=os.path.basename(path),
+                auto_activate=False,
+                apply_now=False,
             )
             if result.get("ok"):
                 messagebox.showinfo("Tamam", result.get("message", "Kriter dosyasi yuklendi."))

@@ -55,11 +55,17 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
         label="Kriter / Performans / Popülerlik",
         description=(
             "Ders bazlı başarı oranı, kontenjan doluluk sinyali ve popülerlik verilerini yükler.\n"
-            "Import sonrası kriter tamamlama durumu otomatik güncellenir.\n"
-            "⚠ Bu import türü için FAKÜLTE seçimi zorunludur."
+            "Fakülte seçilirse yalnız o fakültenin satırları işlenir.\n"
+            "Fakülte = 'Tumu' seçilirse dosyadaki 'fakulte' kolonuna göre her fakülte\n"
+            "için ayrı batch oluşturulur (çoklu fakülte importu).\n"
+            "Dönem dosyadaki 'donem' kolonundan okunur (Güz/Bahar otomatik bölünür)."
         ),
-        required_scope="Fakülte ve yıl zorunlu; bölüm opsiyonel; dönem önerilir.",
+        required_scope="Yıl zorunlu; fakülte opsiyonel (Tumu = dosyadaki tüm fakülteler); bölüm opsiyonel.",
         expected_columns=(
+            "fakulte",
+            "bolum (opsiyonel)",
+            "yil (opsiyonel)",
+            "donem",
             "ders_kodu veya ders_adi",
             "toplam_ogrenci",
             "gecen_ogrenci",
@@ -112,12 +118,10 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
         label="Öğrenci Veri Setinden Kriter Oluştur",
         description=(
             "Öğrenci not veri setinden (kayıt/geçme/ortalama/katılım) ders bazlı\n"
-            "kriterleri OTOMATİK hesaplar ve kaydeder:\n"
-            "  • Başarı oranı, ortalama not (performans tablosu)\n"
-            "  • Talep/kayıt sayısı ve doluluk oranı (popülerlik tablosu)\n"
-            "  • Kriter tamamlama (ders_kriterleri tablosu)\n"
-            "Dersler ders koduyla eşleşir; eşleşmeyen ders için yeni ders açılmaz.\n"
-            "Kaydetmeden önce hesaplanan kriterlerin ÖNİZLEMESİ gösterilir."
+            "kriterleri otomatik HESAPLAR ve normal kriter import akışına ekler.\n"
+            "Veritabanına DOĞRUDAN YAZMAZ — üretilen kriter satırları 'Rollback &\n"
+            "Onay' kuyruğuna düşer; uygulanması için onaylanmalıdır.\n"
+            "Dersler ders koduyla eşleşir; eşleşmeyen ders için yeni ders açılmaz."
         ),
         required_scope="Yıl zorunlu. Dosya 'Ders Analizi' sayfasını içermelidir.",
         expected_columns=(
@@ -128,11 +132,11 @@ IMPORT_TYPE_SPECS: dict[str, ImportTypeSpec] = {
             "ort_agirlikli",
             "ort_katilim_yuzde",
         ),
-        affected_tables=("ders_kriterleri", "performans", "populerlik"),
+        affected_tables=("(onay sonrası) ders_kriterleri, performans, populerlik",),
         on_missing_columns="'Ders Analizi' sayfası veya zorunlu kolon yoksa işlem durur; eşleşmeyen ders kodu atlanır.",
-        post_import="Kaydetmeden önce ÖNİZLEME gösterilir; onaylanırsa seçilen yılın kriter verileri yeniden yazılır.",
-        rollback_supported=False,
-        approval_required=False,
+        post_import="Kriter satırları kriter importu olarak STAGED kuyruğa alınır; onaylandığında uygulanır.",
+        rollback_supported=True,
+        approval_required=True,
     ),
 }
 
@@ -382,12 +386,10 @@ def execute_import_request(
         return {"ok": False, "message": "Excel dosyası bulunamadı.", "errors": ["Excel dosyası bulunamadı."]}
 
     if import_type == "criteria":
-        if faculty_id is None:
-            return {"ok": False, "message": "Kriter importu için fakülte seçin.", "errors": ["Fakülte zorunlu."]}
         criteria_result = import_criteria_excel(
             db_path=db_path,
             excel_path=excel_path,
-            faculty_id=int(faculty_id),
+            faculty_id=int(faculty_id) if faculty_id is not None else None,
             department_id=int(department_id) if department_id is not None else None,
             year=int(year),
             term=term or "",
@@ -396,11 +398,10 @@ def execute_import_request(
             uploaded_by=uploaded_by,
             apply_now=apply_now,
         )
-        # OTOMATIK MOD: kriter importu UYGULANDIYSA (apply_now) ve otomatik mod aciksa,
+        # OTOMATIK MOD: tek fakulte importu UYGULANDIYSA (apply_now) ve otomatik mod aciksa,
         # ilgili fakulte icin sonraki yil mufredatini uretip ders onerisi Excel'ini yaz.
-        # Erteleme modunda (staged) kriterler henuz uygulanmadigi icin pipeline tetiklenmez;
-        # onay sonrasi calistirilir.
-        if apply_now and criteria_result.get("ok"):
+        # Coklu fakulte ('Tumu') ve erteleme modunda tetiklenmez.
+        if apply_now and faculty_id is not None and criteria_result.get("ok"):
             _maybe_run_auto_pipeline(db_path, year=int(year), faculty_id=int(faculty_id), result=criteria_result)
         return criteria_result
 
@@ -418,11 +419,16 @@ def execute_import_request(
         )
 
     if import_type == "student_criteria":
-        return generate_criteria_from_student_dataset(
+        # §3 (revize): Ogrenci veri seti importu artik dogrudan ders_kriterleri
+        # tablosuna yazmaz. Kriter satirlarini hesaplar, kriter_import sablonu
+        # formatinda gecici Excel uretir ve onu kriter importu olarak STAGED
+        # (apply_now=False) calistirir; kullanici Rollback & Onay sekmesinden
+        # uygular. Boylece tum kriter girisi tek bir onayli akistan gecer.
+        return _import_student_criteria_via_criteria_pipeline(
             db_path=db_path,
             excel_path=excel_path,
             year=int(year),
-            dry_run=False,
+            uploaded_by=uploaded_by,
         )
 
     return import_curriculum_excel(
@@ -435,39 +441,151 @@ def execute_import_request(
     )
 
 
+def _import_student_criteria_via_criteria_pipeline(
+    db_path: str,
+    excel_path: str,
+    year: int,
+    uploaded_by: str | None,
+) -> dict[str, Any]:
+    """Ogrenci veri setini kriter sablonu formatinda gecici Excel'e cevirip
+    standart kriter import (staged) akisina yonlendirir. DB'ye dogrudan yazma yok;
+    sonuc 'Rollback & Onay' kuyruguna duser."""
+    import tempfile
+
+    try:
+        raw_rows = build_student_criteria_dataset(excel_path=excel_path, year=int(year))
+    except (FileNotFoundError, ValueError) as exc:
+        return {"ok": False, "message": str(exc), "errors": [str(exc)]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "message": f"Kriter veri seti üretilemedi: {exc}", "errors": [str(exc)]}
+    if not raw_rows:
+        return {
+            "ok": False,
+            "message": "Üretilecek kriter satırı bulunamadı (dosya boş veya ders kodu yok).",
+            "errors": ["Boş"],
+        }
+    enriched = _enrich_student_rows_with_scope(db_path, int(year), raw_rows)
+
+    with tempfile.TemporaryDirectory(prefix="adil_ogr_kriter_") as temp_dir:
+        temp_excel = os.path.join(temp_dir, f"ogrenci_kriter_{int(year)}.xlsx")
+        with pd.ExcelWriter(temp_excel, engine="openpyxl") as writer:
+            pd.DataFrame(enriched).to_excel(writer, sheet_name="Kriter", index=False)
+        result = import_criteria_excel(
+            db_path=db_path,
+            excel_path=temp_excel,
+            faculty_id=None,
+            year=int(year),
+            term="",
+            department_id=None,
+            source_filename=f"ogrenci_veri_seti_kriter_{int(year)}.xlsx",
+            auto_activate=False,
+            uploaded_by=uploaded_by,
+            apply_now=False,
+        )
+    result.setdefault("warnings", []).append(
+        "Öğrenci veri setinden üretildi; canlı tablolara yazılmadı. 'Rollback & Onay' sekmesinden onaylayın."
+    )
+    result["import_type"] = "student_criteria"
+    return result
+
+
+def _enrich_student_rows_with_scope(
+    db_path: str, year: int, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Ders kodu uzerinden fakulte/bolum/yil bilgisini DB'den ekler; kolonlari
+    kriter sablonu (CRITERIA_TEMPLATE_COLUMNS) sirasiyla hizalar."""
+    from app.services.criteria_import_service import CRITERIA_TEMPLATE_COLUMNS
+
+    lookup: dict[str, dict[str, Any]] = {}
+    if db_path and os.path.exists(db_path):
+        try:
+            with connect_data_management(db_path) as conn:
+                cur = conn.cursor()
+                codes = [str(r.get("ders_kodu") or "").strip() for r in rows if str(r.get("ders_kodu") or "").strip()]
+                for chunk_start in range(0, len(codes), 500):
+                    chunk = codes[chunk_start : chunk_start + 500]
+                    placeholders = ",".join("?" for _ in chunk)
+                    cur.execute(
+                        f"""
+                        SELECT d.kod, f.ad, b.ad, d.ad
+                        FROM ders d
+                        LEFT JOIN bolum b ON b.bolum_id = d.bolum_id
+                        LEFT JOIN fakulte f ON f.fakulte_id = b.fakulte_id
+                        WHERE d.kod IN ({placeholders})
+                        """,
+                        tuple(chunk),
+                    )
+                    for row in cur.fetchall():
+                        kod = str(row[0] or "").strip()
+                        if not kod:
+                            continue
+                        lookup[kod] = {
+                            "fakulte": str(row[1] or ""),
+                            "bolum": str(row[2] or ""),
+                            "ders_adi": str(row[3] or ""),
+                        }
+        except Exception:
+            lookup = {}
+
+    aligned: list[dict[str, Any]] = []
+    for row in rows:
+        kod = str(row.get("ders_kodu") or "").strip()
+        scope = lookup.get(kod, {})
+        aligned.append(
+            {
+                "fakulte": scope.get("fakulte", ""),
+                "bolum": scope.get("bolum", ""),
+                "yil": int(year),
+                "donem": row.get("donem"),
+                "ders_kodu": kod,
+                "ders_adi": scope.get("ders_adi", ""),
+                "toplam_ogrenci": row.get("toplam_ogrenci"),
+                "gecen_ogrenci": row.get("gecen_ogrenci"),
+                "basari_ortalamasi": row.get("basari_ortalamasi"),
+                "kontenjan": row.get("kontenjan"),
+                "kayitli_ogrenci": row.get("kayitli_ogrenci"),
+            }
+        )
+    # Kolon sirasini sablonla hizala
+    return [{col: row.get(col, "") for col in CRITERIA_TEMPLATE_COLUMNS} for row in aligned]
+
+
 def export_student_criteria_dataset(
     excel_path: str,
     year: int,
     target_path: str,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
     """§3: Öğrenci not veri setinden kriter veri setini üretip indirilebilir Excel'e yazar.
 
-    Veritabanına HİÇBİR ŞEY yazmaz. Üretilen dosya kriter import şablonu formatındadır;
-    kullanıcı isterse normal (onaylı) kriter import akışından içeri alabilir.
+    Veritabanına HİÇBİR ŞEY yazmaz. Üretilen dosya kriter import şablonu formatındadır
+    (fakulte/bolum/yil/donem dahil); kullanıcı normal (onaylı) kriter import akışından
+    içeri alabilir.
     """
     if not excel_path or not os.path.exists(excel_path):
         return {"ok": False, "message": "Öğrenci veri seti dosyası bulunamadı.", "errors": ["Dosya yok."]}
     if not target_path:
         return {"ok": False, "message": "Hedef dosya yolu seçilmedi.", "errors": ["Hedef yol zorunlu."]}
     try:
-        rows = build_student_criteria_dataset(excel_path=excel_path, year=int(year))
+        raw_rows = build_student_criteria_dataset(excel_path=excel_path, year=int(year))
     except (FileNotFoundError, ValueError) as exc:
         return {"ok": False, "message": str(exc), "errors": [str(exc)]}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "message": f"Kriter veri seti üretilemedi: {exc}", "errors": [str(exc)]}
-    if not rows:
+    if not raw_rows:
         return {"ok": False, "message": "Üretilecek kriter satırı bulunamadı (dosya boş veya ders kodu yok).", "errors": ["Boş"]}
+    enriched = _enrich_student_rows_with_scope(db_path or "", int(year), raw_rows)
     try:
         os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
         with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
-            pd.DataFrame(rows).to_excel(writer, sheet_name="Kriter", index=False)
+            pd.DataFrame(enriched).to_excel(writer, sheet_name="Kriter", index=False)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "message": f"Dosya yazılamadı: {exc}", "errors": [str(exc)]}
     return {
         "ok": True,
-        "message": f"{len(rows)} ders için kriter veri seti üretildi ve kaydedildi.",
+        "message": f"{len(enriched)} ders için kriter veri seti üretildi ve kaydedildi.",
         "path": target_path,
-        "row_count": len(rows),
+        "row_count": len(enriched),
     }
 
 
@@ -556,18 +674,25 @@ def write_import_template(
     os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
     try:
         if import_type == "criteria":
+            # db_path her durumda iletilir; faculty_id None ('Tumu') ise tum
+            # fakultelerin dersleri tek sablonda listelenir.
             try:
                 written = write_criteria_template_excel(
                     target_path=target_path,
-                    db_path=db_path if faculty_id is not None else None,
+                    db_path=db_path,
                     faculty_id=int(faculty_id) if faculty_id is not None else None,
                     department_id=int(department_id) if department_id is not None else None,
                     year=int(year),
-                    term=term or "Guz",
+                    term=term or "",
                 )
             except Exception:
-                written = write_criteria_template_excel(target_path=target_path, year=int(year), term=term or "Guz")
-            return {"ok": True, "message": "Kriter şablonu oluşturuldu.", "path": written}
+                written = write_criteria_template_excel(target_path=target_path, year=int(year))
+            scope_msg = (
+                "Kriter şablonu oluşturuldu."
+                if faculty_id is not None
+                else "Kriter şablonu (tüm fakülteler) oluşturuldu."
+            )
+            return {"ok": True, "message": scope_msg, "path": written}
 
         if import_type == "survey":
             # faculty_id None ('Tumu') => tum fakulteler tek dosyada; db_path her durumda iletilir.
