@@ -378,15 +378,20 @@ class DataManagementPage(ttk.Frame):
         ttk.Button(rb_top, text="Reddet", command=self.reject_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Rollback Planı", command=self.load_rollback_plan).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Geri Al", command=self.rollback_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Separator(rb_top, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
+        ttk.Button(rb_top, text="Tümünü Seç", command=self._pending_select_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(rb_top, text="Seçimi Temizle", command=self._pending_clear_selection).pack(side=tk.LEFT, padx=2)
         ttk.Label(
             rb_top,
-            text="Bekleyen importlar onaylanana kadar müfredat, kriter ve anket tablolarını değiştirmez.",
+            text="Ctrl/Shift ile çoklu seçim. Onay/Red/Geri Al seçili tüm importlara uygulanır.",
             foreground="#475569",
         ).pack(side=tk.LEFT, padx=12)
         queue_box = ttk.LabelFrame(self.rollback_tab, text="Onay Bekleyen Importlar", padding=6)
         queue_box.pack(fill=tk.BOTH, expand=True, pady=(6, 4))
         queue_cols = ("id", "type", "file", "scope", "quality", "status", "uploaded")
-        self.pending_tree = ttk.Treeview(queue_box, columns=queue_cols, show="headings", height=9)
+        self.pending_tree = ttk.Treeview(
+            queue_box, columns=queue_cols, show="headings", height=9, selectmode="extended"
+        )
         for col, title, width in (
             ("id", "ID", 55), ("type", "Tür", 100), ("file", "Dosya", 280),
             ("scope", "Kapsam", 230), ("quality", "Kalite", 90),
@@ -587,8 +592,28 @@ class DataManagementPage(ttk.Frame):
         selected = self.pending_tree.selection()
         if not selected:
             return
+        # Coklu secimde "Secili Import Ozeti" panelinde ilk secili gosterilir.
         self.selected_import_batch_id = int(selected[0])
         self.load_selected_import()
+
+    def _pending_selected_ids(self) -> list[int]:
+        return [int(iid) for iid in self.pending_tree.selection() if str(iid).isdigit()]
+
+    def _pending_select_all(self) -> None:
+        children = self.pending_tree.get_children()
+        if not children:
+            return
+        self.pending_tree.selection_set(children)
+        self.pending_tree.see(children[0])
+        try:
+            self.selected_import_batch_id = int(children[0])
+            self.load_selected_import()
+        except (ValueError, TypeError):
+            pass
+
+    def _pending_clear_selection(self) -> None:
+        self.pending_tree.selection_remove(self.pending_tree.selection())
+        self.selected_import_batch_id = None
 
     def delete_rejected_history_action(self) -> None:
         """Geçmişte seçili reddedilmiş importu ve yalnız ona ait staging/logları siler."""
@@ -1492,68 +1517,113 @@ class DataManagementPage(ttk.Frame):
             messagebox.showerror("Rollback", self._friendly_backend_error())
 
     def approve_selected(self) -> None:
-        if self.selected_import_batch_id is None:
-            messagebox.showinfo("Import Onayı", "Önce onay bekleyen bir import seçin.")
+        ids = self._pending_selected_ids()
+        if not ids:
+            messagebox.showinfo("Import Onayı", "Önce onay bekleyen en az bir import seçin.")
             return
         if not messagebox.askyesno(
-            "Importu Onayla ve Uygula",
-            "Seçili import doğrulandıktan sonra canlı sistem tablolarına uygulanacak. Devam edilsin mi?",
+            "Importları Onayla ve Uygula",
+            f"{len(ids)} import doğrulandıktan sonra canlı sistem tablolarına uygulanacak. Devam edilsin mi?",
         ):
             return
-        self._status_action(
+        self._bulk_status_action(
+            ids,
             lambda conn, batch_id: apply_pending_import(conn, batch_id, user="desktop-ui"),
-            "Import onaylandı ve canlı sisteme uygulandı.",
+            success_singular="Import onaylandı ve canlı sisteme uygulandı.",
+            success_plural_fmt="{ok}/{total} import onaylandı ve uygulandı.",
         )
 
     def reject_selected(self) -> None:
-        if self.selected_import_batch_id is None:
-            messagebox.showinfo("Import Reddi", "Önce onay bekleyen bir import seçin.")
+        ids = self._pending_selected_ids()
+        if not ids:
+            messagebox.showinfo("Import Reddi", "Önce onay bekleyen en az bir import seçin.")
             return
-        reason = simpledialog.askstring("Import Reddi", "Red gerekçesi:", parent=self)
+        reason = simpledialog.askstring(
+            "Import Reddi",
+            f"{len(ids)} import reddedilecek. Red gerekçesi:",
+            parent=self,
+        )
         if not reason or not reason.strip():
             return
-        self._status_action(
+        clean_reason = reason.strip()
+        self._bulk_status_action(
+            ids,
             lambda conn, batch_id: reject_pending_import(
-                conn, batch_id, reason=reason.strip(), user="desktop-ui"
+                conn, batch_id, reason=clean_reason, user="desktop-ui"
             ),
-            "Import reddedildi.",
+            success_singular="Import reddedildi.",
+            success_plural_fmt="{ok}/{total} import reddedildi.",
         )
 
     def rollback_selected(self) -> None:
-        if self.selected_import_batch_id is None:
-            messagebox.showinfo("Rollback", "Önce bir import seçin.")
+        ids = self._pending_selected_ids()
+        if not ids:
+            messagebox.showinfo("Rollback", "Önce en az bir import seçin.")
             return
-        if not messagebox.askyesno("Rollback", "Seçili import geri alınsın mı? Bu işlem ilgili importu pasifler."):
+        if not messagebox.askyesno(
+            "Rollback",
+            f"{len(ids)} import geri alınsın mı? Bu işlem ilgili importları pasifler.",
+        ):
             return
-        self._status_action(
-            lambda conn, batch_id: rollback_import(conn, batch_id, reason="UI uzerinden rollback.", user="desktop-ui"),
-            "Import geri alındı.",
+        self._bulk_status_action(
+            ids,
+            lambda conn, batch_id: rollback_import(
+                conn, batch_id, reason="UI uzerinden rollback.", user="desktop-ui"
+            ),
+            success_singular="Import geri alındı.",
+            success_plural_fmt="{ok}/{total} import geri alındı.",
         )
 
-    def _status_action(self, func: Any, success_message: str) -> None:
-        if self.selected_import_batch_id is None:
-            messagebox.showinfo("Veri Yönetimi", "Önce bir import seçin.")
-            return
-        def _op() -> Any:
+    def _bulk_status_action(
+        self,
+        batch_ids: list[int],
+        func: Any,
+        success_singular: str,
+        success_plural_fmt: str,
+    ) -> None:
+        """Secili tum importlara `func` uygular; basari/hata sayilarini ozetler."""
+        def _op() -> dict[str, Any]:
+            ok_ids: list[int] = []
+            failures: list[tuple[int, str]] = []
             with self._connect() as conn:
-                outcome = func(conn, self.selected_import_batch_id)
-                evaluate_import_quality(conn, self.selected_import_batch_id)
-                conn.commit()
-            return outcome
+                for batch_id in batch_ids:
+                    try:
+                        outcome = func(conn, int(batch_id))
+                        evaluate_import_quality(conn, int(batch_id))
+                        if isinstance(outcome, dict) and outcome.get("ok") is False:
+                            conn.rollback()
+                            failures.append((int(batch_id), str(outcome.get("message") or "")))
+                        else:
+                            conn.commit()
+                            ok_ids.append(int(batch_id))
+                    except Exception as exc:  # noqa: BLE001
+                        conn.rollback()
+                        failures.append((int(batch_id), str(exc)))
+            return {"ok_ids": ok_ids, "failures": failures}
 
         try:
             result = self._run_external_db_operation(_op)
-            if isinstance(result, dict) and not result.get("ok", True):
-                messagebox.showwarning(
-                    "Veri Yönetimi",
-                    result.get("message") or "İşlem uygulanamadı.",
-                )
-                self.refresh_center()
-                return
-            messagebox.showinfo("Veri Yönetimi", success_message)
-            self.refresh_center()
-            self.load_selected_import()
-            self._set_text(self.rollback_text, result)
-            self._refresh_related_views()
         except Exception:
             messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
+            return
+
+        ok_count = len(result.get("ok_ids") or [])
+        failures = result.get("failures") or []
+        total = len(batch_ids)
+        if ok_count == total == 1:
+            summary = success_singular
+        else:
+            summary = success_plural_fmt.format(ok=ok_count, total=total)
+        if failures:
+            sample = "\n".join(f"- ID {fid}: {msg}" for fid, msg in failures[:5])
+            extra = f"\n... ve {len(failures) - 5} daha" if len(failures) > 5 else ""
+            messagebox.showwarning(
+                "Veri Yönetimi",
+                f"{summary}\n\nBaşarısız ({len(failures)}):\n{sample}{extra}",
+            )
+        else:
+            messagebox.showinfo("Veri Yönetimi", summary)
+        self.refresh_center()
+        if ok_count > 0:
+            self.load_selected_import()
+            self._refresh_related_views()
