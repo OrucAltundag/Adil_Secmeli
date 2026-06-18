@@ -609,12 +609,15 @@ class DataManagementPage(ttk.Frame):
         except (TypeError, ValueError):
             return default
 
-    def _selected_import_year(self) -> int:
-        value = self.import_year_combo.get() or self.year_combo.get() or "2022"
+    def _selected_import_year(self) -> int | None:
+        """Seçili import yılı; combobox boşsa None (hayali 2022 üretme)."""
+        value = (self.import_year_combo.get() or self.year_combo.get() or "").strip()
+        if not value:
+            return None
         try:
             return int(value)
         except ValueError:
-            return 2022
+            return None
 
     def _selected_faculty_id(self) -> int | None:
         return self._faculty_options.get(self.faculty_combo.get())
@@ -658,7 +661,11 @@ class DataManagementPage(ttk.Frame):
         if not path:
             messagebox.showerror("Şablon", "Veritabanı seçilmedi.")
             return
-        default_name = f"{self._selected_import_type()}_sablon_{self._selected_import_year()}.xlsx"
+        year = self._selected_import_year()
+        if year is None:
+            messagebox.showwarning("Şablon", "Önce 'Yıl' filtresinden bir akademik yıl seçin.")
+            return
+        default_name = f"{self._selected_import_type()}_sablon_{year}.xlsx"
         target_path = filedialog.asksaveasfilename(
             title="Şablon dosyası oluştur",
             defaultextension=".xlsx",
@@ -672,7 +679,7 @@ class DataManagementPage(ttk.Frame):
                 db_path=path,
                 import_type=self._selected_import_type(),
                 target_path=target_path,
-                year=self._selected_import_year(),
+                year=year,
                 faculty_id=self._selected_faculty_id(),
                 department_id=self._selected_department_id(),
                 term=self._import_term() or "Guz",
@@ -741,6 +748,9 @@ class DataManagementPage(ttk.Frame):
             messagebox.showwarning("Kriter Veri Seti", "Önce öğrenci not veri seti dosyasını 'Seç' ile yükleyin.")
             return
         year = self._selected_import_year()
+        if year is None:
+            messagebox.showwarning("Kriter Veri Seti", "Önce 'Yıl' filtresinden bir akademik yıl seçin.")
+            return
         target = filedialog.asksaveasfilename(
             title="Kriter veri setini kaydet",
             defaultextension=".xlsx",
@@ -856,6 +866,9 @@ class DataManagementPage(ttk.Frame):
 
         import_type = self._selected_import_type()
         year = self._selected_import_year()
+        if year is None:
+            messagebox.showwarning("Import", "Önce 'Yıl' filtresinden bir akademik yıl seçin (veya yazın).")
+            return
         import_filename = os.path.basename(excel_path)
 
         # Müfredat importu: yılın eski müfredatı sıfırlanacak — kullanıcıya uyar

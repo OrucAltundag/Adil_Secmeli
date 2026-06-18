@@ -268,6 +268,9 @@ class PoolTab(ttk.Frame):
         self.cb_yil["values"] = yil_values
         if yil_values and (force_latest_year or self.cb_yil.get() not in yil_values):
             self.cb_yil.set(yil_values[-1])
+        elif not yil_values:
+            # Veri yok (ör. sıfırlama sonrası) → stale değeri temizle.
+            self.cb_yil.set("")
 
     def on_faculty_change(self, _event, force_latest_year: bool = False):
         fakulte = self.cb_fakulte.get()

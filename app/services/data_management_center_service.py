@@ -294,17 +294,31 @@ def get_dashboard_context(
     with connect_data_management(db_path) as conn:
         cur = conn.cursor()
         years = _fetch_years(cur)
-        selected_year = int(year if year is not None else (years[0] if years else 2022))
+        # Veri yoksa hayali yıl üretme (sıfırlama sonrası boş kalsın).
+        if year is not None:
+            selected_year = int(year)
+        elif years:
+            selected_year = int(years[0])
+        else:
+            selected_year = None
         faculties = _fetch_faculties(cur)
         departments = _fetch_departments(cur, faculty_id=faculty_id)
-        coverage = generate_coverage_report_cursor(cur, selected_year, faculty_id, department_id)
-        readiness = assess_data_readiness_cursor(cur, selected_year, faculty_id, department_id)
-        trend_ready = _count_trend_ready(cur, faculty_id, department_id)
-        missing = _missing_counts(coverage, trend_ready)
+        # selected_year None ise (veri yok) kapsama/olgunluk hesaplanmaz.
+        if selected_year is None:
+            coverage = {}
+            readiness = {}
+            trend_ready = 0
+            missing = {}
+        else:
+            coverage = generate_coverage_report_cursor(cur, selected_year, faculty_id, department_id)
+            readiness = assess_data_readiness_cursor(cur, selected_year, faculty_id, department_id)
+            trend_ready = _count_trend_ready(cur, faculty_id, department_id)
+            missing = _missing_counts(coverage, trend_ready)
         latest = list_import_batches(conn, limit=8)
         status_counts = _latest_import_counts(conn)
         return {
-            "years": years or [selected_year],
+            # Veri varsa o yılları döndür; veri yoksa BOŞ liste (hayali yıl üretme).
+            "years": years,
             "selected_year": selected_year,
             "faculties": faculties,
             "departments": departments,

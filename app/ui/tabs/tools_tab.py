@@ -392,7 +392,10 @@ class ToolsTab(ttk.Frame):
         label = TEMPLATE_LABELS.get(template_type, template_type)
         faculty_id, _fac, year = self._selected_faculty_scope()
         if year is None:
-            year = 2023
+            messagebox.showwarning(
+                "Şablon", "Önce 'Yıl' filtresinden bir akademik yıl seçin (veya yazın)."
+            )
+            return
         target = filedialog.asksaveasfilename(
             title=f"{label} kaydet",
             defaultextension=".xlsx",
@@ -1173,8 +1176,26 @@ class ToolsTab(ttk.Frame):
             return
 
         self.log(result.get("message") or "Sıfırlama tamamlandı.")
-        messagebox.showinfo("Sistemi Sıfırla", result.get("message") or "Sıfırlama tamamlandı.")
+        # Sıfırlama sonrası bütün ekranlardaki yıl filtrelerini temizlemek için
+        # diğer sayfaların refresh()'ini çağır (varsa); ardından bu sayfayı yenile.
+        for attr in (
+            "tab_calc", "tab_data_management", "tab_data_quality",
+            "tab_semester_planning", "tab_ahp_weight", "tab_decision_center",
+            "tab_analysis", "tab_trend_vis", "tab_view",
+        ):
+            target = getattr(self.app, attr, None)
+            if target is None:
+                continue
+            for method in ("refresh", "_refresh", "_load_initial"):
+                fn = getattr(target, method, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
+                    break
         self.refresh()
+        messagebox.showinfo("Sistemi Sıfırla", result.get("message") or "Sıfırlama tamamlandı.")
 
     # ---------------------------------------------------------
     # Zone C - Export
