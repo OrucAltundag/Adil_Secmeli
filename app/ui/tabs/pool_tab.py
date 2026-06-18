@@ -126,9 +126,16 @@ class PoolTab(ttk.Frame):
         filter_combo.pack(side=tk.LEFT, padx=(4, 12))
         filter_combo.bind("<<ComboboxSelected>>", lambda e: self._render_pool_table())
 
-        ttk.Button(actions, text="Seçileni Havuzda Yap (0)", command=lambda: self.set_selected_pool_status(0)).pack(side=tk.LEFT, padx=3)
-        ttk.Button(actions, text="Dinlenmeye Al (-1)", command=lambda: self.set_selected_pool_status(-1)).pack(side=tk.LEFT, padx=3)
-        ttk.Button(actions, text="Kalıcı İptal (-2)", command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=3)
+        # Havuz statü aksiyonları — sonraki yıl müfredatı oluşturulunca GİZLENİR
+        # (hesaplanmış havuz üzerinde değişiklik yapılması doğru olmaz).
+        self._pool_action_frame = tk.Frame(actions, bg="#e2e8f0")
+        self._pool_action_frame.pack(side=tk.LEFT)
+        ttk.Button(self._pool_action_frame, text="Seçileni Havuzda Yap (0)", command=lambda: self.set_selected_pool_status(0)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(self._pool_action_frame, text="Dinlenmeye Al (-1)", command=lambda: self.set_selected_pool_status(-1)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(self._pool_action_frame, text="Kalıcı İptal (-2)", command=lambda: self.set_selected_pool_status(-2)).pack(side=tk.LEFT, padx=3)
+        self._pool_action_locked_lbl = tk.Label(
+            actions, text="", bg="#e2e8f0", fg="#991b1b", font=("Segoe UI", 8, "bold"),
+        )
 
         self.lbl_summary = tk.Label(actions, text="", bg="#e2e8f0", fg="#334155", font=("Segoe UI", 8, "italic"))
         self.lbl_summary.pack(side=tk.RIGHT, padx=6)
@@ -305,6 +312,48 @@ class PoolTab(ttk.Frame):
     # =========================================================
     #  VERİ YÜKLEME
     # =========================================================
+    def _next_year_curriculum_exists(self, conn, faculty_id, department_id, year: int) -> bool:
+        """Bu havuz yılından (year) sonraki yıl (year+1) için müfredat üretilmiş mi?"""
+        try:
+            cur = conn.cursor()
+            params: list = [int(year) + 1]
+            scope = ""
+            if department_id is not None:
+                scope = " AND m.bolum_id = ?"; params.append(int(department_id))
+            elif faculty_id is not None:
+                scope = " AND b.fakulte_id = ?"; params.append(int(faculty_id))
+            cur.execute(
+                "SELECT 1 FROM mufredat m "
+                "JOIN bolum b ON b.bolum_id=m.bolum_id "
+                "JOIN mufredat_ders md ON md.mufredat_id=m.mufredat_id "
+                f"WHERE m.akademik_yil = ?{scope} LIMIT 1",
+                params,
+            )
+            return cur.fetchone() is not None
+        except Exception:
+            return False
+
+    def _update_pool_action_visibility(self, conn, faculty_id, department_id, year: int):
+        """§4: Sonraki yıl müfredatı oluşturulduysa havuz statü butonlarını gizle/kilitle."""
+        locked = self._next_year_curriculum_exists(conn, faculty_id, department_id, year)
+        frame = getattr(self, "_pool_action_frame", None)
+        lbl = getattr(self, "_pool_action_locked_lbl", None)
+        if frame is None or lbl is None:
+            return
+        if locked:
+            if frame.winfo_manager() == "pack":
+                frame.pack_forget()
+            lbl.config(
+                text=f"🔒 {year + 1} müfredatı oluşturulduğu için {year} havuzunda statü değişikliği kapalı."
+            )
+            if lbl.winfo_manager() != "pack":
+                lbl.pack(side=tk.LEFT, padx=6)
+        else:
+            if lbl.winfo_manager() == "pack":
+                lbl.pack_forget()
+            if frame.winfo_manager() != "pack":
+                frame.pack(side=tk.LEFT)
+
     def load_pool_data(self):
         fakulte = self.cb_fakulte.get()
         yil = self.cb_yil.get()
@@ -336,6 +385,7 @@ class PoolTab(ttk.Frame):
         self._render_pool_table()
         self._fill_curriculum_tree(self.tree_fall, fall, conflicts)
         self._fill_curriculum_tree(self.tree_spring, spring, conflicts)
+        self._update_pool_action_visibility(conn, faculty_id, department_id, int(yil))
 
         self.lbl_summary.config(
             text=(
@@ -459,6 +509,16 @@ class PoolTab(ttk.Frame):
             return
         faculty_id = self._faculty_id(fakulte)
         if faculty_id is None:
+            return
+        # §4: Sonraki yıl müfredatı oluşturulmuşsa hesaplanmış havuz kilitli.
+        conn = getattr(self.db, "conn", None)
+        department_id = self._department_id(faculty_id, self.cb_bolum.get())
+        if conn is not None and self._next_year_curriculum_exists(conn, faculty_id, department_id, int(yil)):
+            messagebox.showwarning(
+                "Havuz Kilitli",
+                f"{int(yil) + 1} müfredatı oluşturulduğu için {yil} havuzunda statü değişikliği "
+                "yapılamaz (hesaplanmış havuz korunur).",
+            )
             return
         try:
             for ders_id in course_ids:

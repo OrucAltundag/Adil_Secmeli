@@ -36,7 +36,10 @@ from app.services.pool_state_machine_service import (
 from app.services.pool_state_policy_service import (
     resolve_policy as resolve_pool_state_policy,
 )
-from app.services.trend_analysis_service import analyze_course_trend
+from app.services.trend_analysis_service import (
+    analyze_course_finalized_score_trend,
+    analyze_course_trend,
+)
 from app.services.yearly_workflow import (
     ensure_yearly_workflow_schema,
     get_faculty_year_status,
@@ -931,10 +934,12 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
                 key = (int(ders_id), int(yil))
                 if key not in _ANKET_INVALID_WARNED:
                     _ANKET_INVALID_WARNED.add(key)
-                    logger.info(
+                    # Kaynak veri tutarsızlığı (seçen > katılımcı); kod nötr 0.5 ile
+                    # doğru biçimde ele alır. Bir HATA değildir; konsolu kirletmemesi
+                    # için DEBUG'a alındı (gerçek araç UI/import doğrulamasıdır).
+                    logger.debug(
                         "Mantiksiz anket verisi (secen %d > katilimci %d) "
-                        "ders_id=%s yil=%s; notr 0.5 uygulandi. "
-                        "(Veri kalitesi sorunu - bu uyari ayni ders/yil icin bir kez basilir.)",
+                        "ders_id=%s yil=%s; notr 0.5 uygulandi.",
                         int(anket_secen), int(anket_kat), ders_id, yil,
                     )
                 anket = 0.5
@@ -961,7 +966,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
     # veya basari'nin kopyasini veriyordu. Boylece trend kriteri basari'nin
     # kopyasi olmaz ve karar formulu haksiz cezalandirma/odullendirme yapmaz.
     # bkz. docs/MATEMATIKSEL_INCELEME_RAPORU_2026-06-15.md
-    trend_analysis = analyze_course_trend(cur, int(ders_id), int(yil))
+    trend_analysis = analyze_course_finalized_score_trend(cur, int(ders_id), int(yil))
     trend = max(0.0, min(1.0, _safe_float2(trend_analysis.get("trend_score"), 0.5)))
 
     no_current_year_data = (
@@ -1216,7 +1221,8 @@ def get_faculty_year_topsis_results(
             placeholders = ",".join("?" for _ in chunk)
             cur.execute(
                 f"""
-                SELECT ders_id, {'bolum_id' if has_bolum_col else 'NULL as bolum_id'}, ad
+                SELECT ders_id, {'bolum_id' if has_bolum_col else 'NULL as bolum_id'}, ad,
+                       {'kod' if 'kod' in ders_cols else "'' as kod"}
                 FROM ders
                 WHERE ders_id IN ({placeholders})
                 """,
@@ -1227,6 +1233,7 @@ def get_faculty_year_topsis_results(
                 ders_meta[d_id] = {
                     "bolum_id": int(r[1]) if r[1] is not None else None,
                     "ad": str(r[2] or ""),
+                    "kod": str(r[3] or ""),
                 }
 
     motor = KararMotoru()
@@ -2454,7 +2461,7 @@ def generate_next_year_curricula(
 
             try:
                 pool_policy = _pool_policy_for_course(bolum_id)
-                trend = analyze_course_trend(cur, int(ders_id), akademik_yil)
+                trend = analyze_course_finalized_score_trend(cur, int(ders_id), akademik_yil)
                 confidence = calculate_course_data_confidence(
                     cur=cur,
                     course_id=int(ders_id),

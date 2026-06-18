@@ -29,6 +29,7 @@ uretimine yol aciyordu; iptal edildi.
 from __future__ import annotations
 
 import math
+import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -53,6 +54,9 @@ DEFAULT_POLICY = {
     "low_data_confidence_threshold": 0.50,
     "sensitivity_margin": 3.0,
     "require_manual_approval_for_cancel": True,
+    "classification_method": "electre_tri_b",
+    "electre_lambda": 0.65,
+    "electre_assignment_rule": "pessimistic",
 }
 
 VALID_POLICY_MODES = {"static_threshold"}
@@ -89,6 +93,17 @@ def _default_if_none(raw: Any, default: Any) -> Any:
     return default if raw is None else raw
 
 
+def _json_value(raw: Any, default: Any) -> Any:
+    if raw in (None, ""):
+        return default
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        return json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
 def _row_to_policy(row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
     # isinstance ile narrow yapıyoruz; Pylance'e Row vs tuple ayrımı net görünür.
     if isinstance(row, sqlite3.Row):
@@ -103,7 +118,7 @@ def _row_to_policy(row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
         return get(idx)
 
     cancel_raw = value("cancel_candidate_threshold", 10)
-    return {
+    policy = {
         "id": int(_default_if_none(value("id", 0), 0)),
         "name": str(_default_if_none(value("name", 1), "")),
         "scope_type": str(_default_if_none(value("scope_type", 2), "global")),
@@ -130,6 +145,31 @@ def _row_to_policy(row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
         "updated_at": value("updated_at", 23),
         "notes": value("notes", 24),
     }
+    if keys:
+        policy.update(
+            {
+                "classification_method": str(_default_if_none(value("classification_method", 25), "electre_tri_b")),
+                "electre_lambda": float(_default_if_none(value("electre_lambda", 26), 0.65)),
+                "electre_assignment_rule": str(_default_if_none(value("electre_assignment_rule", 27), "pessimistic")),
+                "electre_q": _json_value(value("electre_q_json", 28), {}),
+                "electre_p": _json_value(value("electre_p_json", 29), {}),
+                "electre_veto": _json_value(value("electre_veto_json", 30), {}),
+                "electre_profiles": _json_value(value("electre_profiles_json", 31), []),
+            }
+        )
+    else:
+        policy.update(
+            {
+                "classification_method": "electre_tri_b",
+                "electre_lambda": 0.65,
+                "electre_assignment_rule": "pessimistic",
+                "electre_q": {},
+                "electre_p": {},
+                "electre_veto": {},
+                "electre_profiles": [],
+            }
+        )
+    return policy
 
 
 def _deactivate_same_scope(
@@ -190,6 +230,9 @@ def validate_decision_policy_values(
     sensitivity_margin: float,
     faculty_id: int | None = None,
     department_id: int | None = None,
+    classification_method: str = "electre_tri_b",
+    electre_lambda: float = 0.65,
+    electre_assignment_rule: str = "pessimistic",
 ) -> None:
     """Politika alanlarinin iz kurallari acisindan tutarli oldugunu garanti eder.
 
@@ -244,6 +287,12 @@ def validate_decision_policy_values(
         raise ValueError("Dusuk veri guveni esigi 0-1 araliginda olmalidir.")
     if float(sensitivity_margin) < 0:
         raise ValueError("Hassasiyet marji negatif olamaz.")
+    if classification_method not in {"electre_tri_b", "static_threshold"}:
+        raise ValueError("Siniflandirma yontemi electre_tri_b veya static_threshold olmalidir.")
+    if not 0.50 <= float(electre_lambda) <= 1.0:
+        raise ValueError("ELECTRE lambda degeri 0.50-1.00 araliginda olmalidir.")
+    if electre_assignment_rule not in {"pessimistic"}:
+        raise ValueError("Su anda yalnizca pessimistic ELECTRE atamasi destekleniyor.")
 
 
 def _validate_score(score: float | None) -> float:
@@ -349,6 +398,13 @@ def create_decision_policy(
     middle_percent_pool: float | None = None,
     bottom_percent_rest: float | None = None,
     require_manual_approval_for_cancel: bool = True,
+    classification_method: str = "electre_tri_b",
+    electre_lambda: float = 0.65,
+    electre_assignment_rule: str = "pessimistic",
+    electre_q: dict[str, float] | None = None,
+    electre_p: dict[str, float] | None = None,
+    electre_veto: dict[str, float | None] | None = None,
+    electre_profiles: list[dict[str, Any]] | None = None,
     notes: str | None = None,
     activate: bool = True,
 ) -> dict[str, Any]:
@@ -368,6 +424,9 @@ def create_decision_policy(
         sensitivity_margin=sensitivity_margin,
         faculty_id=faculty_id,
         department_id=department_id,
+        classification_method=classification_method,
+        electre_lambda=electre_lambda,
+        electre_assignment_rule=electre_assignment_rule,
     )
 
     cur = conn.cursor()
@@ -382,9 +441,11 @@ def create_decision_policy(
             min_enrollment_rate, new_course_grace_period_years,
             low_data_confidence_threshold, sensitivity_margin,
             top_percent_curriculum, middle_percent_pool, bottom_percent_rest,
-            require_manual_approval_for_cancel, is_active, created_at, updated_at, notes
+            require_manual_approval_for_cancel, classification_method, electre_lambda,
+            electre_assignment_rule, electre_q_json, electre_p_json, electre_veto_json,
+            electre_profiles_json, is_active, created_at, updated_at, notes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(name),
@@ -407,6 +468,13 @@ def create_decision_policy(
             middle_percent_pool,
             bottom_percent_rest,
             1 if require_manual_approval_for_cancel else 0,
+            str(classification_method),
+            float(electre_lambda),
+            str(electre_assignment_rule),
+            json.dumps(electre_q or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(electre_p or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(electre_veto or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(electre_profiles or [], ensure_ascii=False, sort_keys=True),
             1 if activate else 0,
             _now(),
             _now(),
@@ -543,6 +611,13 @@ def update_decision_policy(conn: sqlite3.Connection, policy_id: int, **values: A
         "middle_percent_pool",
         "bottom_percent_rest",
         "require_manual_approval_for_cancel",
+        "classification_method",
+        "electre_lambda",
+        "electre_assignment_rule",
+        "electre_q",
+        "electre_p",
+        "electre_veto",
+        "electre_profiles",
         "notes",
     }
     updates = {key: value for key, value in values.items() if key in allowed}
@@ -569,6 +644,9 @@ def update_decision_policy(conn: sqlite3.Connection, policy_id: int, **values: A
         sensitivity_margin=float(merged.get("sensitivity_margin") or 0),
         faculty_id=merged.get("faculty_id"),
         department_id=merged.get("department_id"),
+        classification_method=str(merged.get("classification_method") or "electre_tri_b"),
+        electre_lambda=float(merged.get("electre_lambda") or 0.65),
+        electre_assignment_rule=str(merged.get("electre_assignment_rule") or "pessimistic"),
     )
 
     if "name" in updates:
@@ -581,6 +659,18 @@ def update_decision_policy(conn: sqlite3.Connection, policy_id: int, **values: A
         updates["require_manual_approval_for_cancel"] = (
             1 if _bool(updates["require_manual_approval_for_cancel"]) else 0
         )
+    for public_key, column_name in (
+        ("electre_q", "electre_q_json"),
+        ("electre_p", "electre_p_json"),
+        ("electre_veto", "electre_veto_json"),
+        ("electre_profiles", "electre_profiles_json"),
+    ):
+        if public_key in updates:
+            updates[column_name] = json.dumps(
+                updates.pop(public_key) or ({} if public_key != "electre_profiles" else []),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
 
     assignments = ", ".join(f"{key} = ?" for key in updates)
     params = list(updates.values()) + [_now(), int(policy_id)]

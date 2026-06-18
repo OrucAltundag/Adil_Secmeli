@@ -146,7 +146,16 @@ def _fetch_candidate_courses(
     # Faz 4: Önerilen Dersler (Karar Merkezi) çıktısı dönem planlamayı beslesin.
     # Açılabilirlik skoru kapsamdaki en güncel karar çalıştırmasından okunur;
     # yoksa eski davranışa (skor tablosu) geri düşülür.
-    acil_map = _latest_acilabilirlik_scores(conn, year, faculty_id, department_id)
+    # Hedef yil henuz mufredatsiz oldugu icin PROMETHEE adaylari bir onceki
+    # (karar kaynagi) yildaki gecici calistirmadan okunur.
+    candidate_map = _latest_candidate_scores(conn, int(year) - 1, faculty_id, department_id)
+    if not candidate_map:
+        candidate_map = _latest_candidate_scores(conn, int(year), faculty_id, department_id)
+    # Yeni hedef yil icin kaynak yil (year-1); eski/entegrasyon cagrilarinda
+    # karar ve plan ayni yili tasiyabildigi icin once ayni yil, sonra onceki yil.
+    acil_map = _latest_acilabilirlik_scores(conn, int(year), faculty_id, department_id)
+    if not acil_map:
+        acil_map = _latest_acilabilirlik_scores(conn, int(year) - 1, faculty_id, department_id)
     score_map = _latest_scores(conn, year)
     out = []
     for row in rows:
@@ -158,11 +167,55 @@ def _fetch_candidate_courses(
                 "course_name": row.get("ad") or str(cid),
                 "department_id": row.get("bolum_id"),
                 "faculty_id": row.get("fakulte_id"),
-                "score": acil_map.get(cid, score_map.get(cid, 0.0)),
-                "score_source": "acilabilirlik" if cid in acil_map else "skor",
+                "score": candidate_map.get(cid, acil_map.get(cid, score_map.get(cid, 0.0))),
+                "score_source": (
+                    "promethee_ii" if cid in candidate_map
+                    else "acilabilirlik" if cid in acil_map
+                    else "skor"
+                ),
             }
         )
     return out
+
+
+def _latest_candidate_scores(
+    conn: sqlite3.Connection,
+    source_year: int,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> dict[int, float]:
+    """En guncel PROMETHEE II Top-7 sonucunu 0-100 planlama skoruna cevirir."""
+    tables = _existing_tables(conn)
+    if "candidate_course_recommendations" not in tables or "decision_runs" not in tables:
+        return {}
+    where = ["dr.year = ?", "dr.status = 'completed'"]
+    params: list[Any] = [int(source_year)]
+    if faculty_id is not None:
+        where.append("dr.faculty_id = ?")
+        params.append(int(faculty_id))
+    if department_id is not None:
+        where.append("IFNULL(dr.department_id, -1) IN (-1, ?)")
+        params.append(int(department_id))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT MAX(dr.id) FROM decision_runs dr WHERE {' AND '.join(where)}",
+            tuple(params),
+        )
+        row = cur.fetchone()
+        run_id = int(row[0]) if row and row[0] is not None else None
+        if run_id is None:
+            return {}
+        cur.execute(
+            "SELECT course_id, net_flow FROM candidate_course_recommendations WHERE decision_run_id=?",
+            (run_id,),
+        )
+        return {
+            int(course_id): max(0.0, min(100.0, (float(net_flow) + 1.0) * 50.0))
+            for course_id, net_flow in cur.fetchall()
+        }
+    except sqlite3.OperationalError:
+        return {}
 
 
 def _latest_acilabilirlik_scores(

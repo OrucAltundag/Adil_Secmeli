@@ -1858,7 +1858,7 @@ class CourseAnalysisTab(ttk.Frame):
         except (TypeError, ValueError):
             return "İlk kez hesaplandı", "ilk_kez"
         diff = yeni_f - eski_f
-        if abs(diff) < 0.000001:
+        if abs(diff) < 0.01:
             return f"Değişmedi (={yeni_f:.6f})", ""
         if diff > 0:
             return f"Arttı (+{diff:.6f})", "artti"

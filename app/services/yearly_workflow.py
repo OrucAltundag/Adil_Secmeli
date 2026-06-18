@@ -28,6 +28,9 @@ ALGORITHM_RAN = "ran"
 ALGORITHM_FAILED = "failed"
 
 
+_YEARLY_WORKFLOW_CONFIG_KEY = "enable_yearly_criteria_workflow"
+
+
 def is_yearly_workflow_enabled() -> bool:
     raw_env = os.getenv("ENABLE_YEARLY_CRITERIA_WORKFLOW")
     if raw_env is not None:
@@ -37,6 +40,44 @@ def is_yearly_workflow_enabled() -> bool:
         return bool(getattr(settings, "enable_yearly_criteria_workflow", True))
     except Exception:
         return True
+
+
+def set_yearly_workflow_enabled(enabled: bool, config_path: str = "config.json") -> bool:
+    """Yıllık kriter workflow bayrağını config.json'a yazar (UI toggle için).
+
+    Bayrak açıkken (True) açılıştaki LEGACY otomatik skor üretimi ATLANIR (manuel
+    mod); kapalıyken (False) açılışta otomatik üretim çalışır. Ortam değişkeni
+    (ENABLE_YEARLY_CRITERIA_WORKFLOW) ayarlıysa config'i geçersiz kılar.
+    """
+    import json
+
+    cfg: dict[str, Any] = {}
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, encoding="utf-8") as fh:
+                cfg = json.load(fh)
+    except Exception:
+        cfg = {}
+    cfg[_YEARLY_WORKFLOW_CONFIG_KEY] = bool(enabled)
+    with open(config_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=2)
+    return bool(enabled)
+
+
+def is_startup_auto_scoring_enabled() -> bool:
+    """Açılışta otomatik skor/müfredat üretimi AÇIK mı? (workflow bayrağının tersi)."""
+    return not is_yearly_workflow_enabled()
+
+
+def set_startup_auto_scoring_enabled(enabled: bool, config_path: str = "config.json") -> bool:
+    """Açılış otomatik üretimini aç/kapat (kullanıcı dostu yön). Yeni AÇIK durumunu döndürür."""
+    set_yearly_workflow_enabled(not enabled, config_path=config_path)
+    return bool(enabled)
+
+
+def yearly_workflow_env_override() -> bool:
+    """ENABLE_YEARLY_CRITERIA_WORKFLOW ortam değişkeni ayarlı mı (config'i geçersiz kılar)?"""
+    return os.getenv("ENABLE_YEARLY_CRITERIA_WORKFLOW") is not None
 
 
 def _now_utc() -> str:

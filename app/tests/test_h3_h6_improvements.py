@@ -223,7 +223,7 @@ def test_h5_warning_is_deduplicated_per_course_year(caplog):
     conn = sqlite3.connect(path); conn.row_factory = sqlite3.Row
     try:
         motor = KararMotoru()
-        with caplog.at_level(logging.INFO, logger="app.services.calculation"):
+        with caplog.at_level(logging.DEBUG, logger="app.services.calculation"):
             # Ayni ders icin 5 kez cagir
             for _ in range(5):
                 _read_course_metrics(conn.cursor(), 1, 2022, "Guz", motor)
@@ -234,8 +234,9 @@ def test_h5_warning_is_deduplicated_per_course_year(caplog):
         assert len(anket_warnings) == 1, (
             f"Beklenen 1 uyari; alinan: {len(anket_warnings)}. Dedupe calismiyor."
         )
-        # Log seviyesi INFO olmali (WARNING degil) - kod hatasi degil veri kalitesi notu
-        assert anket_warnings[0].levelname == "INFO"
+        # Log seviyesi DEBUG (kullanici konsolda gormesin diye INFO'dan dusuruldu)
+        # - kod hatasi degil, kaynak veri kalitesi notu.
+        assert anket_warnings[0].levelname == "DEBUG"
     finally:
         conn.close()
         os.unlink(path)
@@ -252,7 +253,7 @@ def test_h5_warning_resets_with_cache_reset(caplog):
     conn = sqlite3.connect(path); conn.row_factory = sqlite3.Row
     try:
         motor = KararMotoru()
-        with caplog.at_level(logging.INFO, logger="app.services.calculation"):
+        with caplog.at_level(logging.DEBUG, logger="app.services.calculation"):
             _read_course_metrics(conn.cursor(), 1, 2022, "Guz", motor)
             reset_anket_warning_cache()
             _read_course_metrics(conn.cursor(), 1, 2022, "Guz", motor)

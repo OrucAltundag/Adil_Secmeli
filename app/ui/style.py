@@ -11,11 +11,38 @@ from tkinter import ttk
 
 # İstersen sabitleri burada tut
 COLORS = {
+    # Yeni karar ekranlarının kullandığı uyumluluk renkleri. Bunlar eski
+    # uygulama temasını global olarak değiştirmez; yalnız yerel kartlarda
+    # sabit renk anahtarları sağlar.
+    "surface": "#ffffff",
+    "surface_alt": "#f8fafc",
+    "text": "#172033",
+    "muted": "#64748b",
+    "success": "#15803d",
+    "success_soft": "#dcfce7",
+    "warning_soft": "#fef3c7",
     "sidebar_bg": "#0f172a",
     "sidebar_fg": "#e2e8f0",
     "btn_bg": "#111827",
     "btn_bg_active": "#1f2937",
 }
+
+
+def style_text_widget(widget: tk.Text, *, mono: bool = False) -> None:
+    """Yeni ekranlardaki metin alanlarını eski, sade temayla uyumlu tut."""
+
+    widget.configure(
+        bg="#ffffff",
+        fg="#172033",
+        insertbackground="#172033",
+        selectbackground="#dbeafe",
+        selectforeground="#172033",
+        relief=tk.SUNKEN,
+        borderwidth=1,
+        padx=6,
+        pady=6,
+        font=("Consolas", 9) if mono else ("Segoe UI", 9),
+    )
 
 FONTS = {
     "header": ("Segoe UI", 12, "bold"),

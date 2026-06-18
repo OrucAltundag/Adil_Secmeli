@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -292,12 +293,20 @@ def test_decision_run_integration_writes_core_records():
         assert cur.fetchone()[0] == 1
         # Faz 3: acilabilirlik_score karar hattinda hesaplanip yazilmali (NULL degil).
         cur.execute(
-            "SELECT acilabilirlik_score FROM course_decisions WHERE decision_run_id = ?",
+            """SELECT acilabilirlik_score, dt_prediction_status, dt_comparison,
+                      dt_details_json
+               FROM course_decisions WHERE decision_run_id = ?""",
             (run_id,),
         )
-        acilabilirlik = cur.fetchone()[0]
+        decision_row = cur.fetchone()
+        acilabilirlik = decision_row[0]
         assert acilabilirlik is not None
         assert 0.0 <= float(acilabilirlik) <= 100.0
+        # Bu fixture'da hedef yildan once 100 etiketli karar yoktur. DT sahte
+        # tahmin uretmez; her ders icin gerekceli unavailable sonucu saklar.
+        assert decision_row[1] is None
+        assert decision_row[2] == "unavailable"
+        assert "yetersiz" in json.loads(decision_row[3])["explanation"].lower()
         cur.execute("SELECT COUNT(*) FROM course_decision_explanations")
         assert cur.fetchone()[0] == 1
         cur.execute("SELECT COUNT(*) FROM decision_fairness_reports WHERE decision_run_id = ?", (run_id,))

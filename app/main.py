@@ -57,9 +57,7 @@ from app.core.state import AppState
 from app.db.sqlite_db import Database
 
 # ---------- Servis katmanı (hesaplama, havuz kararı) ----------
-from app.services.calculation import run_automatic_scoring
 from app.services.course_type import build_elective_predicate_from_columns
-from app.services.yearly_workflow import is_yearly_workflow_enabled
 
 
 # =============================================================================
@@ -287,6 +285,7 @@ class AdilSecmeliApp(tk.Tk):
         from app.ui.tabs.overview_page import OverviewPage
         from app.ui.tabs.semester_planning_page import SemesterPlanningPage
         from app.ui.tabs.system_health_page import SystemHealthPage
+        from app.ui.tabs.topsis_decision_page import TopsisDecisionPage
         from app.ui.tabs.tools_tab import ToolsTab
         from app.ui.tabs.trend_visualization_page import TrendVisualizationPage
         from app.ui.tabs.view_tab import ViewTab
@@ -296,6 +295,10 @@ class AdilSecmeliApp(tk.Tk):
         configure_logging(self.app_config)
         self.user_context = UserContext.demo_admin(self.app_config)
         self.config_data = load_config()
+        self.auto_algorithm_trigger_var = tk.BooleanVar(
+            value=bool(self.config_data.get("auto_pipeline_enabled", False))
+        )
+        self._automatic_preview_in_progress = False
         self.db_path = self.config_data.get("db_path")
         if self.db_path:
             self.db_path = os.path.abspath(self.db_path)
@@ -329,6 +332,12 @@ class AdilSecmeliApp(tk.Tk):
         ttk.Label(topbar, text="Adil Seçmeli • Masaüstü", style="Header.TLabel").pack(side=tk.LEFT)
         ttk.Button(topbar, text="Veritabanı Seç", command=self.cmd_open_db).pack(side=tk.RIGHT, padx=4)
         ttk.Button(topbar, text="Yenile", command=self.refresh_all).pack(side=tk.RIGHT, padx=4)
+        ttk.Checkbutton(
+            topbar,
+            text="Otomatik Karar Tetiği",
+            variable=self.auto_algorithm_trigger_var,
+            command=self._toggle_auto_algorithm_trigger,
+        ).pack(side=tk.RIGHT, padx=10)
 
         # ---- Ana Konteyner ----
         container = ttk.Frame(self)
@@ -392,6 +401,9 @@ class AdilSecmeliApp(tk.Tk):
 
         self.tab_ahp_weight = AHPWeightPage(self._nb_karar, app=self)
         self._nb_karar.add(self.tab_ahp_weight, text="⚖️ AHP Ağırlık Yönetimi")
+
+        self.tab_topsis_decision = TopsisDecisionPage(self._nb_karar, app=self)
+        self._nb_karar.add(self.tab_topsis_decision, text="📐 TOPSIS Kararı")
 
         self.tab_decision_center = DecisionCenterPage(self._nb_karar, app=self)
         self._nb_karar.add(self.tab_decision_center, text="🎯 Karar Merkezi")
@@ -459,34 +471,9 @@ class AdilSecmeliApp(tk.Tk):
             # 2) Havuz seed (bossa)
             self.ensure_pool_initialized_once()
 
-            # 3) Otomatik sonraki yil uretimi (legacy mod)
-            if is_yearly_workflow_enabled():
-                print("[AUTO] ENABLE_YEARLY_CRITERIA_WORKFLOW=true -> otomatik algoritma tetigi kapali.")
-            else:
-                try:
-                    if self.app_config.db_backend != "sqlite":
-                        print("[AUTO] PostgreSQL modu etkin; legacy SQLite otomatik skor yolu atlandi.")
-                    else:
-                        print("[AUTO] Sonraki yil mufredat kontrolu basliyor...")
-                        if isinstance(db_path, str):
-                            auto_summary = run_automatic_scoring(db_path)
-                        else:
-                            auto_summary = run_automatic_scoring()
-                        if isinstance(auto_summary, dict):
-                            gen = auto_summary.get("generation") or {}
-                            generated = gen.get("generated", []) or []
-                            skipped = gen.get("skipped", []) or []
-                            errors = gen.get("errors", []) or []
-                            print(
-                                f"[AUTO] Uretim ozeti | olusan: {len(generated)} | "
-                                f"atlanan: {len(skipped)} | hata: {len(errors)}"
-                            )
-                            for err in errors[:5]:
-                                print(f"[AUTO][HATA] {err}")
-                            for sk in skipped[:5]:
-                                print(f"[AUTO][ATLANAN] {sk}")
-                except Exception as e:
-                    print(f"[AUTO] Otomatik uretim hatasi: {e}")
+            # 3) Otomatik tetik yalniz gecici karar onizlemesi uretir; mufredati yazmaz.
+            if self.auto_algorithm_trigger_var.get():
+                self.after(500, self._run_automatic_decision_previews)
 
             # 4) UI yenileme
             try:
@@ -521,6 +508,102 @@ class AdilSecmeliApp(tk.Tk):
             )
 
 
+    def _persist_config_value(self, key, value):
+        path = os.path.join(os.getcwd(), "config.json")
+        data = {}
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle) or {}
+        except Exception:
+            data = {}
+        data[str(key)] = value
+        temp_path = path + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        os.replace(temp_path, path)
+        self.config_data[str(key)] = value
+
+    def _toggle_auto_algorithm_trigger(self):
+        enabled = bool(self.auto_algorithm_trigger_var.get())
+        try:
+            self._persist_config_value("auto_pipeline_enabled", enabled)
+        except Exception as exc:
+            self.auto_algorithm_trigger_var.set(not enabled)
+            messagebox.showerror("Otomatik Karar Tetiği", f"Ayar kaydedilemedi: {exc}")
+            return
+        if enabled and messagebox.askyesno(
+            "Otomatik Karar Tetiği",
+            "Otomatik tetik açıldı. En güncel gerçek yıl için geçici kararlar şimdi hesaplansın mı?",
+        ):
+            self.after(50, self._run_automatic_decision_previews)
+
+    def _run_automatic_decision_previews(self):
+        if self._automatic_preview_in_progress or not self.auto_algorithm_trigger_var.get():
+            return
+        self._automatic_preview_in_progress = True
+        created = 0
+        skipped = 0
+        errors = []
+        try:
+            from app.services.criteria_completion_service import can_run_algorithm
+            from app.services.decision_run_service import record_decision_run_for_faculty_year
+
+            conn = getattr(self.db, "conn", None)
+            if conn is None:
+                return
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT b.fakulte_id, b.bolum_id, MAX(m.akademik_yil)
+                FROM mufredat m JOIN bolum b ON b.bolum_id=m.bolum_id
+                GROUP BY b.fakulte_id, b.bolum_id
+                ORDER BY b.fakulte_id, b.bolum_id
+                """
+            )
+            scopes = [
+                (int(row[0]), int(row[1]), int(row[2]))
+                for row in cur.fetchall()
+                if row[2] is not None
+            ]
+            for faculty_id, department_id, year in scopes:
+                for semester in ("Guz", "Bahar"):
+                    try:
+                        gate = can_run_algorithm(
+                            conn,
+                            year=year,
+                            faculty_id=faculty_id,
+                            department_id=department_id,
+                            semester=semester,
+                            scope_type="department",
+                            refresh=False,
+                        )
+                        if not gate.get("can_run"):
+                            skipped += 1
+                            continue
+                        record_decision_run_for_faculty_year(
+                            conn,
+                            year=year,
+                            faculty_id=faculty_id,
+                            department_id=department_id,
+                            semester=semester,
+                            created_by="automatic-preview",
+                        )
+                        created += 1
+                    except Exception as exc:
+                        errors.append(str(exc))
+            conn.commit()
+            try:
+                self.tab_decision_center.refresh()
+            except Exception:
+                pass
+            messagebox.showinfo(
+                "Otomatik Karar Tetiği",
+                f"Geçici karar önizlemeleri tamamlandı. Oluşan: {created}, atlanan: {skipped}, hata: {len(errors)}.",
+            )
+        finally:
+            self._automatic_preview_in_progress = False
+
     def cmd_open_db(self):
         """Kullanicidan yeni veritabani dosyasi secmesini ister ve baglantıyı yeniler."""
         if self.app_config.db_backend != "sqlite":
@@ -542,19 +625,16 @@ class AdilSecmeliApp(tk.Tk):
             self.state.set("db_path", path)
 
             try:
-                with open("config.json", "w", encoding="utf-8") as f:
-                    db_url_path = os.path.abspath(path).replace(os.sep, "/")
-                    json.dump({"db_path": path, "db_url": f"sqlite:///{db_url_path}"}, f, ensure_ascii=False, indent=2)
+                db_url_path = os.path.abspath(path).replace(os.sep, "/")
+                self._persist_config_value("db_path", path)
+                self._persist_config_value("db_url", f"sqlite:///{db_url_path}")
             except Exception:
                 pass
 
             self.tab_view.fill_tables()
             self.ensure_pool_initialized_once()
-            if not is_yearly_workflow_enabled():
-                try:
-                    run_automatic_scoring(path)
-                except Exception:
-                    pass
+            if self.auto_algorithm_trigger_var.get():
+                self.after(50, self._run_automatic_decision_previews)
             self.tab_calc.refresh()
             try:
                 self.tab_tools.refresh()
@@ -687,6 +767,8 @@ class AdilSecmeliApp(tk.Tk):
                     self.tab_calc.refresh()
                 elif "AHP" in inner:
                     self.tab_ahp_weight.refresh()
+                elif "TOPSIS" in inner:
+                    self.tab_topsis_decision.refresh()
                 elif "Karar Merkezi" in inner:
                     self.tab_decision_center.refresh()
                 elif "Dönem" in inner:
@@ -724,6 +806,8 @@ class AdilSecmeliApp(tk.Tk):
                     self.tab_calc.refresh()
                 elif "AHP" in inner:
                     self.tab_ahp_weight.refresh()
+                elif "TOPSIS" in inner:
+                    self.tab_topsis_decision.refresh()
                 elif "Karar Merkezi" in inner:
                     self.tab_decision_center.refresh()
                 elif "Dönem" in inner:
@@ -751,6 +835,8 @@ class AdilSecmeliApp(tk.Tk):
                     self.tab_calc.refresh()
                 elif "AHP" in selected:
                     self.tab_ahp_weight.refresh()
+                elif "TOPSIS" in selected:
+                    self.tab_topsis_decision.refresh()
                 elif "Karar Merkezi" in selected:
                     self.tab_decision_center.refresh()
                 elif "Dönem" in selected:

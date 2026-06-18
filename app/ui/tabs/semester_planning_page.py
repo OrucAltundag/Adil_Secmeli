@@ -108,6 +108,9 @@ class SemesterPlanningPage(ttk.Frame):
         self.var_filter = tk.StringVar(value="Tümü")
         self.var_draft_target = tk.StringVar(value="")
         self._last_draft: dict[str, Any] | None = None
+        # Kullanıcı hedefi/politika alanlarını elle değiştirdiyse reload üzerine yazmasın (§7).
+        self._draft_target_user_set = False
+        self._policy_user_set = False
         self._yearly_by_iid: dict[str, dict[str, Any]] = {}
         self._build_ui()
 
@@ -148,7 +151,8 @@ class SemesterPlanningPage(ttk.Frame):
         self._build_draft_tab()
         self._build_yearly_tab()
         self._build_terms_tab()
-        self._build_integrity_tab()
+        # "Bütünlük Kontrolü" sekmesi kullanıcı isteğiyle gizlendi (arayüzde yok).
+        # self._build_integrity_tab()
         self._build_plan_tab()
         self._build_report_tab()
         self._build_runs_tab()
@@ -158,7 +162,7 @@ class SemesterPlanningPage(ttk.Frame):
         bar.pack(fill=tk.X, padx=8, pady=(4, 6))
 
         ttk.Label(bar, text="Yıl").grid(row=0, column=0, sticky=tk.W, padx=(0, 4))
-        self.var_year = tk.StringVar(value="2026")
+        self.var_year = tk.StringVar(value="")
         self.year_combo = ttk.Combobox(bar, textvariable=self.var_year, width=8, state="readonly")
         self.year_combo.grid(row=0, column=1, sticky=tk.W, padx=(0, 12))
         self.year_combo.bind("<<ComboboxSelected>>", self._on_filter_change)
@@ -229,10 +233,12 @@ class SemesterPlanningPage(ttk.Frame):
         controls = ttk.Frame(frame)
         controls.pack(fill=tk.X, pady=(8, 4))
         ttk.Label(controls, text="Hedef ders sayısı:").pack(side=tk.LEFT)
-        target_entry = ttk.Entry(controls, textvariable=self.var_draft_target, width=6)
-        target_entry.pack(side=tk.LEFT, padx=(4, 12))
-        # §1.2: Sayı değiştirince taslak güvenilir biçimde yeniden üretilsin
-        # (Enter veya alandan çıkınca). Geçersiz/boş girişte inline uyarı, popup yok.
+        # §7: Müfredat boyutunu (ders sayısı) güvenilir değiştirmek için −/+ butonları
+        # + serbest giriş. Butonlar reload'lardan etkilenmeden her zaman çalışır.
+        ttk.Button(controls, text="−", width=3, command=lambda: self._step_draft_target(-1)).pack(side=tk.LEFT)
+        target_entry = ttk.Entry(controls, textvariable=self.var_draft_target, width=6, justify=tk.CENTER)
+        target_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Button(controls, text="+", width=3, command=lambda: self._step_draft_target(1)).pack(side=tk.LEFT, padx=(0, 12))
         target_entry.bind("<Return>", lambda _e: self._commit_draft_target())
         target_entry.bind("<FocusOut>", lambda _e: self._commit_draft_target())
         ttk.Button(controls, text="Taslağı Üret", command=self.generate_draft).pack(side=tk.LEFT, padx=2)
@@ -299,14 +305,19 @@ class SemesterPlanningPage(ttk.Frame):
             f"Mevcut ders: {summary['current_count']} "
             f"(Güz {summary['fall_count']} / Bahar {summary['spring_count']})"
         )
-        # Hedef varsayılan = mevcut sayı; mevcut müfredatı hemen göster (§9).
-        self.var_draft_target.set(str(summary["current_count"]))
+        # Hedef varsayılan = mevcut sayı; kullanıcı elle değiştirdiyse koru (§7).
+        if not self._draft_target_user_set:
+            self.var_draft_target.set(str(summary["current_count"]))
+        try:
+            target = int((self.var_draft_target.get() or "").strip() or summary["current_count"])
+        except ValueError:
+            target = int(summary["current_count"])
         try:
             draft = generate_planning_draft(
                 conn,
                 self._selected_faculty_id(),
                 self._selected_department_id(),
-                target_course_count=summary["current_count"],
+                target_course_count=target,
             )
             self._render_draft_result(draft)
         except Exception:
@@ -320,6 +331,17 @@ class SemesterPlanningPage(ttk.Frame):
         if not raw.isdigit():
             self.draft_warning_var.set("⚠ Hedef ders sayısı pozitif tam sayı olmalı.")
             return
+        self._draft_target_user_set = True
+        self.generate_draft()
+
+    def _step_draft_target(self, delta: int) -> None:
+        """§7: Hedef ders sayısını −/+ ile güvenilir değiştir (reload'dan etkilenmez)."""
+        try:
+            current = int((self.var_draft_target.get() or "0").strip())
+        except ValueError:
+            current = 0
+        self.var_draft_target.set(str(max(0, current + delta)))
+        self._draft_target_user_set = True
         self.generate_draft()
 
     def generate_draft(self) -> None:
@@ -466,7 +488,6 @@ class SemesterPlanningPage(ttk.Frame):
         filter_combo = ttk.Combobox(toolbar, textvariable=self.var_filter, values=_FILTERS, width=18, state="readonly")
         filter_combo.pack(side=tk.LEFT, padx=(4, 12))
         filter_combo.bind("<<ComboboxSelected>>", lambda _e: self._render_yearly_table())
-        ttk.Button(toolbar, text="Müfredata Ekle (Takas)", command=self._open_swap_dialog).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(
             toolbar,
             text="Renkler: yeşil=müfredatta · mavi=havuzda · mor=yeni öneri · kırmızı=çakışma/tekrar eklenemez",
@@ -552,7 +573,10 @@ class SemesterPlanningPage(ttk.Frame):
         col = 0
         for label, var in policy_fields:
             ttk.Label(controls, text=label).grid(row=1, column=col, sticky=tk.W, padx=(0, 4), pady=2)
-            ttk.Entry(controls, textvariable=var, width=6).grid(row=1, column=col + 1, sticky=tk.W, padx=(0, 10), pady=2)
+            entry = ttk.Entry(controls, textvariable=var, width=6)
+            entry.grid(row=1, column=col + 1, sticky=tk.W, padx=(0, 10), pady=2)
+            # §7(b): Kullanıcı bir alana yazınca işaretle → reload üzerine yazmasın.
+            entry.bind("<KeyRelease>", lambda _e: setattr(self, "_policy_user_set", True))
             col += 2
         ttk.Checkbutton(
             controls,
@@ -708,10 +732,10 @@ class SemesterPlanningPage(ttk.Frame):
             self.year_combo["values"] = [str(item) for item in years]
             if current_year in self.year_combo["values"]:
                 self.year_combo.set(current_year)
-            elif "2026" in self.year_combo["values"]:
-                self.year_combo.set("2026")
             elif years:
                 self.year_combo.set(str(years[-1]))
+            else:
+                self.year_combo.set("")
 
             current_faculty = self.faculty_combo.get()
             self._faculty_options = {"Tüm Fakülteler": None}
@@ -725,20 +749,15 @@ class SemesterPlanningPage(ttk.Frame):
 
     @staticmethod
     def _fetch_years(cur) -> list[int]:
-        years: set[int] = {2026}
-        for table, column in (("skor", "akademik_yil"), ("mufredat", "akademik_yil"), ("semester_plan_runs", "year")):
-            try:
-                cur.execute(f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL")
-                for row in cur.fetchall():
-                    if not row or row[0] is None:
-                        continue
-                    try:
-                        years.add(int(row[0]))
-                    except (TypeError, ValueError):
-                        continue
-            except Exception:
-                continue
-        return sorted(years)
+        try:
+            cur.execute("SELECT MAX(akademik_yil) FROM mufredat WHERE akademik_yil IS NOT NULL")
+            latest = cur.fetchone()[0]
+        except Exception:
+            latest = None
+        if latest is None:
+            return []
+        # Planlama yalniz henuz mufredati olmayan siradaki akademik yil icindir.
+        return [int(latest) + 1]
 
     @staticmethod
     def _fetch_faculties(cur) -> list[tuple[int, str]]:
@@ -766,6 +785,8 @@ class SemesterPlanningPage(ttk.Frame):
     def _on_faculty_change(self, _event: Any = None) -> None:
         if self._suppress_events:
             return
+        self._draft_target_user_set = False  # kapsam değişti → hedef varsayılana dönsün (§7)
+        self._policy_user_set = False  # kapsam değişti → politika alanları aktif politikadan dolsun
         try:
             cur = self._conn().cursor()
             self._populate_departments(cur)
@@ -780,6 +801,8 @@ class SemesterPlanningPage(ttk.Frame):
     def _on_filter_change(self, _event: Any = None) -> None:
         if self._suppress_events:
             return
+        self._draft_target_user_set = False  # kapsam değişti → hedef varsayılana dönsün (§7)
+        self._policy_user_set = False  # kapsam değişti → politika alanları aktif politikadan dolsun
         self._load_current_policy()
         self._load_draft_scope()
         self._load_yearly_view()
@@ -906,15 +929,36 @@ class SemesterPlanningPage(ttk.Frame):
     # §2.4 Ders takas (swap): havuzdaki öneri dersini müfredata al, karşılığında
     # seçilen müfredat dersini havuza gönder.
     # ------------------------------------------------------------------
+    def _goto_pool_page(self) -> None:
+        """§3: Dinlenmeye-al havuz sayfasında olduğundan 'Kriter & Havuz' sayfasına yönlendir."""
+        app = self.app
+        try:
+            nb = getattr(app, "nb", None)
+            nb_karar = getattr(app, "_nb_karar", None)
+            if nb is not None and nb_karar is not None:
+                for i in nb.tabs():
+                    if "Karar" in nb.tab(i, "text"):
+                        nb.select(i)
+                        break
+                for i in nb_karar.tabs():
+                    if "Kriter" in nb_karar.tab(i, "text"):
+                        nb_karar.select(i)
+                        break
+                messagebox.showinfo(
+                    "Dinlenmeye Al",
+                    "'Kriter & Havuz' sayfasına geçildi. Havuzdan dersi seçip 'Dinlenmeye Al (-1)' "
+                    "butonunu kullanın.",
+                )
+                return
+        except Exception:
+            pass
+        messagebox.showinfo(
+            "Dinlenmeye Al",
+            "Dinlenmeye alma işlemi 'Karar Süreci > Kriter & Havuz' sayfasındaki havuzdan yapılır.",
+        )
+
     def _open_swap_dialog(self) -> None:
-        sel = self.yearly_tree.selection()
-        row = self._yearly_by_iid.get(sel[0]) if sel else None
-        if not row:
-            messagebox.showinfo("Müfredata Ekle", "Önce listeden havuzdaki (önerilen) bir ders seçin.")
-            return
-        if row.get("in_yearly_curriculum"):
-            messagebox.showinfo("Müfredata Ekle", "Bu ders zaten müfredatta. Lütfen havuzdaki (önerilen) bir ders seçin.")
-            return
+        """§3: Planlama Taslağı'ndan, önerilen (havuz) bir dersi müfredata ekle/takas et."""
         year = self._selected_year()
         faculty_id = self._selected_faculty_id()
         department_id = self._selected_department_id()
@@ -924,16 +968,38 @@ class SemesterPlanningPage(ttk.Frame):
                 "Takas için Yıl + Fakülte + Bölüm seçili olmalıdır (müfredat bölüm bazlıdır).",
             )
             return
-        incoming_id = int(row["course_id"])
-        incoming_label = f"{row.get('course_code') or ''} {row.get('course_name') or ''}".strip()
+        # Önerilen dersler = havuzda olup müfredatta olmayanlar.
+        incoming_map: dict[str, int] = {}
+        try:
+            conn = self._conn()
+            for r in get_pool_courses_with_curriculum_status(conn, year, faculty_id, department_id):
+                if r.get("in_yearly_curriculum"):
+                    continue
+                cid = r.get("course_id")
+                if cid is None:
+                    continue
+                label = f"{r.get('course_code') or cid} {r.get('course_name') or ''}".strip()
+                incoming_map[label] = int(cid)
+        except Exception:
+            pass
+        if not incoming_map:
+            messagebox.showinfo(
+                "Müfredata Ekle",
+                "Bu kapsamda müfredata eklenebilecek (havuzda olup müfredatta olmayan) önerilen ders bulunamadı.",
+            )
+            return
 
         dlg = tk.Toplevel(self)
         dlg.title("Müfredata Ekle (Takas)")
         dlg.transient(self.winfo_toplevel())
         dlg.resizable(False, False)
-        ttk.Label(dlg, text=f"Eklenecek (havuz) ders:\n{incoming_label}", font=("Segoe UI", 10, "bold")).pack(
-            anchor=tk.W, padx=12, pady=(12, 6)
+        ttk.Label(dlg, text="Eklenecek (önerilen / havuz) ders:", font=("Segoe UI", 10, "bold")).pack(
+            anchor=tk.W, padx=12, pady=(12, 2)
         )
+        in_var = tk.StringVar()
+        in_combo = ttk.Combobox(dlg, textvariable=in_var, width=48, state="readonly", values=list(incoming_map.keys()))
+        in_combo.pack(fill=tk.X, padx=12)
+        in_combo.current(0)
 
         term_var = tk.StringVar(value="Güz")
         term_row = ttk.Frame(dlg)
@@ -965,6 +1031,10 @@ class SemesterPlanningPage(ttk.Frame):
         _reload_outgoing()
 
         def _do_swap() -> None:
+            incoming_id = incoming_map.get(in_var.get())
+            if incoming_id is None:
+                messagebox.showinfo("Müfredata Ekle", "Eklenecek dersi seçin.", parent=dlg)
+                return
             outgoing_id = out_map.get(out_var.get())
             try:
                 conn = self._conn()
@@ -983,7 +1053,7 @@ class SemesterPlanningPage(ttk.Frame):
             self.status_var.set(result.get("message") or "Takas tamamlandı.")
             messagebox.showinfo("Müfredata Ekle", result.get("message") or "Takas tamamlandı.")
             self._load_yearly_view()
-            self._load_integrity()
+            self._load_draft_scope()
 
         btns = ttk.Frame(dlg)
         btns.pack(fill=tk.X, padx=12, pady=12)
@@ -1032,6 +1102,9 @@ class SemesterPlanningPage(ttk.Frame):
     # Bütünlük kontrolü
     # ------------------------------------------------------------------
     def _load_integrity(self) -> None:
+        # Bütünlük Kontrolü sekmesi gizli; widget yoksa sessizce çık.
+        if not hasattr(self, "integrity_tree"):
+            return
         year = self._selected_year()
         if year <= 0:
             return
@@ -1069,7 +1142,7 @@ class SemesterPlanningPage(ttk.Frame):
             conn = self._conn()
             policy = resolve_policy(
                 conn,
-                year=self._selected_year() or 2026,
+                year=self._selected_year() or None,
                 faculty_id=self._selected_faculty_id(),
                 department_id=self._selected_department_id(),
             )
@@ -1078,7 +1151,7 @@ class SemesterPlanningPage(ttk.Frame):
                 conn.commit()
                 policy = resolve_policy(
                     conn,
-                    year=self._selected_year() or 2026,
+                    year=self._selected_year() or None,
                     faculty_id=self._selected_faculty_id(),
                     department_id=self._selected_department_id(),
                 )
@@ -1096,6 +1169,9 @@ class SemesterPlanningPage(ttk.Frame):
             f"Bahar {policy.get('spring_min')}-{policy.get('spring_max')} | "
             f"denge toleransı {policy.get('max_semester_imbalance')}"
         )
+        # §7(b): Kullanıcı Min/Max alanlarını elle değiştirdiyse reload üzerine yazmasın.
+        if getattr(self, "_policy_user_set", False):
+            return
         self.var_target.set(str(policy.get("total_elective_target") or 8))
         self.var_fall_min.set(str(policy.get("fall_min") or 0))
         self.var_fall_max.set(str(policy.get("fall_max") or 0))
@@ -1134,6 +1210,8 @@ class SemesterPlanningPage(ttk.Frame):
                 notes="Masaüstü dönem planlama ekranından oluşturuldu.",
             )
             conn.commit()
+            # Kaydedildi: artık politika alanları kayıtlı değeri yansıtsın (kullanıcı-set bayrağını sıfırla).
+            self._policy_user_set = False
             self._set_policy_text(policy)
             self.status_var.set("Politika kaydedildi ve aktif yapıldı.")
             messagebox.showinfo("Dönem Planlama", "Politika kaydedildi. Yeni planlar bu ayarlarla üretilecek.")

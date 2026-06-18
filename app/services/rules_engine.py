@@ -29,7 +29,20 @@ def is_course_eligible_for_student(
     if db is None:
         return False, "Veritabanı bağlantısı yok"
 
-    yil = yil or 2024
+    if yil is None:
+        try:
+            _, year_rows = db.run_sql(
+                """
+                SELECT MAX(yil) FROM (
+                    SELECT akademik_yil AS yil FROM populerlik
+                    UNION ALL SELECT akademik_yil FROM mufredat
+                    UNION ALL SELECT akademik_yil FROM kayit
+                )
+                """
+            )
+            yil = int(year_rows[0][0]) if year_rows and year_rows[0][0] is not None else 0
+        except Exception:
+            yil = 0
 
     # 1. Engel Denetimi (failed_before)
     try:

@@ -8,13 +8,22 @@ import logging
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
+from app.ui.style import COLORS, style_text_widget
+
 from app.services.ahp_profile_service import (
     activate_ahp_profile,
     create_ahp_profile,
     list_ahp_profiles,
 )
-from app.services.calculation import run_all_algorithms_for_year
+from app.services.candidate_recommendation_service import list_candidate_recommendations
 from app.services.criteria_completion_service import can_run_algorithm
+from app.services.curriculum_decision_review_service import (
+    approve_curriculum_review,
+    build_curriculum_review,
+    get_latest_review,
+    reject_curriculum_review,
+    replace_review_course,
+)
 from app.services.criteria_override_service import (
     approve_override,
     list_overrides,
@@ -28,8 +37,18 @@ from app.services.decision_policy_service import (
     list_decision_policies,
     update_decision_policy,
 )
-from app.services.acilabilirlik_service import list_recommended_courses
-from app.services.decision_run_service import list_course_decisions, list_decision_runs
+from app.services.decision_run_service import (
+    list_course_decisions,
+    list_decision_runs,
+    record_decision_run_for_faculty_year,
+)
+from app.services.decision_run_override_service import (
+    approve_decision_run_override,
+    list_decision_run_overrides,
+    reject_decision_run_override,
+    request_decision_run_override,
+)
+from app.services.electre_dt_validation_service import comparison_label
 from app.services.ml_prediction_service import get_predictions_for_course
 from app.services.pool_state_machine_service import (
     approve_state_approval,
@@ -68,11 +87,25 @@ def _lifecycle_text(label: str | None) -> str:
     return labels.get(str(label or ""), str(label or "Belirsiz"))
 
 
+def _trend_text(label: str | None) -> str:
+    labels = {
+        "insufficient_data": "Yetersiz geçmiş",
+        "new_course": "Yeni ders",
+        "single_finalized_score": "Tek kesinleşmiş puan",
+        "rising": "Yükselen",
+        "falling": "Düşen",
+        "stable": "Dengeli",
+        "volatile": "Dalgalı",
+    }
+    return labels.get(str(label or ""), str(label or "Belirsiz"))
+
+
 class DecisionCenterPage(ttk.Frame):
     """Karar Merkezi: AHP, policy, runs, course decisions and reports."""
 
     def __init__(self, parent, app, service_factory=None):
         super().__init__(parent)
+        self.configure(style="Page.TFrame")
         self.app = app
         self.db = app.db
         self.service_factory = service_factory or get_service_factory(
@@ -88,21 +121,22 @@ class DecisionCenterPage(ttk.Frame):
         self._pool_approval_ids: dict[str, int] = {}
         self._action_buttons: list[ttk.Button] = []
         self._override_ids: dict[str, int] = {}
+        self._run_override_ids: dict[str, int] = {}
+        self._candidate_rows: dict[str, dict] = {}
+        self._curriculum_review: dict | None = None
 
         self._build_filters()
-        self.sub_nb = ttk.Notebook(self)
+        self.sub_nb = ttk.Notebook(self, style="Content.TNotebook")
         self.sub_nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
         self._build_readiness_tab()
         self._build_ahp_tab()
         self._build_policy_tab()
-        self._build_runs_tab()
         self._build_course_tab()
         self._build_recommended_tab()
         self._build_pool_lifecycle_tab()
-        self._build_sensitivity_tab()
-        self._build_approvals_tab()
-        self._build_fairness_tab()
+        # Hassas Kararlar, Akademik Onay ve Adalet Raporu arayuzden gizlidir.
+        # Audit servisleri ve tablolar korunur.
 
     def _conn(self):
         conn = getattr(self.db, "conn", None)
@@ -116,39 +150,47 @@ class DecisionCenterPage(ttk.Frame):
 
     def _tab_info(self, parent, baslik, ne_ise_yarar, veri_kaynagi, ne_yapmali, renk="#1565C0"):
         """Her sekmenin üstüne; amaç, veri kaynağı ve yapılacak işi açıklayan bilgi kutusu."""
-        box = tk.Frame(parent, bg=renk)
+        box = tk.Frame(
+            parent,
+            bg=COLORS["surface"],
+            highlightbackground=renk,
+            highlightcolor=renk,
+            highlightthickness=1,
+        )
         box.pack(fill=tk.X, pady=(0, 8))
-        inner = tk.Frame(box, bg="#F4F8FE")
-        inner.pack(fill=tk.X, padx=2, pady=2)
+        inner = tk.Frame(box, bg=COLORS["surface"])
+        inner.pack(fill=tk.X, padx=12, pady=9)
 
         tk.Label(
-            inner, text=baslik, bg="#F4F8FE", fg=renk,
-            font=("Segoe UI", 10, "bold"), anchor=tk.W,
-        ).pack(fill=tk.X, padx=10, pady=(6, 3))
+            inner, text=baslik, bg=COLORS["surface"], fg=renk,
+            font=("Segoe UI Semibold", 11), anchor=tk.W,
+        ).pack(fill=tk.X, pady=(0, 5))
 
         tk.Label(
-            inner, text="Ne işe yarar:  " + ne_ise_yarar,
-            bg="#F4F8FE", fg="#2A2A2A", font=("Segoe UI", 8),
+            inner, text=ne_ise_yarar,
+            bg=COLORS["surface"], fg=COLORS["text"], font=("Segoe UI", 8),
             anchor=tk.W, justify=tk.LEFT, wraplength=1180,
-        ).pack(fill=tk.X, padx=10, pady=1)
+        ).pack(fill=tk.X, pady=(0, 5))
+
+        meta = tk.Frame(inner, bg=COLORS["surface_alt"])
+        meta.pack(fill=tk.X)
+        tk.Label(
+            meta, text="KAYNAK  " + veri_kaynagi,
+            bg=COLORS["surface_alt"], fg=COLORS["muted"], font=("Segoe UI Semibold", 8),
+            anchor=tk.W, justify=tk.LEFT, wraplength=1180,
+        ).pack(fill=tk.X, padx=8, pady=(5, 2))
 
         tk.Label(
-            inner, text="Veri kaynağı:  " + veri_kaynagi,
-            bg="#FFF6DF", fg="#6B4E00", font=("Segoe UI", 8, "bold"),
+            meta, text="SONRAKİ ADIM  " + ne_yapmali,
+            bg=COLORS["surface_alt"], fg=COLORS["success"], font=("Segoe UI", 8),
             anchor=tk.W, justify=tk.LEFT, wraplength=1180,
-        ).pack(fill=tk.X, padx=10, pady=3, ipady=2)
-
-        tk.Label(
-            inner, text="Ne yapmalısınız:  " + ne_yapmali,
-            bg="#F4F8FE", fg="#1B5E20", font=("Segoe UI", 8),
-            anchor=tk.W, justify=tk.LEFT, wraplength=1180,
-        ).pack(fill=tk.X, padx=10, pady=(1, 6))
+        ).pack(fill=tk.X, padx=8, pady=(2, 5))
 
     # Run combobox boş durum metni — kullanıcı ne yapacağını bilsin diye.
     _RUN_EMPTY_PLACEHOLDER = "(Bu kapsamda henüz karar çalıştırması yok)"
 
     def _build_filters(self):
-        bar = ttk.LabelFrame(self, text="Filtreler", padding=8)
+        bar = ttk.LabelFrame(self, text="Karar kapsamı", padding=10, style="Filter.TLabelframe")
         bar.pack(fill=tk.X, padx=8, pady=8)
 
         # ---- 1. SATIR: Kapsam seçimi (Yıl / Fakülte / Bölüm / Dönem) ----
@@ -285,6 +327,7 @@ class DecisionCenterPage(ttk.Frame):
         paned = ttk.PanedWindow(frame, orient=tk.VERTICAL)
         paned.pack(fill=tk.BOTH, expand=True)
         self.txt_readiness = tk.Text(paned, height=12, wrap=tk.WORD)
+        style_text_widget(self.txt_readiness)
         paned.add(self.txt_readiness, weight=3)
 
         # Override (istisna) onay/red paneli — talep eden ≠ onaylayan (Roller Ayrılığı).
@@ -300,23 +343,57 @@ class DecisionCenterPage(ttk.Frame):
         ttk.Button(ovr_buttons, text="Seçileni Onayla", command=self._approve_selected_override).pack(side=tk.LEFT, padx=4)
         ttk.Button(ovr_buttons, text="Seçileni Reddet", command=self._reject_selected_override).pack(side=tk.LEFT, padx=4)
 
+        run_panel = ttk.LabelFrame(paned, text="Karar Çalıştırmaları", padding=6)
+        paned.add(run_panel, weight=2)
+        run_actions = ttk.Frame(run_panel)
+        run_actions.pack(fill=tk.X, pady=(0, 4))
+        self.btn_execute_run = ttk.Button(
+            run_actions, text="Yeni Geçici Karar Oluştur", command=self._execute_run
+        )
+        self.btn_execute_run.pack(side=tk.LEFT, padx=4)
+        self._action_buttons.append(self.btn_execute_run)
+        ttk.Button(
+            run_actions, text="Kararı Engelle (Override)", command=self._request_run_override
+        ).pack(side=tk.LEFT, padx=4)
+        self.tree_runs = self._tree(
+            run_panel,
+            ("id", "yil", "fakülte", "bölüm", "dönem", "durum", "ahp", "politika", "başlangıç"),
+        )
+        self.tree_runs.bind("<<TreeviewSelect>>", lambda _e: self._select_run_from_tree())
+
+        run_override_panel = ttk.LabelFrame(
+            paned, text="Bekleyen Karar Engelleme Talepleri", padding=6
+        )
+        paned.add(run_override_panel, weight=2)
+        self.tree_run_overrides = self._tree(
+            run_override_panel,
+            ("id", "karar", "kapsam", "talep_eden", "gerekçe", "durum", "tarih"),
+        )
+        run_override_actions = ttk.Frame(run_override_panel)
+        run_override_actions.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(
+            run_override_actions, text="Engellemeyi Onayla", command=self._approve_run_override
+        ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(
+            run_override_actions, text="Engellemeyi Reddet", command=self._reject_run_override
+        ).pack(side=tk.LEFT, padx=4)
+
     def _build_policy_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Karar Politikaları")
         self._tab_info(
             frame,
             "Karar Politikaları — Eşik Değerleri ve Kurallar",
-            "Bir dersin TOPSIS skoruna göre hangi statüye geçeceğini belirleyen eşikleri tutar: "
-            "müfredatta kalma eşiği, havuza düşme, dinlenmeye alma, iptal adayı eşiği ve "
-            "iptal için manuel onay gerekip gerekmediği. Skorlar 0-100 aralığındadır ve eşikler "
-            "iptal <= dinlenme < havuz < müfredat sırasını izlemelidir.",
+            "ELECTRE TRI-B referans profillerini, lambda kesme düzeyini ve akademik onay "
+            "kurallarını tutar. 70/50/40 değerleri tek başına TOPSIS eşiği değil; her kriter "
+            "için Müfredat/Havuz/Dinlenme sınır profillerinin başlangıç değerleridir.",
             "decision_policies tablosu. Politikalar bu sekmede oluşturulur (içe aktarma gerekmez); "
             "değerler kurum kurallarınıza göre belirlenir.",
             "Aktif politika yoksa 'Yeni Varsayılan Politika' oluşturun ve 'Seçileni Aktif Yap' deyin. "
             "Seçili politikayı çift tıklayarak veya 'Seçileni Düzenle' ile eşikleri güncelleyin.",
             renk="#6A1B9A",
         )
-        columns = ("id", "ad", "kapsam", "yil", "mod", "müfredat", "havuz", "dinlenme", "iptal", "onay", "aktif")
+        columns = ("id", "ad", "kapsam", "yil", "yöntem", "lambda", "müfredat", "havuz", "dinlenme", "iptal", "onay", "aktif")
         self.tree_policy = self._tree(frame, columns)
         self.tree_policy.bind("<Double-1>", lambda _event: self._edit_policy())
         actions = ttk.Frame(frame)
@@ -375,33 +452,57 @@ class DecisionCenterPage(ttk.Frame):
         )
         self.tree_courses = self._tree(
             top,
-            ("id", "kod", "ders", "eski", "öneri", "final", "skor", "trend", "güven", "stabilite", "onay", "gerekçe"),
+            (
+                "id", "kod", "ders", "eski", "ELECTRE önerisi", "TOPSIS",
+                "credibility", "DT önerisi", "DT güven", "ELECTRE/DT",
+                "final", "trend", "veri güveni", "onay", "gerekçe",
+            ),
         )
+        self.tree_courses.tag_configure("dt_agree", background=COLORS["success_soft"])
+        self.tree_courses.tag_configure("dt_conflict", background=COLORS["warning_soft"])
+        self.tree_courses.tag_configure("dt_unavailable", background=COLORS["surface_alt"], foreground=COLORS["muted"])
         self.tree_courses.bind("<<TreeviewSelect>>", lambda _e: self._show_course_detail())
         self.txt_course_detail = tk.Text(bottom, height=10, wrap=tk.WORD)
+        style_text_widget(self.txt_course_detail)
         self.txt_course_detail.pack(fill=tk.BOTH, expand=True)
+
+        self.course_summary = ttk.Frame(top, style="Surface.TFrame", padding=(10, 7))
+        self.course_summary.pack(fill=tk.X, pady=(6, 0))
+        self.lbl_course_total = self._summary_item(self.course_summary, "Toplam ders", "0")
+        self.lbl_dt_ready = self._summary_item(self.course_summary, "DT sonucu", "0")
+        self.lbl_dt_agree = self._summary_item(self.course_summary, "Uyumlu", "0")
+        self.lbl_dt_conflict = self._summary_item(self.course_summary, "İncelenecek", "0")
 
     def _build_recommended_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
         self.sub_nb.add(frame, text="Önerilen Dersler")
         self._tab_info(
             frame,
-            "Önerilen Dersler — Açılabilirlik Skoruna Göre Sıralı",
-            "Seçili karar çalıştırmasının çıktısını, dersin o dönem GERÇEKTEN açılabilir "
-            "olup olmadığını ölçen Açılabilirlik skoruna göre sıralar. Açılabilirlik = "
-            "%45 TOPSIS + %25 talep + %15 veri güveni + %10 dönem uygunluğu + %5 kaynak "
-            "uygunluğu. Kategori final statüye göre belirlenir: güçlü öneri, şartlı öneri "
-            "(kurul onayı gerekli), havuzda kalma, dinlenme, iptal adayı.",
-            "course_decisions tablosundaki acilabilirlik_score kolonu (karar çalıştırması "
-            "sırasında hesaplanır). Eski çalıştırmalarda kolon boşsa anlık hesaplanır.",
-            "Üstteki 'Run' filtresinden bir çalıştırma seçin. Boşsa önce 'Çalıştırmalar' "
-            "sekmesinde karar çalıştırın.",
+            "Önerilen Dersler — PROMETHEE II Top-7",
+            "Aktif müfredatta olmayan aday dersleri akademik uygunluk, müfredat boşluğu, "
+            "anket talebi, kaynak/dönem uygunluğu, çakışma azlığı ve veri güveniyle ikili "
+            "karşılaştırır. Net akış sırasından çeşitlilik kontrolüyle en fazla 7 ders seçilir.",
+            "candidate_course_recommendations tablosu. Anketi olmayan dersin talep skoru "
+            "sıfır değil nötr 50 kabul edilir; anket girilen dersler bonus alır.",
+            "Üstteki karar çalıştırmasından bir kayıt seçin. Liste, o geçici kararla birlikte üretilir.",
             renk="#6D28D9",
         )
         self.tree_recommended = self._tree(
             frame,
-            ("kod", "ders", "kategori", "açılabilirlik", "topsis", "trend", "güven", "final", "onay"),
+            ("sıra", "kod", "ders", "net akış", "phi+", "phi-", "anket", "güçlü kriterler", "gerekçe"),
         )
+        recommended_actions = ttk.Frame(frame)
+        recommended_actions.pack(fill=tk.X, pady=(6, 0))
+        ttk.Button(
+            recommended_actions,
+            text="Seçili Dersi Nihai Müfredatta Değiştir",
+            command=self._add_selected_candidate_to_review,
+        ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(
+            recommended_actions,
+            text="Dinlenmeye Al / Havuz Sayfasına Git",
+            command=self._goto_pool_page,
+        ).pack(side=tk.LEFT, padx=4)
 
     def _build_pool_lifecycle_tab(self):
         frame = ttk.PanedWindow(self.sub_nb, orient=tk.VERTICAL)
@@ -427,30 +528,24 @@ class DecisionCenterPage(ttk.Frame):
         actions = ttk.Frame(top)
         actions.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(actions, text="Yaşam Döngüsünü Yenile", command=self._load_pool_lifecycle).pack(side=tk.LEFT, padx=4)
-        ttk.Button(actions, text="Havuzdan Öner", command=self._havuzdan_oner).pack(side=tk.LEFT, padx=4)
-        ttk.Button(actions, text="Otomatik Karar Önerisi", command=self._otomatik_karar).pack(side=tk.LEFT, padx=4)
-        ttk.Button(actions, text="ML Analiz (p-value/SHAP/LIME)", command=self._ml_analiz).pack(side=tk.LEFT, padx=4)
-
-        # ── Normalize seçimi ──
-        ttk.Label(actions, text="Normalize:").pack(side=tk.LEFT, padx=(12, 2))
-        self.cb_ml_scaler = ttk.Combobox(
-            actions, state="readonly", width=10,
-            values=["none", "zscore", "minmax"],
-        )
-        self.cb_ml_scaler.set("none")
-        self.cb_ml_scaler.pack(side=tk.LEFT, padx=(0, 6))
-
-        # ── Imputation seçimi ──
-        ttk.Label(actions, text="Imputation:").pack(side=tk.LEFT, padx=(4, 2))
-        self.cb_ml_imputer = ttk.Combobox(
-            actions, state="readonly", width=8,
-            values=["median", "mean", "knn", "zero"],
-        )
-        self.cb_ml_imputer.set("median")
-        self.cb_ml_imputer.pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(actions, text="Nihai Müfredatı Hazırla", command=self._prepare_curriculum_review).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Ders Değiştir", command=self._swap_curriculum_review).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Müfredatı Onayla", command=self._approve_curriculum_review).pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Müfredatı Reddet", command=self._reject_curriculum_review).pack(side=tk.LEFT, padx=4)
 
         self.lbl_pool_lifecycle = ttk.Label(actions, text="")
         self.lbl_pool_lifecycle.pack(side=tk.LEFT, padx=12)
+
+        preview = ttk.LabelFrame(top, text="Yeni Yıl Nihai Müfredat Önizlemesi (onay verilene kadar yazılmaz)", padding=6)
+        preview.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+        self.lbl_curriculum_review = ttk.Label(preview, text="Önizleme hazırlanmamış.")
+        self.lbl_curriculum_review.pack(fill=tk.X, pady=(0, 4))
+        preview_panes = ttk.PanedWindow(preview, orient=tk.HORIZONTAL)
+        preview_panes.pack(fill=tk.BOTH, expand=True)
+        self.tree_review_fall = self._review_tree(preview_panes, "Güz Müfredatı")
+        self.tree_review_spring = self._review_tree(preview_panes, "Bahar Müfredatı")
+
+        ttk.Label(top, text="Havuz statü geçişleri", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W)
         self.tree_pool_lifecycle = self._tree(
             top,
             ("id", "kod", "ders", "eski", "öneri", "final", "etiket", "skor", "trend", "güven", "onay", "gerekçe"),
@@ -463,6 +558,7 @@ class DecisionCenterPage(ttk.Frame):
         bottom.add(approvals, weight=2)
 
         self.txt_pool_lifecycle_detail = tk.Text(detail, height=10, wrap=tk.WORD)
+        style_text_widget(self.txt_pool_lifecycle_detail)
         self.txt_pool_lifecycle_detail.pack(fill=tk.BOTH, expand=True)
 
         self.tree_pool_approvals = self._tree(
@@ -473,6 +569,19 @@ class DecisionCenterPage(ttk.Frame):
         approval_buttons.pack(fill=tk.X, pady=6)
         ttk.Button(approval_buttons, text="Onayla", command=self._approve_pool_state).pack(side=tk.LEFT, padx=4)
         ttk.Button(approval_buttons, text="Reddet", command=self._reject_pool_state).pack(side=tk.LEFT, padx=4)
+
+    def _review_tree(self, parent, title):
+        box = ttk.LabelFrame(parent, text=title, padding=4)
+        parent.add(box, weight=1)
+        tree = ttk.Treeview(box, columns=("kod", "ders", "puan", "kaynak"), show="headings", height=6)
+        for column, text, width in (
+            ("kod", "Kod", 90), ("ders", "Ders", 230),
+            ("puan", "Puan", 80), ("kaynak", "Kaynak", 120),
+        ):
+            tree.heading(column, text=text)
+            tree.column(column, width=width, anchor=tk.W)
+        tree.pack(fill=tk.BOTH, expand=True)
+        return tree
 
     def _build_sensitivity_tab(self):
         frame = ttk.Frame(self.sub_nb, padding=8)
@@ -529,6 +638,7 @@ class DecisionCenterPage(ttk.Frame):
             renk="#283593",
         )
         self.txt_fairness = tk.Text(frame, height=18, wrap=tk.WORD)
+        style_text_widget(self.txt_fairness, mono=True)
         self.txt_fairness.pack(fill=tk.BOTH, expand=True)
 
     def _tree(self, parent, columns):
@@ -543,10 +653,49 @@ class DecisionCenterPage(ttk.Frame):
         hsb.grid(row=1, column=0, sticky="ew")
         wrapper.columnconfigure(0, weight=1)
         wrapper.rowconfigure(0, weight=1)
+        width_map = {
+            "id": 58,
+            "sıra": 58,
+            "kod": 92,
+            "ders": 220,
+            "yil": 72,
+            "dönem": 82,
+            "TOPSIS": 82,
+            "credibility": 92,
+            "DT güven": 82,
+            "veri güveni": 88,
+            "onay": 72,
+            "gerekçe": 300,
+            "ELECTRE önerisi": 118,
+            "DT önerisi": 110,
+            "ELECTRE/DT": 124,
+            "final": 105,
+            "trend": 105,
+        }
+        centered = {
+            "id", "sıra", "yil", "dönem", "TOPSIS", "credibility",
+            "DT güven", "veri güveni", "onay", "ELECTRE önerisi",
+            "DT önerisi", "ELECTRE/DT", "final", "trend", "eski",
+        }
         for column in columns:
             tree.heading(column, text=column.title())
-            tree.column(column, width=130, anchor=tk.W)
+            tree.column(
+                column,
+                width=width_map.get(column, 130),
+                minwidth=50,
+                anchor=tk.CENTER if column in centered else tk.W,
+                stretch=column in {"ders", "gerekçe"},
+            )
         return tree
+
+    @staticmethod
+    def _summary_item(parent, title: str, value: str):
+        card = ttk.Frame(parent, style="Surface.TFrame", padding=(10, 2))
+        card.pack(side=tk.LEFT, padx=(0, 18))
+        ttk.Label(card, text=title, style="SurfaceMuted.TLabel").pack(anchor=tk.W)
+        label = ttk.Label(card, text=value, style="CardValue.TLabel")
+        label.pack(anchor=tk.W)
+        return label
 
     def _safe_load(self, name: str, func) -> None:
         """Tek bir bileşenin hatası tüm sayfayı yarım bırakmasın; hata loglanır."""
@@ -695,7 +844,8 @@ class DecisionCenterPage(ttk.Frame):
                 iid=str(p["id"]),
                 values=(
                     p["id"], p["name"], p["scope_type"], p.get("year") or "",
-                    p["mode"], p["curriculum_keep_threshold"], p["pool_threshold"],
+                    p.get("classification_method") or "electre_tri_b", p.get("electre_lambda") or 0.65,
+                    p["curriculum_keep_threshold"], p["pool_threshold"],
                     p["rest_threshold"], p.get("cancel_candidate_threshold") or "",
                     "Evet" if p.get("require_manual_approval_for_cancel") else "Hayır",
                     "Evet" if p.get("is_active") else "Hayır",
@@ -767,6 +917,16 @@ class DecisionCenterPage(ttk.Frame):
 
         for run in list_decision_runs(self._conn(), limit=500):
             in_scope = self._run_in_scope(run, selected_year, faculty_id, department_id, semester)
+            run_faculty_id = run.get("faculty_id")
+            run_department_id = run.get("department_id")
+            faculty_label = next(
+                (name for name, value in self._faculty_map.items() if value == run_faculty_id),
+                str(run_faculty_id or "Genel"),
+            )
+            department_label = next(
+                (name for name, value in self._department_map.items() if value == run_department_id),
+                str(run_department_id or "Fakülte Geneli"),
+            )
             # Treeview kapsamı önemsiz tüm sistemdeki run'ları görüntülemeyi sürdürür
             # (kullanıcı tarihçeye bakmak istediğinde yeni filtreye geçmeden görsün).
             self.tree_runs.insert(
@@ -774,7 +934,7 @@ class DecisionCenterPage(ttk.Frame):
                 tk.END,
                 iid=str(run["id"]),
                 values=(
-                    run["id"], run.get("year"), run.get("faculty_id") or "",
+                    run["id"], run.get("year"), faculty_label, department_label,
                     run.get("semester") or "", run.get("status") or "",
                     run.get("ahp_profile_name") or run.get("ahp_profile_id") or "",
                     run.get("decision_policy_name") or run.get("decision_policy_id") or "",
@@ -813,22 +973,25 @@ class DecisionCenterPage(ttk.Frame):
                 self.lbl_scope_status.config(text=hint, foreground="#15803d")
 
     def _jump_to_runs_tab(self):
-        """'Çalıştırmalar' alt sekmesine geçer ve kullanıcının yeni run başlatmasını kolaylaştırır."""
+        """Hazırlık Kontrolü içindeki karar çalıştırmaları paneline geçer."""
         try:
             for idx in range(self.sub_nb.index("end")):
-                if self.sub_nb.tab(idx, "text") == "Çalıştırmalar":
+                if self.sub_nb.tab(idx, "text") == "Hazırlık Kontrolü":
                     self.sub_nb.select(idx)
                     return
         except Exception:
-            logger.exception("Çalıştırmalar sekmesine geçilemedi")
+            logger.exception("Hazırlık Kontrolü sekmesine geçilemedi")
 
     def _load_run_related(self):
         run_id = self._selected_run_id()
         self._load_course_decisions(run_id)
         self._load_recommended(run_id)
-        self._load_sensitivity(run_id)
-        self._load_approvals(run_id)
-        self._load_fairness(run_id)
+        if hasattr(self, "tree_sensitivity"):
+            self._load_sensitivity(run_id)
+        if hasattr(self, "tree_approvals"):
+            self._load_approvals(run_id)
+        if hasattr(self, "txt_fairness"):
+            self._load_fairness(run_id)
         self._load_pool_lifecycle()
 
     def _load_readiness(self):
@@ -940,6 +1103,7 @@ class DecisionCenterPage(ttk.Frame):
             logger.exception("Hazırlık kontrolü yüklenemedi")
             self.lbl_readiness.config(text="Hazırlık kontrolü yüklenemedi.")
             self.txt_readiness.insert(tk.END, self._friendly_backend_error())
+        self._load_run_overrides()
 
     def _current_username(self, default: str) -> str:
         active_user = getattr(self.app, "current_user", None)
@@ -1051,52 +1215,417 @@ class DecisionCenterPage(ttk.Frame):
             logger.exception("Override reddedilemedi")
             messagebox.showerror("Override Reddi", self._friendly_backend_error())
 
+    def _request_run_override(self):
+        run_id = self._selected_run_id()
+        if not run_id:
+            messagebox.showwarning("Kararı Engelle", "Önce bir karar çalıştırması seçin.")
+            return
+        reason = simpledialog.askstring("Kararı Engelle", "Kararı engelleme gerekçesi:")
+        if not reason or not reason.strip():
+            return
+        try:
+            actor = self._current_username("decision_center") + ":requester"
+            request_decision_run_override(self._conn(), int(run_id), reason.strip(), actor)
+            self._conn().commit()
+            self._load_run_overrides()
+            messagebox.showinfo("Kararı Engelle", "Talep onay kuyruğuna alındı.")
+        except ValueError as exc:
+            messagebox.showwarning("Kararı Engelle", str(exc))
+        except Exception:
+            logger.exception("Karar engelleme talebi oluşturulamadı")
+            messagebox.showerror("Kararı Engelle", self._friendly_backend_error())
+
+    def _load_run_overrides(self):
+        if not hasattr(self, "tree_run_overrides"):
+            return
+        self._clear(self.tree_run_overrides)
+        self._run_override_ids.clear()
+        try:
+            for request in list_decision_run_overrides(self._conn(), status="pending"):
+                iid = str(request.get("id"))
+                self._run_override_ids[iid] = int(request.get("id") or 0)
+                try:
+                    snapshot = json.loads(request.get("run_snapshot_json") or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    snapshot = {}
+                scope = f"{snapshot.get('year') or ''} / {snapshot.get('semester') or ''}"
+                self.tree_run_overrides.insert(
+                    "",
+                    tk.END,
+                    iid=iid,
+                    values=(
+                        request.get("id"),
+                        request.get("decision_run_id"),
+                        scope,
+                        request.get("requested_by") or "",
+                        request.get("reason") or "",
+                        request.get("status") or "",
+                        request.get("requested_at") or "",
+                    ),
+                )
+        except Exception:
+            logger.exception("Karar engelleme talepleri yüklenemedi")
+
+    def _selected_run_override_id(self) -> int | None:
+        selected = self.tree_run_overrides.selection() if hasattr(self, "tree_run_overrides") else ()
+        return self._run_override_ids.get(str(selected[0])) if selected else None
+
+    def _approve_run_override(self):
+        request_id = self._selected_run_override_id()
+        if request_id is None:
+            messagebox.showwarning("Engelleme Onayı", "Bekleyen bir talep seçin.")
+            return
+        note = simpledialog.askstring("Engelleme Onayı", "Onay notu (isteğe bağlı):")
+        try:
+            actor = self._current_username("decision_center") + ":approver"
+            approve_decision_run_override(self._conn(), request_id, actor, note)
+            self._conn().commit()
+            self.refresh()
+            messagebox.showinfo("Engelleme Onayı", "Geçici karar ve bağlı sonuçları temizlendi.")
+        except ValueError as exc:
+            messagebox.showwarning("Engelleme Onayı", str(exc))
+        except Exception:
+            logger.exception("Karar engelleme onayı uygulanamadı")
+            messagebox.showerror("Engelleme Onayı", self._friendly_backend_error())
+
+    def _reject_run_override(self):
+        request_id = self._selected_run_override_id()
+        if request_id is None:
+            messagebox.showwarning("Engelleme Reddi", "Bekleyen bir talep seçin.")
+            return
+        note = simpledialog.askstring("Engelleme Reddi", "Red gerekçesi:")
+        if not note or not note.strip():
+            return
+        try:
+            actor = self._current_username("decision_center") + ":approver"
+            reject_decision_run_override(self._conn(), request_id, note.strip(), actor)
+            self._conn().commit()
+            self._load_run_overrides()
+        except ValueError as exc:
+            messagebox.showwarning("Engelleme Reddi", str(exc))
+        except Exception:
+            logger.exception("Karar engelleme reddi uygulanamadı")
+            messagebox.showerror("Engelleme Reddi", self._friendly_backend_error())
+
     def _load_course_decisions(self, run_id):
         self._clear(self.tree_courses)
         self._decision_ids.clear()
         self.txt_course_detail.delete("1.0", tk.END)
         if not run_id:
             self.txt_course_detail.insert(tk.END, "Henüz karar çalıştırması bulunmuyor.")
+            for label in (self.lbl_course_total, self.lbl_dt_ready, self.lbl_dt_agree, self.lbl_dt_conflict):
+                label.config(text="0")
             return
-        for row in list_course_decisions(self._conn(), int(run_id)):
+        rows = list_course_decisions(self._conn(), int(run_id))
+        dt_ready = 0
+        dt_agree = 0
+        dt_conflict = 0
+        for row in rows:
             iid = str(row["id"])
             self._decision_ids[iid] = int(row["id"])
+            dt_status = row.get("dt_prediction_status")
+            dt_comparison = str(row.get("dt_comparison") or "unavailable")
+            if dt_status is not None:
+                dt_ready += 1
+            if dt_comparison == "agree":
+                dt_agree += 1
+                row_tag = "dt_agree"
+            elif dt_comparison in {"dt_more_positive", "dt_more_cautious"}:
+                dt_conflict += 1
+                row_tag = "dt_conflict"
+            else:
+                row_tag = "dt_unavailable"
+            dt_confidence = row.get("dt_confidence")
             self.tree_courses.insert(
                 "",
                 tk.END,
                 iid=iid,
+                tags=(row_tag,),
                 values=(
                     row["id"], row.get("course_code") or "", row.get("course_name") or row.get("course_id"),
                     _status_text(row.get("old_status")), _status_text(row.get("recommended_status")),
-                    _status_text(row.get("final_status")), f"{float(row.get('topsis_score') or 0):.4f}",
-                    row.get("trend_label") or "", f"{float(row.get('data_confidence_score') or 0):.2f}",
-                    row.get("decision_stability") or "", "Evet" if row.get("approval_required") else "Hayır",
+                    f"{float(row.get('topsis_score') or 0):.2f}",
+                    f"{float(row.get('electre_credibility') or 0):.4f}",
+                    _status_text(dt_status) if dt_status is not None else "Veri yetersiz",
+                    f"{float(dt_confidence):.2f}" if dt_confidence is not None else "—",
+                    comparison_label(dt_comparison),
+                    _status_text(row.get("final_status")),
+                    _trend_text(row.get("trend_label")), f"{float(row.get('data_confidence_score') or 0):.2f}",
+                    "Evet" if row.get("approval_required") else "Hayır",
                     row.get("main_reason") or "",
                 ),
             )
+        self.lbl_course_total.config(text=str(len(rows)))
+        self.lbl_dt_ready.config(text=str(dt_ready))
+        self.lbl_dt_agree.config(text=str(dt_agree))
+        self.lbl_dt_conflict.config(text=str(dt_conflict))
 
     def _load_recommended(self, run_id):
         if getattr(self, "tree_recommended", None) is None:
             return
         self._clear(self.tree_recommended)
+        self._candidate_rows.clear()
         if not run_id:
             return
-        for row in list_recommended_courses(self._conn(), int(run_id)):
+        rows = list_candidate_recommendations(self._conn(), int(run_id))
+        if not rows:
             self.tree_recommended.insert(
                 "",
                 tk.END,
+                iid="empty",
+                values=("—", "", "Müfredat dışı aday ders bulunamadı", "", "", "", "", "", ""),
+            )
+            return
+        for row in rows:
+            criteria = dict(row.get("criteria") or {})
+            strongest = sorted(criteria, key=lambda key: criteria[key], reverse=True)[:2]
+            iid = str(row.get("id") or row.get("course_id"))
+            self._candidate_rows[iid] = row
+            self.tree_recommended.insert(
+                "",
+                tk.END,
+                iid=iid,
                 values=(
+                    row.get("rank") or "",
                     row.get("course_code") or "",
                     row.get("course_name") or row.get("course_id"),
-                    row.get("oneri_kategori") or "",
-                    f"{float(row.get('acilabilirlik') or 0):.1f}",
-                    f"{float(row.get('topsis_score') or 0):.4f}",
-                    row.get("trend_label") or "",
-                    f"{float(row.get('data_confidence_score') or 0):.2f}",
-                    _status_text(row.get("final_status")),
-                    "Evet" if row.get("approval_required") else "Hayır",
+                    f"{float(row.get('net_flow') or 0):.6f}",
+                    f"{float(row.get('phi_plus') or 0):.6f}",
+                    f"{float(row.get('phi_minus') or 0):.6f}",
+                    "Nötr (50)" if row.get("survey_neutral") else f"{float(criteria.get('survey_demand') or 0):.1f}",
+                    ", ".join(strongest),
+                    row.get("reason") or "",
                 ),
             )
+
+    def _curriculum_review_scope(self):
+        try:
+            year = int(self.cb_year.get())
+        except (TypeError, ValueError):
+            raise ValueError("Önce yıl seçin.")
+        faculty_id = self._faculty_map.get(self.cb_faculty.get())
+        department_id = self._department_map.get(self.cb_department.get())
+        if faculty_id is None or department_id is None:
+            raise ValueError("Nihai müfredat kararı için Fakülte ve belirli bir Bölüm seçin.")
+        return year, int(faculty_id), int(department_id)
+
+    def _render_curriculum_review(self, review):
+        self._curriculum_review = review
+        self._clear(self.tree_review_fall)
+        self._clear(self.tree_review_spring)
+        if not review:
+            self.lbl_curriculum_review.config(text="Önizleme hazırlanmamış.")
+            return
+        payload = dict(review.get("payload") or {})
+        origin_labels = {
+            "mevcut": "Mevcut müfredat",
+            "otomatik_yedek": "Otomatik yedek",
+            "manuel_takas": "Manuel takas",
+        }
+        for key, tree in (("fall", self.tree_review_fall), ("spring", self.tree_review_spring)):
+            term = dict(payload.get(key) or {})
+            for item in term.get("items") or []:
+                score = item.get("score")
+                tree.insert(
+                    "",
+                    tk.END,
+                    iid=f"{key}:{item.get('course_id')}",
+                    values=(
+                        item.get("course_code") or "",
+                        item.get("course_name") or item.get("course_id"),
+                        "—" if score is None else f"{float(score):.2f}",
+                        origin_labels.get(str(item.get("origin") or ""), item.get("origin") or ""),
+                    ),
+                )
+        shortage = sum(
+            int((payload.get(key) or {}).get("replacement_shortage") or 0)
+            for key in ("fall", "spring")
+        )
+        status_labels = {"pending": "ONAY BEKLİYOR", "approved": "ONAYLANDI", "rejected": "REDDEDİLDİ"}
+        self.lbl_curriculum_review.config(
+            text=(
+                f"Karar #{review.get('id')} | {review.get('source_year')} → {review.get('target_year')} | "
+                f"{status_labels.get(review.get('status'), review.get('status'))}"
+                + (f" | {shortage} boşluk için uygun Top-7 adayı bulunamadı" if shortage else "")
+            )
+        )
+
+    def _prepare_curriculum_review(self):
+        try:
+            year, faculty_id, department_id = self._curriculum_review_scope()
+            review = build_curriculum_review(self._conn(), year, faculty_id, department_id)
+            self._conn().commit()
+            self._render_curriculum_review(review)
+        except ValueError as exc:
+            messagebox.showwarning("Nihai Müfredat", str(exc))
+        except Exception:
+            logger.exception("Nihai müfredat önizlemesi oluşturulamadı")
+            messagebox.showerror("Nihai Müfredat", self._friendly_backend_error())
+
+    def _swap_curriculum_review(self, incoming_course_id=None, initial_semester=None):
+        review = self._curriculum_review
+        if not review or review.get("status") != "pending":
+            messagebox.showwarning("Ders Değiştir", "Önce onay bekleyen bir nihai müfredat önizlemesi hazırlayın.")
+            return
+        payload = dict(review.get("payload") or {})
+        dialog = tk.Toplevel(self)
+        dialog.title("Nihai Müfredatta Ders Değiştir")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(
+            body,
+            text="Bu işlem yalnız önizlemeyi değiştirir; havuz statüsü ve sayaç değerleri değişmez.",
+            foreground="#166534",
+        ).grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 8))
+        term_var = tk.StringVar(
+            value="Bahar" if str(initial_semester or "").lower().startswith("b") else "Güz"
+        )
+        outgoing_var = tk.StringVar()
+        incoming_var = tk.StringVar()
+        term_cb = ttk.Combobox(body, textvariable=term_var, values=["Güz", "Bahar"], state="readonly", width=12)
+        outgoing_cb = ttk.Combobox(body, textvariable=outgoing_var, state="readonly", width=48)
+        incoming_cb = ttk.Combobox(body, textvariable=incoming_var, state="readonly", width=48)
+        ttk.Label(body, text="Dönem").grid(row=1, column=0, sticky=tk.W, pady=4)
+        term_cb.grid(row=1, column=1, sticky=tk.EW, pady=4)
+        ttk.Label(body, text="Çıkarılacak ders").grid(row=2, column=0, sticky=tk.W, pady=4)
+        outgoing_cb.grid(row=2, column=1, sticky=tk.EW, pady=4)
+        ttk.Label(body, text="Top-7 içinden eklenecek ders").grid(row=3, column=0, sticky=tk.W, pady=4)
+        incoming_cb.grid(row=3, column=1, sticky=tk.EW, pady=4)
+        body.columnconfigure(1, weight=1)
+        outgoing_map = {}
+        incoming_map = {}
+
+        def reload_choices(_event=None):
+            key = "spring" if term_var.get() == "Bahar" else "fall"
+            term = dict(payload.get(key) or {})
+            outgoing_map.clear()
+            incoming_map.clear()
+            for item in term.get("items") or []:
+                label = f"{item.get('course_code') or ''} — {item.get('course_name') or item.get('course_id')}"
+                outgoing_map[label] = int(item["course_id"])
+            for item in term.get("candidates") or []:
+                label = (
+                    f"{item.get('course_code') or ''} — {item.get('course_name') or item.get('course_id')} "
+                    f"(puan {float(item.get('score') or 0):.2f})"
+                )
+                incoming_map[label] = int(item["course_id"])
+            outgoing_cb["values"] = list(outgoing_map)
+            incoming_cb["values"] = list(incoming_map)
+            outgoing_var.set(next(iter(outgoing_map), ""))
+            selected_label = next(
+                (label for label, course_id in incoming_map.items() if incoming_course_id is not None and course_id == int(incoming_course_id)),
+                None,
+            )
+            incoming_var.set(selected_label or next(iter(incoming_map), ""))
+
+        def apply_swap():
+            if outgoing_var.get() not in outgoing_map or incoming_var.get() not in incoming_map:
+                messagebox.showwarning("Ders Değiştir", "Çıkarılacak ve eklenecek dersi seçin.", parent=dialog)
+                return
+            try:
+                updated = replace_review_course(
+                    self._conn(),
+                    int(review["id"]),
+                    semester=term_var.get(),
+                    outgoing_course_id=outgoing_map[outgoing_var.get()],
+                    incoming_course_id=incoming_map[incoming_var.get()],
+                )
+                self._conn().commit()
+                self._render_curriculum_review(updated)
+                dialog.destroy()
+            except ValueError as exc:
+                messagebox.showwarning("Ders Değiştir", str(exc), parent=dialog)
+            except Exception:
+                logger.exception("Nihai müfredat manuel takası başarısız")
+                messagebox.showerror("Ders Değiştir", self._friendly_backend_error(), parent=dialog)
+
+        term_cb.bind("<<ComboboxSelected>>", reload_choices)
+        reload_choices()
+        buttons = ttk.Frame(body)
+        buttons.grid(row=4, column=0, columnspan=2, sticky=tk.E, pady=(10, 0))
+        ttk.Button(buttons, text="Değiştir", command=apply_swap).pack(side=tk.LEFT, padx=4)
+        ttk.Button(buttons, text="Vazgeç", command=dialog.destroy).pack(side=tk.LEFT)
+
+    def _add_selected_candidate_to_review(self):
+        selected = self.tree_recommended.selection()
+        if not selected or selected[0] == "empty":
+            messagebox.showwarning("Önerilen Ders", "Önce önerilen ders listesinden bir ders seçin.")
+            return
+        candidate = self._candidate_rows.get(str(selected[0]))
+        if not candidate:
+            return
+        try:
+            year, faculty_id, department_id = self._curriculum_review_scope()
+            review = get_latest_review(self._conn(), year, faculty_id, department_id)
+            if not review or review.get("status") != "pending":
+                review = build_curriculum_review(self._conn(), year, faculty_id, department_id)
+                self._conn().commit()
+            self._render_curriculum_review(review)
+            self._swap_curriculum_review(
+                incoming_course_id=int(candidate["course_id"]),
+                initial_semester=candidate.get("semester"),
+            )
+        except ValueError as exc:
+            messagebox.showwarning("Önerilen Ders", str(exc))
+        except Exception:
+            logger.exception("Önerilen ders müfredat önizlemesine aktarılamadı")
+            messagebox.showerror("Önerilen Ders", self._friendly_backend_error())
+
+    def _goto_pool_page(self):
+        try:
+            self.app._nb_karar.select(self.app.tab_calc)
+            self.app.tab_calc.sub_nb.select(self.app.tab_calc.page_pool)
+            self.app.tab_calc.page_pool.load_pool_data()
+        except Exception:
+            logger.exception("Havuz sayfasına geçilemedi")
+            messagebox.showerror("Havuz", self._friendly_backend_error())
+
+    def _approve_curriculum_review(self):
+        review = self._curriculum_review
+        if not review or review.get("status") != "pending":
+            messagebox.showwarning("Müfredat Onayı", "Onay bekleyen bir nihai müfredat önizlemesi yok.")
+            return
+        if not messagebox.askyesno(
+            "Müfredat Onayı",
+            f"{review.get('target_year')} Güz/Bahar müfredatı ekrandaki önizlemeyle kaydedilsin mi?",
+        ):
+            return
+        note = simpledialog.askstring("Müfredat Onayı", "Kurul/onay notu (isteğe bağlı):")
+        try:
+            updated = approve_curriculum_review(
+                self._conn(), int(review["id"]), reviewed_by=self._current_username("decision_center"), review_note=note
+            )
+            self._conn().commit()
+            self._render_curriculum_review(updated)
+            messagebox.showinfo("Müfredat Onayı", f"{review.get('target_year')} müfredatı onaylandı ve kaydedildi.")
+            self.app.refresh_all()
+        except ValueError as exc:
+            messagebox.showwarning("Müfredat Onayı", str(exc))
+        except Exception:
+            logger.exception("Nihai müfredat onayı başarısız")
+            messagebox.showerror("Müfredat Onayı", self._friendly_backend_error())
+
+    def _reject_curriculum_review(self):
+        review = self._curriculum_review
+        if not review or review.get("status") != "pending":
+            messagebox.showwarning("Müfredat Reddi", "Onay bekleyen bir nihai müfredat önizlemesi yok.")
+            return
+        note = simpledialog.askstring("Müfredat Reddi", "Red gerekçesi:")
+        if not str(note or "").strip():
+            return
+        try:
+            updated = reject_curriculum_review(
+                self._conn(), int(review["id"]), reviewed_by=self._current_username("decision_center"), review_note=note
+            )
+            self._conn().commit()
+            self._render_curriculum_review(updated)
+        except ValueError as exc:
+            messagebox.showwarning("Müfredat Reddi", str(exc))
+        except Exception:
+            logger.exception("Nihai müfredat reddi başarısız")
+            messagebox.showerror("Müfredat Reddi", self._friendly_backend_error())
 
     def _havuzdan_oner(self):
         """Havuzdaki secmeli dersleri AKTIF AHP agirliklariyla puanlayip
@@ -1286,6 +1815,12 @@ class DecisionCenterPage(ttk.Frame):
             faculty_id = self._faculty_map.get(self.cb_faculty.get())
             department_id = self._department_map.get(self.cb_department.get())
             semester = self.cb_semester.get() or "Guz"
+            if faculty_id is not None and department_id is not None:
+                self._render_curriculum_review(
+                    get_latest_review(self._conn(), year, int(faculty_id), int(department_id))
+                )
+            else:
+                self._render_curriculum_review(None)
             summary = get_pool_lifecycle_summary(
                 self._conn(),
                 year=year,
@@ -1623,10 +2158,20 @@ class DecisionCenterPage(ttk.Frame):
         raw = json.loads(row["raw_values_json"] or "{}") if row["raw_values_json"] else {}
         weights = json.loads(row["weights_json"] or "{}") if row["weights_json"] else {}
         contrib = json.loads(row["contribution_json"] or "{}") if row["contribution_json"] else {}
+        try:
+            electre = json.loads(row["electre_details_json"] or "{}") if row["electre_details_json"] else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            electre = {}
+        try:
+            dt_details = json.loads(row["dt_details_json"] or "{}") if row["dt_details_json"] else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            dt_details = {}
         lines = [
             f"{row['kod'] or ''} {row['ad'] or ''}",
             f"TOPSIS skoru: {float(row['topsis_score'] or 0):.4f}",
-            f"Trend: {row['trend_label'] or ''} ({float(row['trend_score'] or 0):.2f})",
+            f"ELECTRE TRI-B önerisi: {_status_text(row['recommended_status'])}",
+            f"ELECTRE credibility / lambda: {float(row['electre_credibility'] or 0):.4f} / {float(electre.get('lambda') or 0):.2f}",
+            f"Trend: {_trend_text(row['trend_label'])} ({float(row['trend_score'] or 0):.2f})",
             f"Veri güveni: {float(row['data_confidence_score'] or 0):.2f}",
             f"Kararlılık: {row['decision_stability'] or ''}",
             f"Pozitif/negatif ideale uzaklık: {float(row['positive_distance'] or 0):.4f} / {float(row['negative_distance'] or 0):.4f}",
@@ -1635,12 +2180,39 @@ class DecisionCenterPage(ttk.Frame):
         ]
         for key in sorted(raw):
             lines.append(f"- {key}: değer={raw.get(key):.3f}, ağırlık={float(weights.get(key, 0)):.3f}, katkı={float(contrib.get(key, 0)):.3f}")
+        if electre:
+            lines.extend(["", "ELECTRE profil karşılaştırmaları:"])
+            for comparison in electre.get("comparisons") or []:
+                lines.append(
+                    f"- {comparison.get('profile')}: concordance={float(comparison.get('concordance') or 0):.4f}, "
+                    f"credibility={float(comparison.get('credibility') or 0):.4f}, "
+                    f"geçti={'evet' if comparison.get('outranks') else 'hayır'}"
+                )
+            if electre.get("vetoed_criteria"):
+                lines.append("- Veto uygulanan kriterler: " + ", ".join(electre["vetoed_criteria"]))
+        lines.extend(["", "Decision Tree bağımsız doğrulaması:"])
+        if not dt_details or not dt_details.get("available"):
+            lines.append("- Sonuç: Veri yetersiz / doğrulama yapılamadı")
+            lines.append(f"- Neden: {dt_details.get('explanation') or 'DT sonucu bu eski çalıştırmada üretilmemiş.'}")
+        else:
+            context = dict(dt_details.get("context") or {})
+            lines.extend(
+                [
+                    f"- DT önerisi: {_status_text(dt_details.get('predicted_status'))}",
+                    f"- DT güveni: {float(dt_details.get('confidence') or 0):.2f}",
+                    f"- ELECTRE/DT ilişkisi: {comparison_label(dt_details.get('comparison'))}",
+                    f"- Eğitim kapsamı: {context.get('training_scope') or '—'}; örnek={context.get('sample_count') or 0}",
+                    f"- Zamansal doğrulama: {float(context['validation_score']):.2f}" if context.get("validation_score") is not None else "- Zamansal doğrulama: Yeterli ayrı yıl yok",
+                    f"- Okunabilir kural yolu: {dt_details.get('rule_path') or '—'}",
+                    f"- Yorum: {dt_details.get('explanation') or ''}",
+                ]
+            )
         lines.extend(["", str(row["trend_explanation"] or ""), str(row["confidence_explanation"] or ""), "", str(row["human_readable_text"] or row["main_reason"] or "")])
         try:
             ml_predictions = get_predictions_for_course(self._conn(), int(row["course_id"]), int(row["year"]))
         except Exception:
             ml_predictions = []
-        lines.extend(["", "ML Destekleyici Tahmin:"])
+        lines.extend(["", "Diğer ML destekleyici tahminleri:"])
         if not ml_predictions:
             lines.append("Bu ders için kayıtlı ML destekleyici tahmin bulunmuyor.")
         else:
@@ -1768,6 +2340,7 @@ class DecisionCenterPage(ttk.Frame):
             "cancel": tk.StringVar(
                 value="" if policy.get("cancel_candidate_threshold") is None else str(policy.get("cancel_candidate_threshold"))
             ),
+            "lambda": tk.StringVar(value=str(policy.get("electre_lambda") or 0.65)),
             "manual": tk.BooleanVar(value=bool(policy.get("require_manual_approval_for_cancel"))),
             "notes": tk.StringVar(value=str(policy.get("notes") or "")),
         }
@@ -1791,6 +2364,7 @@ class DecisionCenterPage(ttk.Frame):
             ("Havuz eşiği", "pool"),
             ("Dinlenme eşiği", "rest"),
             ("İptal adayı eşiği", "cancel"),
+            ("ELECTRE lambda", "lambda"),
             ("Not", "notes"),
         ]
         for row, (label, key) in enumerate(fields, start=1):
@@ -1818,6 +2392,7 @@ class DecisionCenterPage(ttk.Frame):
                 pool = self._policy_number(vars_["pool"].get(), "Havuz eşiği")
                 rest = self._policy_number(vars_["rest"].get(), "Dinlenme eşiği")
                 cancel = self._policy_number(vars_["cancel"].get(), "İptal adayı eşiği", required=False)
+                electre_lambda = self._policy_number(vars_["lambda"].get(), "ELECTRE lambda")
                 update_decision_policy(
                     self._conn(),
                     int(policy["id"]),
@@ -1826,6 +2401,9 @@ class DecisionCenterPage(ttk.Frame):
                     pool_threshold=pool,
                     rest_threshold=rest,
                     cancel_candidate_threshold=cancel,
+                    classification_method="electre_tri_b",
+                    electre_lambda=electre_lambda,
+                    electre_assignment_rule="pessimistic",
                     require_manual_approval_for_cancel=vars_["manual"].get(),
                     notes=vars_["notes"].get().strip() or None,
                 )
@@ -1870,12 +2448,14 @@ class DecisionCenterPage(ttk.Frame):
         try:
             year = int(self.cb_year.get())
             faculty_id = self._faculty_map.get(self.cb_faculty.get())
+            department_id = self._department_map.get(self.cb_department.get())
             gate = can_run_algorithm(
                 self._conn(),
                 year=year,
                 faculty_id=int(faculty_id or 0),
+                department_id=department_id,
                 semester=self.cb_semester.get() or "Guz",
-                scope_type="faculty",
+                scope_type="department" if department_id is not None else "faculty",
             )
             if not gate.get("can_run"):
                 messagebox.showwarning(
@@ -1884,14 +2464,23 @@ class DecisionCenterPage(ttk.Frame):
                 )
                 self._load_readiness()
                 return
-            result = run_all_algorithms_for_year(
-                yil=year,
-                db_path=getattr(self.app, "db_path", None) or "data/adil_secmeli.db",
-                donem=self.cb_semester.get() or "Guz",
-                fakulte_id=int(faculty_id or 0),
+            result = record_decision_run_for_faculty_year(
+                conn=self._conn(),
+                year=year,
+                faculty_id=int(faculty_id or 0),
+                department_id=department_id,
+                semester=self.cb_semester.get() or "Guz",
+                created_by=self._current_username("decision_center"),
             )
             if not result.get("ok"):
                 messagebox.showwarning("Karar Çalıştır", self._friendly_backend_error())
+            else:
+                self._conn().commit()
+                messagebox.showinfo(
+                    "Geçici Karar",
+                    "Karar hesaplandı ve Karar Merkezi'ne geçici kayıt olarak eklendi. "
+                    "Müfredat henüz değiştirilmedi.",
+                )
             self.refresh()
         except Exception:
             logger.exception("Karar çalıştırma başarısız")

@@ -284,7 +284,7 @@ class CalcTab(ttk.Frame):
 
         self._btn_next_year = tk.Button(
             next_year_bar,
-            text="Sonraki Yil Mufredat Uret",
+            text="Sonraki Yıl Kararını Hesapla",
             bg="#16a34a", fg="white", activebackground="#15803d", activeforeground="white",
             font=("Segoe UI", 12, "bold"),
             cursor="hand2",
@@ -341,6 +341,25 @@ class CalcTab(ttk.Frame):
             font=("Segoe UI", 9, "bold"),
         )
         self._chk_auto_mode.pack(side=tk.LEFT, padx=(16, 4))
+
+        # Açılışta otomatik algoritma/müfredat üretimi (yearly_workflow bayrağı).
+        # Konsoldaki "[AUTO] ... otomatik algoritma tetigi kapali" mesajını kontrol eder.
+        try:
+            from app.services.yearly_workflow import is_startup_auto_scoring_enabled
+            self._startup_auto_var = tk.BooleanVar(value=is_startup_auto_scoring_enabled())
+        except Exception:
+            self._startup_auto_var = tk.BooleanVar(value=False)
+        self._chk_startup_auto = tk.Checkbutton(
+            next_year_bar,
+            text="Açılışta Otomatik Üretim",
+            variable=self._startup_auto_var,
+            command=self._toggle_startup_auto,
+            bg="#0f172a", fg="#cbd5e1", selectcolor="#0f172a",
+            activebackground="#0f172a", activeforeground="white",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self._chk_startup_auto.pack(side=tk.LEFT, padx=(8, 4))
+
         self._btn_export_excel = tk.Button(
             next_year_bar,
             text="Ders Önerisi Excel'e Aktar",
@@ -531,6 +550,34 @@ class CalcTab(ttk.Frame):
                 messagebox.showinfo("Otomatik Mod", "Otomatik mod kapatıldı (manuel çalışma).")
         except Exception:
             messagebox.showerror("Otomatik Mod", self._friendly_ui_error())
+
+    def _toggle_startup_auto(self):
+        """Açılışta otomatik üretimi config.json'a yazar (yearly_workflow bayrağı)."""
+        try:
+            from app.services.yearly_workflow import (
+                set_startup_auto_scoring_enabled,
+                yearly_workflow_env_override,
+            )
+
+            enabled = bool(self._startup_auto_var.get())
+            set_startup_auto_scoring_enabled(enabled)
+            if yearly_workflow_env_override():
+                messagebox.showwarning(
+                    "Açılışta Otomatik Üretim",
+                    "Ayar kaydedildi ANCAK ENABLE_YEARLY_CRITERIA_WORKFLOW ortam değişkeni "
+                    "ayarlı olduğu için config'i geçersiz kılar. Etki etmesi için ortam "
+                    "değişkenini kaldırın.",
+                )
+                return
+            durum = "AÇIK" if enabled else "KAPALI"
+            messagebox.showinfo(
+                "Açılışta Otomatik Üretim",
+                f"Açılışta otomatik algoritma/müfredat üretimi: {durum}.\n\n"
+                "Değişiklik bir sonraki uygulama açılışında geçerli olur. "
+                "(KAPALI iken üretimi 'Sonraki Yıl Müfredat Üret' ile elle yaparsınız.)",
+            )
+        except Exception:
+            messagebox.showerror("Açılışta Otomatik Üretim", self._friendly_ui_error())
 
     def _export_recommendation_excel(self):
         """Seçili fakülte/yıl için ders önerisi Excel'ini elle üretir."""
@@ -798,17 +845,6 @@ class CalcTab(ttk.Frame):
 
             # 5) Sonraki yil mufredat uretimi (fakulte bazli, kriter tamlık kontrolu ile)
             elif algo_id == "next_year":
-                import os
-
-                from app.services.calculation import (
-                    run_all_algorithms_for_year_dual,
-                )
-
-                db_path = getattr(self.app, "db_path", None) or self.db_path
-                if not db_path:
-                    raise ValueError("Veritabani yolu bulunamadi.")
-                db_path = os.path.abspath(db_path)
-
                 # Seçili fakülte ID'sini al
                 secili_fakulte_id = None
                 secili_fakulte_ad = None
@@ -882,7 +918,7 @@ class CalcTab(ttk.Frame):
                         # UI'ı güncelle ve erken çık
                         widgets["status"].config(text="Kriter Eksik!", fg="#ef4444")
                         self._btn_next_year.config(
-                            state="normal", bg="#16a34a", text="Sonraki Yil Mufredat Uret"
+                            state="normal", bg="#16a34a", text="Sonraki Yıl Kararını Hesapla"
                         )
                         self.results_cache[algo_id] = sonuc_metni
                         self.result_text.config(state="normal")
@@ -897,153 +933,67 @@ class CalcTab(ttk.Frame):
                         )
                         return
 
-                # Kriter kontrolü geçildi - algoritmayı çalıştır (sadece seçili fakülte için)
-                batch_results = self._run_full_algorithm_batch_for_next_year()
-                batch_failures = [item for item in batch_results if not item.get("ok")]
+                # Kriter kontrolü geçildi: Güz+Bahar için yalnız GEÇİCİ karar
+                # çalıştırmaları oluşturulur. Müfredat/havuz burada değiştirilmez.
+                from app.services.decision_run_service import record_decision_run_for_faculty_year
 
-                # Spec madde 3: Guz+Bahar BIRLIKTE uretim. Dual wrapper hem G hem B
-                # icin alt akisi calistirir; UI rapor mantigi geriye uyumlu olsun
-                # diye `summary` olarak guz detayini, bahar bilgilerini ek bolum
-                # olarak gosteririz.
-                dual_result = run_all_algorithms_for_year_dual(
-                    yil=int(secili_yil),
-                    db_path=db_path,
-                    fakulte_id=secili_fakulte_id,
+                conn = getattr(self.db, "conn", None)
+                if conn is None:
+                    raise ValueError("Veritabanı bağlantısı bulunamadı.")
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT DISTINCT b.bolum_id, b.ad
+                    FROM mufredat m
+                    JOIN bolum b ON b.bolum_id=m.bolum_id
+                    WHERE b.fakulte_id=? AND m.akademik_yil=?
+                    ORDER BY b.ad, b.bolum_id
+                    """,
+                    (int(secili_fakulte_id), int(secili_yil)),
                 )
-                summary = dual_result.get("guz_detay", {}) or {}
-                bahar_detay = dual_result.get("bahar_detay", {}) or {}
-
-                processed = summary.get("processed", []) or []
-                skipped = summary.get("skipped", []) or []
-                errors = summary.get("errors", []) or []
-                bahar_processed = bahar_detay.get("processed", []) or []
-                bahar_skipped = bahar_detay.get("skipped", []) or []
-                bahar_errors = bahar_detay.get("errors", []) or []
-
-                lines = []
-                lines.append(f"Algoritma kontrol merkezi: {secili_fakulte_ad} fakultesi, {int(secili_yil)} yili calistirildi.")
-                lines.append(
-                    f"GUZ ozeti  : islenen_fakulte={len(processed)} | atlanan={len(skipped)} | hata={len(errors)}"
-                )
-                lines.append(
-                    f"BAHAR ozeti: islenen_fakulte={len(bahar_processed)} | atlanan={len(bahar_skipped)} | hata={len(bahar_errors)}"
-                )
-                # Yillik bütünlük durumu
-                guz_ok = bool(dual_result.get("guz_olusturuldu"))
-                bahar_ok = bool(dual_result.get("bahar_olusturuldu"))
-                if guz_ok and bahar_ok:
-                    lines.append("Yillik butunluk: Guz ve Bahar BIRLIKTE uretildi.")
-                elif guz_ok and not bahar_ok:
-                    bahar_neden = ""
-                    if bahar_skipped:
-                        bahar_neden = (bahar_skipped[0] or {}).get("reason", "")
-                    elif bahar_errors:
-                        bahar_neden = (bahar_errors[0] or {}).get("error", "")
-                    lines.append(
-                        f"Yillik butunluk: BAHAR uretilemedi. Neden: {bahar_neden or 'bahar verisi/krit eri eksik'}"
-                    )
-                elif bahar_ok and not guz_ok:
-                    lines.append("Yillik butunluk: Sadece BAHAR uretildi (guz uretimi basarisiz).")
-                else:
-                    lines.append("Yillik butunluk: Hicbir donem uretilemedi.")
-                ahp_meta = dual_result.get("kullanilan_ahp_profile", {}) or {}
-                if ahp_meta.get("id") or ahp_meta.get("name"):
-                    lines.append(
-                        f"Kullanilan AHP profili: id={ahp_meta.get('id')} "
-                        f"ad={ahp_meta.get('name')} v={ahp_meta.get('version')} "
-                        f"tutarli={ahp_meta.get('is_consistent')}"
-                    )
-                lines.append(
-                    f"Calistirma zamani: {dual_result.get('baslangic_zaman')} -> "
-                    f"{dual_result.get('bitis_zaman')}"
-                )
-                lines.append("")
-
-                if batch_results:
-                    lines.append("Toplu calistirilan algoritmalar:")
-                    for item in batch_results:
-                        lines.append(f"- {item.get('id', '').upper()}: {item.get('status', 'Bilinmiyor')}")
-                    if batch_failures:
-                        lines.append("")
-                        lines.append(
-                            "Uyari: Bazi algoritmalar hata verdi: "
-                            + ", ".join(item.get("id", "").upper() for item in batch_failures)
-                        )
-                    lines.append("")
-
-                if processed:
-                    lines.append("Islenen fakulteler:")
-                    for item in processed:
-                        lines.append(f"- {item.get('message', '')}")
-                        for bol in item.get("departments", []) or []:
-                            lines.append(
-                                f"  * {bol.get('bolum', '?')} | dis_bolum_dersi={bol.get('dis_bolum_ders_sayisi', 0)}"
+                departments = [(int(row[0]), str(row[1] or row[0])) for row in cur.fetchall()]
+                if not departments:
+                    raise ValueError("Seçili fakülte/yıl için karar üretilecek bölüm bulunamadı.")
+                results = []
+                for department_id, department_name in departments:
+                    for term in ("Guz", "Bahar"):
+                        try:
+                            result = record_decision_run_for_faculty_year(
+                                conn,
+                                year=int(secili_yil),
+                                faculty_id=int(secili_fakulte_id),
+                                department_id=int(department_id),
+                                semester=term,
+                                created_by="calc-tab",
                             )
-                    lines.append("")
+                            results.append((department_name, term, result, None))
+                        except Exception as exc:
+                            results.append((department_name, term, None, str(exc)))
+                conn.commit()
 
-                if skipped:
-                    lines.append("Atlanan fakulteler:")
-                    for item in skipped:
-                        lines.append(f"- {item.get('reason')}")
-                        missing_criteria = item.get("missing_criteria", []) or []
-                        for mk in missing_criteria[:8]:
-                            lines.append(
-                                f"  * Eksik: {mk.get('bolum')} | {mk.get('ders')} (ID:{mk.get('ders_id')})"
-                            )
-                        if len(missing_criteria) > 8:
-                            lines.append(f"  * ... +{len(missing_criteria) - 8} ders daha")
-                    lines.append("")
-
-                if errors:
-                    lines.append("Hatalar:")
-                    for item in errors:
+                lines = [
+                    f"{secili_fakulte_ad} / {secili_yil} için geçici müfredat kararları hesaplandı.",
+                    "Müfredat ve havuz kayıtları değiştirilmedi.",
+                    "",
+                ]
+                for department_name, term, result, error in results:
+                    if error:
+                        lines.append(f"{department_name} / {term}: oluşturulamadı — {error}")
+                    else:
+                        summary = (result or {}).get("summary") or {}
                         lines.append(
-                            f"- {item.get('fakulte')} | yil={item.get('year')} -> {item.get('error')}"
+                            f"{department_name} / {term}: karar #{(result or {}).get('decision_run_id')} | "
+                            f"ders={summary.get('course_count', 0)} | "
+                            f"PROMETHEE öneri={((summary.get('candidate_recommendations') or {}).get('selected_count', 0))}"
                         )
-
-                if not processed and not skipped and not errors:
-                    lines.append("Calistirilacak uygun fakulte bulunamadi.")
-
-                # Bahar bolumu (spec madde 3: bahar tarafi acikca raporlanmali)
-                lines.append("")
-                lines.append("=" * 60)
-                lines.append("BAHAR DETAYI")
-                lines.append("=" * 60)
-                if bahar_processed:
-                    lines.append("Bahar islenen fakulteler:")
-                    for item in bahar_processed:
-                        lines.append(f"- {item.get('message', '')}")
-                if bahar_skipped:
-                    lines.append("Bahar atlanan fakulteler (bu beklenen olabilir):")
-                    for item in bahar_skipped:
-                        lines.append(f"- {item.get('reason')}")
-                if bahar_errors:
-                    lines.append("Bahar hatalari:")
-                    for item in bahar_errors:
-                        lines.append(
-                            f"- {item.get('fakulte')} | yil={item.get('year')} -> {item.get('error')}"
-                        )
-                if not bahar_processed and not bahar_skipped and not bahar_errors:
-                    lines.append("Bahar icin uygun fakulte bulunamadi.")
-
                 sonuc_metni = "\n".join(lines)
-                # Genel basari: en az bir donem uretildi VE batch hatasiz
-                basarili_mi = (guz_ok or bahar_ok) and not batch_failures
-
-                try:
-                    self._refresh_algo_faculty_options()
-                    self._refresh_algo_year_options()
-                    self._sync_algo_controls()
-                except Exception:
-                    pass
-                try:
-                    self.page_pool.refresh(select_latest_year=True)
-                except Exception:
-                    pass
-                try:
-                    self.page_lab.refresh()
-                except Exception:
-                    pass
+                basarili_mi = any(result and result.get("ok") for _, _, result, _ in results)
+                if basarili_mi:
+                    try:
+                        self.app._nb_karar.select(self.app.tab_decision_center)
+                        self.app.tab_decision_center.refresh()
+                    except Exception:
+                        pass
                 try:
                     self.app.refresh_all()
                 except Exception:
@@ -1153,7 +1103,7 @@ class CalcTab(ttk.Frame):
                 widgets["status"].config(text="Tamamlandi", fg="#86efac")
                 self._btn_next_year.config(
                     state="normal", bg="#16a34a",
-                    text="Sonraki Yil Mufredat Uret",
+                    text="Sonraki Yıl Kararını Hesapla",
                 )
             else:
                 widgets["status"].config(text="Hata!", fg="#fca5a5")

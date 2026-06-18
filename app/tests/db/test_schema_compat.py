@@ -92,6 +92,13 @@ class TestSchemaCompat:
         cur.execute("PRAGMA table_info(course_decisions)")
         columns = {row[1] for row in cur.fetchall()}
         assert "acilabilirlik_score" in columns
+        assert {
+            "dt_prediction_status",
+            "dt_confidence",
+            "dt_comparison",
+            "dt_rule_path",
+            "dt_details_json",
+        }.issubset(columns)
 
     def test_course_decisions_acilabilirlik_score_added_to_legacy_table(self):
         from app.db.schema_compat import ensure_decision_governance_schema
@@ -109,6 +116,7 @@ class TestSchemaCompat:
         cur.execute("PRAGMA table_info(course_decisions)")
         columns = {row[1] for row in cur.fetchall()}
         assert "acilabilirlik_score" in columns
+        assert "dt_details_json" in columns
 
     def test_ensure_decision_governance_schema_enforces_single_active_policy_per_scope(self):
         from app.db.schema_compat import ensure_decision_governance_schema

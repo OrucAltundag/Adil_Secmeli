@@ -46,6 +46,7 @@ from app.services.survey_import_service import import_survey_excel as run_survey
 from app.services.survey_import_service import (
     write_survey_template_excel,
 )
+from app.services.system_reset_service import preview_reset, reset_system
 from app.services.system_service import SystemService
 
 
@@ -217,6 +218,7 @@ class ToolsTab(ttk.Frame):
         ttk.Button(top, text="Rapor Getir", command=self.load_report).pack(side=tk.LEFT, padx=4)
         ttk.Button(top, text="Statu/Yil Esitle", command=self.sync_status_year).pack(side=tk.LEFT, padx=4)
         ttk.Button(top, text="DB Yedekle", command=self.backup_db).pack(side=tk.LEFT, padx=4)
+        ttk.Button(top, text="⚠ Sistemi Sıfırla", command=self.reset_system_action).pack(side=tk.RIGHT, padx=4)
 
         # ---------- Zone A: Import ----------
         # Yıl kısıtlaması kaldırıldı - yükleme seçili yıl için yapılır
@@ -509,8 +511,9 @@ class ToolsTab(ttk.Frame):
             )
             years = [str(int(r[0])) for r in (rows or []) if r and r[0] is not None]
             if not years:
-                # Ilk mufredat yuklemesi: henuz kayit yok; tek onerilen yil (sabit aralik degil)
-                years = [str(datetime.datetime.now().year)]
+                # Veri yoksa filtreye hayali bir yil ekleme. Ilk import icin alan
+                # yazilabilir oldugundan kullanici hedef yili kendisi girebilir.
+                years = []
             years = self._merge_year_values(years, current_year)
             self.cb_yil["values"] = years
             if current_year is not None:
@@ -1088,6 +1091,90 @@ class ToolsTab(ttk.Frame):
         except Exception as exc:
             self.log(f"DB yedekleme hatasi: {exc}")
             messagebox.showerror("Hata", self._format_operation_error(exc))
+
+    def reset_system_action(self):
+        """Sistemi sıfırla: operasyonel/üretilmiş veriyi siler; master/ham/config korunur.
+
+        Müfredat yükleyerek baştan başlamak için. Çift onay (uyarı + 'SIFIRLA' yazımı)
+        ve DB yedek önerisi ile korunur; yazma, UI bağlantısı bırakılarak yapılır.
+        """
+        from tkinter import simpledialog
+
+        from app.db.session import open_sqlite_connection
+
+        if not self.db_path or not os.path.exists(self.db_path):
+            messagebox.showwarning("Sistemi Sıfırla", "Veritabanı bulunamadı.")
+            return
+
+        def _preview():
+            conn = open_sqlite_connection(os.path.abspath(self.db_path), row_factory=False)
+            try:
+                return preview_reset(conn)
+            finally:
+                conn.close()
+
+        try:
+            preview = self._run_external_db_operation(_preview)
+        except Exception as exc:
+            messagebox.showerror("Sistemi Sıfırla", self._format_operation_error(exc))
+            return
+
+        total = int(preview.get("total_rows", 0))
+        tcount = int(preview.get("table_count", 0))
+        if total == 0:
+            messagebox.showinfo("Sistemi Sıfırla", "Silinecek operasyonel veri yok (sistem zaten boş).")
+            return
+
+        if not messagebox.askyesno(
+            "Sistemi Sıfırla — DİKKAT",
+            f"Bu işlem {tcount} tablodan toplam {total} kaydı KALICI olarak siler:\n"
+            "  • Müfredat, kriter, performans, popülerlik, havuz, skor\n"
+            "  • Karar çalışmaları, dönem planları, üretim/import geçmişi\n"
+            "  • 'Kriter girildi' durum işaretleri\n\n"
+            "KORUNUR: fakülte/bölüm/ders kataloğu ve öğrenci/anket ham verisi.\n"
+            "AHP ve karar politikaları varsayılana döner.\n\n"
+            "Önce 'DB Yedekle' yapmanız önerilir.\n\nDevam edilsin mi?",
+            icon="warning",
+        ):
+            return
+
+        typed = simpledialog.askstring(
+            "Son Onay", "Sıfırlamayı onaylamak için SIFIRLA yazın:", parent=self
+        )
+        if (typed or "").strip().upper() != "SIFIRLA":
+            messagebox.showinfo("Sistemi Sıfırla", "İşlem iptal edildi.")
+            return
+
+        def _reset():
+            conn = open_sqlite_connection(os.path.abspath(self.db_path), row_factory=False)
+            try:
+                res = reset_system(conn, user="desktop-ui")
+                from app.services.ahp_profile_service import seed_default_profile
+                from app.services.criteria_completion_policy_service import create_default_policy as create_criteria_policy
+                from app.services.decision_policy_service import ensure_default_decision_policy
+                from app.services.pool_state_policy_service import create_default_policy as create_pool_policy
+                from app.services.semester_planning_policy_service import seed_default_policy as seed_planning_policy
+
+                seed_default_profile(conn)
+                ensure_default_decision_policy(conn)
+                create_criteria_policy(conn)
+                create_pool_policy(conn)
+                seed_planning_policy(conn)
+                conn.commit()
+                return res
+            finally:
+                conn.close()
+
+        try:
+            result = self._run_external_db_operation(_reset)
+        except Exception as exc:
+            self.log(f"Sıfırlama hatası: {exc}")
+            messagebox.showerror("Sistemi Sıfırla", self._format_operation_error(exc))
+            return
+
+        self.log(result.get("message") or "Sıfırlama tamamlandı.")
+        messagebox.showinfo("Sistemi Sıfırla", result.get("message") or "Sıfırlama tamamlandı.")
+        self.refresh()
 
     # ---------------------------------------------------------
     # Zone C - Export

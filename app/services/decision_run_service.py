@@ -55,8 +55,14 @@ from app.services.data_quality_integration_service import (
     generate_coverage_report_cursor,
     save_data_coverage_report,
 )
+from app.services.candidate_recommendation_service import generate_candidate_recommendations
 from app.services.db import get_raw_connection
 from app.services.decision_policy_service import classify_score, resolve_decision_policy
+from app.services.electre_tri_b_service import assign_course_electre_tri_b
+from app.services.electre_dt_validation_service import (
+    evaluate_course_with_dt,
+    prepare_dt_validation_context,
+)
 from app.services.explanation_engine import (
     build_decision_explanation,
     save_decision_explanation,
@@ -80,11 +86,12 @@ from app.services.topsis_explainability_service import (
     save_score_breakdown,
 )
 from app.services.trend_analysis_service import (
+    analyze_course_finalized_score_trend,
     analyze_course_trend,
     save_trend_analysis,
 )
 
-ALGORITHM_VERSION = "ahp-topsis-trend-governance-v1"
+ALGORITHM_VERSION = "ahp-topsis-electre-tri-b-dt-v3"
 
 # Statu siddet hiyerarsisi — `max()` yerine acik, surdurulebilir bir siralama.
 # Yumusatma kurali: "asagiya inebilir, fakat asla limit_status'tan agir olamaz".
@@ -569,8 +576,18 @@ def record_decision_run_for_faculty_year(
         skor_map[course_id_int] = value
 
     metric_map = {int(k): dict(v) for k, v in dict(score_pack.get("metric_map", {})).items()}
-    course_ids = sorted(metric_map.keys())
-    meta_map = _course_meta(cur, course_ids)
+    score_methods = {int(k): str(v) for k, v in dict(score_pack.get("score_methods", {})).items()}
+    # Ders Kararlari yalniz secili kapsamin mevcut mufredat derslerini icerir.
+    # Mufredat disi adaylar ayri PROMETHEE II Top-7 akisinda ele alinir.
+    curriculum_ids = [course_id for course_id in metric_map if score_methods.get(course_id) == "topsis"]
+    meta_map = _course_meta(cur, curriculum_ids)
+    course_ids = sorted(
+        course_id
+        for course_id in curriculum_ids
+        if department_id is None or meta_map.get(course_id, {}).get("department_id") == department_id
+    )
+    skor_map = {course_id: score for course_id, score in skor_map.items() if course_id in course_ids}
+    metric_map = {course_id: metric_map[course_id] for course_id in course_ids}
 
     # Policy snapshot: yeni kolon eklemek mevcut DB'leri kirar; bunun yerine
     # input_hash'e ve summary_json'a politikanin tam halini gomeruz. Boylece
@@ -592,6 +609,13 @@ def record_decision_run_for_faculty_year(
         "low_data_confidence_threshold": policy.get("low_data_confidence_threshold"),
         "sensitivity_margin": policy.get("sensitivity_margin"),
         "new_course_grace_period_years": policy.get("new_course_grace_period_years"),
+        "classification_method": policy.get("classification_method", "electre_tri_b"),
+        "electre_lambda": policy.get("electre_lambda", 0.65),
+        "electre_assignment_rule": policy.get("electre_assignment_rule", "pessimistic"),
+        "electre_q": policy.get("electre_q") or {},
+        "electre_p": policy.get("electre_p") or {},
+        "electre_veto": policy.get("electre_veto") or {},
+        "electre_profiles": policy.get("electre_profiles") or [],
     }
     input_hash = _hash_payload(
         {
@@ -644,6 +668,17 @@ def record_decision_run_for_faculty_year(
             course_rows.append(row)
         breakdowns = calculate_topsis_breakdowns(course_rows, weights=weights, criteria_keys=criteria_keys)
 
+        # ELECTRE'den bagimsiz DT ikinci gorusu bir kez hazirlanir ve tum derslere
+        # uygulanir. Model sadece hedef yildan ONCEKI tamamlanmis final kararlarini
+        # kullanir; mevcut run veya ayni yil verisi egitime sizamaz.
+        dt_context = prepare_dt_validation_context(
+            conn,
+            target_year=int(year),
+            faculty_id=faculty_id,
+            department_id=department_id,
+            semester=semester,
+        )
+
         # Veri kapsama raporu — coverage_report sadece ozet amacli, blokleyici degil.
         coverage_report = generate_coverage_report_cursor(
             cur=cur,
@@ -659,6 +694,12 @@ def record_decision_run_for_faculty_year(
         low_confidence_count = 0
         sensitive_count = 0
         status_counts: dict[str, int] = {}
+        dt_comparison_counts: dict[str, int] = {
+            "agree": 0,
+            "dt_more_positive": 0,
+            "dt_more_cautious": 0,
+            "unavailable": 0,
+        }
 
         for course_id in course_ids:
             meta = meta_map.get(course_id, {})
@@ -670,12 +711,19 @@ def record_decision_run_for_faculty_year(
                 skipped_no_score.append(course_id)
                 continue
             score = skor_map[course_id]
-            classification = classify_score(score, policy)
+            if str(policy.get("classification_method") or "electre_tri_b") == "electre_tri_b":
+                classification = assign_course_electre_tri_b(
+                    metric_map.get(course_id, {}),
+                    weights,
+                    policy,
+                )
+            else:
+                classification = classify_score(score, policy)
             old_status = _old_status(cur, course_id, int(year), faculty_id, semester)
             governance = _fetch_governance_flags(cur, course_id)
             first_seen = _first_seen_year(cur, course_id)
             confidence = calculate_course_data_confidence(cur, course_id, int(year), semester, policy=policy)
-            trend = analyze_course_trend(cur, course_id, int(year))
+            trend = analyze_course_finalized_score_trend(cur, course_id, int(year))
             breakdown = breakdowns.get(course_id, {})
             if breakdown:
                 breakdown["final_score"] = score
@@ -685,6 +733,16 @@ def record_decision_run_for_faculty_year(
                 weights=dict(breakdown.get("weights") or weights),
                 raw_values=dict(breakdown.get("raw_values") or metric_map.get(course_id, {})),
             )
+            dt_validation = evaluate_course_with_dt(
+                dt_context,
+                raw_values=dict(breakdown.get("raw_values") or metric_map.get(course_id, {})),
+                topsis_score=score,
+                data_confidence=float(confidence.get("score") or 0.0),
+                old_status=old_status,
+                electre_status=int(classification["recommended_status"]),
+            )
+            dt_comparison = str(dt_validation.get("comparison") or "unavailable")
+            dt_comparison_counts[dt_comparison] = dt_comparison_counts.get(dt_comparison, 0) + 1
             governance_result = _apply_governance(
                 recommended_status=int(classification["recommended_status"]),
                 old_status=old_status,
@@ -725,6 +783,12 @@ def record_decision_run_for_faculty_year(
                 "approval_reason": governance_result["approval_reason"],
                 "main_reason": classification["reason"],
                 "rule_triggered": classification["rule_triggered"],
+                "classification_method": classification.get("classification_method", "static_threshold"),
+                "electre_category": classification.get("category"),
+                "electre_credibility": classification.get("credibility"),
+                "dt_prediction_status": dt_validation.get("predicted_status"),
+                "dt_confidence": dt_validation.get("confidence"),
+                "dt_comparison": dt_comparison,
             }
             explanation = build_decision_explanation(
                 course_code=meta.get("code"),
@@ -745,8 +809,11 @@ def record_decision_run_for_faculty_year(
                     decision_stability,
                     approval_required, approval_status, approval_reason,
                     override_applied, override_reason, main_reason, rule_triggered
+                    , classification_method, electre_category, electre_credibility,
+                    electre_details_json, dt_prediction_status, dt_confidence,
+                    dt_comparison, dt_rule_path, dt_details_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(run_id),
@@ -771,6 +838,15 @@ def record_decision_run_for_faculty_year(
                     governance_result["approval_reason"],
                     str(main_reason),
                     str(classification["rule_triggered"]),
+                    str(classification.get("classification_method") or "static_threshold"),
+                    classification.get("category"),
+                    classification.get("credibility"),
+                    _json_dump(classification) if classification.get("classification_method") == "electre_tri_b" else None,
+                    dt_validation.get("predicted_status"),
+                    dt_validation.get("confidence"),
+                    dt_comparison,
+                    str(dt_validation.get("rule_path") or ""),
+                    _json_dump(dt_validation),
                 ),
             )
             decision_id = int(cur.lastrowid or 0)
@@ -795,6 +871,20 @@ def record_decision_run_for_faculty_year(
             status_key = str(governance_result["final_status"])
             status_counts[status_key] = status_counts.get(status_key, 0) + 1
 
+        try:
+            candidate_summary = generate_candidate_recommendations(
+                conn,
+                year=int(year),
+                faculty_id=faculty_id,
+                department_id=department_id,
+                semester=_normalize_semester(semester),
+                decision_run_id=int(run_id),
+                top_n=7,
+            )
+        except (sqlite3.OperationalError, ValueError) as candidate_exc:
+            logger.warning("PROMETHEE II aday ders onerileri uretilemedi: %s", candidate_exc)
+            candidate_summary = {"candidate_count": 0, "selected_count": 0, "error": str(candidate_exc)}
+
         fairness = generate_fairness_report(cur, run_id, int(year), faculty_id, department_id)
         save_fairness_report(cur, run_id, faculty_id, department_id, int(year), fairness)
         summary = {
@@ -810,6 +900,18 @@ def record_decision_run_for_faculty_year(
             # Audit/aciklanabilirlik icin policy ve readiness snapshot'i.
             "policy_snapshot": policy_snapshot,
             "readiness_snapshot": readiness_result,
+            "classification_method": policy.get("classification_method", "electre_tri_b"),
+            "electre_lambda": policy.get("electre_lambda", 0.65),
+            "dt_validation": {
+                **dt_context.summary(),
+                "comparison_counts": dt_comparison_counts,
+            },
+            "candidate_recommendations": {
+                "candidate_count": candidate_summary.get("candidate_count", 0),
+                "selected_count": candidate_summary.get("selected_count", 0),
+                "weight_source": candidate_summary.get("weight_source"),
+                "error": candidate_summary.get("error"),
+            },
         }
         mark_decision_run_completed(cur, run_id, summary)
 

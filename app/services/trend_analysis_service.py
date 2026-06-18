@@ -255,6 +255,101 @@ def analyze_course_trend(
     return analyze_trend_values(values, target_year=int(year), first_seen_year=first_seen)
 
 
+def fetch_finalized_score_values(
+    cur: sqlite3.Cursor,
+    course_id: int,
+    source_year: int,
+) -> tuple[dict[int, float], str]:
+    """Kaynak yildan ONCE kesinlesmis TOPSIS puanlarini 0-1 araliginda okur.
+
+    Kaynak yil skoru ayni calistirmada yeni uretildigi icin trend girdisine
+    alinmaz. Ornegin 2023 verisiyle 2024 karari uretilirken 2022 puani
+    kullanilabilir; 2022 verisiyle 2023 karari uretilirken gecmis yoktur.
+    """
+    values: dict[int, float] = {}
+    try:
+        cur.execute(
+            """
+            SELECT akademik_yil, skor_top
+            FROM skor
+            WHERE ders_id = ? AND akademik_yil < ? AND skor_top IS NOT NULL
+            ORDER BY akademik_yil
+            """,
+            (int(course_id), int(source_year)),
+        )
+        for year, score in cur.fetchall():
+            numeric = _safe_float(score)
+            values[int(year)] = max(0.0, min(1.0, numeric / 100.0 if numeric > 1.0 else numeric))
+        if values:
+            return values, "skor.skor_top"
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute(
+            """
+            SELECT yil, MAX(skor)
+            FROM havuz
+            WHERE CAST(ders_id AS INTEGER) = ? AND yil < ? AND skor IS NOT NULL
+            GROUP BY yil
+            ORDER BY yil
+            """,
+            (int(course_id), int(source_year)),
+        )
+        for year, score in cur.fetchall():
+            numeric = _safe_float(score)
+            values[int(year)] = max(0.0, min(1.0, numeric / 100.0 if numeric > 1.0 else numeric))
+        if values:
+            return values, "havuz.skor"
+    except sqlite3.OperationalError:
+        pass
+    return {}, "yok"
+
+
+def analyze_course_finalized_score_trend(
+    cur: sqlite3.Cursor,
+    course_id: int,
+    source_year: int,
+) -> dict[str, Any]:
+    """Yalniz onceki yillarin kesinlesme puanlariyla trend girdisi uretir."""
+    values, source = fetch_finalized_score_values(cur, course_id, source_year)
+    if not values:
+        # Eski snapshot/test semalarinda skor ve havuz tablolari hic yoksa,
+        # migration uyumlulugu icin tarihsel basari serisine geri dusulur.
+        # Uretim semasinda bu tablolar vardir ve kaynak yil puani kullanilmaz.
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('skor','havuz')")
+        has_final_score_storage = bool(cur.fetchall())
+        if has_final_score_storage:
+            result = analyze_trend_values({}, target_year=source_year)
+        else:
+            legacy_values, legacy_source = fetch_course_values_by_year(cur, course_id, source_year)
+            result = analyze_trend_values(
+                legacy_values,
+                target_year=source_year,
+                first_seen_year=min(legacy_values) if legacy_values else None,
+            )
+            source = "legacy:" + legacy_source
+    elif len(values) == 1:
+        only_year, only_score = next(iter(sorted(values.items())))
+        result = {
+            "values_by_year": values,
+            "trend_score": float(only_score),
+            "trend_label": "single_finalized_score",
+            "volatility_score": 0.0,
+            "data_points_count": 1,
+            "neutral_trend": False,
+            "explanation": (
+                f"Trend girdisi, kaynak yildan once kesinlesmis tek TOPSIS puanina "
+                f"dayanir ({only_year}: {only_score * 100.0:.2f})."
+            ),
+        }
+    else:
+        result = analyze_trend_values(values, target_year=source_year, first_seen_year=min(values))
+    result["data_source"] = source
+    result["excludes_source_year"] = True
+    return result
+
+
 def course_trend_breakdown(
     cur: sqlite3.Cursor,
     course_id: int,

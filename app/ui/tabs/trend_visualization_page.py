@@ -12,6 +12,10 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from app.services.lr_trend_prediction_service import (
+    DEFAULT_MISSING_SCORE,
+    predict_next_year_trend,
+)
 from app.services.trend_analysis_service import (
     TREND_DEFAULT_WEIGHTS,
     course_trend_breakdown,
@@ -204,11 +208,14 @@ class TrendVisualizationPage(ttk.Frame):
         try:
             cur = self.db.conn.cursor()
             breakdown = course_trend_breakdown(cur, int(ders_id), int(year))
+            # LR ile bir sonraki yıl tahmini (seçili yıl referans → tahmin yılı = yıl+1)
+            lr = predict_next_year_trend(cur, int(ders_id), int(year) + 1)
         except Exception as exc:  # noqa: BLE001
             self._set_text(f"Trend hesaplanamadı: {exc}")
             return
         breakdown["_ders_ad"] = ders_ad
         breakdown["_year"] = year
+        breakdown["_lr"] = lr  # grafiğe + metne taşı
         self._last_breakdown = breakdown
         self._redraw()
         self._render_text(breakdown)
@@ -304,6 +311,34 @@ class TrendVisualizationPage(ttk.Frame):
             text=f"Ağırlıklı Trend = {score01:.3f}", font=("Segoe UI", 9, "bold"), fill=label_color,
         )
 
+        # LR ile bir sonraki yıl tahmini (mor "Tahmin" çubuğu, kesik kenarlı).
+        # Geçmiş gerçek değerlerden ayırt edilebilir biçimde gösterilir.
+        lr = b.get("_lr")
+        if lr:
+            pred100 = float(lr.get("predicted_score_100") or 0.0)
+            pred_year = int(lr.get("target_year") or 0)
+            pred01 = max(0.0, min(1.0, pred100 / 100.0))
+            # Tahmin çubuğunu mevcut son sütunun sağına ekle.
+            cx = margin_l + slot * (n + 0.5)
+            if cx + bar_w / 2 > w - margin_r:
+                cx = w - margin_r - bar_w / 2
+            bar_h = max(2, pred01 * plot_h)
+            x0, x1 = cx - bar_w / 2, cx + bar_w / 2
+            y0 = bottom_y - bar_h
+            # LR tahmini: mor doluluk + kesik çerçeve (gerçek değerden ayırt edilsin).
+            c.create_rectangle(x0, y0, x1, bottom_y, fill="#a78bfa", outline="#5b21b6", width=2, dash=(4, 2))
+            c.create_text(cx, y0 - 10, text=f"{pred01:.2f}", font=("Segoe UI", 9, "bold"), fill="#5b21b6")
+            c.create_text(cx, bottom_y + 14, text=f"{pred_year}", font=("Segoe UI", 9, "bold"), fill="#5b21b6")
+            c.create_text(
+                cx, bottom_y + 30,
+                text=f"LR tahmin", font=("Segoe UI", 8, "italic"), fill="#5b21b6",
+            )
+            c.create_text(
+                cx, bottom_y + 44,
+                text=f"{pred100:.1f}/100  ({lr.get('direction_label_tr', '')})",
+                font=("Segoe UI", 8), fill="#5b21b6",
+            )
+
         # Senaryoya özgü not
         notes = {
             "single": "Tek yıl verisi: ağırlıklandırma yapılamaz, skor = mevcut yıl değeri. Karar temkinli yorumlanmalı.",
@@ -367,6 +402,36 @@ class TrendVisualizationPage(ttk.Frame):
         lines.append("")
         lines.append("Açıklama:")
         lines.append(str(b.get("explanation", "")))
+
+        # LR ile bir sonraki yıl tahmini (LR_Trend_Skor_Tahmini_Raporu.docx)
+        lr = b.get("_lr") or {}
+        if lr:
+            lines.append("")
+            lines.append("LR İLE SONRAKİ YIL TAHMİNİ")
+            lines.append("=" * 34)
+            lines.append(f"Tahmin yılı : {lr.get('target_year')}")
+            hist_disp = []
+            for y in lr.get("history", []):
+                mark = "*" if y.get("is_default") else " "
+                hist_disp.append(f"{y['year']}={float(y['score']):.1f}{mark}")
+            lines.append(f"Geçmiş (3 yıl): {'  '.join(hist_disp)}   (* = varsayılan 50)")
+            lines.append(
+                f"Model       : y = β0 + β1·x   →   β0 = {lr.get('intercept'):.2f}, "
+                f"β1 = {lr.get('slope'):+.3f} puan/yıl"
+            )
+            pred = float(lr.get('predicted_score_100') or 0.0)
+            raw = float(lr.get('raw_prediction') or 0.0)
+            line_pred = f"Tahmin      : {pred:.2f} / 100  ({float(lr.get('trend_score_normalized') or 0):.3f} normalize)"
+            if lr.get("model_clamped"):
+                line_pred += f"   (ham: {raw:.2f} → 0..100'e kırpıldı)"
+            lines.append(line_pred)
+            lines.append(
+                f"Yön / Güven : {lr.get('direction_label_tr')}  |  "
+                f"güven={lr.get('confidence')}  |  varsayılana düşen yıl={lr.get('missing_year_count')}"
+            )
+            lines.append("")
+            lines.append("Not:")
+            lines.append(str(lr.get("explanation", "")))
 
         self._set_text("\n".join(lines))
 
