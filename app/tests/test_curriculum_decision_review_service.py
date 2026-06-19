@@ -93,3 +93,21 @@ def test_rejection_keeps_target_curriculum_empty():
     rejected = reject_curriculum_review(conn, review["id"], reviewed_by="kurul", review_note="uygun değil")
     assert rejected["status"] == "rejected"
     assert conn.execute("SELECT COUNT(*) FROM mufredat WHERE akademik_yil=2023").fetchone()[0] == 0
+
+
+def test_pending_review_blocks_duplicate_approval_queue_for_same_scope():
+    conn = _db()
+    first = build_curriculum_review(conn, 2022, 1, 10)
+    conn.execute("INSERT INTO decision_runs VALUES (102, 2022, 1, NULL, 'Guz', 'completed')")
+    conn.execute("INSERT INTO course_decisions VALUES (4, 102, 1, 10, 1, 88, 'yeni run')")
+    conn.execute("INSERT INTO candidate_course_recommendations VALUES (3, 102, 5, 1, 0.90, 'yeni aday')")
+
+    second = build_curriculum_review(conn, 2022, 1, 10)
+
+    assert second["id"] == first["id"]
+    assert conn.execute(
+        """
+        SELECT COUNT(*) FROM curriculum_decision_reviews
+        WHERE source_year=2022 AND faculty_id=1 AND department_id=10 AND status='pending'
+        """
+    ).fetchone()[0] == 1

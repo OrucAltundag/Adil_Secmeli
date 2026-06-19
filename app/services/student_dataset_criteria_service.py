@@ -22,6 +22,9 @@ from typing import Any
 
 import openpyxl
 
+from app.db.schema_compat import ensure_criteria_import_schema
+from app.services.popularity_service import calculate_popularity_score
+
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 YIL = 2022
 VARSAYILAN_EXCEL = DATA_DIR / f"{YIL}_ogrenci_not_veri_seti.xlsx"
@@ -62,6 +65,76 @@ def _read_ders_analizi(excel_path: str | Path) -> list[dict[str, Any]]:
             "agir": float(r[j["ort_agirlikli"]] or 0),  # type: ignore[arg-type]
             "katilim": float(r[j["ort_katilim_yuzde"]] or 0),  # type: ignore[arg-type]
         })
+
+    # Dört katılım alanı Ana Veri'de öğrenci bazındadır. Kriter dosyası ders
+    # bazında tek satır tuttuğu için ortalama katılım sayısı/yüzdesi, toplam
+    # hafta ve devamsız öğrenci sayısı olarak güvenli biçimde özetlenir.
+    attendance_by_course: dict[tuple[str, str], dict[str, float]] = {}
+    if "Ana Veri" in wb.sheetnames:
+        raw_ws = wb["Ana Veri"]
+        raw_it = raw_ws.iter_rows(min_row=1, values_only=True)
+        raw_header = [str(value or "").strip() for value in next(raw_it)]
+        raw_index = {name: idx for idx, name in enumerate(raw_header)}
+        attendance_fields = {
+            "ders_kodu",
+            "donem",
+            "katilim_sayisi",
+            "toplam_hafta",
+            "katilim_yuzdesi",
+            "devamsiz_mi",
+        }
+        if attendance_fields.issubset(raw_index):
+            for raw_row in raw_it:
+                code = str(raw_row[raw_index["ders_kodu"]] or "").strip()
+                term = str(raw_row[raw_index["donem"]] or "").strip().lower()[:1]
+                if not code:
+                    continue
+                key = (code, term)
+                aggregate = attendance_by_course.setdefault(
+                    key,
+                    {
+                        "count": 0.0,
+                        "attendance_sum": 0.0,
+                        "percentage_sum": 0.0,
+                        "total_weeks": 0.0,
+                        "absent_count": 0.0,
+                    },
+                )
+                try:
+                    attendance_count = float(raw_row[raw_index["katilim_sayisi"]] or 0)
+                except (TypeError, ValueError):
+                    attendance_count = 0.0
+                try:
+                    attendance_percentage = float(raw_row[raw_index["katilim_yuzdesi"]] or 0)
+                except (TypeError, ValueError):
+                    attendance_percentage = 0.0
+                try:
+                    total_weeks = float(raw_row[raw_index["toplam_hafta"]] or 0)
+                except (TypeError, ValueError):
+                    total_weeks = 0.0
+                absent_text = str(raw_row[raw_index["devamsiz_mi"]] or "").strip().lower()
+                aggregate["count"] += 1.0
+                aggregate["attendance_sum"] += attendance_count
+                aggregate["percentage_sum"] += attendance_percentage
+                aggregate["total_weeks"] = max(aggregate["total_weeks"], total_weeks)
+                if absent_text.startswith(("e", "y", "t")):
+                    aggregate["absent_count"] += 1.0
+
+    for record in kayitlar:
+        key = (str(record["kod"]), str(record["donem"] or "").strip().lower()[:1])
+        aggregate = attendance_by_course.get(key)
+        if aggregate and aggregate["count"] > 0:
+            count = aggregate["count"]
+            record["katilim_sayisi"] = round(aggregate["attendance_sum"] / count, 2)
+            record["toplam_hafta"] = int(aggregate["total_weeks"])
+            record["katilim_yuzdesi"] = round(aggregate["percentage_sum"] / count, 2)
+            record["devamsiz_ogrenci_sayisi"] = int(aggregate["absent_count"])
+        else:
+            # Eski dosyalarda Ana Veri yoksa Ders Analizi yüzdesini koru.
+            record["katilim_sayisi"] = None
+            record["toplam_hafta"] = None
+            record["katilim_yuzdesi"] = round(float(record["katilim"]), 2)
+            record["devamsiz_ogrenci_sayisi"] = None
     wb.close()
     return kayitlar
 
@@ -93,6 +166,10 @@ def build_student_criteria_dataset(
             "basari_ortalamasi": round(s["agir"], 2),
             "kontenjan": KONTENJAN,
             "kayitli_ogrenci": toplam,
+            "katilim_sayisi": s.get("katilim_sayisi"),
+            "toplam_hafta": s.get("toplam_hafta"),
+            "katilim_yuzdesi": s.get("katilim_yuzdesi"),
+            "devamsiz_ogrenci_sayisi": s.get("devamsiz_ogrenci_sayisi"),
         })
     return rows
 
@@ -124,41 +201,14 @@ def auto_generate_criteria_from_student_dataset(
     if not yol.exists():
         raise FileNotFoundError(f"Ogrenci veri seti bulunamadi: {yol}")
 
-    wb = openpyxl.load_workbook(str(yol), read_only=True)
-    if "Ders Analizi" not in wb.sheetnames:
-        wb.close()
-        raise ValueError(
-            "Excel dosyasinda 'Ders Analizi' sekmesi yok."
-        )
-    ws = wb["Ders Analizi"]
-    it = ws.iter_rows(min_row=1, values_only=True)
-    hdr = list(next(it))
-    j = {k: i for i, k in enumerate(hdr)}
-    gerekli = {"ders_kodu", "donem", "kayit_sayisi", "gecme_orani_%",
-               "ort_agirlikli", "ort_katilim_yuzde"}
-    # openpyxl cell value tipi cok genis (Decimal, datetime, formula vb.);
-    # set diff'i str-onlu yapacak şekilde normalize edelim.
-    hdr_str = {str(h) for h in hdr}
-    if not gerekli.issubset(hdr_str):
-        wb.close()
-        raise ValueError(
-            "Excel 'Ders Analizi' sekmesinde gerekli sutunlar eksik: "
-            f"{gerekli - hdr_str}"
-        )
+    kayitlar = _read_ders_analizi(yol)
 
-    kayitlar = []
-    for r in it:
-        kayitlar.append({
-            "kod": str(r[j["ders_kodu"]]).strip(),
-            "donem": str(r[j["donem"]]).strip(),
-            "kayit": int(r[j["kayit_sayisi"]] or 0),  # type: ignore[arg-type]
-            "gecme": float(r[j["gecme_orani_%"]] or 0),  # type: ignore[arg-type]
-            "agir": float(r[j["ort_agirlikli"]] or 0),  # type: ignore[arg-type]
-            "katilim": float(r[j["ort_katilim_yuzde"]] or 0),  # type: ignore[arg-type]
-        })
-    wb.close()
-
+    ensure_criteria_import_schema(conn, commit=False)
     cur = conn.cursor()
+    criteria_cols = {
+        str(row[1])
+        for row in cur.execute("PRAGMA table_info(ders_kriterleri)").fetchall()
+    }
     if replace and not dry_run:
         # Manuel kayit ile tutarli: yilin uc tablosunu da temizle.
         cur.execute("DELETE FROM ders_kriterleri WHERE yil = ?", (int(year),))
@@ -183,9 +233,19 @@ def auto_generate_criteria_from_student_dataset(
         donem = s["donem"]
         gecen = round(s["kayit"] * s["gecme"] / 100.0)
         anket_kat = round(s["kayit"] * s["katilim"] / 100.0)
-        # Turetilen olcumler (manuel kayit save_data ile ayni mantik):
+        # Turetilen olcumler: başarı ayrı, popülerlik kapasite + katılım
+        # bileşenlerinden ortak servis ile hesaplanır.
         basari_orani = (gecen / s["kayit"]) if s["kayit"] > 0 else 0.0
-        doluluk_orani = min(s["kayit"] / KONTENJAN, 1.0) if KONTENJAN > 0 else 0.0
+        popularity = calculate_popularity_score(
+            capacity=KONTENJAN,
+            enrolled=s["kayit"],
+            attendance_count=s.get("katilim_sayisi"),
+            total_weeks=s.get("toplam_hafta"),
+            attendance_percentage=s.get("katilim_yuzdesi"),
+            absent_student_count=s.get("devamsiz_ogrenci_sayisi"),
+        )
+        doluluk_orani = float(popularity["occupancy_ratio"] or 0.0)
+        populerlik_puani = float(popularity["popularity_score"] or 0.0)
 
         # Onizleme satiri (UI onay diyalogu icin) — yazma olsun olmasin doldurulur.
         preview_rows.append({
@@ -195,6 +255,8 @@ def auto_generate_criteria_from_student_dataset(
             "basari_orani": round(basari_orani, 3),
             "ortalama_not": round(s["agir"], 2),
             "doluluk_orani": round(doluluk_orani, 3),
+            "katilim_yuzdesi": s.get("katilim_yuzdesi"),
+            "populerlik_orani": round(populerlik_puani, 3),
         })
         eklenen += 1
 
@@ -204,16 +266,32 @@ def auto_generate_criteria_from_student_dataset(
             pop_yazilan += 1
             continue
 
+        kriter_values: list[tuple[str, Any]] = [
+            ("ders_id", did),
+            ("yil", int(year)),
+            ("donem", donem),
+            ("toplam_ogrenci", s["kayit"]),
+            ("gecen_ogrenci", gecen),
+            ("basari_ortalamasi", round(s["agir"], 2)),
+            ("kontenjan", KONTENJAN),
+            ("kayitli_ogrenci", s["kayit"]),
+            ("anket_katilimci", anket_kat),
+            ("katilim_sayisi", s.get("katilim_sayisi")),
+            ("toplam_hafta", s.get("toplam_hafta")),
+            ("katilim_yuzdesi", s.get("katilim_yuzdesi")),
+            ("devamsiz_ogrenci_sayisi", s.get("devamsiz_ogrenci_sayisi")),
+            ("anket_dersi_secen", s["kayit"]),
+            ("anket_veri_kaynagi", "ogrenci_veri_seti"),
+            ("criteria_veri_kaynagi", "ogrenci_veri_seti"),
+            ("criteria_updated_at", now),
+            ("is_active", 1),
+        ]
+        insert_cols = [col for col, _ in kriter_values if col in criteria_cols]
+        insert_vals = [value for col, value in kriter_values if col in criteria_cols]
+        placeholders = ",".join("?" for _ in insert_cols)
         cur.execute(
-            "INSERT INTO ders_kriterleri "
-            "(ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, "
-            "basari_ortalamasi, kontenjan, kayitli_ogrenci, anket_katilimci, "
-            "anket_dersi_secen, anket_veri_kaynagi, criteria_veri_kaynagi, "
-            "criteria_updated_at, is_active) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?, 'ogrenci_veri_seti', "
-            "'ogrenci_veri_seti', ?, 1)",
-            (did, int(year), donem, s["kayit"], gecen,
-             round(s["agir"], 2), KONTENJAN, s["kayit"], anket_kat, s["kayit"], now),
+            f"INSERT INTO ders_kriterleri ({','.join(insert_cols)}) VALUES ({placeholders})",
+            tuple(insert_vals),
         )
 
         # performans — TOPSIS 'basari' kriterinin okudugu tablo
@@ -234,9 +312,19 @@ def auto_generate_criteria_from_student_dataset(
             (did, int(year), donem),
         )
         cur.execute(
-            "INSERT INTO populerlik (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani) "
-            "VALUES (?,?,?,?,?,?)",
-            (did, int(year), donem, s["kayit"], KONTENJAN, doluluk_orani),
+            "INSERT INTO populerlik "
+            "(ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani, ilgi_orani, ham_puan) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                did,
+                int(year),
+                donem,
+                s["kayit"],
+                KONTENJAN,
+                doluluk_orani,
+                popularity.get("attendance_component"),
+                populerlik_puani,
+            ),
         )
         pop_yazilan += 1
 

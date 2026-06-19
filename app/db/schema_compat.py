@@ -458,6 +458,10 @@ def _create_ders_kriterleri_table(cur: sqlite3.Cursor, table_name: str = "ders_k
             basari_ortalamasi REAL DEFAULT 0.0,
             kontenjan INTEGER DEFAULT 0,
             kayitli_ogrenci INTEGER DEFAULT 0,
+            katilim_sayisi REAL,
+            toplam_hafta INTEGER,
+            katilim_yuzdesi REAL,
+            devamsiz_ogrenci_sayisi INTEGER,
             anket_katilimci INTEGER DEFAULT 0,
             anket_dersi_secen INTEGER DEFAULT 0,
             anket_veri_kaynagi TEXT DEFAULT 'manual',
@@ -500,6 +504,10 @@ def _rebuild_ders_kriterleri_table(cur: sqlite3.Cursor) -> None:
             basari_ortalamasi,
             kontenjan,
             kayitli_ogrenci,
+            katilim_sayisi,
+            toplam_hafta,
+            katilim_yuzdesi,
+            devamsiz_ogrenci_sayisi,
             anket_katilimci,
             anket_dersi_secen,
             anket_veri_kaynagi,
@@ -521,6 +529,10 @@ def _rebuild_ders_kriterleri_table(cur: sqlite3.Cursor) -> None:
             {select_expr("basari_ortalamasi", "0.0")},
             {select_expr("kontenjan", "0")},
             {select_expr("kayitli_ogrenci", "0")},
+            {select_expr("katilim_sayisi", "NULL")},
+            {select_expr("toplam_hafta", "NULL")},
+            {select_expr("katilim_yuzdesi", "NULL")},
+            {select_expr("devamsiz_ogrenci_sayisi", "NULL")},
             {select_expr("anket_katilimci", "0")},
             {select_expr("anket_dersi_secen", "0")},
             COALESCE({select_expr("anket_veri_kaynagi", "'manual'")}, 'manual'),
@@ -575,6 +587,10 @@ def ensure_criteria_import_schema(conn: sqlite3.Connection, commit: bool = True)
     if _table_exists(cur, "ders_kriterleri"):
         cols = _column_names(cur, "ders_kriterleri")
         criteria_columns = [
+            ("katilim_sayisi", "REAL"),
+            ("toplam_hafta", "INTEGER"),
+            ("katilim_yuzdesi", "REAL"),
+            ("devamsiz_ogrenci_sayisi", "INTEGER"),
             ("criteria_import_id", "INTEGER"),
             ("criteria_veri_kaynagi", "TEXT DEFAULT 'manual'"),
             ("criteria_manual_override", "INTEGER NOT NULL DEFAULT 0"),
@@ -635,6 +651,10 @@ def ensure_criteria_import_schema(conn: sqlite3.Connection, commit: bool = True)
                 basari_ortalamasi REAL NOT NULL DEFAULT 0.0,
                 kontenjan INTEGER NOT NULL DEFAULT 0,
                 kayitli_ogrenci INTEGER NOT NULL DEFAULT 0,
+                katilim_sayisi REAL,
+                toplam_hafta INTEGER,
+                katilim_yuzdesi REAL,
+                devamsiz_ogrenci_sayisi INTEGER,
                 matched_ders_id INTEGER,
                 match_method TEXT,
                 row_status TEXT NOT NULL DEFAULT 'matched',
@@ -647,6 +667,30 @@ def ensure_criteria_import_schema(conn: sqlite3.Connection, commit: bool = True)
             """
         )
         changed["tables_created"] += 1
+
+    if _table_exists(cur, "criteria_import_rows"):
+        import_row_cols = _column_names(cur, "criteria_import_rows")
+        for col_name, ddl in (
+            ("katilim_sayisi", "REAL"),
+            ("toplam_hafta", "INTEGER"),
+            ("katilim_yuzdesi", "REAL"),
+            ("devamsiz_ogrenci_sayisi", "INTEGER"),
+        ):
+            if col_name not in import_row_cols:
+                cur.execute(f"ALTER TABLE criteria_import_rows ADD COLUMN {col_name} {ddl}")
+                import_row_cols.add(col_name)
+                changed["columns_added"] += 1
+
+    if _table_exists(cur, "populerlik"):
+        popularity_cols = _column_names(cur, "populerlik")
+        for col_name, ddl in (
+            ("ilgi_orani", "REAL"),
+            ("ham_puan", "REAL"),
+        ):
+            if col_name not in popularity_cols:
+                cur.execute(f"ALTER TABLE populerlik ADD COLUMN {col_name} {ddl}")
+                popularity_cols.add(col_name)
+                changed["columns_added"] += 1
 
     cur.execute(
         """

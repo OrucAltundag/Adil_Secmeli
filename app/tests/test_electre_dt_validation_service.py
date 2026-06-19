@@ -116,9 +116,12 @@ def test_dt_context_rejects_same_year_and_reports_unavailable():
             data_confidence=0.9,
             old_status=0,
             electre_status=1,
+            policy={"curriculum_keep_threshold": 70, "pool_threshold": 50, "rest_threshold": 40},
         )
-        assert result["comparison"] == "unavailable"
-        assert result["predicted_status"] is None
+        assert result["comparison"] == "agree"
+        assert result["predicted_status"] == 1
+        assert result["fallback_advisory"] is True
+        assert float(result["confidence"]) < 0.70
         assert "yetersiz" in result["explanation"].lower()
         assert result["peer_assessment"]["advisory_only"] is True
     finally:

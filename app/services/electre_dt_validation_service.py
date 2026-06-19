@@ -592,6 +592,56 @@ def _comparison(predicted_status: int, electre_status: int) -> tuple[str, str]:
     )
 
 
+def _policy_advisory_prediction(
+    *,
+    topsis_score: Any,
+    old_status: Any,
+    electre_status: int,
+    peer_result: dict[str, Any],
+    policy: dict[str, Any] | None,
+) -> tuple[int, float, str]:
+    """Model yokken politika esikleri + akran baglamiyla dusuk guvenli oneri."""
+
+    source = dict(policy or {})
+    keep = _finite(source.get("curriculum_keep_threshold"), 70.0)
+    pool = _finite(source.get("pool_threshold"), 50.0)
+    rest = _finite(source.get("rest_threshold"), 40.0)
+    score = max(0.0, min(100.0, _finite(topsis_score)))
+    peer_level = str(peer_result.get("level") or "")
+    try:
+        old_status_int = int(old_status)
+    except (TypeError, ValueError):
+        old_status_int = None
+
+    if score >= keep or (peer_level == "strong" and score >= pool):
+        predicted = 1
+    elif score >= pool:
+        predicted = 0
+    elif score >= rest:
+        predicted = -1
+    else:
+        predicted = -2
+
+    if old_status_int == 1 and score >= keep:
+        predicted = 1
+    elif old_status_int == 1 and predicted < 0 and score >= pool:
+        predicted = 0
+    elif peer_level == "weak" and predicted == 1 and score < keep:
+        predicted = 0
+
+    distance = min(abs(score - keep), abs(score - pool), abs(score - rest))
+    confidence = 0.35 + min(0.25, distance / 100.0)
+    if predicted == int(electre_status):
+        confidence += 0.05
+    confidence = max(0.30, min(0.65, confidence))
+    reason = (
+        f"DT modeli eğitilemediği için politika destekli öneri üretildi "
+        f"(TOPSIS {score:.2f}; eşikler {keep:.0f}/{pool:.0f}/{rest:.0f}; "
+        f"akran: {peer_result.get('label')})."
+    )
+    return predicted, confidence, reason
+
+
 def evaluate_course_with_dt(
     context: DTValidationContext,
     *,
@@ -602,6 +652,7 @@ def evaluate_course_with_dt(
     data_confidence: Any,
     old_status: Any,
     electre_status: int,
+    policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Bir ders icin DT ikinci gorusunu ve ELECTRE karsilastirmasini uretir."""
 
@@ -609,18 +660,30 @@ def evaluate_course_with_dt(
     peer_result = peer_assessment(normalized_peer)
 
     if not context.available or context.model is None:
+        prediction, confidence, advisory_reason = _policy_advisory_prediction(
+            topsis_score=topsis_score,
+            old_status=old_status,
+            electre_status=int(electre_status),
+            peer_result=peer_result,
+            policy=policy,
+        )
+        comparison, comparison_text = _comparison(prediction, int(electre_status))
         return {
             "available": False,
-            "predicted_status": None,
-            "predicted_label": "Veri yetersiz",
-            "confidence": None,
-            "comparison": "unavailable",
-            "rule_path": "",
-            "explanation": f"{context.reason} Şeffaf akran kontrolü: {peer_result['label']}.",
+            "predicted_status": prediction,
+            "predicted_label": _status_label(prediction),
+            "confidence": confidence,
+            "comparison": comparison,
+            "rule_path": "DT yok; politika eşikleri + akran özeti",
+            "explanation": (
+                f"{context.reason} {advisory_reason} {comparison_text} "
+                "Bu sonuç düşük güvenli destek sinyalidir; nihai kararı değiştirmez."
+            ),
             "context": context.summary(),
             "lr_trend_forecast": _bounded(lr_trend_forecast),
             "peer_features": normalized_peer,
             "peer_assessment": peer_result,
+            "fallback_advisory": True,
             "advisory_only": True,
             "should_influence_decision": False,
         }

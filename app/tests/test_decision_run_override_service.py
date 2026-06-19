@@ -90,3 +90,12 @@ def test_clicked_run_row_has_priority_over_combobox_run():
     page._run_ids = {"#1 · 2022 Guz": 1}
 
     assert page._selected_run_id() == 2
+
+
+def test_multiple_clicked_run_rows_are_returned_for_bulk_override():
+    page = object.__new__(DecisionCenterPage)
+    page.tree_runs = _SelectionStub(selected=("2", "5", "8"))
+    page.cb_run = _SelectionStub(value="#1 · 2022 Guz")
+    page._run_ids = {"#1 · 2022 Guz": 1}
+
+    assert page._selected_run_ids() == [2, 5, 8]

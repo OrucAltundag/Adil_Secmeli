@@ -48,7 +48,11 @@ def main():
             continue
         did = int(row[0])
         gecen = round(s["kayit"] * s["gecme"] / 100.0)
-        anket_kat = round(s["kayit"] * s["katilim"] / 100.0)
+        katilim_yuzde = round(s.get("katilim", 0.0), 1)
+        katilim_sayisi = round(s["kayit"] * katilim_yuzde / 100.0)
+        # Ders_kriterleri tablo mevcut schema'sı katilim_yuzdesi/katilim_sayisi sütunlarını
+        # içermiyor; anket_katilimci alanına katilim_sayisi yazarak katılım bilgisini koruyalım.
+        anket_kat = katilim_sayisi
         cur.execute(
             "INSERT INTO ders_kriterleri "
             "(ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, "

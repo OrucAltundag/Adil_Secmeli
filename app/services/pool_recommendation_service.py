@@ -21,6 +21,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from app.services.popularity_service import calculate_popularity_score
+
 VARSAYILAN_AGIRLIK = {
     "basari": 0.40, "trend": 0.25, "populerlik": 0.20, "anket": 0.15,
 }
@@ -128,10 +130,18 @@ def _ham_kriterler(row: dict) -> dict[str, float]:
     kont = float(row.get("kontenjan") or 0.0)
     kayit = float(row.get("kayitli_ogrenci") or 0.0)
     anket = float(row.get("anket_katilimci") or 0.0)
+    popularity = calculate_popularity_score(
+        capacity=kont,
+        enrolled=kayit,
+        attendance_count=row.get("katilim_sayisi"),
+        total_weeks=row.get("toplam_hafta"),
+        attendance_percentage=row.get("katilim_yuzdesi"),
+        absent_student_count=row.get("devamsiz_ogrenci_sayisi"),
+    )
     return {
         "basari": basari,
         "trend": (gecen / toplam * 100.0) if toplam > 0 else 0.0,
-        "populerlik": (kayit / kont * 100.0) if kont > 0 else 0.0,
+        "populerlik": float(popularity["popularity_score"] or 0.0) * 100.0,
         "anket": (anket / kayit * 100.0) if kayit > 0 else 0.0,
     }
 
@@ -206,7 +216,9 @@ def recommend_from_pool(
         SELECT d.ders_id, COALESCE(d.kod,'') AS kod, COALESCE(d.ad,'') AS ad,
                h.statu AS statu,
                dk.basari_ortalamasi, dk.toplam_ogrenci, dk.gecen_ogrenci,
-               dk.kontenjan, dk.kayitli_ogrenci, dk.anket_katilimci
+               dk.kontenjan, dk.kayitli_ogrenci, dk.anket_katilimci,
+               dk.katilim_sayisi, dk.toplam_hafta, dk.katilim_yuzdesi,
+               dk.devamsiz_ogrenci_sayisi
         FROM havuz h
         JOIN ders d ON d.ders_id = CAST(h.ders_id AS INTEGER)
         LEFT JOIN ders_kriterleri dk
@@ -214,7 +226,22 @@ def recommend_from_pool(
         WHERE {' AND '.join(kosul)}
         GROUP BY d.ders_id
     """
-    cur.execute(sql, [int(year)] + params)
+    try:
+        cur.execute(sql, [int(year)] + params)
+    except sqlite3.OperationalError:
+        legacy_sql = f"""
+            SELECT d.ders_id, COALESCE(d.kod,'') AS kod, COALESCE(d.ad,'') AS ad,
+                   h.statu AS statu,
+                   dk.basari_ortalamasi, dk.toplam_ogrenci, dk.gecen_ogrenci,
+                   dk.kontenjan, dk.kayitli_ogrenci, dk.anket_katilimci
+            FROM havuz h
+            JOIN ders d ON d.ders_id = CAST(h.ders_id AS INTEGER)
+            LEFT JOIN ders_kriterleri dk
+                   ON dk.ders_id = d.ders_id AND dk.yil = ?
+            WHERE {' AND '.join(kosul)}
+            GROUP BY d.ders_id
+        """
+        cur.execute(legacy_sql, [int(year)] + params)
     cols = [c[0] for c in cur.description]
     rows = [dict(zip(cols, r)) for r in cur.fetchall()]
 

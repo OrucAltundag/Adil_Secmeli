@@ -319,6 +319,7 @@ def _course_meta(cur: sqlite3.Cursor, course_ids: list[int]) -> dict[int, dict[s
 def _apply_governance(
     recommended_status: int,
     old_status: int | None,
+    topsis_score: float | None,
     year: int,
     policy: dict[str, Any],
     governance: dict[str, Any],
@@ -376,12 +377,77 @@ def _apply_governance(
         approval_required = True
         approval_reason_parts.append("Karar esige yakin/hassas")
 
+    score = None
+    try:
+        score = float(topsis_score) if topsis_score is not None else None
+    except (TypeError, ValueError):
+        score = None
+    keep_threshold = float(policy.get("curriculum_keep_threshold", 70.0) or 70.0)
+    pool_threshold = float(policy.get("pool_threshold", 50.0) or 50.0)
+    if old_status == STATU_MUFREDATTA and score is not None:
+        if score >= keep_threshold and int(final_status) != STATU_MUFREDATTA:
+            final_status = STATU_MUFREDATTA
+            approval_required = True
+            approval_reason_parts.append(
+                f"Mevcut müfredat dersi politika koruması: TOPSIS {score:.2f} >= {keep_threshold:.2f}"
+            )
+        elif score >= pool_threshold and int(final_status) in {STATU_DINLENMEDE, STATU_IPTAL}:
+            final_status = STATU_HAVUZDA
+            approval_required = True
+            approval_reason_parts.append(
+                f"Mevcut müfredat dersi havuz altına düşürülmedi: TOPSIS {score:.2f} >= {pool_threshold:.2f}"
+            )
+
     return {
         "final_status": int(final_status),
         "approval_required": approval_required,
         "approval_status": "pending" if approval_required else None,
         "approval_reason": "; ".join(dict.fromkeys(approval_reason_parts)) if approval_reason_parts else None,
     }
+
+
+def _soften_curriculum_recommendation(
+    classification: dict[str, Any],
+    *,
+    old_status: int | None,
+    topsis_score: float,
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    """Mevcut müfredat derslerinde ELECTRE düşüşünü politika eşiğiyle yumuşat."""
+
+    if old_status != STATU_MUFREDATTA:
+        return classification
+    try:
+        recommended = int(classification.get("recommended_status"))
+    except (TypeError, ValueError):
+        return classification
+
+    keep_threshold = float(policy.get("curriculum_keep_threshold", 70.0) or 70.0)
+    pool_threshold = float(policy.get("pool_threshold", 50.0) or 50.0)
+    updated = dict(classification)
+    reason = str(updated.get("reason") or "")
+    if float(topsis_score) >= keep_threshold and recommended != STATU_MUFREDATTA:
+        updated["recommended_status"] = STATU_MUFREDATTA
+        updated["category"] = "Mufredat"
+        updated["rule_triggered"] = f"{updated.get('rule_triggered') or 'electre_tri_b'}:policy_keep"
+        updated["reason"] = (
+            f"{reason} Politika destekli ELECTRE yumuşatma: mevcut müfredat dersi "
+            f"TOPSIS {float(topsis_score):.2f} ile müfredat eşiğini "
+            f"({keep_threshold:.2f}) geçtiği için öneri Müfredatta yapıldı."
+        ).strip()
+        updated["policy_softened"] = True
+        return updated
+    if float(topsis_score) >= pool_threshold and recommended in {STATU_DINLENMEDE, STATU_IPTAL}:
+        updated["recommended_status"] = STATU_HAVUZDA
+        updated["category"] = "Havuz"
+        updated["rule_triggered"] = f"{updated.get('rule_triggered') or 'electre_tri_b'}:policy_pool_floor"
+        updated["reason"] = (
+            f"{reason} Politika destekli ELECTRE yumuşatma: mevcut müfredat dersi "
+            f"TOPSIS {float(topsis_score):.2f} ile havuz eşiğini "
+            f"({pool_threshold:.2f}) geçtiği için dinlenme/iptal yerine Havuzda önerildi."
+        ).strip()
+        updated["policy_softened"] = True
+    return updated
 
 
 def create_decision_run(
@@ -754,15 +820,23 @@ def record_decision_run_for_faculty_year(
                 skipped_no_score.append(course_id)
                 continue
             score = skor_map[course_id]
+            old_status = _old_status(cur, course_id, int(year), faculty_id, semester)
+            if old_status is None:
+                old_status = STATU_MUFREDATTA
             if str(policy.get("classification_method") or "electre_tri_b") == "electre_tri_b":
                 classification = assign_course_electre_tri_b(
                     metric_map.get(course_id, {}),
                     weights,
                     policy,
                 )
+                classification = _soften_curriculum_recommendation(
+                    classification,
+                    old_status=old_status,
+                    topsis_score=score,
+                    policy=policy,
+                )
             else:
                 classification = classify_score(score, policy)
-            old_status = _old_status(cur, course_id, int(year), faculty_id, semester)
             governance = _fetch_governance_flags(cur, course_id)
             first_seen = _first_seen_year(cur, course_id)
             confidence = calculate_course_data_confidence(cur, course_id, int(year), semester, policy=policy)
@@ -785,12 +859,14 @@ def record_decision_run_for_faculty_year(
                 data_confidence=float(confidence.get("score") or 0.0),
                 old_status=old_status,
                 electre_status=int(classification["recommended_status"]),
+                policy=policy,
             )
             dt_comparison = str(dt_validation.get("comparison") or "unavailable")
             dt_comparison_counts[dt_comparison] = dt_comparison_counts.get(dt_comparison, 0) + 1
             governance_result = _apply_governance(
                 recommended_status=int(classification["recommended_status"]),
                 old_status=old_status,
+                topsis_score=score,
                 year=int(year),
                 policy=policy,
                 governance=governance,

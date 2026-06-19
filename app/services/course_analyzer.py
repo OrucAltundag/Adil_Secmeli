@@ -40,6 +40,7 @@ from app.services.havuz_karar import (
     STATU_MUFREDATTA,
     calculate_next_status,
 )
+from app.services.popularity_service import calculate_popularity_score
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,9 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
     try:
         cur.execute(
             """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                      kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+                      kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen,
+                      katilim_sayisi, toplam_hafta, katilim_yuzdesi,
+                      devamsiz_ogrenci_sayisi
                FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
             (course_id, year)
         )
@@ -173,14 +176,27 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
             anket_kat = _safe_float(row_dk[5])
             anket_secen = _safe_float(row_dk[6])
     except (sqlite3.OperationalError, TypeError):
-        # Eski şemada anket sütunları yoksa kısa sorgu dene
-        cur.execute(
-            """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                      kontenjan, kayitli_ogrenci
-               FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
-            (course_id, year)
-        )
-        row_dk = cur.fetchone()
+        try:
+            cur.execute(
+                """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                          kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+                   FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
+                (course_id, year),
+            )
+            legacy_row = cur.fetchone()
+            row_dk = (*legacy_row, None, None, None, None) if legacy_row else None
+            if row_dk:
+                anket_kat = _safe_float(row_dk[5])
+                anket_secen = _safe_float(row_dk[6])
+        except sqlite3.OperationalError:
+            # Çok eski şemada anket sütunları da yoksa kısa sorgu dene.
+            cur.execute(
+                """SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                          kontenjan, kayitli_ogrenci
+                   FROM ders_kriterleri WHERE ders_id=? AND yil=? LIMIT 1""",
+                (course_id, year),
+            )
+            row_dk = cur.fetchone()
 
     # 2. performans tablosu (fallback)
     cur.execute(
@@ -190,10 +206,18 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
     row_p = cur.fetchone()
 
     # 3. populerlik tablosu (fallback)
-    cur.execute(
-        "SELECT talep_sayisi, kontenjan, doluluk_orani FROM populerlik WHERE ders_id=? AND akademik_yil=? LIMIT 1",
-        (course_id, year)
-    )
+    try:
+        cur.execute(
+            "SELECT talep_sayisi, kontenjan, COALESCE(ham_puan, doluluk_orani) "
+            "FROM populerlik WHERE ders_id=? AND akademik_yil=? LIMIT 1",
+            (course_id, year),
+        )
+    except sqlite3.OperationalError:
+        cur.execute(
+            "SELECT talep_sayisi, kontenjan, doluluk_orani "
+            "FROM populerlik WHERE ders_id=? AND akademik_yil=? LIMIT 1",
+            (course_id, year),
+        )
     row_pop = cur.fetchone()
 
     # Kriterleri birleştir (ders_kriterleri öncelikli)
@@ -204,7 +228,15 @@ def _fetch_criteria(cur: sqlite3.Cursor, course_id: int, year: int) -> dict:
         kont     = _safe_float(row_dk[3])
         kayitli  = _safe_float(row_dk[4])
         basari   = (gecen / toplam) if toplam > 0 else _safe_float(row_p[1] if row_p else None)
-        doluluk  = (kayitli / kont) if kont > 0 else _safe_float(row_pop[2] if row_pop else None)
+        popularity = calculate_popularity_score(
+            capacity=kont,
+            enrolled=kayitli,
+            attendance_count=row_dk[7] if len(row_dk) > 7 else None,
+            total_weeks=row_dk[8] if len(row_dk) > 8 else None,
+            attendance_percentage=row_dk[9] if len(row_dk) > 9 else None,
+            absent_student_count=row_dk[10] if len(row_dk) > 10 else None,
+        )
+        doluluk = float(popularity["popularity_score"] or 0.0)
     elif row_p and row_pop:
         ort_not  = _safe_float(row_p[0])
         basari   = _safe_float(row_p[1])

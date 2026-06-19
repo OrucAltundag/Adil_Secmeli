@@ -501,6 +501,10 @@ def _enrich_student_rows_with_scope(
                 "basari_ortalamasi": row.get("basari_ortalamasi"),
                 "kontenjan": row.get("kontenjan"),
                 "kayitli_ogrenci": row.get("kayitli_ogrenci"),
+                "katilim_sayisi": row.get("katilim_sayisi"),
+                "toplam_hafta": row.get("toplam_hafta"),
+                "katilim_yuzdesi": row.get("katilim_yuzdesi"),
+                "devamsiz_ogrenci_sayisi": row.get("devamsiz_ogrenci_sayisi"),
             }
         )
     # Kolon sirasini sablonla hizala

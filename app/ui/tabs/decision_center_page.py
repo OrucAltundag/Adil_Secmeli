@@ -336,13 +336,12 @@ class DecisionCenterPage(ttk.Frame):
             "criteria_completion_matrix, criteria_validation_issues, criteria_missing_data_risks "
             "tabloları. Bu veriler 'Veri Yönetimi' sekmesinden kriter Excel'i içe aktarılarak doldurulur.",
             "Yıl ve Fakülte seçip 'Hazırlığı Yenile' deyin. 'Engellendi' görüyorsanız eksik "
-            "kriterleri içe aktarın veya geçerli gerekçeyle 'Override Talep Et' kullanın.",
+            "kriterleri içe aktarın.",
             renk="#E65100",
         )
         top = ttk.Frame(frame)
         top.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(top, text="Hazırlığı Yenile", command=self._load_readiness).pack(side=tk.LEFT, padx=4)
-        ttk.Button(top, text="Override Talep Et", command=self._request_readiness_override).pack(side=tk.LEFT, padx=4)
         self.lbl_readiness = ttk.Label(top, text="")
         self.lbl_readiness.pack(side=tk.LEFT, padx=12)
 
@@ -351,19 +350,6 @@ class DecisionCenterPage(ttk.Frame):
         self.txt_readiness = tk.Text(paned, height=12, wrap=tk.WORD)
         style_text_widget(self.txt_readiness)
         paned.add(self.txt_readiness, weight=1)
-
-        # Override (istisna) onay/red paneli — talep eden ≠ onaylayan (Roller Ayrılığı).
-        override_panel = ttk.LabelFrame(
-            paned, text="Bekleyen Override (İstisna) Talepleri — Yetkili Onayı", padding=6
-        )
-        paned.add(override_panel, weight=2)
-        self.tree_overrides = self._tree(
-            override_panel, ("id", "kapsam", "talep_eden", "eksik_alanlar", "gerekçe", "durum", "tarih")
-        )
-        ovr_buttons = ttk.Frame(override_panel)
-        ovr_buttons.pack(fill=tk.X, pady=(4, 0))
-        ttk.Button(ovr_buttons, text="Seçileni Onayla", command=self._approve_selected_override).pack(side=tk.LEFT, padx=4)
-        ttk.Button(ovr_buttons, text="Seçileni Reddet", command=self._reject_selected_override).pack(side=tk.LEFT, padx=4)
 
         run_panel = ttk.LabelFrame(paned, text="Karar Çalıştırmaları", padding=6)
         paned.add(run_panel, weight=2)
@@ -375,12 +361,16 @@ class DecisionCenterPage(ttk.Frame):
         self.btn_execute_run.pack(side=tk.LEFT, padx=4)
         self._action_buttons.append(self.btn_execute_run)
         ttk.Button(
+            run_actions, text="Hepsini Seç", command=self._select_all_runs
+        ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(
             run_actions, text="Kararı Engelle (Override)", command=self._request_run_override
         ).pack(side=tk.LEFT, padx=4)
         self.tree_runs = self._tree(
             run_panel,
             ("id", "yil", "fakülte", "bölüm", "dönem", "durum", "ahp", "politika", "başlangıç"),
         )
+        self.tree_runs.configure(selectmode="extended")
         self.tree_runs.bind("<<TreeviewSelect>>", lambda _e: self._select_run_from_tree())
 
         run_override_panel = ttk.LabelFrame(
@@ -391,8 +381,11 @@ class DecisionCenterPage(ttk.Frame):
         run_override_actions.pack(fill=tk.X, pady=(0, 4))
         ttk.Label(
             run_override_actions,
-            text="Talebi seçin; onay, red veya geri çekme işlemi uygulayın.",
+            text="Birden fazla satır seçilebilir; onay, red veya geri çekme seçilenlerin tümüne uygulanır.",
         ).pack(side=tk.LEFT, padx=(4, 12))
+        ttk.Button(
+            run_override_actions, text="Hepsini Seç", command=self._select_all_run_overrides
+        ).pack(side=tk.LEFT, padx=4)
         ttk.Button(
             run_override_actions, text="Engellemeyi Onayla", command=self._approve_run_override
         ).pack(side=tk.LEFT, padx=4)
@@ -406,6 +399,7 @@ class DecisionCenterPage(ttk.Frame):
             run_override_panel,
             ("id", "karar", "kapsam", "talep_eden", "gerekçe", "durum", "tarih"),
         )
+        self.tree_run_overrides.configure(selectmode="extended")
         self.tree_run_overrides.bind("<Delete>", lambda _event: self._cancel_run_override())
 
     def _build_policy_tab(self):
@@ -458,6 +452,7 @@ class DecisionCenterPage(ttk.Frame):
             frame,
             ("id", "yil", "fakülte", "dönem", "durum", "ahp", "politika", "başlangıç"),
         )
+        self.tree_runs.configure(selectmode="extended")
         self.tree_runs.bind("<<TreeviewSelect>>", lambda _e: self._select_run_from_tree())
 
     def _build_course_tab(self):
@@ -480,6 +475,15 @@ class DecisionCenterPage(ttk.Frame):
             "sekmesinde karar çalıştırın.",
             renk="#00838F",
         )
+        course_actions = ttk.Frame(top)
+        course_actions.pack(fill=tk.X, pady=(0, 6))
+        self.btn_recalculate_course_decisions = ttk.Button(
+            course_actions,
+            text="Kararları Yeniden Hesapla",
+            command=self._execute_run,
+        )
+        self.btn_recalculate_course_decisions.pack(side=tk.LEFT, padx=(0, 4))
+        self._action_buttons.append(self.btn_recalculate_course_decisions)
         self.tree_courses = self._tree(
             top,
             (
@@ -603,10 +607,10 @@ class DecisionCenterPage(ttk.Frame):
     def _review_tree(self, parent, title):
         box = ttk.LabelFrame(parent, text=title, padding=4)
         parent.add(box, weight=1)
-        tree = ttk.Treeview(box, columns=("kod", "ders", "puan", "kaynak"), show="headings", height=6)
+        tree = ttk.Treeview(box, columns=("islem", "kod", "ders", "puan", "kaynak"), show="headings", height=6)
         for column, text, width in (
-            ("kod", "Kod", 90), ("ders", "Ders", 230),
-            ("puan", "Puan", 80), ("kaynak", "Kaynak", 120),
+            ("islem", "İşlem", 90), ("kod", "Kod", 90), ("ders", "Ders", 230),
+            ("puan", "Puan", 80), ("kaynak", "Kaynak / Gerekçe", 180),
         ):
             tree.heading(column, text=text)
             tree.column(column, width=width, anchor=tk.W)
@@ -1041,16 +1045,23 @@ class DecisionCenterPage(ttk.Frame):
         if getattr(self, "tree_overrides", None) is not None:
             self._clear(self.tree_overrides)
         self._override_ids.clear()
+        self._last_readiness_gate = None
         try:
-            year = int(self.cb_year.get())
+            year_raw = (self.cb_year.get() or "").strip()
             faculty_id = self._faculty_map.get(self.cb_faculty.get())
+            if not year_raw or not faculty_id:
+                self.lbl_readiness.config(text="Fakülte ve yıl seçimi bekleniyor.")
+                self.txt_readiness.insert(tk.END, "Hazırlık kontrolü için fakülte ve yıl seçiniz.")
+                return
+            try:
+                year = int(year_raw)
+            except (TypeError, ValueError):
+                self.lbl_readiness.config(text="Geçerli bir yıl seçimi bekleniyor.")
+                self.txt_readiness.insert(tk.END, "Hazırlık kontrolü için geçerli bir yıl seçiniz.")
+                return
             department_id = self._department_map.get(self.cb_department.get())
             semester = self.cb_semester.get() or "Guz"
             scope_type = "department" if department_id is not None else "faculty"
-            if not faculty_id:
-                self.lbl_readiness.config(text="Fakülte seçimi bekleniyor.")
-                self.txt_readiness.insert(tk.END, "Hazırlık kontrolü için fakülte ve yıl seçiniz.")
-                return
             # Salt okunur değerlendirme: izleme görünümü kalıcı snapshot yazmasın.
             gate = can_run_algorithm(
                 self._conn(),
@@ -1063,20 +1074,8 @@ class DecisionCenterPage(ttk.Frame):
             )
             summary = gate.get("summary") or {}
             risk = gate.get("risk") or {}
-            # Bekleyen (pending) override talepleri — override_active yalnızca onaylı (approved) olanı yansıtır.
-            pending = list_overrides(
-                self._conn(),
-                scope_type=scope_type,
-                year=year,
-                faculty_id=int(faculty_id),
-                department_id=int(department_id) if department_id is not None else None,
-                semester=semester,
-                approval_status="pending",
-            )
             if gate.get("override_active") and gate.get("can_run"):
                 durum = "Override ile hazır"
-            elif pending:
-                durum = "Override onayı bekliyor"
             elif gate.get("can_run"):
                 durum = "Hazır"
             else:
@@ -1096,8 +1095,6 @@ class DecisionCenterPage(ttk.Frame):
                 f"Geçersiz zorunlu alan: {gate.get('invalid_required_fields')}",
                 f"Kritik/geçersiz issue: {gate.get('blocking_issue_count')}",
                 f"Risk: {risk.get('risk_level', 'low')} ({risk.get('risk_score', 0)})",
-                f"Aktif override: {'Evet' if gate.get('override_active') else 'Hayır'}",
-                f"Bekleyen override talebi: {len(pending)}",
                 "",
                 gate.get("blocking_reason") or summary.get("warning_reason") or "Hazırlık kontrolünde engelleyici bulgu yok.",
             ]
@@ -1120,25 +1117,6 @@ class DecisionCenterPage(ttk.Frame):
                 lines.append(f"- {key}{suffix}: %{float(ratio or 0) * 100:.1f}")
             self.txt_readiness.insert(tk.END, "\n".join(lines))
             self._last_readiness_gate = gate
-            # Bekleyen override taleplerini onay tablosuna doldur.
-            for req in pending:
-                iid = str(req.get("id"))
-                self._override_ids[iid] = int(req.get("id") or 0)
-                gaps = ", ".join(req.get("missing_fields") or []) or "—"
-                self.tree_overrides.insert(
-                    "",
-                    tk.END,
-                    iid=iid,
-                    values=(
-                        req.get("id"),
-                        req.get("scope_type") or "",
-                        req.get("requested_by") or "",
-                        gaps,
-                        (req.get("reason") or "")[:80],
-                        req.get("approval_status") or "",
-                        req.get("requested_at") or "",
-                    ),
-                )
         except Exception:
             logger.exception("Hazırlık kontrolü yüklenemedi")
             self.lbl_readiness.config(text="Hazırlık kontrolü yüklenemedi.")
@@ -1256,29 +1234,58 @@ class DecisionCenterPage(ttk.Frame):
             messagebox.showerror("Override Reddi", self._friendly_backend_error())
 
     def _request_run_override(self):
-        run_id = self._selected_run_id()
-        if not run_id:
-            messagebox.showwarning("Kararı Engelle", "Önce bir karar çalıştırması seçin.")
+        run_ids = self._selected_run_ids()
+        if not run_ids:
+            messagebox.showwarning("Kararı Engelle", "Önce en az bir karar çalıştırması seçin.")
             return
-        reason = simpledialog.askstring("Kararı Engelle", "Kararı engelleme gerekçesi:")
+        reason = simpledialog.askstring(
+            "Kararı Engelle",
+            f"{len(run_ids)} karar çalıştırması için engelleme gerekçesi:",
+        )
         if not reason or not reason.strip():
             return
         try:
             actor = self._current_username("decision_center") + ":requester"
-            request = request_decision_run_override(self._conn(), int(run_id), reason.strip(), actor)
+            created = []
+            skipped = []
+            for run_id in run_ids:
+                try:
+                    request = request_decision_run_override(self._conn(), int(run_id), reason.strip(), actor)
+                    created.append(int(request.get("id") or 0))
+                except ValueError as exc:
+                    skipped.append(f"#{run_id}: {exc}")
             self._conn().commit()
             self._load_run_overrides()
-            request_iid = str(request.get("id") or "")
-            if request_iid and self.tree_run_overrides.exists(request_iid):
-                self.tree_run_overrides.selection_set(request_iid)
-                self.tree_run_overrides.focus(request_iid)
-                self.tree_run_overrides.see(request_iid)
-            messagebox.showinfo("Kararı Engelle", "Talep onay kuyruğuna alındı.")
-        except ValueError as exc:
-            messagebox.showwarning("Kararı Engelle", str(exc))
+            selectable = [str(req_id) for req_id in created if req_id and self.tree_run_overrides.exists(str(req_id))]
+            if selectable:
+                self.tree_run_overrides.selection_set(*selectable)
+                self.tree_run_overrides.focus(selectable[0])
+                self.tree_run_overrides.see(selectable[0])
+            message = f"{len(created)} talep onay kuyruğuna alındı."
+            if skipped:
+                message += "\n\nAtlananlar:\n" + "\n".join(skipped[:8])
+                if len(skipped) > 8:
+                    message += f"\n... {len(skipped) - 8} kayıt daha"
+            messagebox.showinfo("Kararı Engelle", message)
         except Exception:
             logger.exception("Karar engelleme talebi oluşturulamadı")
             messagebox.showerror("Kararı Engelle", self._friendly_backend_error())
+
+    def _select_all_runs(self):
+        if not hasattr(self, "tree_runs"):
+            return
+        items = self.tree_runs.get_children()
+        if not items:
+            messagebox.showinfo("Hepsini Seç", "Seçilecek karar çalıştırması yok.")
+            return
+        self.tree_runs.selection_set(*items)
+        self.tree_runs.focus(items[0])
+        self.tree_runs.see(items[0])
+        if hasattr(self, "lbl_scope_status"):
+            self.lbl_scope_status.config(
+                text=f"● {len(items)} karar seçildi · Kararı Engelle ile kuyruğa alınabilir",
+                foreground="#6B4E00",
+            )
 
     def _load_run_overrides(self):
         if not hasattr(self, "tree_run_overrides"):
@@ -1315,28 +1322,56 @@ class DecisionCenterPage(ttk.Frame):
         selected = self.tree_run_overrides.selection() if hasattr(self, "tree_run_overrides") else ()
         return self._run_override_ids.get(str(selected[0])) if selected else None
 
+    def _selected_run_override_ids(self) -> list[int]:
+        selected = self.tree_run_overrides.selection() if hasattr(self, "tree_run_overrides") else ()
+        ids: list[int] = []
+        for item in selected:
+            request_id = self._run_override_ids.get(str(item))
+            if request_id is not None:
+                ids.append(int(request_id))
+        return ids
+
+    def _select_all_run_overrides(self):
+        if not hasattr(self, "tree_run_overrides"):
+            return
+        items = self.tree_run_overrides.get_children()
+        if not items:
+            messagebox.showinfo("Hepsini Seç", "Seçilecek bekleyen engelleme talebi yok.")
+            return
+        self.tree_run_overrides.selection_set(*items)
+        self.tree_run_overrides.focus(items[0])
+        self.tree_run_overrides.see(items[0])
+
     def _approve_run_override(self):
-        request_id = self._selected_run_override_id()
-        if request_id is None:
-            messagebox.showwarning("Engelleme Onayı", "Bekleyen bir talep seçin.")
+        request_ids = self._selected_run_override_ids()
+        if not request_ids:
+            messagebox.showwarning("Engelleme Onayı", "Bekleyen en az bir talep seçin.")
             return
         note = simpledialog.askstring("Engelleme Onayı", "Onay notu (isteğe bağlı):")
         try:
             actor = self._current_username("decision_center") + ":approver"
-            approve_decision_run_override(self._conn(), request_id, actor, note)
+            approved = 0
+            errors = []
+            for request_id in request_ids:
+                try:
+                    approve_decision_run_override(self._conn(), request_id, actor, note)
+                    approved += 1
+                except ValueError as exc:
+                    errors.append(f"#{request_id}: {exc}")
             self._conn().commit()
             self.refresh()
-            messagebox.showinfo("Engelleme Onayı", "Geçici karar ve bağlı sonuçları temizlendi.")
-        except ValueError as exc:
-            messagebox.showwarning("Engelleme Onayı", str(exc))
+            message = f"{approved} geçici karar ve bağlı sonuçları temizlendi."
+            if errors:
+                message += "\n\nAtlananlar:\n" + "\n".join(errors[:8])
+            messagebox.showinfo("Engelleme Onayı", message)
         except Exception:
             logger.exception("Karar engelleme onayı uygulanamadı")
             messagebox.showerror("Engelleme Onayı", self._friendly_backend_error())
 
     def _reject_run_override(self):
-        request_id = self._selected_run_override_id()
-        if request_id is None:
-            messagebox.showwarning("Engelleme Reddi", "Bekleyen bir talep seçin.")
+        request_ids = self._selected_run_override_ids()
+        if not request_ids:
+            messagebox.showwarning("Engelleme Reddi", "Bekleyen en az bir talep seçin.")
             return
         note = simpledialog.askstring("Engelleme Reddi", "Red gerekçesi:")
         if not note or not note.strip():
@@ -1348,37 +1383,53 @@ class DecisionCenterPage(ttk.Frame):
             return
         try:
             actor = self._current_username("decision_center") + ":approver"
-            reject_decision_run_override(self._conn(), request_id, note.strip(), actor)
+            rejected = 0
+            errors = []
+            for request_id in request_ids:
+                try:
+                    reject_decision_run_override(self._conn(), request_id, note.strip(), actor)
+                    rejected += 1
+                except ValueError as exc:
+                    errors.append(f"#{request_id}: {exc}")
             self._conn().commit()
             self._load_run_overrides()
+            message = f"{rejected} talep reddedildi; karar çalıştırmaları korunuyor."
+            if errors:
+                message += "\n\nAtlananlar:\n" + "\n".join(errors[:8])
             messagebox.showinfo(
                 "Engelleme Reddi",
-                "Talep reddedildi; karar çalıştırması ve müfredat üzerinde değişiklik yapılmadı.",
+                message,
             )
-        except ValueError as exc:
-            messagebox.showwarning("Engelleme Reddi", str(exc))
         except Exception:
             logger.exception("Karar engelleme reddi uygulanamadı")
             messagebox.showerror("Engelleme Reddi", self._friendly_backend_error())
 
     def _cancel_run_override(self):
-        request_id = self._selected_run_override_id()
-        if request_id is None:
-            messagebox.showwarning("Talebi Geri Çek", "Önce bekleyen bir talep seçin.")
+        request_ids = self._selected_run_override_ids()
+        if not request_ids:
+            messagebox.showwarning("Talebi Geri Çek", "Önce bekleyen en az bir talep seçin.")
             return
         if not messagebox.askyesno(
             "Talebi Geri Çek",
-            f"#{request_id} numaralı engelleme talebi kuyruktan kaldırılsın mı?\n\n"
+            f"{len(request_ids)} engelleme talebi kuyruktan kaldırılsın mı?\n\n"
             "Karar çalıştırması ve üretilen sonuçlar silinmeyecektir.",
         ):
             return
         try:
-            cancel_decision_run_override(self._conn(), request_id)
+            cancelled = 0
+            errors = []
+            for request_id in request_ids:
+                try:
+                    cancel_decision_run_override(self._conn(), request_id)
+                    cancelled += 1
+                except ValueError as exc:
+                    errors.append(f"#{request_id}: {exc}")
             self._conn().commit()
             self._load_run_overrides()
-            messagebox.showinfo("Talebi Geri Çek", "Bekleyen talep kuyruktan kaldırıldı.")
-        except ValueError as exc:
-            messagebox.showwarning("Talebi Geri Çek", str(exc))
+            message = f"{cancelled} bekleyen talep kuyruktan kaldırıldı."
+            if errors:
+                message += "\n\nAtlananlar:\n" + "\n".join(errors[:8])
+            messagebox.showinfo("Talebi Geri Çek", message)
         except Exception:
             logger.exception("Karar engelleme talebi geri çekilemedi")
             messagebox.showerror("Talebi Geri Çek", self._friendly_backend_error())
@@ -1504,19 +1555,40 @@ class DecisionCenterPage(ttk.Frame):
             "otomatik_yedek": "Otomatik yedek",
             "manuel_takas": "Manuel takas",
         }
+        origin_actions = {
+            "mevcut": "Kalacak",
+            "otomatik_yedek": "Eklenecek",
+            "manuel_takas": "Eklenecek",
+        }
         for key, tree in (("fall", self.tree_review_fall), ("spring", self.tree_review_spring)):
             term = dict(payload.get(key) or {})
             for item in term.get("items") or []:
                 score = item.get("score")
+                origin = str(item.get("origin") or "")
                 tree.insert(
                     "",
                     tk.END,
                     iid=f"{key}:{item.get('course_id')}",
                     values=(
+                        origin_actions.get(origin, "Kalacak"),
                         item.get("course_code") or "",
                         item.get("course_name") or item.get("course_id"),
                         "—" if score is None else f"{float(score):.2f}",
-                        origin_labels.get(str(item.get("origin") or ""), item.get("origin") or ""),
+                        origin_labels.get(origin, origin),
+                    ),
+                )
+            for item in term.get("dropped") or []:
+                score = item.get("score")
+                tree.insert(
+                    "",
+                    tk.END,
+                    iid=f"{key}:drop:{item.get('course_id')}",
+                    values=(
+                        "Çıkarılacak",
+                        item.get("course_code") or "",
+                        item.get("course_name") or item.get("course_id"),
+                        "—" if score is None else f"{float(score):.2f}",
+                        item.get("reason") or "Karar sonucu müfredattan düşürüldü.",
                     ),
                 )
         shortage = sum(
@@ -2272,7 +2344,18 @@ class DecisionCenterPage(ttk.Frame):
         lines.extend(["", "Decision Tree bağımsız doğrulaması:"])
         peer = dict(dt_details.get("peer_assessment") or {})
         peer_deltas = dict(peer.get("criterion_delta_medians") or {})
-        if not dt_details or not dt_details.get("available"):
+        if dt_details.get("fallback_advisory"):
+            lines.extend(
+                [
+                    "- Sonuç: DT eğitim verisi yetersiz; politika destekli düşük güven önerisi üretildi",
+                    f"- Destek önerisi: {_status_text(dt_details.get('predicted_status'))}",
+                    f"- Destek güveni: {float(dt_details.get('confidence') or 0):.2f}",
+                    f"- ELECTRE/destek ilişkisi: {comparison_label(dt_details.get('comparison'))}",
+                    f"- Kural özeti: {dt_details.get('rule_path') or '—'}",
+                    f"- Yorum: {dt_details.get('explanation') or ''}",
+                ]
+            )
+        elif not dt_details or not dt_details.get("available"):
             lines.append("- Sonuç: Veri yetersiz / doğrulama yapılamadı")
             lines.append(f"- Neden: {dt_details.get('explanation') or 'DT sonucu bu eski çalıştırmada üretilmemiş.'}")
         else:
@@ -2340,11 +2423,25 @@ class DecisionCenterPage(ttk.Frame):
             return self._run_ids[label]
         return None
 
+    def _selected_run_ids(self) -> list[int]:
+        selected = self.tree_runs.selection() if hasattr(self, "tree_runs") else ()
+        if selected:
+            return [int(item) for item in selected]
+        run_id = self._selected_run_id()
+        return [int(run_id)] if run_id else []
+
     def _select_run_from_tree(self):
         if self._syncing_run_selection:
             return
         selected = self.tree_runs.selection()
         if not selected:
+            return
+        if len(selected) > 1:
+            if hasattr(self, "lbl_scope_status"):
+                self.lbl_scope_status.config(
+                    text=f"● {len(selected)} karar seçildi · toplu engelleme uygulanabilir",
+                    foreground="#6B4E00",
+                )
             return
         run_id = int(selected[0])
         run = self._runs_by_id.get(run_id)

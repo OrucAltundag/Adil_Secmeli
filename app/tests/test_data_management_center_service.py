@@ -77,7 +77,7 @@ def test_import_bundle_returns_batch_details(tmp_path):
     assert "rollback" in bundle
 
 
-def test_execute_import_request_validates_required_scope(tmp_path):
+def test_execute_import_request_all_faculties_reports_invalid_file(tmp_path):
     db_path, _batch_id = _db(tmp_path)
     excel_path = tmp_path / "empty.xlsx"
     excel_path.write_bytes(b"not parsed because faculty is missing")
@@ -91,7 +91,11 @@ def test_execute_import_request_validates_required_scope(tmp_path):
     )
 
     assert result["ok"] is False
-    assert "Fakülte" in result["errors"][0]
+    # faculty_id=None artık "Tümü" kapsamıdır; dosyadaki fakülte kolonu
+    # kullanılır. Bu nedenle geçersiz dosya kapsam hatası değil okuma hatası
+    # üretmelidir.
+    assert result["errors"]
+    assert "Excel" in result["errors"][0]
     assert os.path.exists(excel_path)
 
 

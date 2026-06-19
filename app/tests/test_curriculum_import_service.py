@@ -6,7 +6,7 @@ import tempfile
 
 import pandas as pd
 
-from app.services.curriculum_import_service import import_curriculum_excel
+from app.services.curriculum_import_service import detect_curriculum_years, import_curriculum_excel
 
 
 def _build_db() -> str:
@@ -84,6 +84,73 @@ def test_import_curriculum_excel_insert_and_compare_same():
         for p in (db_path, excel_path):
             try:
                 os.unlink(p)
+            except OSError:
+                pass
+
+
+def test_detect_curriculum_years_reads_years_from_rows():
+    excel_path = _write_excel(
+        [
+            {"Fakulte": "Muhendislik", "Bolum": "Bilgisayar", "Yil": "2022-2023", "Donem": "Guz", "Ders Kodu": "C101"},
+            {"Fakulte": "Muhendislik", "Bolum": "Bilgisayar", "Yil": 2022, "Donem": "Bahar", "Ders Kodu": "C102"},
+        ]
+    )
+    try:
+        assert detect_curriculum_years(excel_path) == [2022]
+    finally:
+        os.unlink(excel_path)
+
+
+def test_name_match_prefers_elective_course_in_selected_department():
+    db_path = _build_db()
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("ALTER TABLE ders ADD COLUMN DersTipi TEXT")
+        conn.executemany(
+            "INSERT INTO ders (ders_id, kod, ad, bolum_id, fakulte_id, DersTipi) VALUES (?, ?, ?, 10, 1, ?)",
+            [
+                (105, "LEGACY609", "Pediatrik Rehabilitasyon", "Zorunlu"),
+                (107, "BilgisayarSEC9", "Pediatrik Rehabilitasyon", "Secmeli"),
+                (106, "FTR609S", "Pediatrik Rehabilitasyon", "Secmeli"),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    excel_path = _write_excel(
+        [
+            {
+                "Fakulte": "Muhendislik",
+                "Bolum": "Bilgisayar",
+                "Yil": 2022,
+                "Donem": "Guz",
+                "Ders Adi": "Pediatrik Rehabilitasyon",
+            }
+        ]
+    )
+    try:
+        result = import_curriculum_excel(
+            db_path=db_path,
+            excel_path=excel_path,
+            target_year=2022,
+            apply_now=False,
+        )
+        assert result["ok"] is True
+
+        conn = sqlite3.connect(db_path)
+        try:
+            matched = conn.execute(
+                "SELECT matched_ders_id FROM import_staging_rows WHERE import_batch_id = ?",
+                (int(result["import_batch_id"]),),
+            ).fetchone()
+            assert matched == (106,)
+        finally:
+            conn.close()
+    finally:
+        for path in (db_path, excel_path):
+            try:
+                os.unlink(path)
             except OSError:
                 pass
 

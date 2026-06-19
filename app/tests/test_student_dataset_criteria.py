@@ -70,10 +70,15 @@ def test_auto_generate_writes_all_three_tables():
         assert ort == 82.25
         assert abs(basari - 0.96) < 1e-6
         # populerlik: doluluk = 50/60
-        cur.execute("SELECT talep_sayisi, kontenjan, doluluk_orani FROM populerlik WHERE ders_id=769")
-        talep, kont, dol = cur.fetchone()
+        cur.execute(
+            "SELECT talep_sayisi, kontenjan, doluluk_orani, ilgi_orani, ham_puan "
+            "FROM populerlik WHERE ders_id=769"
+        )
+        talep, kont, dol, ilgi, populerlik = cur.fetchone()
         assert talep == 50 and kont == 60
         assert abs(dol - 50 / 60) < 1e-6
+        assert abs(ilgi - 0.80) < 1e-6
+        assert abs(populerlik - ((50 / 60 * 0.60 + 0.80 * 0.15) / 0.75)) < 1e-6
     finally:
         conn.close()
         os.unlink(xp)

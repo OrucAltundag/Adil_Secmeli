@@ -295,6 +295,72 @@ def test_import_criteria_tracks_document_and_report_summary():
         _cleanup(db_path, excel_path)
 
 
+def test_pending_import_with_unmatched_row_reaches_review_queue():
+    db_path = _build_db()
+    excel_path = _write_criteria_excel(
+        [
+            {
+                "fakulte_adi": "Muhendislik",
+                "bolum_adi": "Bilgisayar",
+                "yil": 2024,
+                "donem": "Guz",
+                "ders_kodu": "C101",
+                "ders_adi": "Algoritmalar",
+                "toplam_ogrenci": 80,
+                "gecen_ogrenci": 60,
+                "basari_ortalamasi": 72.5,
+                "kontenjan": 50,
+                "kayitli_ogrenci": 75,
+            },
+            {
+                "fakulte_adi": "Muhendislik",
+                "bolum_adi": "Bilgisayar",
+                "yil": 2024,
+                "donem": "Guz",
+                "ders_kodu": "C999",
+                "ders_adi": "Kapsamda Olmayan Ders",
+                "toplam_ogrenci": 40,
+                "gecen_ogrenci": 20,
+                "basari_ortalamasi": 60.0,
+                "kontenjan": 30,
+                "kayitli_ogrenci": 28,
+            },
+        ]
+    )
+    try:
+        result = import_criteria_excel(
+            db_path=db_path,
+            excel_path=excel_path,
+            faculty_id=1,
+            year=2024,
+            term="Guz",
+            source_filename="partial_match.xlsx",
+            apply_now=False,
+        )
+
+        assert result["ok"] is True
+        assert result["matched_count"] == 1
+        assert result["unmatched_count"] == 1
+        assert result["import_status"] == "pending_review"
+
+        conn = sqlite3.connect(db_path)
+        try:
+            batch = conn.execute(
+                "SELECT status, error_message FROM import_batches WHERE id = ?",
+                (int(result["import_batch_id"]),),
+            ).fetchone()
+            assert batch == ("pending_review", None)
+            issue = conn.execute(
+                "SELECT issue_type, severity FROM import_row_issues WHERE import_batch_id = ?",
+                (int(result["import_batch_id"]),),
+            ).fetchone()
+            assert issue == ("course_not_matched", "warning")
+        finally:
+            conn.close()
+    finally:
+        _cleanup(db_path, excel_path)
+
+
 def test_faculty_reimport_preserves_department_override_metrics():
     db_path = _build_db()
     faculty_v1 = _write_criteria_excel(
@@ -481,7 +547,7 @@ def test_faculty_reimport_preserves_department_override_metrics():
         _cleanup(db_path, faculty_v1, department_v1, faculty_v2)
 
 
-def test_write_criteria_template_matches_flat_dataset_schema():
+def test_write_criteria_template_contains_scope_and_course_columns():
     db_path = _build_db()
     fd, target_path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
@@ -497,9 +563,20 @@ def test_write_criteria_template_matches_flat_dataset_schema():
 
         data_df = pd.read_excel(target_path, sheet_name="Kriter")
         assert list(data_df.columns) == [
-            "ders_kodu", "donem", "toplam_ogrenci", "gecen_ogrenci",
-            "basari_ortalamasi", "kontenjan", "kayitli_ogrenci",
+            "fakulte", "bolum", "yil", "donem", "ders_kodu", "ders_adi",
+            "toplam_ogrenci", "gecen_ogrenci", "basari_ortalamasi",
+            "kontenjan", "kayitli_ogrenci",
+            "katilim_sayisi", "toplam_hafta", "katilim_yuzdesi",
+            "devamsiz_ogrenci_sayisi",
         ]
-        assert data_df.empty
+        assert data_df[["fakulte", "bolum", "yil", "donem", "ders_kodu"]].to_dict("records") == [
+            {
+                "fakulte": "Muhendislik",
+                "bolum": "Bilgisayar",
+                "yil": 2024,
+                "donem": "Güz",
+                "ders_kodu": "C101",
+            }
+        ]
     finally:
         _cleanup(db_path, target_path)

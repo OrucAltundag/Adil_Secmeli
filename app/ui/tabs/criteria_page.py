@@ -31,6 +31,7 @@ from app.services.criteria_import_service import (
 )
 from app.services.criteria_override_service import list_overrides, request_override
 from app.services.criteria_task_service import generate_tasks_for_missing_criteria
+from app.services.popularity_service import calculate_popularity_score
 from app.services.yearly_workflow import mark_criteria_status
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class CriteriaPage:
         self._survey_locked = False
         self._current_survey_record = None
         self._current_criteria_import_summary = None
+        self._attendance_metrics: dict[str, Any] = {}
         self._student_dataset_path = None  # Secilen ogrenci veri seti yolu
 
         self._ensure_table()
@@ -252,19 +254,27 @@ class CriteriaPage:
         self.ent_kontenjan = self.create_input_row(8, "Ders Kontenjanı:", "0")
         self.ent_kayitli = self.create_input_row(9, "Kayıtlı Öğrenci (otomatik):", "0")
 
-        # Otomatik Hesaplanan: Doluluk
-        tk.Label(self.form_frame, text="Doluluk Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=10, column=0, sticky="w", pady=5)
+        # Ham kapasite doluluğu ve katılım etkili nihai popülerlik ayrı gösterilir.
+        tk.Label(self.form_frame, text="Kapasite Doluluğu (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=10, column=0, sticky="w", pady=5)
         self.lbl_doluluk_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
         self.lbl_doluluk_sonuc.grid(row=10, column=1, sticky="w")
 
+        tk.Label(self.form_frame, text="Derse Katılım (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=11, column=0, sticky="w", pady=5)
+        self.lbl_katilim_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
+        self.lbl_katilim_sonuc.grid(row=11, column=1, sticky="w")
+
+        tk.Label(self.form_frame, text="Popülerlik Skoru (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=12, column=0, sticky="w", pady=5)
+        self.lbl_populerlik_sonuc = tk.Label(self.form_frame, text="-", bg="#dcfce7", width=10)
+        self.lbl_populerlik_sonuc.grid(row=12, column=1, sticky="w")
+
         # 3. Anket Tercihi
-        self.create_section_header(11, "3. Anket Tercihi")
-        self.ent_anket_katilimci = self.create_input_row(12, "Ankete Katılan Toplam Öğrenci (otomatik):", "0")
+        self.create_section_header(13, "3. Anket Tercihi")
+        self.ent_anket_katilimci = self.create_input_row(14, "Ankete Katılan Toplam Öğrenci (otomatik):", "0")
         self.ent_anket_katilimci.config(state="disabled")
-        self.ent_anket_dersi_secen = self.create_input_row(13, "Bu Dersi Seçen Öğrenci:", "0")
-        tk.Label(self.form_frame, text="Anket Tercih Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=14, column=0, sticky="w", pady=5)
+        self.ent_anket_dersi_secen = self.create_input_row(15, "Bu Dersi Seçen Öğrenci:", "0")
+        tk.Label(self.form_frame, text="Anket Tercih Oranı (%):", bg="#f8fafc", font=("Segoe UI", 9, "bold")).grid(row=16, column=0, sticky="w", pady=5)
         self.lbl_anket_sonuc = tk.Label(self.form_frame, text="-", bg="#e2e8f0", width=10)
-        self.lbl_anket_sonuc.grid(row=14, column=1, sticky="w")
+        self.lbl_anket_sonuc.grid(row=16, column=1, sticky="w")
         self.lbl_anket_kaynak_info = tk.Label(
             self.form_frame,
             text="Anket verisi manuel girise acik.",
@@ -274,13 +284,13 @@ class CriteriaPage:
             wraplength=280,
             justify="left",
         )
-        self.lbl_anket_kaynak_info.grid(row=15, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_anket_kaynak_info.grid(row=17, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # KAYDET BUTONU
         btn_save = tk.Button(self.form_frame, text="💾 VERİLERİ KAYDET VE GÜNCELLE",
                              bg="#16a34a", fg="white", font=("Segoe UI", 10, "bold"),
                              command=self.save_data, cursor="hand2")
-        btn_save.grid(row=16, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
+        btn_save.grid(row=18, column=0, columnspan=2, sticky="ew", pady=30, ipady=5)
 
     def create_completion_panel(self):
         panel = ttk.LabelFrame(self.parent, text="Gelişmiş Tamlık Paneli", padding=8)
@@ -1194,6 +1204,10 @@ class CriteriaPage:
             "basari_ortalamasi",
             "kontenjan",
             "kayitli_ogrenci",
+            "katilim_sayisi",
+            "toplam_hafta",
+            "katilim_yuzdesi",
+            "devamsiz_ogrenci_sayisi",
             "anket_katilimci",
             "anket_dersi_secen",
             "anket_veri_kaynagi",
@@ -1212,6 +1226,12 @@ class CriteriaPage:
             "basari_ortalamasi",
             "kontenjan",
             "kayitli_ogrenci",
+            "katilim_sayisi" if self._has_col("ders_kriterleri", "katilim_sayisi") else "NULL AS katilim_sayisi",
+            "toplam_hafta" if self._has_col("ders_kriterleri", "toplam_hafta") else "NULL AS toplam_hafta",
+            "katilim_yuzdesi" if self._has_col("ders_kriterleri", "katilim_yuzdesi") else "NULL AS katilim_yuzdesi",
+            "devamsiz_ogrenci_sayisi"
+            if self._has_col("ders_kriterleri", "devamsiz_ogrenci_sayisi")
+            else "NULL AS devamsiz_ogrenci_sayisi",
             "anket_katilimci",
             "anket_dersi_secen",
             "COALESCE(anket_veri_kaynagi, 'manual') AS anket_veri_kaynagi"
@@ -1333,6 +1353,12 @@ class CriteriaPage:
                 self.ent_kontenjan.insert(0, str(saved_record.get("kontenjan") or 0))
                 self.ent_kayitli.delete(0, tk.END)
                 self.ent_kayitli.insert(0, str(saved_record.get("kayitli_ogrenci") or 0))
+                self._attendance_metrics = {
+                    "katilim_sayisi": saved_record.get("katilim_sayisi"),
+                    "toplam_hafta": saved_record.get("toplam_hafta"),
+                    "katilim_yuzdesi": saved_record.get("katilim_yuzdesi"),
+                    "devamsiz_ogrenci_sayisi": saved_record.get("devamsiz_ogrenci_sayisi"),
+                }
                 self._set_entry_value(self.ent_anket_katilimci, saved_record.get("anket_katilimci") or 0, state="normal")
                 self.ent_anket_katilimci.config(state="disabled")
                 self._set_entry_value(self.ent_anket_dersi_secen, saved_record.get("anket_dersi_secen") or 0, state="normal")
@@ -1347,6 +1373,7 @@ class CriteriaPage:
                     self._apply_survey_lock_state(False)
             else:
                 self._current_survey_record = None
+                self._attendance_metrics = {}
                 self._update_criteria_source_info(None)
                 # ders_kriterleri yoksa performans+populerlikten doldur
                 _, pr = self.db.run_sql(
@@ -1400,6 +1427,7 @@ class CriteriaPage:
         """Formu güvenli şekilde temizler"""
         self._current_survey_record = None
         self._current_criteria_import_summary = None
+        self._attendance_metrics = {}
         self.ent_toplam_ogrenci.delete(0, tk.END)
         self.ent_toplam_ogrenci.insert(0, "0")
         self.ent_gecen_ogrenci.delete(0, tk.END)
@@ -1415,6 +1443,9 @@ class CriteriaPage:
         self.ent_anket_dersi_secen.delete(0, tk.END)
         self.ent_anket_dersi_secen.insert(0, "0")
         self.lbl_anket_sonuc.config(text="-")
+        self.lbl_doluluk_sonuc.config(text="-")
+        self.lbl_katilim_sonuc.config(text="-")
+        self.lbl_populerlik_sonuc.config(text="-")
         if getattr(self, "lbl_criteria_source_info", None):
             self.lbl_criteria_source_info.config(text="Aktif kriter dosyasi: -")
         self._apply_survey_lock_state(False)
@@ -1438,11 +1469,38 @@ class CriteriaPage:
                 self.lbl_basari_sonuc.config(text="-")
 
             kontenjan = float(self.ent_kontenjan.get())
+            attendance_metrics = getattr(self, "_attendance_metrics", {})
+            popularity = calculate_popularity_score(
+                capacity=kontenjan,
+                enrolled=kayitli,
+                attendance_count=attendance_metrics.get("katilim_sayisi"),
+                total_weeks=attendance_metrics.get("toplam_hafta"),
+                attendance_percentage=attendance_metrics.get("katilim_yuzdesi"),
+                absent_student_count=attendance_metrics.get("devamsiz_ogrenci_sayisi"),
+            )
             if kontenjan > 0:
-                doluluk = (kayitli / kontenjan) * 100
-                self.lbl_doluluk_sonuc.config(text=f"%{doluluk:.1f}", fg="blue")
+                self.lbl_doluluk_sonuc.config(
+                    text=f"%{float(popularity['occupancy_ratio'] or 0.0) * 100:.1f}",
+                    fg="blue",
+                )
+                getattr(self, "lbl_populerlik_sonuc", self.lbl_doluluk_sonuc).config(
+                    text=f"%{float(popularity['popularity_score'] or 0.0) * 100:.1f}",
+                    fg="#15803d",
+                )
             else:
                 self.lbl_doluluk_sonuc.config(text="-")
+                if hasattr(self, "lbl_populerlik_sonuc"):
+                    self.lbl_populerlik_sonuc.config(text="-")
+            attendance_component = popularity.get("attendance_component")
+            if hasattr(self, "lbl_katilim_sonuc"):
+                self.lbl_katilim_sonuc.config(
+                    text=(
+                        f"%{float(attendance_component) * 100:.1f}"
+                        if attendance_component is not None
+                        else "Veri yok"
+                    ),
+                    fg="#7c3aed" if attendance_component is not None else "#64748b",
+                )
 
             anket_kat = float(self.ent_anket_katilimci.get() or 0)
             anket_secen = float(self.ent_anket_dersi_secen.get() or 0)
@@ -1531,7 +1589,26 @@ class CriteriaPage:
             criteria_updated_at = self._now_utc()
 
             basari_orani = (gecen / top_ogr) if top_ogr > 0 else 0.0
-            doluluk_orani = min(kayit / kont, 1.0) if kont > 0 else 0.0
+            katilim_sayisi = (
+                existing_record.get("katilim_sayisi") if existing_record else None
+            )
+            toplam_hafta = existing_record.get("toplam_hafta") if existing_record else None
+            katilim_yuzdesi = (
+                existing_record.get("katilim_yuzdesi") if existing_record else None
+            )
+            devamsiz_ogrenci_sayisi = (
+                existing_record.get("devamsiz_ogrenci_sayisi") if existing_record else None
+            )
+            popularity = calculate_popularity_score(
+                capacity=kont,
+                enrolled=kayit,
+                attendance_count=katilim_sayisi,
+                total_weeks=toplam_hafta,
+                attendance_percentage=katilim_yuzdesi,
+                absent_student_count=devamsiz_ogrenci_sayisi,
+            )
+            doluluk_orani = float(popularity["occupancy_ratio"] or 0.0)
+            populerlik_orani = float(popularity["popularity_score"] or 0.0)
 
             cur = self.db.conn.cursor()
 
@@ -1559,6 +1636,10 @@ class CriteriaPage:
                         basari_ortalamasi = ?,
                         kontenjan = ?,
                         kayitli_ogrenci = ?,
+                        katilim_sayisi = ?,
+                        toplam_hafta = ?,
+                        katilim_yuzdesi = ?,
+                        devamsiz_ogrenci_sayisi = ?,
                         anket_katilimci = ?,
                         anket_dersi_secen = ?,
                         anket_veri_kaynagi = ?,
@@ -1578,6 +1659,10 @@ class CriteriaPage:
                         ort,
                         kont,
                         kayit,
+                        katilim_sayisi,
+                        toplam_hafta,
+                        katilim_yuzdesi,
+                        devamsiz_ogrenci_sayisi,
                         ank_kat,
                         ank_sec,
                         anket_veri_kaynagi,
@@ -1597,10 +1682,12 @@ class CriteriaPage:
                     INSERT INTO ders_kriterleri
                         (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci,
                          basari_ortalamasi, kontenjan, kayitli_ogrenci,
+                         katilim_sayisi, toplam_hafta, katilim_yuzdesi,
+                         devamsiz_ogrenci_sayisi,
                          anket_katilimci, anket_dersi_secen, anket_veri_kaynagi,
                          anket_manual_locked, anket_import_id, anket_imported_at,
                          criteria_import_id, criteria_veri_kaynagi, criteria_manual_override, criteria_updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         c_id,
@@ -1611,6 +1698,10 @@ class CriteriaPage:
                         ort,
                         kont,
                         kayit,
+                        katilim_sayisi,
+                        toplam_hafta,
+                        katilim_yuzdesi,
+                        devamsiz_ogrenci_sayisi,
                         ank_kat,
                         ank_sec,
                         anket_veri_kaynagi,
@@ -1646,10 +1737,20 @@ class CriteriaPage:
             cur.execute(
                 """
                 INSERT INTO populerlik
-                    (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (ders_id, akademik_yil, donem, talep_sayisi, kontenjan,
+                     doluluk_orani, ilgi_orani, ham_puan)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (c_id, yil, donem_db, kayit, kont, doluluk_orani),
+                (
+                    c_id,
+                    yil,
+                    donem_db,
+                    kayit,
+                    kont,
+                    doluluk_orani,
+                    popularity.get("attendance_component"),
+                    populerlik_orani,
+                ),
             )
 
             self.db.conn.commit()
@@ -1680,7 +1781,11 @@ class CriteriaPage:
 
             msg = "Veriler kaydedildi."
             if in_mufredat:
-                msg += f"\nBaşarı oranı: %{basari_orani*100:.1f}  |  Doluluk: %{doluluk_orani*100:.1f}"
+                msg += (
+                    f"\nBaşarı oranı: %{basari_orani*100:.1f}"
+                    f"  |  Kapasite doluluğu: %{doluluk_orani*100:.1f}"
+                    f"  |  Popülerlik: %{populerlik_orani*100:.1f}"
+                )
             else:
                 msg += "\n(Müfredatta olmayan ders – yalnızca temel kriterler kaydedildi.)"
             if survey_locked:

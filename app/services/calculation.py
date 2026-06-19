@@ -36,6 +36,7 @@ from app.services.pool_state_machine_service import (
 from app.services.pool_state_policy_service import (
     resolve_policy as resolve_pool_state_policy,
 )
+from app.services.popularity_service import calculate_popularity_score
 from app.services.trend_analysis_service import (
     analyze_course_finalized_score_trend,
     analyze_course_trend,
@@ -808,7 +809,9 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         cur.execute(
             """
             SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                   kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+                   kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen,
+                   katilim_sayisi, toplam_hafta, katilim_yuzdesi,
+                   devamsiz_ogrenci_sayisi
             FROM ders_kriterleri
             WHERE ders_id = ? AND yil = ?
               AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
@@ -823,7 +826,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
             cur.execute(
                 """
                 SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                       kontenjan, kayitli_ogrenci
+                       kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
                 FROM ders_kriterleri
                 WHERE ders_id = ? AND yil = ?
                   AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
@@ -833,16 +836,34 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
                 (int(ders_id), int(yil), str(donem)),
             )
             row = cur.fetchone()
-            dk = (row[0], row[1], row[2], row[3], row[4], 0, 0) if row else None
+            dk = (*row, None, None, None, None) if row else None
         except Exception:
-            pass
+            try:
+                cur.execute(
+                    """
+                    SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
+                           kontenjan, kayitli_ogrenci
+                    FROM ders_kriterleri
+                    WHERE ders_id = ? AND yil = ?
+                      AND (COALESCE(TRIM(donem), '') = '' OR LOWER(SUBSTR(TRIM(donem), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1)))
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (int(ders_id), int(yil), str(donem)),
+                )
+                row = cur.fetchone()
+                dk = (*row, 0, 0, None, None, None, None) if row else None
+            except Exception:
+                pass
 
     if dk is None:
         try:
             cur.execute(
                 """
                 SELECT toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                       kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen
+                       kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen,
+                       katilim_sayisi, toplam_hafta, katilim_yuzdesi,
+                       devamsiz_ogrenci_sayisi
                 FROM ders_kriterleri
                 WHERE ders_id = ? AND yil < ?
                 ORDER BY yil DESC, id DESC
@@ -881,7 +902,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
     try:
         cur.execute(
             """
-            SELECT doluluk_orani
+            SELECT COALESCE(ham_puan, doluluk_orani)
             FROM populerlik
             WHERE ders_id = ? AND akademik_yil = ?
             ORDER BY pop_id DESC
@@ -915,8 +936,15 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
         kayitli = _safe_float2(dk[4], 0.0)
         if toplam > 0:
             basari = gecen / toplam
-        if kontenjan > 0:
-            doluluk = kayitli / kontenjan
+        popularity = calculate_popularity_score(
+            capacity=kontenjan,
+            enrolled=kayitli,
+            attendance_count=dk[7] if len(dk) > 7 else None,
+            total_weeks=dk[8] if len(dk) > 8 else None,
+            attendance_percentage=dk[9] if len(dk) > 9 else None,
+            absent_student_count=dk[10] if len(dk) > 10 else None,
+        )
+        doluluk = float(popularity["popularity_score"] or 0.0)
 
         anket_kat = _safe_float2(dk[5], 0.0)
         anket_secen = _safe_float2(dk[6], 0.0)
@@ -990,7 +1018,7 @@ def _read_course_metrics(cur, ders_id, yil, donem, motor):
             pass
         try:
             cur.execute(
-                """SELECT doluluk_orani FROM populerlik
+                """SELECT COALESCE(ham_puan, doluluk_orani) FROM populerlik
                    WHERE ders_id = ? AND akademik_yil = ?
                    ORDER BY pop_id DESC LIMIT 1""",
                 (int(ders_id), prev_yil),

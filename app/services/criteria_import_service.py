@@ -35,6 +35,7 @@ from app.services.import_diff_service import recalculate_import_diff
 from app.services.import_impact_service import recalculate_import_impact
 from app.services.import_lineage_service import record_value_source
 from app.services.import_quality_service import evaluate_import_quality, recommended_import_status
+from app.services.popularity_service import calculate_popularity_score
 from app.services.yearly_workflow import mark_criteria_status
 
 CRITERIA_TEMPLATE_VERSION = "criteria-import-v1"
@@ -52,6 +53,10 @@ class CriteriaRow:
     basari_ortalamasi: float | None
     kontenjan: int | None
     kayitli_ogrenci: int | None
+    katilim_sayisi: float | None = None
+    toplam_hafta: int | None = None
+    katilim_yuzdesi: float | None = None
+    devamsiz_ogrenci_sayisi: int | None = None
     aciklama: str | None = None
     fakulte_adi: str | None = None
     bolum_adi: str | None = None
@@ -69,6 +74,10 @@ class CriteriaImportRowResult:
     basari_ortalamasi: float
     kontenjan: int
     kayitli_ogrenci: int
+    katilim_sayisi: float | None = None
+    toplam_hafta: int | None = None
+    katilim_yuzdesi: float | None = None
+    devamsiz_ogrenci_sayisi: int | None = None
     aciklama: str | None = None
     matched_ders_id: int | None = None
     match_method: str | None = None
@@ -226,6 +235,22 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
     col_avg = _find_col(columns, "basari_ortalamasi", "ortalama_not", "ortalama")
     col_quota = _find_col(columns, "kontenjan", "ders_kontenjani")
     col_enrolled = _find_col(columns, "kayitli_ogrenci", "kayitli ogrenci", "talep_sayisi")
+    col_attendance_count = _find_col(
+        columns, "katilim_sayisi", "ortalama_katilim_sayisi", "ort_katilim_sayisi"
+    )
+    col_total_weeks = _find_col(columns, "toplam_hafta", "hafta_sayisi")
+    col_attendance_percentage = _find_col(
+        columns,
+        "katilim_yuzdesi",
+        "ortalama_katilim_yuzdesi",
+        "ort_katilim_yuzde",
+    )
+    col_absent_count = _find_col(
+        columns,
+        "devamsiz_ogrenci_sayisi",
+        "devamsiz_sayisi",
+        "devamsiz_mi",
+    )
     col_note = _find_col(columns, "aciklama", "not")
     col_faculty = _find_col(columns, "fakulte_adi", "fakulte", "faculty")
     col_department = _find_col(columns, "bolum_adi", "bolum", "department")
@@ -256,6 +281,14 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
         if kayitli is None:
             kayitli = toplam
 
+        devamsiz_count = _safe_int(row.get(col_absent_count)) if col_absent_count else None
+        if devamsiz_count is None and col_absent_count:
+            absent_text = normalize_course_text(_clean_text(row.get(col_absent_count)))
+            if absent_text in {"evet", "yes", "true"}:
+                devamsiz_count = 1
+            elif absent_text in {"hayir", "no", "false"}:
+                devamsiz_count = 0
+
         criteria_row = CriteriaRow(
             row_no=int(str(idx)) + 2,
             ders_kodu=ders_kodu,
@@ -265,6 +298,16 @@ def parse_criteria_excel(excel_path: str) -> dict[str, Any]:
             basari_ortalamasi=ortalama,
             kontenjan=kontenjan,
             kayitli_ogrenci=kayitli,
+            katilim_sayisi=(
+                _safe_float(row.get(col_attendance_count)) if col_attendance_count else None
+            ),
+            toplam_hafta=_safe_int(row.get(col_total_weeks)) if col_total_weeks else None,
+            katilim_yuzdesi=(
+                _safe_float(row.get(col_attendance_percentage))
+                if col_attendance_percentage
+                else None
+            ),
+            devamsiz_ogrenci_sayisi=devamsiz_count,
             aciklama=_clean_text(row.get(col_note)) if col_note else None,
             fakulte_adi=_clean_text(row.get(col_faculty)) if col_faculty else None,
             bolum_adi=_clean_text(row.get(col_department)) if col_department else None,
@@ -326,6 +369,25 @@ def validate_criteria_rows(
             errors.append(f"Satir {row.row_no}: sayisal alanlar negatif olamaz.")
         if row.gecen_ogrenci > row.toplam_ogrenci:
             errors.append(f"Satir {row.row_no}: gecen_ogrenci toplam_ogrenci degerini asamaz.")
+        if row.katilim_sayisi is not None and row.katilim_sayisi < 0:
+            errors.append(f"Satir {row.row_no}: katilim_sayisi negatif olamaz.")
+        if row.toplam_hafta is not None and row.toplam_hafta <= 0:
+            errors.append(f"Satir {row.row_no}: toplam_hafta sifirdan buyuk olmali.")
+        if (
+            row.katilim_sayisi is not None
+            and row.toplam_hafta is not None
+            and row.katilim_sayisi > row.toplam_hafta
+        ):
+            errors.append(f"Satir {row.row_no}: katilim_sayisi toplam_hafta degerini asamaz.")
+        if row.katilim_yuzdesi is not None and not 0.0 <= row.katilim_yuzdesi <= 100.0:
+            errors.append(f"Satir {row.row_no}: katilim_yuzdesi 0-100 araliginda olmali.")
+        if row.devamsiz_ogrenci_sayisi is not None:
+            if row.devamsiz_ogrenci_sayisi < 0:
+                errors.append(f"Satir {row.row_no}: devamsiz_ogrenci_sayisi negatif olamaz.")
+            elif row.kayitli_ogrenci is not None and row.devamsiz_ogrenci_sayisi > row.kayitli_ogrenci:
+                errors.append(
+                    f"Satir {row.row_no}: devamsiz_ogrenci_sayisi kayitli_ogrenci degerini asamaz."
+                )
         if faculty_name and row.fakulte_adi and normalize_course_text(row.fakulte_adi) != normalize_course_text(faculty_name):
             errors.append(
                 f"Satir {row.row_no}: belge fakultesi '{row.fakulte_adi}' secili fakulte '{faculty_name}' ile uyusmuyor."
@@ -422,6 +484,46 @@ def _get_scope_courses(
         """,
         tuple(params),
     )
+    rows = [
+        {
+            "ders_id": int(row[0]),
+            "ders_kodu": _clean_text(row[1]),
+            "ders_adi": str(row[2] or "").strip(),
+            "bolum_id": int(row[3]) if row[3] is not None else None,
+            "bolum_adi": str(row[4] or "").strip() or None,
+        }
+        for row in cur.fetchall()
+        if row and row[0] is not None and str(row[2] or "").strip()
+    ]
+    if rows:
+        return rows
+
+    # Ilk kurulum/sifirlama senaryosunda henuz mufredat bulunmayabilir.
+    # Kriter importu mufredati uretecek ana girdilerden biri oldugu icin
+    # eslestirmeyi bu durumda dogrudan ders havuzundaki secmeli derslerle yapariz.
+    fallback_params: list[Any] = [int(faculty_id)]
+    fallback_department_clause = ""
+    if department_id is not None:
+        fallback_department_clause = "AND d.bolum_id = ?"
+        fallback_params.append(int(department_id))
+
+    cur.execute(
+        f"""
+        SELECT DISTINCT
+            d.ders_id,
+            NULLIF(TRIM(COALESCE(d.kod, '')), '') AS ders_kodu,
+            COALESCE(NULLIF(TRIM(d.ad), ''), 'Ders ' || d.ders_id) AS ders_adi,
+            d.bolum_id,
+            b.ad AS bolum_adi
+        FROM ders d
+        LEFT JOIN bolum b ON b.bolum_id = d.bolum_id
+        WHERE COALESCE(d.fakulte_id, b.fakulte_id) = ?
+          {fallback_department_clause}
+          AND {predicate}
+        ORDER BY b.ad, d.ad, d.ders_id
+        """,
+        tuple(fallback_params),
+    )
     return [
         {
             "ders_id": int(row[0]),
@@ -491,6 +593,10 @@ CRITERIA_TEMPLATE_COLUMNS = [
     "basari_ortalamasi",
     "kontenjan",
     "kayitli_ogrenci",
+    "katilim_sayisi",
+    "toplam_hafta",
+    "katilim_yuzdesi",
+    "devamsiz_ogrenci_sayisi",
 ]
 
 
@@ -678,6 +784,18 @@ def match_criteria_rows(
             basari_ortalamasi=float(row.basari_ortalamasi or 0.0),
             kontenjan=int(row.kontenjan or 0),
             kayitli_ogrenci=int(row.kayitli_ogrenci or 0),
+            katilim_sayisi=(
+                float(row.katilim_sayisi) if row.katilim_sayisi is not None else None
+            ),
+            toplam_hafta=int(row.toplam_hafta) if row.toplam_hafta is not None else None,
+            katilim_yuzdesi=(
+                float(row.katilim_yuzdesi) if row.katilim_yuzdesi is not None else None
+            ),
+            devamsiz_ogrenci_sayisi=(
+                int(row.devamsiz_ogrenci_sayisi)
+                if row.devamsiz_ogrenci_sayisi is not None
+                else None
+            ),
             aciklama=row.aciklama,
             raw_fakulte=row.fakulte_adi,
             raw_bolum=row.bolum_adi,
@@ -1084,9 +1202,10 @@ def apply_criteria_import(
             """
             INSERT INTO criteria_import_rows
                 (import_id, row_no, ders_kodu, ders_adi, toplam_ogrenci, gecen_ogrenci,
-                 basari_ortalamasi, kontenjan, kayitli_ogrenci, matched_ders_id, match_method,
+                 basari_ortalamasi, kontenjan, kayitli_ogrenci, katilim_sayisi, toplam_hafta,
+                 katilim_yuzdesi, devamsiz_ogrenci_sayisi, matched_ders_id, match_method,
                  row_status, error_message, raw_fakulte, raw_bolum, raw_yil, raw_donem)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(import_id),
@@ -1098,6 +1217,14 @@ def apply_criteria_import(
                 float(row.basari_ortalamasi),
                 int(row.kontenjan),
                 int(row.kayitli_ogrenci),
+                float(row.katilim_sayisi) if row.katilim_sayisi is not None else None,
+                int(row.toplam_hafta) if row.toplam_hafta is not None else None,
+                float(row.katilim_yuzdesi) if row.katilim_yuzdesi is not None else None,
+                (
+                    int(row.devamsiz_ogrenci_sayisi)
+                    if row.devamsiz_ogrenci_sayisi is not None
+                    else None
+                ),
                 int(row.matched_ders_id) if row.matched_ders_id is not None else None,
                 row.match_method,
                 row.row_status,
@@ -1188,6 +1315,10 @@ def apply_criteria_import(
                     basari_ortalamasi = ?,
                     kontenjan = ?,
                     kayitli_ogrenci = ?,
+                    katilim_sayisi = ?,
+                    toplam_hafta = ?,
+                    katilim_yuzdesi = ?,
+                    devamsiz_ogrenci_sayisi = ?,
                     criteria_import_id = ?,
                     criteria_veri_kaynagi = 'criteria_import',
                     criteria_manual_override = 0,
@@ -1200,6 +1331,14 @@ def apply_criteria_import(
                     float(row.basari_ortalamasi),
                     int(row.kontenjan),
                     int(row.kayitli_ogrenci),
+                    float(row.katilim_sayisi) if row.katilim_sayisi is not None else None,
+                    int(row.toplam_hafta) if row.toplam_hafta is not None else None,
+                    float(row.katilim_yuzdesi) if row.katilim_yuzdesi is not None else None,
+                    (
+                        int(row.devamsiz_ogrenci_sayisi)
+                        if row.devamsiz_ogrenci_sayisi is not None
+                        else None
+                    ),
                     int(import_id),
                     now,
                     int(existing_id),
@@ -1211,10 +1350,12 @@ def apply_criteria_import(
                 """
                 INSERT INTO ders_kriterleri
                     (ders_id, yil, donem, toplam_ogrenci, gecen_ogrenci, basari_ortalamasi,
-                     kontenjan, kayitli_ogrenci, anket_katilimci, anket_dersi_secen,
+                     kontenjan, kayitli_ogrenci, katilim_sayisi, toplam_hafta,
+                     katilim_yuzdesi, devamsiz_ogrenci_sayisi,
+                     anket_katilimci, anket_dersi_secen,
                      anket_veri_kaynagi, anket_manual_locked, anket_import_id, anket_imported_at,
                      criteria_import_id, criteria_veri_kaynagi, criteria_manual_override, criteria_updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'manual', 0, NULL, NULL, ?, 'criteria_import', 0, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'manual', 0, NULL, NULL, ?, 'criteria_import', 0, ?)
                 """,
                 (
                     int(row.matched_ders_id),
@@ -1225,6 +1366,14 @@ def apply_criteria_import(
                     float(row.basari_ortalamasi),
                     int(row.kontenjan),
                     int(row.kayitli_ogrenci),
+                    float(row.katilim_sayisi) if row.katilim_sayisi is not None else None,
+                    int(row.toplam_hafta) if row.toplam_hafta is not None else None,
+                    float(row.katilim_yuzdesi) if row.katilim_yuzdesi is not None else None,
+                    (
+                        int(row.devamsiz_ogrenci_sayisi)
+                        if row.devamsiz_ogrenci_sayisi is not None
+                        else None
+                    ),
                     int(import_id),
                     now,
                 ),
@@ -1232,9 +1381,17 @@ def apply_criteria_import(
             created_rows += 1
 
         basari_orani = (float(row.gecen_ogrenci) / float(row.toplam_ogrenci)) if row.toplam_ogrenci > 0 else 0.0
-        doluluk_orani = (
-            min(float(row.kayitli_ogrenci) / float(row.kontenjan), 1.0) if row.kontenjan > 0 else 0.0
+        popularity = calculate_popularity_score(
+            capacity=row.kontenjan,
+            enrolled=row.kayitli_ogrenci,
+            attendance_count=row.katilim_sayisi,
+            total_weeks=row.toplam_hafta,
+            attendance_percentage=row.katilim_yuzdesi,
+            absent_student_count=row.devamsiz_ogrenci_sayisi,
         )
+        doluluk_orani = float(popularity["occupancy_ratio"] or 0.0)
+        ilgi_orani = popularity.get("attendance_component")
+        populerlik_puani = float(popularity["popularity_score"] or 0.0)
 
         cur.execute(
             """
@@ -1269,8 +1426,10 @@ def apply_criteria_import(
         )
         cur.execute(
             """
-            INSERT INTO populerlik (ders_id, akademik_yil, donem, talep_sayisi, kontenjan, doluluk_orani)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO populerlik
+                (ders_id, akademik_yil, donem, talep_sayisi, kontenjan,
+                 doluluk_orani, ilgi_orani, ham_puan)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(row.matched_ders_id),
@@ -1279,6 +1438,8 @@ def apply_criteria_import(
                 int(row.kayitli_ogrenci),
                 int(row.kontenjan),
                 float(doluluk_orani),
+                float(ilgi_orani) if ilgi_orani is not None else None,
+                float(populerlik_puani),
             ),
         )
         applied_course_ids.add(int(row.matched_ders_id))
@@ -1289,6 +1450,10 @@ def apply_criteria_import(
                 ("basari_ortalamasi", row.basari_ortalamasi),
                 ("kontenjan", row.kontenjan),
                 ("kayitli_ogrenci", row.kayitli_ogrenci),
+                ("katilim_sayisi", row.katilim_sayisi),
+                ("toplam_hafta", row.toplam_hafta),
+                ("katilim_yuzdesi", row.katilim_yuzdesi),
+                ("devamsiz_ogrenci_sayisi", row.devamsiz_ogrenci_sayisi),
             ):
                 record_value_source(
                     conn=conn,
@@ -1704,7 +1869,13 @@ def import_criteria_excel(
                 "quality_level": quality.quality_level,
             }
 
-        conn.execute("BEGIN")
+        # Eslesmeyen satirlar yukarida import_row_issues tablosuna yazildiginda
+        # sqlite3 zaten otomatik olarak bir transaction baslatir. Bu durumda
+        # tekrar BEGIN calistirmak "cannot start a transaction within a
+        # transaction" hatasina yol aciyordu ve kismi eslesmeli batch onay
+        # kuyruguna ulasamiyordu.
+        if not conn.in_transaction:
+            conn.execute("BEGIN")
         applied = apply_criteria_import(
             conn=conn,
             faculty_id=int(faculty_id),

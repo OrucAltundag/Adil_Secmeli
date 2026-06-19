@@ -274,12 +274,15 @@ def build_curriculum_review(conn: sqlite3.Connection, source_year: int, faculty_
     ensure_review_schema(conn)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    latest = get_latest_review(conn, source_year, faculty_id, department_id)
+    if latest and latest.get("status") == "pending":
+        return latest
+
     fall_run = _latest_run(cur, source_year=source_year, faculty_id=faculty_id, department_id=department_id, semester="Guz")
     spring_run = _latest_run(cur, source_year=source_year, faculty_id=faculty_id, department_id=department_id, semester="Bahar")
     if fall_run is None and spring_run is None:
         raise ValueError("Bu kapsam için tamamlanmış Güz/Bahar geçici karar çalıştırması bulunamadı.")
 
-    latest = get_latest_review(conn, source_year, faculty_id, department_id)
     if (
         latest
         and latest.get("status") == "pending"

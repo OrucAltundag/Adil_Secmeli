@@ -235,6 +235,26 @@ def import_data(file_path, clear_existing=False):
             ort_basari = safe_float(row.get("OrtalamaBaşarı"), 50.0)
             katilimci = safe_int(row.get("PopülariteSayı"), 0)
 
+            # Eklenen alanlar: kontenjan, kayitli_ogrenci, katilim_yuzdesi/katilim_sayisi
+            kontenjan_val = safe_int(
+                row.get("Kontenjan") or row.get("kontenjan") or row.get("Kontenjanı") or 50,
+                50,
+            )
+            kayitli_val = safe_int(
+                row.get("KayitliOgrenci") or row.get("Kayıtlı") or row.get("kayit") or row.get("KayitSayisi") or row.get("kayit_sayisi"),
+                katilimci,
+            )
+            katilim_yuzde = safe_float(
+                row.get("KatılımYüzde") or row.get("katilim_yuzde") or row.get("ort_katilim_yuzde"),
+                None,
+            )
+            katilim_sayisi = None
+            if katilim_yuzde is not None:
+                try:
+                    katilim_sayisi = int(round(kayitli_val * (float(katilim_yuzde) / 100.0)))
+                except Exception:
+                    katilim_sayisi = None
+
             perf = db.query(Performans).filter(
                 Performans.ders_id == ders_id,
                 Performans.akademik_yil == 2024,
@@ -253,9 +273,22 @@ def import_data(file_path, clear_existing=False):
                 )
                 db.add(perf)
 
-            # Popülerlik
-            safe_float(row.get("PopülerlikPuanı"), 0.0)
-            doluluk = min(1.0, katilimci / 50.0) if katilimci else 0.0
+            # Popülerlik: hesaplama servisini kullanarak daha zengin sinyallerle üret
+            try:
+                from app.services.popularity_service import calculate_popularity_score
+
+                popularity = calculate_popularity_score(
+                    capacity=kontenjan_val,
+                    enrolled=kayitli_val,
+                    attendance_count=katilim_sayisi,
+                    total_weeks=None,
+                    attendance_percentage=katilim_yuzde,
+                    absent_student_count=None,
+                )
+                pop_score = float(popularity.get("popularity_score") or 0.0)
+            except Exception:
+                pop_score = min(1.0, katilimci / (kontenjan_val or 1)) if katilimci else 0.0
+
             pop = db.query(Populerlik).filter(
                 Populerlik.ders_id == ders_id,
                 Populerlik.akademik_yil == 2024,
@@ -263,16 +296,16 @@ def import_data(file_path, clear_existing=False):
             ).first()
             if pop:
                 pop.talep_sayisi = katilimci
-                pop.kontenjan = 50
-                pop.doluluk_orani = doluluk
+                pop.kontenjan = kontenjan_val
+                pop.doluluk_orani = pop_score
             else:
                 pop = Populerlik(
                     ders_id=ders_id,
                     akademik_yil=2024,
                     donem=donem,
                     talep_sayisi=katilimci,
-                    kontenjan=50,
-                    doluluk_orani=doluluk,
+                    kontenjan=kontenjan_val,
+                    doluluk_orani=pop_score,
                 )
                 db.add(pop)
 

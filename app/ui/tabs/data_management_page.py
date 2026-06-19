@@ -29,6 +29,7 @@ from app.services.import_history_service import cleanup_import_history, delete_r
 from app.services.import_quality_service import evaluate_import_quality
 from app.services.import_rollback_service import get_rollback_plan, rollback_import
 from app.services.pending_import_service import apply_pending_import, reject_pending_import
+from app.services.curriculum_import_service import detect_curriculum_years
 
 
 class DataManagementPage(ttk.Frame):
@@ -262,7 +263,10 @@ class DataManagementPage(ttk.Frame):
         # Dönem bilgisi (gerekliyse) dosyadan okunur veya backend varsayılanını
         # kullanır; eski kayıtlar etkilenmez.
         ttk.Label(form, text="Akademik yıl").grid(row=2, column=0, sticky=tk.W, padx=4, pady=4)
-        self.import_year_combo = ttk.Combobox(form, width=10, state="readonly")
+        # Veritabanında henüz yıl bulunmadığında da ilk import yapılabilsin.
+        # Müfredat dosyası seçilince satırlardaki yıl otomatik doldurulur; kullanıcı
+        # gerektiğinde geçerli bir yılı elle de yazabilir.
+        self.import_year_combo = ttk.Combobox(form, width=10, state="normal")
         self.import_year_combo.grid(row=2, column=1, sticky=tk.W, padx=4, pady=4)
 
         self.auto_activate_var = tk.BooleanVar(value=False)
@@ -746,6 +750,8 @@ class DataManagementPage(ttk.Frame):
         path = self.file_path_var.get().strip()
         has_file = bool(path and os.path.exists(path))
         is_student = self._selected_import_type() == "student_criteria"
+        if has_file and self._selected_import_type() == "curriculum":
+            self._set_curriculum_year_from_file(path)
         btn = getattr(self, "_btn_import", None)
         if btn:
             # student_criteria modunda 'Importu Baslat' devre disi: bu mod yalniz
@@ -764,6 +770,24 @@ class DataManagementPage(ttk.Frame):
                 lbl.configure(text="Dosya bulunamadı.", foreground="#dc2626")
             else:
                 lbl.configure(text="Önce Excel dosyası seçin.", foreground="#64748b")
+
+    def _set_curriculum_year_from_file(self, path: str) -> None:
+        """Tek yıllı müfredat dosyasında hedef yılı satırlardan otomatik seçer."""
+        try:
+            years = detect_curriculum_years(path)
+        except Exception:
+            return
+        if len(years) == 1:
+            year = str(years[0])
+            values = list(self.import_year_combo.cget("values") or ())
+            if year not in values:
+                self.import_year_combo.configure(values=[year, *values])
+            self.import_year_combo.set(year)
+            self._update_scope_indicator()
+        elif len(years) > 1:
+            # Mevcut servis bir import batch'ini tek yıla bağlar. Çok yıllı
+            # dosyada sessizce yanlış yıl seçmek yerine kullanıcıdan seçim ister.
+            self.import_year_combo.set("")
 
     def _select_import_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -835,6 +859,9 @@ class DataManagementPage(ttk.Frame):
         self._set_text(self.requirements_text, text)
         self._update_scope_indicator()
         self._update_template_button_state(selected)
+        path = self.file_path_var.get().strip()
+        if selected == "curriculum" and path and os.path.exists(path):
+            self._set_curriculum_year_from_file(path)
 
     def _update_template_button_state(self, selected: str) -> None:
         """§2/§3: Öğrenci-veri-setinden-kriter modunda klasik şablon üretimi ve

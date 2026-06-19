@@ -21,10 +21,11 @@ from app.services.decision_policy_service import (
 )
 from app.services.decision_run_service import (
     _apply_governance,
+    _soften_curriculum_recommendation,
     record_decision_run_for_faculty_year,
 )
 from app.services.explanation_engine import build_decision_explanation
-from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL
+from app.services.havuz_karar import STATU_DINLENMEDE, STATU_HAVUZDA, STATU_IPTAL, STATU_MUFREDATTA
 from app.services.trend_analysis_service import analyze_trend_values
 
 
@@ -270,6 +271,7 @@ def test_governance_blocks_automatic_cancel_for_manual_new_and_strategic():
     result = _apply_governance(
         recommended_status=STATU_IPTAL,
         old_status=STATU_HAVUZDA,
+        topsis_score=20.0,
         year=2026,
         policy=policy,
         governance={"strategic_flag": True, "accreditation_flag": False, "protected_until_year": None},
@@ -279,6 +281,50 @@ def test_governance_blocks_automatic_cancel_for_manual_new_and_strategic():
     assert result["approval_required"] is True
     assert result["final_status"] != STATU_IPTAL
     assert "Stratejik" in result["approval_reason"]
+
+
+def test_governance_keeps_high_scoring_existing_curriculum_course():
+    policy = {
+        "curriculum_keep_threshold": 70.0,
+        "pool_threshold": 50.0,
+        "require_manual_approval_for_cancel": True,
+        "new_course_grace_period_years": 2,
+        "low_data_confidence_threshold": 0.5,
+    }
+    result = _apply_governance(
+        recommended_status=STATU_HAVUZDA,
+        old_status=STATU_MUFREDATTA,
+        topsis_score=82.0,
+        year=2026,
+        policy=policy,
+        governance={"strategic_flag": False, "accreditation_flag": False, "protected_until_year": None},
+        confidence={"score": 0.80},
+        first_seen_year=2022,
+    )
+
+    assert result["final_status"] == STATU_MUFREDATTA
+    assert result["approval_required"] is True
+    assert "politika koruması" in result["approval_reason"]
+
+
+def test_electre_recommendation_softens_high_scoring_existing_curriculum_course():
+    classification = {
+        "recommended_status": STATU_HAVUZDA,
+        "category": "Havuz",
+        "rule_triggered": "electre_tri_b:Havuz",
+        "reason": "ELECTRE TRI-B pessimistic atama: Havuz.",
+    }
+
+    result = _soften_curriculum_recommendation(
+        classification,
+        old_status=STATU_MUFREDATTA,
+        topsis_score=82.0,
+        policy={"curriculum_keep_threshold": 70.0, "pool_threshold": 50.0},
+    )
+
+    assert result["recommended_status"] == STATU_MUFREDATTA
+    assert result["policy_softened"] is True
+    assert "müfredat eşiğini" in result["reason"]
 
 
 def test_decision_run_integration_writes_core_records():
@@ -302,11 +348,13 @@ def test_decision_run_integration_writes_core_records():
         acilabilirlik = decision_row[0]
         assert acilabilirlik is not None
         assert 0.0 <= float(acilabilirlik) <= 100.0
-        # Bu fixture'da hedef yildan once 100 etiketli karar yoktur. DT sahte
-        # tahmin uretmez; her ders icin gerekceli unavailable sonucu saklar.
-        assert decision_row[1] is None
-        assert decision_row[2] == "unavailable"
-        assert "yetersiz" in json.loads(decision_row[3])["explanation"].lower()
+        # Bu fixture'da hedef yildan once 100 etiketli karar yoktur. DT modeli
+        # egitilemez; bunun yerine dusuk guvenli politika + akran onerisi saklanir.
+        assert decision_row[1] is not None
+        assert decision_row[2] in {"agree", "dt_more_positive", "dt_more_cautious"}
+        details = json.loads(decision_row[3])
+        assert details["fallback_advisory"] is True
+        assert "yetersiz" in details["explanation"].lower()
         cur.execute("SELECT COUNT(*) FROM course_decision_explanations")
         assert cur.fetchone()[0] == 1
         cur.execute("SELECT COUNT(*) FROM decision_fairness_reports WHERE decision_run_id = ?", (run_id,))

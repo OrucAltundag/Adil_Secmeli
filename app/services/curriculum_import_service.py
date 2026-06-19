@@ -14,6 +14,7 @@ from app.db.schema_compat import (
     ensure_reporting_schema,
 )
 from app.db.sqlite_connection import connect_sqlite
+from app.services.course_type import build_elective_predicate
 from app.services.import_audit_service import (
     create_import_batch,
     extract_excel_metadata,
@@ -169,14 +170,16 @@ def _parse_year(raw: Any) -> int | None:
 def parse_curriculum_excel(excel_path: str) -> tuple[list[dict[str, Any]], list[str]]:
     if not os.path.exists(excel_path):
         raise FileNotFoundError(f"Excel dosyasi bulunamadi: {excel_path}")
-    xls = pd.ExcelFile(excel_path)
     all_rows: list[dict[str, Any]] = []
     warnings: list[str] = []
-    for sheet in xls.sheet_names:
-        df = pd.read_excel(xls, sheet_name=str(sheet))
-        rows, warns = _extract_rows_from_df(df, sheet_name=str(sheet))
-        all_rows.extend(rows)
-        warnings.extend(warns)
+    # Windows'ta seçilen dosyanın import sonrasında kilitli kalmaması için
+    # ExcelFile tanıtıcısını deterministik olarak kapat.
+    with pd.ExcelFile(excel_path) as xls:
+        for sheet in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=str(sheet))
+            rows, warns = _extract_rows_from_df(df, sheet_name=str(sheet))
+            all_rows.extend(rows)
+            warnings.extend(warns)
     return all_rows, warnings
 
 
@@ -186,6 +189,12 @@ def parse_excel(excel_path: str) -> tuple[list[dict[str, Any]], list[str]]:
     Kullanici senaryosundaki parse_excel(...) adini dogrudan destekler.
     """
     return parse_curriculum_excel(excel_path)
+
+
+def detect_curriculum_years(excel_path: str) -> list[int]:
+    """Müfredat dosyasındaki geçerli akademik yılları döndürür."""
+    rows, _warnings = parse_curriculum_excel(excel_path)
+    return sorted({int(row["yil"]) for row in rows if row.get("yil") is not None})
 
 
 def _table_exists(cur: sqlite3.Cursor, table_name: str) -> bool:
@@ -232,25 +241,79 @@ def _find_department_id(cur: sqlite3.Cursor, faculty_id: int, department_name: s
     return int(row[0]) if row else None
 
 
-def _find_course_id(cur: sqlite3.Cursor, ders_adi: str | None, ders_kodu: str | None) -> int | None:
+def _find_course_id(
+    cur: sqlite3.Cursor,
+    ders_adi: str | None,
+    ders_kodu: str | None,
+    *,
+    faculty_id: int | None = None,
+    department_id: int | None = None,
+) -> int | None:
     code = str(ders_kodu or "").strip()
     name = str(ders_adi or "").strip()
 
+    scope_clauses: list[str] = []
+    scope_params: list[int] = []
+    if faculty_id is not None:
+        scope_clauses.append("d.fakulte_id = ?")
+        scope_params.append(int(faculty_id))
+    if department_id is not None:
+        scope_clauses.append("d.bolum_id = ?")
+        scope_params.append(int(department_id))
+    scope_sql = f" AND {' AND '.join(scope_clauses)}" if scope_clauses else ""
+
+    try:
+        elective_predicate = build_elective_predicate(cur=cur, alias="d")
+    except Exception:
+        elective_predicate = "0=1"
+
+    def select_best(match_sql: str, match_params: tuple[Any, ...]) -> int | None:
+        cur.execute(
+            f"""
+            SELECT d.ders_id,
+                   CASE WHEN {elective_predicate} THEN 1 ELSE 0 END AS is_elective,
+                   COALESCE(d.kod, '') AS ders_kodu
+            FROM ders d
+            WHERE {match_sql}
+              {scope_sql}
+            ORDER BY is_elective DESC, d.ders_id
+            """,
+            (*match_params, *scope_params),
+        )
+        rows = [
+            (int(row[0]), bool(row[1]), str(row[2] or "").strip())
+            for row in cur.fetchall()
+            if row and row[0] is not None
+        ]
+        if not rows:
+            return None
+        preferred_rows = [row for row in rows if row[1]] or rows
+        if len(preferred_rows) == 1:
+            return preferred_rows[0][0]
+
+        # Eski ana veri setlerinde ayni secmeli ders hem aciklama tabanli uzun
+        # kodla ("Fizyoterapi ve RehabilitasyonSEC2") hem de standart kisa
+        # kodla ("FTR611S") bulunabiliyor. Isim ayniysa standart akademik kodu
+        # tekil olarak tercih et; iki standart kod varsa sessizce keyfi secme.
+        standard_code_rows = [
+            row
+            for row in preferred_rows
+            if re.fullmatch(r"[A-Za-zÇĞİÖŞÜçğıöşü]{2,8}\d{2,4}[A-Za-z]?", row[2])
+        ]
+        return standard_code_rows[0][0] if len(standard_code_rows) == 1 else None
+
     if code:
-        cur.execute("SELECT ders_id FROM ders WHERE lower(trim(kod)) = lower(trim(?)) LIMIT 1", (code,))
-        row = cur.fetchone()
-        if row:
-            return int(row[0])
+        course_id = select_best("lower(trim(d.kod)) = lower(trim(?))", (code,))
+        if course_id is not None:
+            return course_id
 
     if name:
-        cur.execute("SELECT ders_id FROM ders WHERE lower(trim(ad)) = lower(trim(?)) LIMIT 1", (name,))
-        row = cur.fetchone()
-        if row:
-            return int(row[0])
-        cur.execute("SELECT ders_id FROM ders WHERE lower(ad) LIKE lower(?) LIMIT 1", (f"%{name}%",))
-        row = cur.fetchone()
-        if row:
-            return int(row[0])
+        course_id = select_best("lower(trim(d.ad)) = lower(trim(?))", (name,))
+        if course_id is not None:
+            return course_id
+        course_id = select_best("lower(d.ad) LIKE lower(?)", (f"%{name}%",))
+        if course_id is not None:
+            return course_id
     return None
 
 
@@ -674,7 +737,13 @@ def import_curriculum_excel(
                     suggestion="Bolum adini secili fakulte altindaki bolum kaydi ile uyumlu hale getirin.",
                 )
                 continue
-            course_id = _find_course_id(cur, item.get("ders_adi"), item.get("ders_kodu"))
+            course_id = _find_course_id(
+                cur,
+                item.get("ders_adi"),
+                item.get("ders_kodu"),
+                faculty_id=int(faculty_id),
+                department_id=int(department_id),
+            )
             if course_id is None:
                 message = f"Ders bulunamadi: kod={item.get('ders_kodu')} ad={item.get('ders_adi')}"
                 errors.append(message)
