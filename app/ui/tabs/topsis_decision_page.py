@@ -44,6 +44,13 @@ class TopsisDecisionPage(ttk.Frame):
         self.lbl_profile = ttk.Label(filters, text="")
         self.lbl_profile.pack(side=tk.RIGHT)
 
+        self.lbl_scope_warning = ttk.Label(
+            self,
+            text="TOPSIS puanı göreli bir yakınlık ölçüsüdür; 0 ve 100 matematiksel olarak mümkündür.",
+            foreground="#92400e",
+        )
+        self.lbl_scope_warning.pack(fill=tk.X, padx=10, pady=(0, 4))
+
         paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
         paned.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
         self.fall_tree = self._term_panel(paned, "Güz Dönemi")
@@ -60,7 +67,7 @@ class TopsisDecisionPage(ttk.Frame):
         parent.add(frame, weight=2)
         columns = (
             "kod", "ders", "başarı", "trend", "doluluk", "anket",
-            "ağırlıklı vektör", "S+", "S-", "C*", "kesinleşme puanı",
+            "ağırlıklı vektör", "S+", "S-", "C*", "göreli TOPSIS puanı",
         )
         tree = ttk.Treeview(frame, columns=columns, show="headings", height=8)
         ybar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
@@ -134,7 +141,8 @@ class TopsisDecisionPage(ttk.Frame):
         for term, tree in (("Guz", self.fall_tree), ("Bahar", self.spring_tree)):
             try:
                 pack = get_faculty_year_topsis_results(
-                    self._conn().cursor(), faculty_id, year, term, strict_ahp=True
+                    self._conn().cursor(), faculty_id, year, term,
+                    strict_ahp=True, department_id=department_id,
                 )
                 if not pack.get("ok"):
                     errors.append(f"{term}: {pack.get('error')}")
@@ -150,10 +158,22 @@ class TopsisDecisionPage(ttk.Frame):
                     course_meta = meta.get(course_id, {})
                     if methods.get(course_id) != "topsis":
                         continue
-                    if department_id is not None and course_meta.get("bolum_id") != department_id:
-                        continue
                     course_rows.append({"course_id": course_id, "ders_id": course_id, **values})
                 breakdowns = calculate_topsis_breakdowns(course_rows, weights)
+                degenerate = sorted(
+                    key
+                    for key in ("basari", "trend", "populerlik", "anket")
+                    if breakdowns
+                    and abs(
+                        float(next(iter(breakdowns.values()))["positive_ideal"].get(key, 0.0))
+                        - float(next(iter(breakdowns.values()))["negative_ideal"].get(key, 0.0))
+                    ) <= 1e-12
+                )
+                if degenerate:
+                    errors.append(
+                        f"{term}: Ayırt edici olmayan kriterler (A+=A-): {', '.join(degenerate)}. "
+                        "Bu kriterler sıralamaya katkı vermez."
+                    )
                 for course_id, breakdown in sorted(
                     breakdowns.items(), key=lambda item: float(item[1].get("final_score") or 0), reverse=True
                 ):
@@ -166,13 +186,13 @@ class TopsisDecisionPage(ttk.Frame):
                         "", tk.END, iid=iid,
                         values=(
                             course_meta.get("kod") or "", course_meta.get("ad") or course_id,
-                            f"{raw.get('basari', 0):.6f}", f"{raw.get('trend', 0):.6f}",
-                            f"{raw.get('populerlik', 0):.6f}", f"{raw.get('anket', 0):.6f}",
-                            " | ".join(f"{key}={value:.6f}" for key, value in weighted.items()),
-                            f"{breakdown['positive_distance']:.6f}",
-                            f"{breakdown['negative_distance']:.6f}",
-                            f"{breakdown['closeness_coefficient']:.6f}",
-                            f"{breakdown['final_score']:.6f}",
+                            self._fmt(raw.get('basari', 0)), self._fmt(raw.get('trend', 0)),
+                            self._fmt(raw.get('populerlik', 0)), self._fmt(raw.get('anket', 0)),
+                            " | ".join(f"{key}={self._fmt(value)}" for key, value in weighted.items()),
+                            self._fmt(breakdown['positive_distance']),
+                            self._fmt(breakdown['negative_distance']),
+                            self._fmt(breakdown['closeness_coefficient']),
+                            self._fmt(breakdown['final_score']),
                         ),
                     )
             except Exception as exc:
@@ -180,6 +200,14 @@ class TopsisDecisionPage(ttk.Frame):
         self.lbl_profile.config(text="Aktif AHP: " + (" / ".join(dict.fromkeys(profiles)) or "bulunamadı"))
         if errors:
             self.txt_detail.insert(tk.END, "\n".join(errors))
+
+    @staticmethod
+    def _fmt(value: Any) -> str:
+        """UI'da ara hesapları altı haneye yuvarlamadan göster."""
+        try:
+            return format(float(value), ".15g")
+        except (TypeError, ValueError):
+            return "0"
 
     def _show_detail(self, event):
         tree = event.widget
@@ -194,17 +222,18 @@ class TopsisDecisionPage(ttk.Frame):
         lines = [
             f"{meta.get('kod') or ''} {meta.get('ad') or ''} — {detail.get('term')}",
             "",
-            "1. Ham karar matrisi: " + ", ".join(f"{k}={v:.6f}" for k, v in detail["raw_values"].items()),
-            "2. Vektör paydaları: " + ", ".join(f"sqrt(sum({k}²))={v:.6f}" for k, v in detail["normalization_denominators"].items()),
-            "3. Normalize değerler: " + ", ".join(f"{k}={v:.6f}" for k, v in detail["normalized_values"].items()),
-            "4. AHP ağırlıkları: " + ", ".join(f"{k}={v:.6f}" for k, v in detail["weights"].items()),
-            "5. Ağırlıklı normalize değerler: " + ", ".join(f"{k}={v:.6f}" for k, v in detail["weighted_values"].items()),
-            "6. Pozitif ideal A+: " + ", ".join(f"{k}={v:.6f}" for k, v in detail["positive_ideal"].items()),
-            "7. Negatif ideal A-: " + ", ".join(f"{k}={v:.6f}" for k, v in detail["negative_ideal"].items()),
-            f"8. S+ = {detail['positive_distance']:.6f}",
-            f"9. S- = {detail['negative_distance']:.6f}",
-            f"10. C* = S- / (S+ + S-) = {detail['closeness_coefficient']:.6f}",
-            f"11. Kesinleşme puanı = C* × 100 = {detail['final_score']:.6f}",
+            "1. Ham karar matrisi: " + ", ".join(f"{k}={self._fmt(v)}" for k, v in detail["raw_values"].items()),
+            "2. Vektör paydaları: " + ", ".join(f"sqrt(sum({k}²))={self._fmt(v)}" for k, v in detail["normalization_denominators"].items()),
+            "3. Normalize değerler: " + ", ".join(f"{k}={self._fmt(v)}" for k, v in detail["normalized_values"].items()),
+            "4. AHP ağırlıkları: " + ", ".join(f"{k}={self._fmt(v)}" for k, v in detail["weights"].items()),
+            "5. Ağırlıklı normalize değerler: " + ", ".join(f"{k}={self._fmt(v)}" for k, v in detail["weighted_values"].items()),
+            "6. Pozitif ideal A+: " + ", ".join(f"{k}={self._fmt(v)}" for k, v in detail["positive_ideal"].items()),
+            "7. Negatif ideal A-: " + ", ".join(f"{k}={self._fmt(v)}" for k, v in detail["negative_ideal"].items()),
+            f"8. S+ = {self._fmt(detail['positive_distance'])}",
+            f"9. S- = {self._fmt(detail['negative_distance'])}",
+            f"10. C* = S- / (S+ + S-) = {self._fmt(detail['closeness_coefficient'])}",
+            f"11. Göreli TOPSIS puanı = C* × 100 = {self._fmt(detail['final_score'])}",
+            "Not: Bir ders A+ ile aynıysa puan 100; A- ile aynıysa puan 0 olabilir. Bu bir yuvarlama değildir.",
         ]
         self.txt_detail.insert(tk.END, "\n".join(lines))
 

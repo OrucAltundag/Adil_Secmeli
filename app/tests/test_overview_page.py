@@ -15,8 +15,8 @@ def test_overview_page_constructs_without_db():
 
     from app.ui.tabs.overview_page import ALGORITMALAR, PIPELINE, OverviewPage
 
-    # İçerik bütünlüğü: boru hattı 7 adım, her algoritma 4 alan dolu.
-    assert len(PIPELINE) == 7
+    # İçerik bütünlüğü: güncel uçtan uca boru hattı, her algoritma 4 alan dolu.
+    assert len(PIPELINE) == 9
     assert len(ALGORITMALAR) >= 6
     for ad, neden, formul, nerede in ALGORITMALAR:
         assert ad and neden and formul and nerede

@@ -96,13 +96,19 @@ def _curriculum_course_ids(
     except sqlite3.OperationalError:
         pass
 
-    # 2) Legacy: mufredat.fakulte_id uzerinden (bolum yoksa)
+    # 2) Legacy: mufredat.fakulte_id uzerinden. Canonical sorguda bolum
+    # secildiyse legacy uyumluluk yolu da AYNI bolumle sinirlanmalidir.
+    # Aksi halde secili bolum kumesine fakultenin diger bolumleri tekrar
+    # eklenir ve Veri Yonetimi kartlari bolum degisse bile ayni gorunur.
     try:
         where = ["m.akademik_yil = ?"]
         params = [int(year)]
         if faculty_id is not None:
             where.append("m.fakulte_id = ?")
             params.append(int(faculty_id))
+        if department_id is not None:
+            where.append("m.bolum_id = ?")
+            params.append(int(department_id))
         cur.execute(
             f"""
             SELECT DISTINCT md.ders_id

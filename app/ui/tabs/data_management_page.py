@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Veri Yönetimi merkezi: import, kalite, diff, onay ve rollback işlemleri."""
+"""Veri Yönetimi merkezi: import, kalite ve onay işlemleri."""
 
 from __future__ import annotations
 
@@ -154,7 +154,6 @@ class DataManagementPage(ttk.Frame):
         self.quality_tab = ttk.Frame(self.nb, padding=8)
         self.diff_tab = ttk.Frame(self.nb, padding=8)
         self.rollback_tab = ttk.Frame(self.nb, padding=8)
-        self.impact_tab = ttk.Frame(self.nb, padding=8)
 
         self.nb.add(self.dashboard_tab, text="Merkez")
         self.nb.add(self.import_tab, text="Yeni Import")
@@ -162,8 +161,7 @@ class DataManagementPage(ttk.Frame):
         self.nb.add(self.detail_tab, text="Import Detayı")
         self.nb.add(self.rows_tab, text="Satır Sonuçları")
         self.nb.add(self.quality_tab, text="Kalite Kontrol")
-        self.nb.add(self.rollback_tab, text="Rollback & Onay")
-        self.nb.add(self.impact_tab, text="Karar Etkisi")
+        self.nb.add(self.rollback_tab, text="Import Onayı")
 
         self._build_dashboard_tab()
         self._build_import_tab()
@@ -376,14 +374,12 @@ class DataManagementPage(ttk.Frame):
         rb_top.pack(fill=tk.X)
         ttk.Button(rb_top, text="Onayla ve Sisteme Uygula", command=self.approve_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Reddet", command=self.reject_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(rb_top, text="Rollback Planı", command=self.load_rollback_plan).pack(side=tk.LEFT, padx=2)
-        ttk.Button(rb_top, text="Geri Al", command=self.rollback_selected).pack(side=tk.LEFT, padx=2)
         ttk.Separator(rb_top, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
         ttk.Button(rb_top, text="Tümünü Seç", command=self._pending_select_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(rb_top, text="Seçimi Temizle", command=self._pending_clear_selection).pack(side=tk.LEFT, padx=2)
         ttk.Label(
             rb_top,
-            text="Ctrl/Shift ile çoklu seçim. Onay/Red/Geri Al seçili tüm importlara uygulanır.",
+            text="Ctrl/Shift ile çoklu seçim. Onay veya red seçili tüm importlara uygulanır.",
             foreground="#475569",
         ).pack(side=tk.LEFT, padx=12)
         queue_box = ttk.LabelFrame(self.rollback_tab, text="Onay Bekleyen Importlar", padding=6)
@@ -407,11 +403,6 @@ class DataManagementPage(ttk.Frame):
         detail_box = ttk.LabelFrame(self.rollback_tab, text="Seçili Import Özeti", padding=6)
         detail_box.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
         self.rollback_text = self._make_text(detail_box, height=10)
-
-        impact_top = ttk.Frame(self.impact_tab)
-        impact_top.pack(fill=tk.X)
-        ttk.Button(impact_top, text="Etki Raporu Hesapla", command=self.recalculate_impact).pack(side=tk.LEFT)
-        self.impact_text = self._make_text(self.impact_tab)
 
     def _make_text(self, parent: tk.Misc, height: int = 24) -> ScrolledText:
         text = ScrolledText(parent, height=height, wrap=tk.WORD)
@@ -1187,7 +1178,7 @@ class DataManagementPage(ttk.Frame):
             lines.append(f"Kalite seviyesi    : {result.get('quality_level', '-')}")
             lines.append(f"Import durumu      : {result.get('import_status', '-')}")
             lines.append("")
-            lines.append("Rollback & Onay sekmesinden onaylayabilir veya geri alabilirsiniz.")
+            lines.append("Import Onayı sekmesinden onaylayabilir veya reddedebilirsiniz.")
 
         warnings = result.get("warnings") or []
         if warnings:
@@ -1223,14 +1214,14 @@ class DataManagementPage(ttk.Frame):
                     f"  • {sc} kapsam hazırlandı\n"
                     f"  • Canlı müfredat henüz değiştirilmedi\n\n"
                     f"Import Batch ID: {batch_id}\n"
-                    "Rollback & Onay sekmesinden onaylayabilir veya reddedebilirsiniz."
+                    "Import Onayı sekmesinden onaylayabilir veya reddedebilirsiniz."
                 )
             msg = f"{year} yılı müfredatı başarıyla güncellendi.\n\n"
             msg += f"  • {sc} kapsam işlendi, {added} ders eklendi, {removed} ders çıkarıldı\n"
             if reset > 0:
                 msg += f"  • {reset} kriter kaydı sıfırlandı (yeniden hesaplama gerekir)\n"
             msg += f"\nImport Batch ID: {batch_id}\n"
-            msg += "Rollback & Onay sekmesinden onaylayabilirsiniz."
+            msg += "Import Onayı sekmesinden onaylayabilirsiniz."
             return msg
         if import_type == "student_criteria":
             matched = result.get("rows_matched", 0)
@@ -1244,7 +1235,7 @@ class DataManagementPage(ttk.Frame):
         if result.get("staged"):
             return (
                 f"Import doğrulandı ve onay kuyruğuna alındı. Batch ID: {batch_id}\n\n"
-                "Canlı veriler henüz değiştirilmedi. Rollback & Onay sekmesinden karar verin."
+                "Canlı veriler henüz değiştirilmedi. Import Onayı sekmesinden karar verin."
             )
         return f"Import tamamlandı. Batch ID: {batch_id}"
 
@@ -1452,7 +1443,8 @@ class DataManagementPage(ttk.Frame):
             self._set_text(self.quality_text, self._format_quality_text(bundle.get("quality")))
             self._set_text(self.diff_text, self._format_diff_text(bundle.get("diff")))
             self._set_text(self.rollback_text, bundle.get("rollback") or {})
-            self._set_text(self.impact_text, self._format_impact_text(bundle.get("impact")))
+            # Karar Etkisi normal kullanici akisindan kaldirildi. Servis ve eski
+            # kayitlar denetim/geriye uyumluluk icin korunur.
         except Exception:
             messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
 
@@ -1546,6 +1538,12 @@ class DataManagementPage(ttk.Frame):
         if not reason or not reason.strip():
             return
         clean_reason = reason.strip()
+        if not messagebox.askyesno(
+            "Importu Reddet",
+            f"{len(ids)} import reddedilecek ve canlı sisteme uygulanmayacak. Onaylıyor musunuz?",
+            icon="warning",
+        ):
+            return
         self._bulk_status_action(
             ids,
             lambda conn, batch_id: reject_pending_import(

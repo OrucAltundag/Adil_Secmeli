@@ -71,6 +71,7 @@ from app.services.fairness_report_service import (
     generate_fairness_report,
     save_fairness_report,
 )
+from app.services.lr_trend_prediction_service import predict_next_year_trend
 from app.services.havuz_karar import (
     STATU_DINLENMEDE,
     STATU_HAVUZDA,
@@ -91,7 +92,7 @@ from app.services.trend_analysis_service import (
     save_trend_analysis,
 )
 
-ALGORITHM_VERSION = "ahp-topsis-electre-tri-b-dt-v3"
+ALGORITHM_VERSION = "ahp-topsis-electre-tri-b-dt-lr-v4"
 
 # Statu siddet hiyerarsisi — `max()` yerine acik, surdurulebilir bir siralama.
 # Yumusatma kurali: "asagiya inebilir, fakat asla limit_status'tan agir olamaz".
@@ -546,6 +547,7 @@ def record_decision_run_for_faculty_year(
         akademik_yil=int(year),
         donem=semester or "Guz",
         strict_ahp=True,
+        department_id=department_id,
     )
     if not score_pack.get("ok"):
         raise RuntimeError(score_pack.get("error", "TOPSIS skorlari uretilemedi."))
@@ -736,6 +738,9 @@ def record_decision_run_for_faculty_year(
             dt_validation = evaluate_course_with_dt(
                 dt_context,
                 raw_values=dict(breakdown.get("raw_values") or metric_map.get(course_id, {})),
+                lr_trend_forecast=predict_next_year_trend(
+                    cur, int(course_id), int(year)
+                ).get("trend_score_normalized", 0.5),
                 topsis_score=score,
                 data_confidence=float(confidence.get("score") or 0.0),
                 old_status=old_status,

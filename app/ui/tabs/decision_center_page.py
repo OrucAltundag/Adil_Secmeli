@@ -101,6 +101,14 @@ def _trend_text(label: str | None) -> str:
     return labels.get(str(label or ""), str(label or "Belirsiz"))
 
 
+def _precise_number(value) -> str:
+    """Karar skorlarini iki/alti haneye yapay olarak yuvarlamadan goster."""
+    try:
+        return format(float(value), ".15g")
+    except (TypeError, ValueError):
+        return "0"
+
+
 class DecisionCenterPage(ttk.Frame):
     """Karar Merkezi: AHP, policy, runs, course decisions and reports."""
 
@@ -117,6 +125,8 @@ class DecisionCenterPage(ttk.Frame):
         self._faculty_map: dict[str, int] = {}
         self._department_map: dict[str, int | None] = {}
         self._run_ids: dict[str, int] = {}
+        self._runs_by_id: dict[int, dict] = {}
+        self._syncing_run_selection = False
         self._decision_ids: dict[str, int] = {}
         self._pool_transition_rows: dict[str, dict] = {}
         self._pool_approval_ids: dict[str, int] = {}
@@ -232,8 +242,6 @@ class DecisionCenterPage(ttk.Frame):
         self.cb_run = ttk.Combobox(row2, width=52, state="readonly")
         self.cb_run.pack(side=tk.LEFT, padx=(4, 8))
         self.cb_run.bind("<<ComboboxSelected>>", self._on_run_combo_selected)
-
-        ttk.Button(row2, text="⚡ Yeni Çalıştır", command=self._jump_to_runs_tab).pack(side=tk.LEFT, padx=(0, 12))
 
         # Kapsama göre durum göstergesi: kaç çalıştırma var, son ne zaman yapılmış vb.
         self.lbl_scope_status = ttk.Label(row2, text="", font=("Segoe UI", 9))
@@ -913,6 +921,7 @@ class DecisionCenterPage(ttk.Frame):
         """
         self._clear(self.tree_runs)
         self._run_ids.clear()
+        self._runs_by_id.clear()
 
         year_raw = (self.cb_year.get() or "").strip()
         selected_year = int(year_raw) if year_raw.isdigit() else None
@@ -925,6 +934,7 @@ class DecisionCenterPage(ttk.Frame):
         last_started: str | None = None
 
         for run in list_decision_runs(self._conn(), limit=500):
+            self._runs_by_id[int(run["id"])] = dict(run)
             in_scope = self._run_in_scope(run, selected_year, faculty_id, department_id, semester)
             run_faculty_id = run.get("faculty_id")
             run_department_id = run.get("department_id")
@@ -972,7 +982,7 @@ class DecisionCenterPage(ttk.Frame):
         if hasattr(self, "lbl_scope_status"):
             if scope_count == 0:
                 self.lbl_scope_status.config(
-                    text="● Bu kapsamda çalıştırma yok — sağdaki '⚡ Yeni Çalıştır' ile başlatın",
+                    text="● Bu kapsamda çalıştırma yok — Algoritma Kontrol'den karar oluşturun",
                     foreground="#9CA3AF",
                 )
             else:
@@ -1318,6 +1328,11 @@ class DecisionCenterPage(ttk.Frame):
         note = simpledialog.askstring("Engelleme Reddi", "Red gerekçesi:")
         if not note or not note.strip():
             return
+        if not messagebox.askyesno(
+            "Engelleme Talebini Reddet",
+            "Talep reddedilecek. Karar çalıştırması, ders sonuçları, havuz ve müfredat değişmeyecek. Onaylıyor musunuz?",
+        ):
+            return
         try:
             actor = self._current_username("decision_center") + ":approver"
             reject_decision_run_override(self._conn(), request_id, note.strip(), actor)
@@ -1344,6 +1359,10 @@ class DecisionCenterPage(ttk.Frame):
             cancel_decision_run_override(self._conn(), request_id)
             self._conn().commit()
             self._load_run_overrides()
+            messagebox.showinfo(
+                "Engelleme Reddi",
+                "Talep reddedildi; karar çalıştırması ve müfredat üzerinde değişiklik yapılmadı.",
+            )
             messagebox.showinfo("Talebi Geri Çek", "Bekleyen talep kuyruktan kaldırıldı.")
         except ValueError as exc:
             messagebox.showwarning("Talebi Geri Çek", str(exc))
@@ -1388,7 +1407,7 @@ class DecisionCenterPage(ttk.Frame):
                 values=(
                     row["id"], row.get("course_code") or "", row.get("course_name") or row.get("course_id"),
                     _status_text(row.get("old_status")), _status_text(row.get("recommended_status")),
-                    f"{float(row.get('topsis_score') or 0):.2f}",
+                    _precise_number(row.get("topsis_score") or 0),
                     f"{float(row.get('electre_credibility') or 0):.4f}",
                     _status_text(dt_status) if dt_status is not None else "Veri yetersiz",
                     f"{float(dt_confidence):.2f}" if dt_confidence is not None else "—",
@@ -1907,7 +1926,7 @@ class DecisionCenterPage(ttk.Frame):
                         _status_text(row.get("recommended_status")),
                         _status_text(row.get("final_status")),
                         _lifecycle_text(row.get("lifecycle_label")),
-                        f"{float(row.get('topsis_score') or 0):.4f}",
+                        _precise_number(row.get("topsis_score") or 0),
                         row.get("trend_label") or "",
                         f"{float(row.get('data_confidence_score') or 0):.2f}",
                         "Evet" if row.get("approval_required") else "Hayır",
@@ -1959,7 +1978,7 @@ class DecisionCenterPage(ttk.Frame):
             f"Final statü: {_status_text(row.get('final_status'))}",
             f"Yaşam döngüsü etiketi: {_lifecycle_text(row.get('lifecycle_label'))}",
             f"Kural: {row.get('rule_applied') or ''}",
-            f"Skor / trend / veri güveni: {float(row.get('topsis_score') or 0):.4f} / {row.get('trend_label') or ''} / {float(row.get('data_confidence_score') or 0):.2f}",
+            f"Skor / trend / veri güveni: {_precise_number(row.get('topsis_score') or 0)} / {row.get('trend_label') or ''} / {float(row.get('data_confidence_score') or 0):.2f}",
             f"Sayaç: {row.get('counter_before')} -> {row.get('counter_after')}",
             f"Onay: {row.get('approval_status') or 'not_required'}",
             "",
@@ -2212,7 +2231,7 @@ class DecisionCenterPage(ttk.Frame):
             dt_details = {}
         lines = [
             f"{row['kod'] or ''} {row['ad'] or ''}",
-            f"TOPSIS skoru: {float(row['topsis_score'] or 0):.4f}",
+            f"TOPSIS skoru: {_precise_number(row['topsis_score'] or 0)}",
             f"ELECTRE TRI-B önerisi: {_status_text(row['recommended_status'])}",
             f"ELECTRE credibility / lambda: {float(row['electre_credibility'] or 0):.4f} / {float(electre.get('lambda') or 0):.2f}",
             f"Trend: {_trend_text(row['trend_label'])} ({float(row['trend_score'] or 0):.2f})",
@@ -2287,15 +2306,59 @@ class DecisionCenterPage(ttk.Frame):
         return None
 
     def _select_run_from_tree(self):
+        if self._syncing_run_selection:
+            return
         selected = self.tree_runs.selection()
         if not selected:
             return
         run_id = int(selected[0])
-        for label, label_run_id in self._run_ids.items():
-            if label_run_id == run_id:
-                self.cb_run.set(label)
-                break
-        self._load_run_related()
+        run = self._runs_by_id.get(run_id)
+        self._syncing_run_selection = True
+        try:
+            if run:
+                year = run.get("year")
+                if year is not None:
+                    self.cb_year.set(str(int(year)))
+
+                run_faculty_id = run.get("faculty_id")
+                faculty_name = next(
+                    (name for name, value in self._faculty_map.items() if value == run_faculty_id),
+                    None,
+                )
+                if faculty_name:
+                    self.cb_faculty.set(faculty_name)
+                    self._load_departments()
+
+                run_department_id = run.get("department_id")
+                department_name = next(
+                    (name for name, value in self._department_map.items() if value == run_department_id),
+                    "Tümü" if run_department_id is None else None,
+                )
+                if department_name:
+                    self.cb_department.set(department_name)
+
+                self.cb_semester.set(self._norm_sem(run.get("semester")))
+
+                # Tablo secimini bozmadan ust run secicisini ayni karara bagla.
+                # Filtrelerden biri daha sonra elle degistirilirse normal
+                # _on_filter_change akisi tum kapsam listesini yeniden kurar.
+                selected_label = self._format_run_label(run)
+                self._run_ids = {selected_label: run_id}
+                self.cb_run["values"] = [selected_label]
+                self.cb_run.set(selected_label)
+                if hasattr(self, "lbl_scope_status"):
+                    self.lbl_scope_status.config(
+                        text=f"● Seçili karar #{run_id} · kapsam filtreleri eşitlendi",
+                        foreground="#15803d",
+                    )
+
+            for label, label_run_id in self._run_ids.items():
+                if label_run_id == run_id:
+                    self.cb_run.set(label)
+                    break
+            self._load_run_related()
+        finally:
+            self._syncing_run_selection = False
 
     def _create_profile(self):
         name = simpledialog.askstring("AHP Profili", "Profil adı:")

@@ -151,7 +151,9 @@ class CriteriaPage:
         paned.add(right_frame)
 
         self.create_form_ui(right_frame)
-        self.create_completion_panel()
+        # Import islemleri Veri Yonetimi merkezinde, kapsam/tamlik raporlari
+        # Veri Kalitesi sayfasinda yonetilir. Bu sayfa yalniz ders bazli kriter
+        # goruntuleme ve manuel girdi icin sade tutulur.
 
         # Fakülte listesi uygulama veritabani baglantisi kurulduktan sonra
         # refresh() veya ilk veri yuklemesinde doldurulur.
@@ -162,13 +164,10 @@ class CriteriaPage:
         # Stil
         lbl_style = {"bg": "#f1f5f9", "font": ("Segoe UI", 9, "bold")}
 
-        # Üst çubuk iki satıra ayrildi: SATIR 1 = filtreler, SATIR 2 = veri/aktarma
-        # butonlari. Eskiden hepsi tek satirdaydi ve son butonlar (Anket Belge
-        # Girisi dahil) ekranin sagina tasip gorunmuyordu.
+        # Ust cubuk yalniz kapsam ve listeleme filtrelerini icerir. Dosya
+        # aktarimlari tek yetkili akis olan Veri -> Veri Yonetimi'ne tasinmistir.
         row1 = tk.Frame(parent, bg="#f1f5f9")
         row1.pack(fill=tk.X)
-        row2 = tk.Frame(parent, bg="#f1f5f9")
-        row2.pack(fill=tk.X, pady=(8, 0))
 
         # --- SATIR 1: FİLTRELER ---
         # Fakülte
@@ -212,39 +211,6 @@ class CriteriaPage:
         # Listele Butonu
         tk.Button(row1, text="Dersleri Getir", bg="#3b82f6", fg="white", font=("Segoe UI", 9, "bold"),
                   command=self.load_courses).pack(side=tk.LEFT, padx=20)
-
-        # --- SATIR 2: VERİ / İÇE AKTARMA ---
-        tk.Label(row2, text="Veri Aktarma:", bg="#f1f5f9",
-                 font=("Segoe UI", 9, "bold"), fg="#334155").pack(side=tk.LEFT, padx=(5, 8))
-
-        # Kriter Excel İçe Aktar (fonksiyon vardı ama butonu yoktu → erişilemiyordu)
-        tk.Button(row2, text="📥 Kriter Excel İçe Aktar", bg="#f97316", fg="white",
-                  font=("Segoe UI", 9, "bold"),
-                  command=self.import_kriterler_excel).pack(side=tk.LEFT, padx=5)
-
-        # Öğrenci Veri Seti seçici
-        tk.Button(row2, text="📂 Öğrenci Veri Seti", bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
-                  command=self._select_student_dataset).pack(side=tk.LEFT, padx=(10, 2))
-        self.lbl_dataset_name = tk.Label(
-            row2,
-            text="seçilmedi",
-            bg="#f1f5f9",
-            fg="#64748b",
-            font=("Segoe UI", 8, "italic"),
-            width=22,
-            anchor="w",
-        )
-        self.lbl_dataset_name.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Otomatik kriter üretimi (seçilen veri setini kullanır)
-        tk.Button(row2, text="🎓 Otomatik Kriter Girdi İşlemleri",
-                  bg="#7c3aed", fg="white", font=("Segoe UI", 9, "bold"),
-                  command=self.auto_generate_from_dataset).pack(side=tk.LEFT, padx=5)
-
-        # Anket belge girişi (Excel anket/tercih veri setinden popülerlik/anket üretir)
-        tk.Button(row2, text="📋 Anket Belge Girişi (Anket/Tercih Excel)",
-                  bg="#0891b2", fg="white", font=("Segoe UI", 9, "bold"),
-                  command=self.import_anket_excel).pack(side=tk.LEFT, padx=5)
 
     def create_form_ui(self, parent):
         tk.Label(parent, text="KRİTER VERİ GİRİŞİ", bg="#1e293b", fg="white",
@@ -434,6 +400,10 @@ class CriteriaPage:
         return "Eksik"
 
     def refresh_completion_panel(self):
+        # Panel arayuzden kaldirildi; eski servis metotlari geriye uyumluluk
+        # icin korunuyor. UI ogeleri yokken cagri guvenle no-op olur.
+        if not hasattr(self, "lbl_completion_summary"):
+            return
         if not getattr(self.db, "conn", None):
             return
         for tree_name in ("tree_completion_matrix", "tree_completion_issues"):

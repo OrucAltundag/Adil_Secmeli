@@ -1093,6 +1093,7 @@ def get_faculty_year_topsis_results(
     donem="G",
     include_course_ids=None,
     strict_ahp: bool = False,
+    department_id: int | None = None,
 ):
     """
     Bir fakulte+yil icin tum adaylarin TOPSIS skorlarini hesaplar.
@@ -1133,7 +1134,9 @@ def get_faculty_year_topsis_results(
             return set()
         return filter_elective_course_ids(cur, normalized) if has_elective_filter else normalized
 
-    curriculum_ids = _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem)
+    curriculum_ids = _get_curriculum_course_ids(
+        cur, fakulte_id, akademik_yil, donem, department_id=department_id
+    )
     curriculum_ids = _elective_filter(curriculum_ids)
 
     aday_dersler = set(curriculum_ids)
@@ -1250,7 +1253,7 @@ def get_faculty_year_topsis_results(
         ahp_profile = resolve_ahp_profile(
             cur.connection,
             faculty_id=fakulte_id,
-            department_id=None,
+            department_id=department_id,
             year=akademik_yil,
         )
         benefit_map = criteria_direction_map(cur.connection)
@@ -1295,7 +1298,8 @@ def get_faculty_year_topsis_results(
         metric_map[ders_id] = m
 
     curriculum_course_ids = _get_curriculum_course_ids(
-        cur=cur, fakulte_id=fakulte_id, akademik_yil=akademik_yil, donem=donem
+        cur=cur, fakulte_id=fakulte_id, akademik_yil=akademik_yil, donem=donem,
+        department_id=department_id,
     )
     curriculum_course_ids = _elective_filter(curriculum_course_ids)
 
@@ -1382,7 +1386,9 @@ def get_faculty_year_topsis_results(
         "pool_only_course_count": len(pool_courses),
     }
 
-def _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem="G"):
+def _get_curriculum_course_ids(
+    cur, fakulte_id, akademik_yil, donem="G", department_id: int | None = None
+):
     """
     Fakulte + yil (+ donem ilk harf) icin mufredatta bulunan ders_id kumesini dondurur.
     Once bolum uzerinden (canonical); basarisizsa mufredat.fakulte_id (legacy sema).
@@ -1392,52 +1398,66 @@ def _get_curriculum_course_ids(cur, fakulte_id, akademik_yil, donem="G"):
     donem = str(donem or "G")
 
     def _fetch_via_bolum(with_donem: bool):
+        department_clause = " AND m.bolum_id = ?" if department_id is not None else ""
+        params: list[Any] = [fakulte_id, akademik_yil]
+        if department_id is not None:
+            params.append(int(department_id))
         if with_donem:
+            params.append(donem)
             cur.execute(
-                """
+                f"""
                 SELECT DISTINCT md.ders_id
                 FROM mufredat m
                 JOIN bolum b ON b.bolum_id = m.bolum_id
                 JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
                 WHERE b.fakulte_id = ? AND m.akademik_yil = ?
+                  {department_clause}
                   AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
                 """,
-                (fakulte_id, akademik_yil, donem),
+                tuple(params),
             )
         else:
             cur.execute(
-                """
+                f"""
                 SELECT DISTINCT md.ders_id
                 FROM mufredat m
                 JOIN bolum b ON b.bolum_id = m.bolum_id
                 JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
                 WHERE b.fakulte_id = ? AND m.akademik_yil = ?
+                  {department_clause}
                 """,
-                (fakulte_id, akademik_yil),
+                tuple(params),
             )
         return {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
 
     def _fetch_via_mufredat_fakulte(with_donem: bool):
+        department_clause = " AND m.bolum_id = ?" if department_id is not None else ""
+        params: list[Any] = [fakulte_id, akademik_yil]
+        if department_id is not None:
+            params.append(int(department_id))
         if with_donem:
+            params.append(donem)
             cur.execute(
-                """
+                f"""
                 SELECT DISTINCT md.ders_id
                 FROM mufredat m
                 JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
                 WHERE m.fakulte_id = ? AND m.akademik_yil = ?
+                  {department_clause}
                   AND LOWER(SUBSTR(TRIM(COALESCE(m.donem, '')), 1, 1)) = LOWER(SUBSTR(TRIM(?), 1, 1))
                 """,
-                (fakulte_id, akademik_yil, donem),
+                tuple(params),
             )
         else:
             cur.execute(
-                """
+                f"""
                 SELECT DISTINCT md.ders_id
                 FROM mufredat m
                 JOIN mufredat_ders md ON md.mufredat_id = m.mufredat_id
                 WHERE m.fakulte_id = ? AND m.akademik_yil = ?
+                  {department_clause}
                 """,
-                (fakulte_id, akademik_yil),
+                tuple(params),
             )
         return {int(r[0]) for r in cur.fetchall() if r and r[0] is not None}
 

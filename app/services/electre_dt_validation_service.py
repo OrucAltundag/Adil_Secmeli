@@ -19,10 +19,13 @@ from typing import Any
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.tree import DecisionTreeClassifier
 
+from app.services.lr_trend_prediction_service import predict_next_year_trend
+
 
 FEATURE_NAMES = (
     "basari",
     "trend",
+    "lr_trend_forecast",
     "populerlik",
     "anket",
     "topsis_score",
@@ -33,6 +36,7 @@ FEATURE_NAMES = (
 FEATURE_LABELS = {
     "basari": "Başarı",
     "trend": "Trend",
+    "lr_trend_forecast": "LR sonraki yıl tahmini",
     "populerlik": "Doluluk / talep",
     "anket": "Anket / tercih",
     "topsis_score": "TOPSIS",
@@ -178,6 +182,12 @@ def _load_historical_records(
         if not isinstance(raw_values, dict):
             raw_values = {}
         row["raw_values"] = raw_values
+        # DT'nin LR sinyalini egitimde ve tahminde ayni semantikle kullanmasi
+        # gerekir. Tarihsel bir karar icin sadece o yildan ONCEKI skorlar
+        # kullanilarak ilgili yil tahmin edilir; boylece gelecek veri sizintisi
+        # olusmaz. Veri yoksa LR servisi notr 0.50 dondurur.
+        lr = predict_next_year_trend(cur, int(row.get("course_id") or 0), int(row.get("year") or 0))
+        row["lr_trend_forecast"] = lr.get("trend_score_normalized", 0.5)
         records.append(row)
     return records
 
@@ -185,6 +195,7 @@ def _load_historical_records(
 def _feature_row(
     raw_values: dict[str, Any],
     *,
+    lr_trend_forecast: Any = 0.5,
     topsis_score: Any,
     data_confidence: Any,
     old_status: Any,
@@ -192,6 +203,7 @@ def _feature_row(
     return [
         _bounded(raw_values.get("basari")),
         _bounded(raw_values.get("trend")),
+        _bounded(lr_trend_forecast),
         _bounded(raw_values.get("populerlik")),
         _bounded(raw_values.get("anket")),
         _bounded(_finite(topsis_score) / 100.0),
@@ -214,6 +226,7 @@ def _dataset(records: list[dict[str, Any]]) -> tuple[list[list[float]], list[int
         X.append(
             _feature_row(
                 dict(row.get("raw_values") or {}),
+                lr_trend_forecast=row.get("lr_trend_forecast", 0.5),
                 topsis_score=row.get("topsis_score"),
                 data_confidence=row.get("data_confidence_score"),
                 old_status=row.get("old_status"),
@@ -370,6 +383,7 @@ def evaluate_course_with_dt(
     context: DTValidationContext,
     *,
     raw_values: dict[str, Any],
+    lr_trend_forecast: Any = 0.5,
     topsis_score: Any,
     data_confidence: Any,
     old_status: Any,
@@ -393,6 +407,7 @@ def evaluate_course_with_dt(
 
     values = _feature_row(
         raw_values,
+        lr_trend_forecast=lr_trend_forecast,
         topsis_score=topsis_score,
         data_confidence=data_confidence,
         old_status=old_status,
@@ -433,4 +448,3 @@ def comparison_label(value: str | None) -> str:
         "dt_more_cautious": "DT daha temkinli",
         "unavailable": "Veri yetersiz",
     }.get(str(value or ""), "Bilinmiyor")
-

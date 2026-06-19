@@ -164,6 +164,53 @@ class TestDataCoverage:
         assert report["courses_with_performance"] == 2
         assert report["coverage_percentage"] > 0
 
+    def test_department_scope_does_not_union_other_departments_via_legacy_path(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            cur = conn.cursor()
+            cur.executescript(
+                """
+                CREATE TABLE fakulte (fakulte_id INTEGER PRIMARY KEY, ad TEXT);
+                CREATE TABLE bolum (bolum_id INTEGER PRIMARY KEY, fakulte_id INTEGER, ad TEXT);
+                CREATE TABLE ders (ders_id INTEGER PRIMARY KEY, ad TEXT, fakulte_id INTEGER, bolum_id INTEGER);
+                CREATE TABLE mufredat (
+                    mufredat_id INTEGER PRIMARY KEY, fakulte_id INTEGER, bolum_id INTEGER,
+                    akademik_yil INTEGER, donem TEXT
+                );
+                CREATE TABLE mufredat_ders (mufredat_id INTEGER, ders_id INTEGER);
+                CREATE TABLE ders_kriterleri (
+                    ders_id INTEGER, yil INTEGER, anket_dersi_secen INTEGER
+                );
+                CREATE TABLE performans (ders_id INTEGER, akademik_yil INTEGER, basari_orani REAL);
+                CREATE TABLE populerlik (ders_id INTEGER, akademik_yil INTEGER, doluluk_orani REAL);
+                INSERT INTO fakulte VALUES (1, 'Fakulte');
+                INSERT INTO bolum VALUES (10, 1, 'Bolum A');
+                INSERT INTO bolum VALUES (20, 1, 'Bolum B');
+                INSERT INTO ders VALUES (101, 'A Dersi', 1, 10);
+                INSERT INTO ders VALUES (201, 'B Dersi', 1, 20);
+                INSERT INTO mufredat VALUES (1, 1, 10, 2026, 'Guz');
+                INSERT INTO mufredat VALUES (2, 1, 20, 2026, 'Guz');
+                INSERT INTO mufredat_ders VALUES (1, 101);
+                INSERT INTO mufredat_ders VALUES (2, 201);
+                INSERT INTO ders_kriterleri VALUES (101, 2026, 1);
+                INSERT INTO performans VALUES (101, 2026, 0.8);
+                INSERT INTO populerlik VALUES (101, 2026, 0.8);
+                """
+            )
+            report_a = generate_coverage_report_cursor(
+                cur, year=2026, faculty_id=1, department_id=10
+            )
+            report_b = generate_coverage_report_cursor(
+                cur, year=2026, faculty_id=1, department_id=20
+            )
+
+            assert report_a["total_courses"] == 1
+            assert report_a["courses_with_criteria"] == 1
+            assert report_b["total_courses"] == 1
+            assert report_b["courses_with_criteria"] == 0
+        finally:
+            conn.close()
+
 
 class TestDataReadiness:
     """Veri olgunluğu değerlendirme testleri"""

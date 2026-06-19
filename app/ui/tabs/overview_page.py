@@ -20,13 +20,15 @@ ACCENT = "#1565C0"
 
 # Karar boru hattı adımları (tek bakışta akış)
 PIPELINE = [
-    ("1", "Kriter Verisi", "Kriter & Havuz → Kriter Girdi", "#0369a1"),
-    ("2", "AHP Ağırlık", "AHP Ağırlık Yönetimi", "#7c3aed"),
-    ("3", "TOPSIS Skor", "Karar Merkezi → Ders Kararları", "#0891b2"),
-    ("4", "Trend + Veri Güveni", "Karar Merkezi → Ders Kararları", "#059669"),
-    ("5", "Karar Politikası", "Karar Merkezi → Karar Politikaları", "#d97706"),
-    ("6", "Açılabilirlik", "Karar Merkezi → Önerilen Dersler", "#6d28d9"),
-    ("7", "Dönem Planı", "Dönem Planlama", "#be123c"),
+    ("1", "Sağlık + Veri", "Sistem Sağlığı / Veri Kalitesi", "#0369a1"),
+    ("2", "Trend + LR", "Veri → Trend", "#059669"),
+    ("3", "Kriter + AHP", "Kriter Girdi / AHP Yönetimi", "#7c3aed"),
+    ("4", "TOPSIS", "TOPSIS Kararı", "#0891b2"),
+    ("5", "Geçici Karar", "Algoritma Kontrol", "#2563eb"),
+    ("6", "ELECTRE + DT", "Karar Merkezi → Ders Kararları", "#d97706"),
+    ("7", "PROMETHEE II", "Karar Merkezi → Önerilen Dersler", "#6d28d9"),
+    ("8", "Müfredat Onayı", "Havuz Yaşam Döngüsü", "#be123c"),
+    ("9", "Dönem Planı", "Dönem Planlama", "#9f1239"),
 ]
 
 # Her algoritma: (ad, ne işe yarar / neden, formül, çıktı nerede görülür)
@@ -49,12 +51,12 @@ ALGORITMALAR = [
         "Karar Merkezi → Ders Kararları (TOPSIS skoru) + skor kırılımı.",
     ),
     (
-        "Trend Analizi",
+        "Trend Analizi + Lineer Regresyon (LR)",
         "Dersin yıllar içindeki gidişatını (yükselen / düşen / sabit) ölçer; "
         "tek yıllık dalgalanmaya değil eğilime bakar.",
-        "Ağırlıklı yıllık değişim — son yıllar daha ağır (örn. 0.50 / 0.30 / 0.20). "
-        "Pozitif = yükselen, negatif = düşen eğilim.",
-        "Karar Merkezi → Ders Kararları (trend etiketi) + Ders Lab.",
+        "Ağırlıklı trend: son 3 yıl 0.50 / 0.30 / 0.20. LR: y = β0 + β1·x; "
+        "son üç kesinleşme puanından bir sonraki yıl için 0–100 tahmin üretir.",
+        "Veri → Trend (geçmiş değerler, ağırlıklı trend ve LR tahmini).",
     ),
     (
         "Veri Güveni",
@@ -65,21 +67,28 @@ ALGORITMALAR = [
         "Karar Merkezi → Ders Kararları (veri güveni) + Hassas Kararlar.",
     ),
     (
-        "Karar Politikası (Eşik Tabanlı Sınıflandırma)",
-        "TOPSIS skorunu akademik statüye çevirir. Eşikler fakülte kararıyla "
-        "değiştirilebilir; kalıcı iptal her zaman manuel onay ister.",
-        "Skor ≥ 70 → Müfredatta   |   ≥ 50 → Havuzda   |   < 40 → Dinlenme   |   "
-        "≤ 30 → İptal Adayı.",
-        "Karar Merkezi → Karar Politikaları (aktif eşikler).",
+        "ELECTRE TRI-B — Kriter Bazlı Statü Ataması",
+        "Dersi yalnız toplam puanla değil; başarı, trend, doluluk ve anket değerlerini "
+        "Müfredat/Havuz/Dinlenme sınır profilleriyle ayrı ayrı karşılaştırarak sınıflandırır.",
+        "Uyum (concordance) + uyumsuzluk/veto → credibility σ(a,b). "
+        "σ ≥ λ ise ders ilgili sınır profilini geçer; varsayılan λ=0.65.",
+        "Karar Merkezi → Karar Politikaları / Ders Kararları.",
     ),
     (
-        "Açılabilirlik Skoru",
-        "Dersin akademik gücünün (TOPSIS) yanı sıra O DÖNEM fiilen açılabilir "
-        "olup olmadığını ölçer. Önerilen Dersler sıralamasını ve dönem planı "
-        "aday seçimini besler.",
-        "Açılabilirlik = 0.45·TOPSIS + 0.25·Talep + 0.15·Veri Güveni "
-        "+ 0.10·Dönem Uygunluk + 0.05·Kaynak Uygunluk  (hepsi 0–100).",
-        "Karar Merkezi → Önerilen Dersler (açılabilirlik + kategori).",
+        "Decision Tree — Bağımsız İkinci Görüş",
+        "Geçmişte uygulanmış final statülerinden öğrenerek ELECTRE önerisini kontrol eder. "
+        "Nihai kararı değiştirmez; uyum veya çatışmayı kurul incelemesine sunar.",
+        "Özellikler: başarı, trend, LR trend tahmini, doluluk, anket, TOPSIS, veri güveni, "
+        "eski statü. En az 100 geçmiş örnek ve sınıf başına 10 kayıt gerekir.",
+        "Karar Merkezi → Ders Kararları (DT Önerisi / ELECTRE-DT).",
+    ),
+    (
+        "PROMETHEE II — Müfredat Dışı Top-7 Öneri",
+        "Aktif müfredatta olmayan adayları ikili karşılaştırır; net akış ve çeşitlilik "
+        "kontrolüyle fakülte/bölüm kapsamına en uygun en fazla 7 dersi önerir.",
+        "π(a,b)=Σw·P(a−b); φ+=ortalama üstünlük, φ−=ortalama yenilgi, net akış φ=φ+−φ−. "
+        "Son seçimde benzer derslere çeşitlilik cezası uygulanır.",
+        "Karar Merkezi → Önerilen Dersler.",
     ),
     (
         "Dönem Planlama (Kısıtlı Atama)",
@@ -133,7 +142,7 @@ class OverviewPage(ttk.Frame):
             box,
             text="Fakültenin hangi seçmeli dersleri açacağına, havuzda bekleteceğine, "
             "dinlenmeye alacağına veya iptal adayı yapacağına; geçmiş başarı, talep, "
-            "anket ve trend verisini AHP + TOPSIS ile birleştirerek AÇIKLANABİLİR "
+            "anket ve trend verisini AHP, TOPSIS, ELECTRE TRI-B ve PROMETHEE II ile birleştirerek AÇIKLANABİLİR "
             "öneriler üretir. Nihai kararı her zaman akademik kurul verir.",
             bg=ACCENT, fg="#e2e8f0", font=("Segoe UI", 10),
             wraplength=900, justify="left", anchor="w",
@@ -192,14 +201,15 @@ class OverviewPage(ttk.Frame):
                  font=("Segoe UI", 12, "bold"), anchor="w").pack(fill=tk.X, padx=12, pady=(10, 4))
         adimlar = (
             "1) Sistem → Sistem Sağlığı: 'Tam Sağlık Kontrolü'\n"
-            "2) Veri → Veri Yönetimi / Veri Kalitesi: kapsam (2022 / fakülte) seç\n"
-            "3) Kriter & Havuz → Kriter Girdi: eksik kriterleri elle gir\n"
-            "4) AHP Ağırlık Yönetimi: profil oluştur, CR ≤ 0.10, aktif yap\n"
-            "5) Karar Merkezi → Karar Politikaları: aktif politika + Hazırlık 'Hazır'\n"
-            "6) Karar Merkezi → Çalıştırmalar: 'Yeni Karar Çalıştır'\n"
-            "7) Karar Merkezi → Önerilen Dersler / Ders Kararları: sonuçları incele\n"
-            "8) Dönem Planlama: 'Plan Üret' → Güz/Bahar planı\n"
-            "9) Raporlama & Analiz: CSV/Excel dışa aktar"
+            "2) Veri → Veri Yönetimi: bölüm kapsamı, import geçmişi, kalite ve onay\n"
+            "3) Veri → Veri Kalitesi: kapsam raporu; Veri → Trend: geçmiş + LR tahmini\n"
+            "4) Karar Süreci → Kriter & Havuz: kriterleri incele; AHP'de CR ≤ 0.10\n"
+            "5) TOPSIS Kararı: bölüm bazlı göreli sıralama ve formül dökümü\n"
+            "6) Algoritma Kontrol & Ders Lab: 'Sonraki Yıl Kararını Hesapla'\n"
+            "7) Karar Merkezi → Hazırlık / Karar Politikaları / Ders Kararları\n"
+            "8) Karar Merkezi → Önerilen Dersler (PROMETHEE II Top-7)\n"
+            "9) Havuz Yaşam Döngüsü: önizle, gerekirse değiştir, müfredatı onayla\n"
+            "10) Havuz Yönetimi → Dönem Planlama → Rapor & Yükleme"
         )
         tk.Label(box, text=adimlar, bg="#0f172a", fg="#e2e8f0", font=("Segoe UI", 9),
                  justify="left", anchor="w").pack(fill=tk.X, padx=12, pady=(0, 12))

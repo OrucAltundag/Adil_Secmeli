@@ -19,7 +19,7 @@ class _DummyStatus:
         return self.text
 
 
-def test_next_year_batch_runs_all_individual_algorithms_in_order():
+def test_next_year_batch_runs_only_production_pipeline_controls_in_order():
     tab = CalcTab.__new__(CalcTab)
     tab.ui_refs = {
         "mock": {"status": _DummyStatus()},
@@ -42,7 +42,7 @@ def test_next_year_batch_runs_all_individual_algorithms_in_order():
 
     results = tab._run_full_algorithm_batch_for_next_year()
 
-    assert calls == ["mock", "trend", "ahp", "topsis", "lr", "rf", "dt"]
+    assert calls == ["mock", "trend", "ahp", "topsis"]
     assert [item["id"] for item in results] == calls
     assert all(item["ok"] is True for item in results)
 

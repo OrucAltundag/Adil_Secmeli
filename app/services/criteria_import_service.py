@@ -1435,11 +1435,18 @@ def _import_criteria_multi_faculty(
     warnings = [warn for result in results for warn in result.get("warnings", [])]
     if unresolved:
         warnings.append(f"Eslesmeyen fakulte(ler) atlandi: {', '.join(unresolved)}")
+    matched_total = sum(int(result.get("matched_count") or 0) for result in results)
+    ok_count = sum(1 for result in results if result.get("ok"))
     return {
-        "ok": bool(results) and all(result.get("ok") for result in results),
-        "message": f"Coklu fakulte kriter yukleme tamamlandi ({len(results)} fakulte).",
+        # En az bir fakulte/donem icin eslesen satir varsa basarili sayilir;
+        # eslesmeyen satirlar warning listesinde gosterilir.
+        "ok": matched_total > 0,
+        "message": (
+            f"Coklu fakulte kriter yukleme tamamlandi "
+            f"({ok_count}/{len(results)} fakulte-donem batch'i basarili)."
+        ),
         "faculty_results": results,
-        "matched_count": sum(int(result.get("matched_count") or 0) for result in results),
+        "matched_count": matched_total,
         "updated_course_count": sum(int(result.get("updated_course_count") or 0) for result in results),
         "created_course_count": sum(int(result.get("created_course_count") or 0) for result in results),
         "errors": errors,
@@ -1513,11 +1520,14 @@ def import_criteria_excel(
                     "errors": ["donem degerleri Guz/Bahar olmalidir."],
                 }
             errors = [err for result in results for err in result.get("errors", [])]
+            matched_total = sum(int(result.get("matched_count") or 0) for result in results)
             return {
-                "ok": all(result.get("ok") for result in results),
+                # En az bir donem icin eslesme varsa basarili; donem bazli detay
+                # period_results altinda zaten mevcut.
+                "ok": matched_total > 0,
                 "message": "Yillik kriter yukleme tamamlandi (Guz+Bahar).",
                 "period_results": results,
-                "matched_count": sum(int(result.get("matched_count") or 0) for result in results),
+                "matched_count": matched_total,
                 "updated_course_count": sum(int(result.get("updated_course_count") or 0) for result in results),
                 "created_course_count": sum(int(result.get("created_course_count") or 0) for result in results),
                 "errors": errors,
@@ -1644,39 +1654,47 @@ def import_criteria_excel(
             term=normalize_term_label(term),
             department_id=int(department_id) if department_id is not None else None,
         )
-        if not matched.get("ok"):
-            for unmatched in matched.get("unmatched_rows") or []:
-                row_dict = unmatched.as_dict() if hasattr(unmatched, "as_dict") else {}
-                record_import_issue(
-                    conn,
-                    import_batch_id=import_batch_id,
-                    row_number=int(row_dict.get("row_no") or 0),
-                    issue_type="course_not_matched",
-                    severity="error",
-                    message=row_dict.get("error_message") or "Ders secili kapsamda eslesmedi.",
-                    suggestion="Ders kodu veya adini sistemdeki ders kaydi ile uyumlu hale getirin.",
-                )
+        # Eslesmeyen satirlari issue/warning olarak kaydet ama akisi durdurma:
+        # Eslesen satirlar normal sekilde stage edilir; kullanici batch'i onayda
+        # gorur, eslesmeyen satirlari da issue listesinden incelyebilir.
+        for unmatched in matched.get("unmatched_rows") or []:
+            row_dict = unmatched.as_dict() if hasattr(unmatched, "as_dict") else {}
+            record_import_issue(
+                conn,
+                import_batch_id=import_batch_id,
+                row_number=int(row_dict.get("row_no") or 0),
+                issue_type="course_not_matched",
+                severity="warning",
+                message=row_dict.get("error_message") or "Ders secili kapsamda eslesmedi.",
+                suggestion="Ders kodu veya adini sistemdeki ders kaydi ile uyumlu hale getirin.",
+            )
+            warnings.append(
+                f"Satir {row_dict.get('row_no')}: {row_dict.get('error_message') or 'eslesmedi'}"
+            )
+        # Hicbir satir eslesmediyse onaylanacak veri yok — bu durumda gercek bir
+        # hata olarak rapor edilir; aksi halde eslesenlerle devam edilir.
+        if not (matched.get("matched_rows") or []):
             quality = evaluate_import_quality(conn, import_batch_id)
             update_import_status(
                 conn,
                 import_batch_id,
                 "pending_review",
-                error_message="Belgedeki bazi dersler secili kapsamda eslesmedi.",
+                error_message="Belgedeki hicbir ders secili kapsamda eslesmedi.",
                 validation_summary={
                     "ok": False,
-                    "matched_count": int(matched.get("matched_count") or 0),
+                    "matched_count": 0,
                     "unmatched_count": int(matched.get("unmatched_count") or 0),
                 },
             )
             conn.commit()
             return {
                 "ok": False,
-                "message": "Belgedeki bazi dersler secili kapsamda eslesmedi. Veri uygulanmadi.",
+                "message": "Belgedeki hicbir ders secili kapsamda eslesmedi. Veri uygulanmadi.",
                 "errors": list(matched.get("errors") or []),
                 "warnings": warnings,
-                "matched_count": int(matched.get("matched_count") or 0),
+                "matched_count": 0,
                 "unmatched_count": int(matched.get("unmatched_count") or 0),
-                "matched_rows": [row.as_dict() for row in matched.get("matched_rows") or []],
+                "matched_rows": [],
                 "unmatched_rows": [row.as_dict() for row in matched.get("unmatched_rows") or []],
                 "import_batch_id": import_batch_id,
                 "quality_score": quality.quality_score,

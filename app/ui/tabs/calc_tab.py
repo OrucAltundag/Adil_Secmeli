@@ -34,14 +34,15 @@ _MSG_CRITERIA_BLOCK = (
     "Yeni yıl müfredatı oluşturulamaz."
 )
 
-_NEXT_YEAR_BATCH_ALGOS = ("mock", "trend", "ahp", "topsis", "lr", "rf", "dt")
+_NEXT_YEAR_BATCH_ALGOS = ("mock", "trend", "ahp", "topsis")
+_HIDDEN_ADVISORY_ALGOS = {"lr", "rf", "dt"}
 
 
 
 class CalcTab(ttk.Frame):
     """
     🧮 Hesaplama & Test sekmesi:
-    - Algoritma kontrol paneli (mock/trend/ahp/topsis/lr/rf/dt)
+    - Algoritma kontrol paneli (mock/trend/ahp/topsis)
     - Ders ilişkileri (NLP benzerlik grafiği)
     - Havuz yönetimi (Fakülte/Bölüm/Yıl filtreli)
     """
@@ -466,6 +467,12 @@ class CalcTab(ttk.Frame):
             if algo_id == "next_year":
                 lbl_status = self._lbl_next_year_status
                 self.ui_refs[algo_id] = {"status": lbl_status, "show_btn": None}
+                continue
+            # LR/RF/DT nihai karar motorunun manuel adimlari degildir. LR Trend
+            # sayfasinda, DT ise Karar Merkezi'nde bagimsiz ikinci gorus olarak
+            # kullanilir; RF benchmark/analiz kapsamindadir. Bu nedenle burada
+            # yaniltici "Calistir" butonlari gosterilmez.
+            if algo_id in _HIDDEN_ADVISORY_ALGOS:
                 continue
 
             btn_run = ttk.Button(
