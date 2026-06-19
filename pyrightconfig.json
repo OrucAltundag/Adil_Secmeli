@@ -1,0 +1,43 @@
+{
+    "include": [
+        "app",
+        "scripts"
+    ],
+    "exclude": [
+        "**/__pycache__",
+        "env",
+        ".venv",
+        "build",
+        "dist",
+        "node_modules"
+    ],
+    "typeCheckingMode": "basic",
+    "reportMissingTypeStubs": false,
+    "reportMissingImports": "warning",
+    "pythonVersion": "3.12",
+    "executionEnvironments": [
+        {
+            "root": "app/tests",
+            "reportOptionalSubscript": "none",
+            "reportOptionalMemberAccess": "none",
+            "reportPossiblyUnboundVariable": "none",
+            "reportArgumentType": "none",
+            "reportAttributeAccessIssue": "none",
+            "reportCallIssue": "none",
+            "reportReturnType": "none"
+        },
+        {
+            "root": "scripts",
+            "reportOptionalMemberAccess": "none",
+            "reportArgumentType": "none",
+            "reportAttributeAccessIssue": "none",
+            "reportMissingImports": "none",
+            "reportPrivateImportUsage": "none",
+            "reportCallIssue": "none",
+            "reportGeneralTypeIssues": "none"
+        },
+        {
+            "root": "app"
+        }
+    ]
+}

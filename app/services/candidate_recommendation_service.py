@@ -296,7 +296,7 @@ def _curriculum_texts(cur: sqlite3.Cursor, year: int, faculty_id: int | None, de
 
 
 def _latest_surveys(cur: sqlite3.Cursor, course_ids: list[int], year: int) -> dict[int, int | None]:
-    result = {course_id: None for course_id in course_ids}
+    result: dict[int, int | None] = {course_id: None for course_id in course_ids}
     if not course_ids or not _table_exists(cur, "ders_kriterleri"):
         return result
     placeholders = ",".join("?" for _ in course_ids)

@@ -127,7 +127,7 @@ class TrendVisualizationPage(ttk.Frame):
         return bool(self.db and getattr(self.db, "conn", None))
 
     def _load_years(self):
-        if not self._conn_ready():
+        if not self._conn_ready() or self.db is None:
             return
         try:
             _, rows = self.db.run_sql(
@@ -147,7 +147,7 @@ class TrendVisualizationPage(ttk.Frame):
             print(f"[TrendVis] _load_years hata: {exc}")
 
     def _load_faculties(self):
-        if not self._conn_ready():
+        if not self._conn_ready() or self.db is None:
             return
         try:
             _, rows = self.db.run_sql("SELECT fakulte_id, ad FROM fakulte ORDER BY ad")
@@ -164,7 +164,7 @@ class TrendVisualizationPage(ttk.Frame):
         self._load_curriculum_courses()
 
     def _load_curriculum_courses(self):
-        if not self._conn_ready():
+        if not self._conn_ready() or self.db is None:
             return
         fak = self.cb_fakulte.get()
         fid = self._fakulte_map.get(fak)
@@ -200,7 +200,7 @@ class TrendVisualizationPage(ttk.Frame):
 
     # ------------------------------------------------------------------- göster
     def _show_trend(self):
-        if not self._conn_ready():
+        if not self._conn_ready() or self.db is None:
             self._set_text("Veritabanı bağlantısı yok.")
             return
         ders_ad = self.cb_ders.get()

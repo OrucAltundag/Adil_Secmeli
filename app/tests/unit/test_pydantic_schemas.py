@@ -1,4 +1,12 @@
-"""Pydantic schema validation tests for API endpoints."""
+"""Pydantic schema validation tests for API endpoints.
+
+Bu testler kasitli olarak hem Ingilizce (year) hem Turkce (yil) anahtarlarla
+calistirilir; populate_by_name=True nedeniyle ikisi de runtime'da gecerlidir
+ama Pylance Pydantic v2 alias'tan otomatik turetilen __init__ imzasini sadece
+alias adiyla gorur. Bu durum testlerin aslindaki amaci -- iki ismin de calistigini
+dogrulamak -- icin gerekli bir false-positive'dir.
+"""
+# pyright: reportCallIssue=false, reportArgumentType=false
 
 import pytest
 from pydantic import ValidationError

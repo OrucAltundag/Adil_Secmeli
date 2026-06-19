@@ -85,7 +85,7 @@ def main():
     root = tk.Tk()
     root.withdraw()
     app = MockApp(TMP_DB)
-    page = M.AHPWeightPage(root, app=app)
+    page = M.AHPWeightPage(root, app=app)  # type: ignore[arg-type]  # tk.Tk runtime icin gecerli parent
 
     cur = app.db.conn.cursor()
 

@@ -95,6 +95,7 @@ def uret(db_path: Path, yil: int, katilimci: int) -> Path:
 
     wb = Workbook()
     ws = wb.active
+    assert ws is not None  # Workbook() daima aktif sheet ile gelir
     ws.title = "AnketSonuclari"
     headers = ["fakulte_adi", "yil", "ders_kodu", "ders_adi",
                "toplam_katilimci", "tercih_sayisi", "aciklama"]
@@ -108,7 +109,10 @@ def uret(db_path: Path, yil: int, katilimci: int) -> Path:
             ws.cell(row=ri, column=ci, value=r[h])
     for col in ws.columns:
         w = max((len(str(c.value)) if c.value is not None else 0) for c in col)
-        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max(10, w + 2), 40)
+        col_idx = col[0].column
+        if col_idx is None:
+            continue
+        ws.column_dimensions[get_column_letter(int(col_idx))].width = min(max(10, w + 2), 40)
     ws.freeze_panes = "A2"
 
     meta = wb.create_sheet("Meta")

@@ -126,8 +126,8 @@ def _rank_correlation(rank_a: Sequence[int], rank_b: Sequence[int]) -> dict[str,
 
         sp = stats.spearmanr(rank_a, rank_b)
         kt = stats.kendalltau(rank_a, rank_b)
-        out["spearman"] = float(getattr(sp, "correlation", sp[0]))
-        out["kendall_tau"] = float(getattr(kt, "correlation", kt[0]))
+        out["spearman"] = float(getattr(sp, "correlation", sp[0]))  # type: ignore[arg-type]  # scipy stats result fallback
+        out["kendall_tau"] = float(getattr(kt, "correlation", kt[0]))  # type: ignore[arg-type]
     except Exception:
         pass
     return out
@@ -162,9 +162,16 @@ def compare_models(
         raise ValueError("course_ids sayisi matrix satir sayisina esit olmali.")
     ben = _benefit_mask(m.shape[1], benefit)
 
-    s_equal = topsis_scores(m, weights=None, benefit=ben)          # baseline 1
-    s_saw = weighted_sum_scores(m, weights=ahp_weights, benefit=ben)  # baseline 2
-    s_hybrid = topsis_scores(m, weights=ahp_weights, benefit=ben)  # HIBRIT
+    # H9: topsis_scores / weighted_sum_scores ic dunyada _as_matrix / _benefit_mask
+    # cagiriyor; m ve ben numpy ndarray olmasina ragmen runtime'da gecerli
+    # Sequence davranisi sergiler. Pylance ndarray <-> Sequence[Sequence[float]]
+    # daraltmasini tanimaz; tolist() ile aciklik kaziniyor.
+    matrix_seq: Sequence[Sequence[float]] = m.tolist()
+    benefit_seq: Sequence[bool] = ben.tolist()
+
+    s_equal = topsis_scores(matrix_seq, weights=None, benefit=benefit_seq)          # baseline 1
+    s_saw = weighted_sum_scores(matrix_seq, weights=ahp_weights, benefit=benefit_seq)  # baseline 2
+    s_hybrid = topsis_scores(matrix_seq, weights=ahp_weights, benefit=benefit_seq)  # HIBRIT
 
     models = {
         MODEL_ESIT_TOPSIS: {"scores": s_equal, "ranking": rank_from_scores(s_equal)},

@@ -40,11 +40,11 @@ def oku_veri_seti():
     # (bolum_id, donem) -> list[(kod, ad, kredi)]
     dersler = defaultdict(dict)
     for r in it:
-        bid = int(r[ix["bolum_id"]])
+        bid = int(r[ix["bolum_id"]])  # type: ignore[arg-type]  # openpyxl cell.value Optional
         don = str(r[ix["donem"]]).strip()
         kod = str(r[ix["ders_kodu"]]).strip()
         ad = str(r[ix["ders_adi"]]).strip()
-        kredi = int(r[ix["kredi"]] or 3)
+        kredi = int(r[ix["kredi"]] or 3)  # type: ignore[arg-type]
         dersler[(bid, don)][kod] = (ad, kredi)
 
     ws2 = wb["Ders Analizi"]
@@ -56,12 +56,12 @@ def oku_veri_seti():
     for r in it2:
         kod = str(r[j["ders_kodu"]]).strip()
         stat[kod] = {
-            "bolum_id": int(r[j["bolum_id"]]),
+            "bolum_id": int(r[j["bolum_id"]]),  # type: ignore[arg-type]
             "donem": str(r[j["donem"]]).strip(),
-            "kayit": int(r[j["kayit_sayisi"]] or 0),
-            "gecme_orani": float(r[j["gecme_orani_%"]] or 0),
-            "ort_agirlikli": float(r[j["ort_agirlikli"]] or 0),
-            "katilim_yuzde": float(r[j["ort_katilim_yuzde"]] or 0),
+            "kayit": int(r[j["kayit_sayisi"]] or 0),  # type: ignore[arg-type]
+            "gecme_orani": float(r[j["gecme_orani_%"]] or 0),  # type: ignore[arg-type]
+            "ort_agirlikli": float(r[j["ort_agirlikli"]] or 0),  # type: ignore[arg-type]
+            "katilim_yuzde": float(r[j["ort_katilim_yuzde"]] or 0),  # type: ignore[arg-type]
         }
     wb.close()
     return dersler, stat
@@ -79,6 +79,7 @@ def yaz_mufredat_excel(dersler, bmap, fmap):
     """18 satır: 9 bölüm × (Guz, Bahar), 4 seçmeli ders."""
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "Sayfa1"
     ws.append([
         "ID", "Fakülte", "Bölüm", "Yıl", "Dönem",
@@ -161,7 +162,7 @@ def main():
                 "VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'Seçmeli', ?)",
                 (bid, fak_id, ad, kredi, 60, "Seçmeli", kredi, kod),
             )
-            did = int(cur.lastrowid)
+            did = int(cur.lastrowid or 0)
             olusturulan += 1
         kod_to_dersid[kod] = did
     conn.commit()
@@ -180,7 +181,7 @@ def main():
                 "donem, durum, versiyon) VALUES (?, ?, ?, ?, 'aktif', 1)",
                 (fak_id, YIL, bid, don),
             )
-            mid = int(cur.lastrowid)
+            mid = int(cur.lastrowid or 0)
             mufredat_sayisi += 1
             for kod in kayit:
                 did = kod_to_dersid.get(kod)

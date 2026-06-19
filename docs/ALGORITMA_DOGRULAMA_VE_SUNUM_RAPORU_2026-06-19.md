@@ -112,9 +112,12 @@ ve bütün profil karşılaştırmaları saklanır.
 ## 5. Decision Tree ve ELECTRE etkileşimi
 
 DT, ELECTRE’nin etiketlerini yeniden ezberlemek için mevcut run üzerinde eğitilmez.
-Yalnız hedef yıldan önceki `completed` ve stale olmayan karar çalıştırmalarının
-uygulanmış `final_status` değerleri eğitim hedefidir. Aynı ders/yıl/dönemin tekrar
-run’larından yalnız en yenisi kullanılır.
+Yalnız hedef yıldan önceki `completed`, stale olmayan ve **müfredat incelemesinde
+kurulca onaylanmış** karar çalıştırmaları kullanılır. Eğitim hedefi algoritmanın
+`final_status` alanı değildir: kurulun onayladığı yeni dönem listesinde bulunan ders
+`Müfredat (1)`, bulunmayan ders `Havuz (0)` olarak etiketlenir. Kurulun manuel ders
+takasları böylece gerçek etikete yansır. Onaylanmamış algoritma çıktıları etiket kabul
+edilmez. Aynı ders/yıl/dönemin tekrar run’larından yalnız en yenisi kullanılır.
 
 Özellikler:
 
@@ -126,6 +129,16 @@ run’larından yalnız en yenisi kullanılır.
 6. TOPSIS puanı
 7. Veri güveni
 8. Önceki statü
+9. Diğer derslere göre TOPSIS yüzdelik sırası
+10. Diğer derslerin TOPSIS medyanından fark
+11. Başarı, trend, doluluk ve anket akran medyanlarından farklar
+12. Akran grubundaki en yüksek ve en düşük TOPSIS puanına uzaklıklar
+
+Hedef ders referans hesabından çıkarılır. Örneğin bölümde sekiz ders varsa her ders,
+diğer yedi dersin medyanı ve dağılımıyla karşılaştırılır. Hedef yıl özellikleri bütün
+TOPSIS puanları tamamlandıktan sonra tek seferde hazırlanır. Tarihsel eğitim satırları
+da kendi yıl–dönem–fakülte/bölüm gruplarında aynı bırak-birini-dışarıda yöntemiyle
+üretilir; böylece eğitim ve tahmin özellikleri aynı anlama gelir.
 
 Hazırlık koşulları:
 
@@ -134,10 +147,11 @@ Hazırlık koşulları:
 - Her sınıf için en az 10 örnek
 - Mümkünse seçili fakülte/bölüm geçmişi; yetersizse global geçmiş
 
-DT hazır değilse `Veri yetersiz` gösterilir. Eşiği yapay olarak düşürmek veya aynı yıl
-verisini eğitime katmak doğruluk değil veri sızıntısı üretir. Yeterli hale getirmek için
-önce geçmiş yılların gerçek kararları çalıştırılmalı, akademik olarak sonuçlandırılmalı
-ve farklı statülerden yeterli örnek biriktirilmelidir.
+DT hazır değilse `Veri yetersiz` gösterilir. Bunun yanında model olmayan bir karar
+gibi sunulmayan, açık kurallı `Akranlarına göre güçlü / dengeli / zayıf` kontrolü
+gösterilir. Eşiği yapay olarak düşürmek veya aynı yıl verisini eğitime katmak doğruluk
+değil veri sızıntısı üretir. Yeterli hale getirmek için geçmiş yılların gerçek kararları
+kurulca onaylanmalı ve farklı statülerden yeterli örnek biriktirilmelidir.
 
 ELECTRE–DT sonucu:
 
@@ -226,4 +240,3 @@ Bu değişiklik paketi için algoritma, veri kapsamı, karar yönetişimi, UI sm
 havuz ve dönem planlama testleri çalıştırılmıştır. Hedefli paketlerde 64/64 ve
 76/76 test başarılıdır. Ayrıca bölüm kapsamının legacy fakülte sorgusuyla yeniden
 genişlemesini engelleyen özel regresyon testi eklenmiştir.
-

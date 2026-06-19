@@ -1449,12 +1449,13 @@ class DataManagementPage(ttk.Frame):
             messagebox.showerror("Veri Yönetimi", self._friendly_backend_error())
 
     def recalculate_quality(self) -> None:
-        if self.selected_import_batch_id is None:
+        batch_id = self.selected_import_batch_id
+        if batch_id is None:
             messagebox.showinfo("Kalite", "Önce bir import seçin.")
             return
         def _op() -> Any:
             with self._connect() as conn:
-                quality = evaluate_import_quality(conn, self.selected_import_batch_id)
+                quality = evaluate_import_quality(conn, batch_id)
                 conn.commit()
             return quality
 
@@ -1466,7 +1467,8 @@ class DataManagementPage(ttk.Frame):
             messagebox.showerror("Kalite", self._friendly_backend_error())
 
     def recalculate_diff(self) -> None:
-        if self.selected_import_batch_id is None:
+        batch_id = self.selected_import_batch_id
+        if batch_id is None:
             messagebox.showinfo("Diff", "Önce bir import seçin.")
             return
         try:
@@ -1474,39 +1476,12 @@ class DataManagementPage(ttk.Frame):
             if not path:
                 raise FileNotFoundError(self._friendly_backend_error())
             diff = self._run_external_db_operation(
-                lambda: recalculate_import_artifact(path, self.selected_import_batch_id, "diff")
+                lambda: recalculate_import_artifact(path, batch_id, "diff")
             )
             self._set_text(self.diff_text, self._format_diff_text(diff))
             self.refresh_center()
         except Exception:
             messagebox.showerror("Diff", self._friendly_backend_error())
-
-    def recalculate_impact(self) -> None:
-        if self.selected_import_batch_id is None:
-            messagebox.showinfo("Karar Etkisi", "Önce bir import seçin.")
-            return
-        try:
-            path = self._db_path()
-            if not path:
-                raise FileNotFoundError(self._friendly_backend_error())
-            impact = self._run_external_db_operation(
-                lambda: recalculate_import_artifact(path, self.selected_import_batch_id, "impact")
-            )
-            self._set_text(self.impact_text, self._format_impact_text(impact))
-            self.refresh_center()
-        except Exception:
-            messagebox.showerror("Karar Etkisi", self._friendly_backend_error())
-
-    def load_rollback_plan(self) -> None:
-        if self.selected_import_batch_id is None:
-            messagebox.showinfo("Rollback", "Önce bir import seçin.")
-            return
-        try:
-            with self._connect() as conn:
-                plan = get_rollback_plan(conn, self.selected_import_batch_id)
-            self._set_text(self.rollback_text, plan)
-        except Exception:
-            messagebox.showerror("Rollback", self._friendly_backend_error())
 
     def approve_selected(self) -> None:
         ids = self._pending_selected_ids()
@@ -1551,25 +1526,6 @@ class DataManagementPage(ttk.Frame):
             ),
             success_singular="Import reddedildi.",
             success_plural_fmt="{ok}/{total} import reddedildi.",
-        )
-
-    def rollback_selected(self) -> None:
-        ids = self._pending_selected_ids()
-        if not ids:
-            messagebox.showinfo("Rollback", "Önce en az bir import seçin.")
-            return
-        if not messagebox.askyesno(
-            "Rollback",
-            f"{len(ids)} import geri alınsın mı? Bu işlem ilgili importları pasifler.",
-        ):
-            return
-        self._bulk_status_action(
-            ids,
-            lambda conn, batch_id: rollback_import(
-                conn, batch_id, reason="UI uzerinden rollback.", user="desktop-ui"
-            ),
-            success_singular="Import geri alındı.",
-            success_plural_fmt="{ok}/{total} import geri alındı.",
         )
 
     def _bulk_status_action(

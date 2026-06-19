@@ -144,8 +144,9 @@ def d_adaptif_fit_predict():
     model.fit(X, y)
     out = model.predict(X)
     pred = getattr(out, "predictions", out)
-    return (pred is not None and len(list(pred)) == len(X),
-            f"fit+predict OK, {len(list(pred))} tahmin")
+    pred_list = list(pred)  # type: ignore[arg-type]  # AlgorithmOutput runtime'da iterable
+    return (pred is not None and len(pred_list) == len(X),
+            f"fit+predict OK, {len(pred_list)} tahmin")
 
 
 def d_pruning_overfit_azaltir():

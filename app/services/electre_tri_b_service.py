@@ -80,7 +80,10 @@ def _profile_values(policy: dict[str, Any]) -> list[dict[str, Any]]:
         for item in custom:
             if not isinstance(item, dict):
                 continue
-            status = int(item.get("status"))
+            status_raw = item.get("status")
+            if status_raw is None:
+                continue
+            status = int(status_raw)
             values = item.get("values") or {}
             profiles.append(
                 {
@@ -182,7 +185,7 @@ def compare_to_profile(
     vetoed = [key for key in CRITERIA if partial_d[key] >= 0.999]
     return {
         "profile": str(profile.get("name") or ""),
-        "status": int(profile.get("status")),
+        "status": int(profile.get("status") or 0),
         "profile_values": {key: _bounded(profile_values.get(key)) for key in CRITERIA},
         "partial_concordance": partial_c,
         "discordance": partial_d,

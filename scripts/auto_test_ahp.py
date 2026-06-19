@@ -21,7 +21,7 @@ try:
     root.withdraw()
     from app.ui.tabs.ahp_weight_page import AHPWeightPage
 
-    page = AHPWeightPage(root)
+    page = AHPWeightPage(root)  # type: ignore[arg-type]  # tk.Tk runtime icin gecerli parent
     logging.info('AHPWeightPage instantiated')
 
     try:

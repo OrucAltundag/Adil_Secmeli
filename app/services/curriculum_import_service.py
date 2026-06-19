@@ -523,6 +523,32 @@ def _apply_curriculum_scopes(
         target_year=int(target_year),
         scope_courses=scope_courses,
     )
+
+    # H8 (2026-06-19): Yeni mufredat eklenen her (yil, fakulte) kapsami icin
+    # havuz da tohumlanir. Aksi halde 2022 mufredati eklendiginde 2022 yili
+    # aktif olsa bile Havuz Yonetimi listesi bos kalir; havuz kurallari (statu
+    # = 0 / sayac = 0) ders bazinda hic uygulanmamis olur ve kullanici
+    # algoritma calistirana kadar havuzu manuel doldurmak zorunda kalir.
+    havuz_seed_total = 0
+    havuz_seed_scopes = 0
+    try:
+        from app.services.havuz_seed_service import seed_havuz_from_electives
+
+        seed_scopes = sorted(
+            {(int(year), int(fid)) for (fid, _bid, year, _term) in scope_courses.keys()}
+        )
+        for year, faculty_id in seed_scopes:
+            seed_result = seed_havuz_from_electives(
+                conn, year, faculty_id=faculty_id, default_score=None,
+            )
+            havuz_seed_total += int(seed_result.get("added", 0))
+            havuz_seed_scopes += 1
+    except Exception:
+        # Havuz tohumlama operasyonel iyilesmedir; basarisiz olsa bile mufredat
+        # uygulamasini geri almayiz. Hata import_diagnostics'e dusurulebilir,
+        # ama mevcut akiste sadece atlanir.
+        pass
+
     return {
         "scopes_total": len(scope_courses),
         "scopes_created": created,
@@ -531,6 +557,8 @@ def _apply_curriculum_scopes(
         "links_added": links_added,
         "links_removed": links_removed,
         "compare": compare,
+        "havuz_seeded_rows": havuz_seed_total,
+        "havuz_seeded_scopes": havuz_seed_scopes,
         **reset_stats,
     }
 
@@ -916,11 +944,14 @@ def apply_pending_curriculum_import(
         )
     if not scope_courses:
         return {"ok": False, "message": "Staging kaydında uygulanacak müfredat kapsamı yok."}
+    target_year_value = payload.get("target_year") or batch.get("year")
+    if target_year_value is None:
+        return {"ok": False, "message": "Staging kaydında hedef yıl bilgisi eksik."}
     stats = _apply_curriculum_scopes(
         conn,
         scope_courses=scope_courses,
         scope_names=scope_names,
-        target_year=int(payload.get("target_year") or batch.get("year")),
+        target_year=int(target_year_value),
         import_batch_id=int(import_batch_id),
     )
     mark_staging_decision(conn, int(import_batch_id), "applied", user=user)

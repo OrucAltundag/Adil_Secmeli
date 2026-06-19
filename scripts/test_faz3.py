@@ -47,16 +47,18 @@ def h_fit_predict():
     m = MLPPredictor()
     m.fit(X, y)
     out = m.predict(X)
-    pred = list(getattr(out, "predictions", out))
+    pred = list(getattr(out, "predictions", out))  # type: ignore[arg-type]  # AlgorithmOutput runtime'da iterable
     acc = float((np.array(pred) == y.values).mean())
     return acc > 0.7, f"egitim acc={acc:.3f}"
 
 
 def h_adaptif_katman():
     from app.services.ml_training_service import _build_model
-    a = _build_model("mlp", 80).named_steps["mlp"].hidden_layer_sizes
-    b = _build_model("deep_learning", 500).named_steps["mlp"].hidden_layer_sizes
-    c = _build_model("neural_network", 5000).named_steps["mlp"].hidden_layer_sizes
+    # _build_model dondurusu sklearn Pipeline; tip stub'i alt sinif tipini
+    # daraltinca named_steps gorunmez. getattr ile runtime'a takiliyoruz.
+    a = getattr(_build_model("mlp", 80), "named_steps")["mlp"].hidden_layer_sizes
+    b = getattr(_build_model("deep_learning", 500), "named_steps")["mlp"].hidden_layer_sizes
+    c = getattr(_build_model("neural_network", 5000), "named_steps")["mlp"].hidden_layer_sizes
     return (a == (32,) and b == (64, 32) and c == (128, 64, 32),
             f"80:{a} 500:{b} 5000:{c}")
 

@@ -406,7 +406,7 @@ def list_policies(
 
 def resolve_policy(
     conn: sqlite3.Connection,
-    year: int,
+    year: int | None,
     faculty_id: int | None = None,
     department_id: int | None = None,
     curriculum_year: int | None = None,

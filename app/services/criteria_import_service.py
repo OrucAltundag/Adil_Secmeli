@@ -495,7 +495,7 @@ CRITERIA_TEMPLATE_COLUMNS = [
 
 
 def _load_scope_rows_for_template(
-    db_path: str,
+    db_path: str | None,
     faculty_id: int | None,
     department_id: int | None,
     year: int | None,
@@ -1346,7 +1346,7 @@ def _import_criteria_multi_faculty(
     db_path: str,
     excel_path: str,
     year: int,
-    term: str,
+    term: str | None,
     department_id: int | None,
     source_filename: str | None,
     auto_activate: bool,
@@ -1459,7 +1459,7 @@ def import_criteria_excel(
     excel_path: str,
     faculty_id: int | None,
     year: int,
-    term: str,
+    term: str | None,
     department_id: int | None = None,
     source_filename: str | None = None,
     auto_activate: bool = True,
@@ -1492,7 +1492,10 @@ def import_criteria_excel(
             with tempfile.TemporaryDirectory(prefix="adil_kriter_") as temp_dir:
                 for term_label in ("Guz", "Bahar"):
                     mask = source_df[term_column].map(
-                        lambda value: term_key(normalize_term_label(value)) == term_key(term_label)
+                        lambda value: term_key(
+                            normalize_term_label(None if pd.isna(value) else str(value))
+                        )
+                        == term_key(term_label)
                     )
                     part = source_df[mask].copy()
                     if part.empty:
@@ -1855,9 +1858,16 @@ def apply_pending_criteria_import(
     if not rows:
         return {"ok": False, "message": "Stage edilmis satirlar cozumlenemedi."}
 
-    faculty_id = int(batch.get("faculty_id"))
+    faculty_raw = batch.get("faculty_id")
+    year_raw = batch.get("year")
+    if faculty_raw is None or year_raw is None:
+        return {
+            "ok": False,
+            "message": "Onay bekleyen import icin fakulte/yil kapsami bulunamadi.",
+        }
+    faculty_id = int(faculty_raw)
     department_id = batch.get("department_id")
-    year = int(batch.get("year"))
+    year = int(year_raw)
     term = normalize_term_label(batch.get("semester") or "Guz")
 
     # Eski staged kayitlari temizle; apply yeniden temiz stage edip uygulasin (kopya olmasin).

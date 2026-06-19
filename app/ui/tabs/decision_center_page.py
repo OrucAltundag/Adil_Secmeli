@@ -109,6 +109,19 @@ def _precise_number(value) -> str:
         return "0"
 
 
+def _dt_details(value) -> dict:
+    try:
+        parsed = json.loads(value or "{}") if value else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _peer_label(details: dict) -> str:
+    assessment = dict(details.get("peer_assessment") or {})
+    return str(assessment.get("label") or "").strip()
+
+
 class DecisionCenterPage(ttk.Frame):
     """Karar Merkezi: AHP, policy, runs, course decisions and reports."""
 
@@ -1338,6 +1351,10 @@ class DecisionCenterPage(ttk.Frame):
             reject_decision_run_override(self._conn(), request_id, note.strip(), actor)
             self._conn().commit()
             self._load_run_overrides()
+            messagebox.showinfo(
+                "Engelleme Reddi",
+                "Talep reddedildi; karar çalıştırması ve müfredat üzerinde değişiklik yapılmadı.",
+            )
         except ValueError as exc:
             messagebox.showwarning("Engelleme Reddi", str(exc))
         except Exception:
@@ -1359,10 +1376,6 @@ class DecisionCenterPage(ttk.Frame):
             cancel_decision_run_override(self._conn(), request_id)
             self._conn().commit()
             self._load_run_overrides()
-            messagebox.showinfo(
-                "Engelleme Reddi",
-                "Talep reddedildi; karar çalıştırması ve müfredat üzerinde değişiklik yapılmadı.",
-            )
             messagebox.showinfo("Talebi Geri Çek", "Bekleyen talep kuyruktan kaldırıldı.")
         except ValueError as exc:
             messagebox.showwarning("Talebi Geri Çek", str(exc))
@@ -1388,6 +1401,8 @@ class DecisionCenterPage(ttk.Frame):
             self._decision_ids[iid] = int(row["id"])
             dt_status = row.get("dt_prediction_status")
             dt_comparison = str(row.get("dt_comparison") or "unavailable")
+            details = _dt_details(row.get("dt_details_json"))
+            peer_label = _peer_label(details)
             if dt_status is not None:
                 dt_ready += 1
             if dt_comparison == "agree":
@@ -1411,7 +1426,11 @@ class DecisionCenterPage(ttk.Frame):
                     f"{float(row.get('electre_credibility') or 0):.4f}",
                     _status_text(dt_status) if dt_status is not None else "Veri yetersiz",
                     f"{float(dt_confidence):.2f}" if dt_confidence is not None else "—",
-                    comparison_label(dt_comparison),
+                    (
+                        comparison_label(dt_comparison)
+                        if dt_comparison != "unavailable" or not peer_label
+                        else f"DT yok · {peer_label}"
+                    ),
                     _status_text(row.get("final_status")),
                     _trend_text(row.get("trend_label")), f"{float(row.get('data_confidence_score') or 0):.2f}",
                     "Evet" if row.get("approval_required") else "Hayır",
@@ -2225,10 +2244,7 @@ class DecisionCenterPage(ttk.Frame):
             electre = json.loads(row["electre_details_json"] or "{}") if row["electre_details_json"] else {}
         except (TypeError, ValueError, json.JSONDecodeError):
             electre = {}
-        try:
-            dt_details = json.loads(row["dt_details_json"] or "{}") if row["dt_details_json"] else {}
-        except (TypeError, ValueError, json.JSONDecodeError):
-            dt_details = {}
+        dt_details = _dt_details(row["dt_details_json"])
         lines = [
             f"{row['kod'] or ''} {row['ad'] or ''}",
             f"TOPSIS skoru: {_precise_number(row['topsis_score'] or 0)}",
@@ -2254,6 +2270,8 @@ class DecisionCenterPage(ttk.Frame):
             if electre.get("vetoed_criteria"):
                 lines.append("- Veto uygulanan kriterler: " + ", ".join(electre["vetoed_criteria"]))
         lines.extend(["", "Decision Tree bağımsız doğrulaması:"])
+        peer = dict(dt_details.get("peer_assessment") or {})
+        peer_deltas = dict(peer.get("criterion_delta_medians") or {})
         if not dt_details or not dt_details.get("available"):
             lines.append("- Sonuç: Veri yetersiz / doğrulama yapılamadı")
             lines.append(f"- Neden: {dt_details.get('explanation') or 'DT sonucu bu eski çalıştırmada üretilmemiş.'}")
@@ -2268,6 +2286,23 @@ class DecisionCenterPage(ttk.Frame):
                     f"- Zamansal doğrulama: {float(context['validation_score']):.2f}" if context.get("validation_score") is not None else "- Zamansal doğrulama: Yeterli ayrı yıl yok",
                     f"- Okunabilir kural yolu: {dt_details.get('rule_path') or '—'}",
                     f"- Yorum: {dt_details.get('explanation') or ''}",
+                ]
+            )
+        if peer:
+            lines.extend(
+                [
+                    f"- Şeffaf akran kontrolü: {peer.get('label') or '—'}",
+                    f"- Karşılaştırılan diğer ders sayısı: {int(peer.get('peer_count') or 0)}",
+                    f"- TOPSIS akran yüzdeliği: %{float(peer.get('topsis_percentile_100') or 0):.2f}",
+                    f"- Akran TOPSIS medyanından fark: {float(peer.get('topsis_delta_median_100') or 0):+.4f} puan",
+                    f"- Akran en yüksek puanına uzaklık: {float(peer.get('distance_to_peer_max_100') or 0):.4f} puan",
+                    f"- Akran en düşük puanına uzaklık: {float(peer.get('distance_to_peer_min_100') or 0):.4f} puan",
+                    f"- Başarı medyan farkı: {float(peer_deltas.get('basari') or 0):+.4f}",
+                    f"- Trend medyan farkı: {float(peer_deltas.get('trend') or 0):+.4f}",
+                    f"- Doluluk medyan farkı: {float(peer_deltas.get('populerlik') or 0):+.4f}",
+                    f"- Anket medyan farkı: {float(peer_deltas.get('anket') or 0):+.4f}",
+                    f"- LR sonraki yıl tahmini: {float(dt_details.get('lr_trend_forecast') or 0.5):.4f}",
+                    "- Not: Akran kontrolü nihai statüyü değiştirmez; açıklanabilir ikinci görüştür.",
                 ]
             )
         lines.extend(["", str(row["trend_explanation"] or ""), str(row["confidence_explanation"] or ""), "", str(row["human_readable_text"] or row["main_reason"] or "")])

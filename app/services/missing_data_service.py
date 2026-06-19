@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false, reportOptionalMemberAccess=false
 # NOT: SQLAlchemy 1.4 stilinde Column[X] descriptor'lari Pylance tarafindan
 # X plain tipiyle uyumsuz gorulur. Runtime'da descriptor __get__/set__
 # uzerinden plain X dondurur — gercek uyumsuzluk yoktur. Pragma'lar yalnizca

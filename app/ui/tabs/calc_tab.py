@@ -114,11 +114,6 @@ class CalcTab(ttk.Frame):
         self.db_path = getattr(self.app, "db_path", self.db_path)
 
         try:
-            self.page_relations.refresh()
-        except Exception:
-            pass
-
-        try:
             self.page_pool.db_path = self.db_path
             if force_reload or not getattr(self, "_pool_initialized", False):
                 self.page_pool.refresh()

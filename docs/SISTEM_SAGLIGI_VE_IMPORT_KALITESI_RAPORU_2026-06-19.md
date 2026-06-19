@@ -67,7 +67,9 @@ Genel statü: `≥90 sağlıklı`, `≥70 uyarılı`, `≥40 riskli`, `<40 kriti
 
 - **Lineer Regresyon:** Trend sayfasında sonraki yıl tahmini; DT’ye sızıntısız özellik.
 - **ELECTRE TRI-B:** kriter bazlı akademik statü sınıflandırması.
-- **Decision Tree:** ELECTRE kararına geçmiş final kararlardan bağımsız ikinci görüş.
+- **Decision Tree:** Yalnız kurulca onaylanmış geçmiş final kararlarından öğrenen;
+  LR tahmini ve bırak-birini-dışarıda akran istatistikleriyle ELECTRE’ye bağımsız
+  ikinci görüş veren model. Geçmiş yetersizse tahmin yerine şeffaf akran kontrolü.
 - **PROMETHEE II:** müfredat dışı adaylarda net akış ve çeşitlilik kontrollü Top-7.
 - **Random Forest:** üretim kararında kullanılmaz; analiz/benchmark kapsamındadır.
 
@@ -138,4 +140,3 @@ sekmesinde yetkili tarafından onaylanmadan canlı tablolara uygulanmaz.
 > ağırlıkla ölçüyor. Ayrıca zorunlu kolon veya kapsam hatası gibi kritik sorunlar
 > sert kapıdır; diğer iyi değerler bu hatayı telafi edemez. Kalite yeterli olsa
 > bile veri doğrudan canlı sisteme geçmez, Import Onayı ekranında yetkili onayı bekler.
-

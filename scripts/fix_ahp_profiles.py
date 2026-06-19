@@ -28,7 +28,7 @@ def temiz_ad(s):
         tr = {"ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g",
               "Ğ": "G", "ç": "c", "Ç": "C", "ö": "o", "Ö": "O",
               "ü": "u", "Ü": "U"}
-        return "".join(tr.get(ch, ch) for ch in s).encode(
+        return "".join(str(tr.get(ch, ch)) for ch in s).encode(
             "ascii", "ignore"
         ).decode("ascii")
 

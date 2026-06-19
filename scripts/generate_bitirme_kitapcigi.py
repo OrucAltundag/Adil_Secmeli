@@ -14,15 +14,16 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle, Rectangle
 import numpy as np
 
-from docx import Document
-from docx.enum.section import WD_SECTION
-from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor, Inches
+from docx import Document  # type: ignore[import-not-found]  # python-docx opsiyonel bagimliliktir
+from docx.enum.section import WD_SECTION  # type: ignore[import-not-found]
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT  # type: ignore[import-not-found]
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK  # type: ignore[import-not-found]
+from docx.oxml import OxmlElement  # type: ignore[import-not-found]
+from docx.oxml.ns import qn  # type: ignore[import-not-found]
+from docx.shared import Cm, Pt, RGBColor, Inches  # type: ignore[import-not-found]
 
 ROOT = Path(__file__).resolve().parent.parent
 SUNUM_DIR = ROOT / "Adil_Secmeli_Sunum"
@@ -43,7 +44,7 @@ def fig_ahp_weights() -> Path:
         "Anket": 0.1942,
     }
     fig, ax = plt.subplots(figsize=(6.5, 3.6))
-    bars = ax.bar(weights.keys(), weights.values(),
+    bars = ax.bar(list(weights.keys()), list(weights.values()),
                   color=["#1f4e79", "#2e75b6", "#5b9bd5", "#9dc3e6"])
     ax.set_ylim(0, 0.50)
     ax.set_ylabel("Ağırlık")
@@ -106,7 +107,7 @@ def fig_algorithm_family() -> Path:
         "Similarity\n(TF-IDF +\nCosine)": 1,
     }
     fig, ax = plt.subplots(figsize=(7.2, 3.8))
-    bars = ax.bar(families.keys(), families.values(),
+    bars = ax.bar(list(families.keys()), list(families.values()),
                   color=["#1f4e79", "#2e75b6", "#5b9bd5", "#9dc3e6",
                          "#bdd7ee", "#deeaf6"])
     ax.set_ylabel("Algoritma Sayısı")
@@ -163,7 +164,7 @@ def fig_pipeline() -> Path:
     w = 0.125
     gap = 0.01
     for i, (txt, c) in enumerate(boxes):
-        rect = plt.Rectangle((x0 + i * (w + gap), 0.30),
+        rect = Rectangle((x0 + i * (w + gap), 0.30),
                              w, 0.45, color=c, ec="white")
         ax.add_patch(rect)
         ax.text(x0 + i * (w + gap) + w / 2, 0.525, txt,
@@ -218,7 +219,7 @@ def fig_state_machine() -> Path:
         "Kalıcı İptal\n(-2)": "#c0504d",
     }
     for name, (x, y) in nodes.items():
-        ax.add_patch(plt.Circle((x, y), 0.085,
+        ax.add_patch(Circle((x, y), 0.085,
                                 color=colors[name], ec="white"))
         ax.text(x, y, name, ha="center", va="center",
                 fontsize=9, fontweight="bold", color="white")

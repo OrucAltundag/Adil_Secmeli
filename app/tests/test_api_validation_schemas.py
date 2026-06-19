@@ -1,3 +1,8 @@
+# Pydantic v2 alias'tan otomatik turetilen __init__ imzasi yalniz alias adini gosterir.
+# Bu testler populate_by_name=True ile her iki adin da gecerli oldugunu dogrular;
+# Pylance icin alias=field-name catismasi false-positive uretir.
+# pyright: reportCallIssue=false, reportArgumentType=false
+
 import pytest
 from pydantic import ValidationError
 

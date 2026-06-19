@@ -27,10 +27,10 @@ def main():
         stat.append({
             "kod": str(r[j["ders_kodu"]]).strip(),
             "donem": str(r[j["donem"]]).strip(),
-            "kayit": int(r[j["kayit_sayisi"]] or 0),
-            "gecme": float(r[j["gecme_orani_%"]] or 0),
-            "agir": float(r[j["ort_agirlikli"]] or 0),
-            "katilim": float(r[j["ort_katilim_yuzde"]] or 0),
+            "kayit": int(r[j["kayit_sayisi"]] or 0),  # type: ignore[arg-type]  # openpyxl cell.value Optional
+            "gecme": float(r[j["gecme_orani_%"]] or 0),  # type: ignore[arg-type]
+            "agir": float(r[j["ort_agirlikli"]] or 0),  # type: ignore[arg-type]
+            "katilim": float(r[j["ort_katilim_yuzde"]] or 0),  # type: ignore[arg-type]
         })
     wb.close()
 

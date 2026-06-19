@@ -18,14 +18,15 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from docx import Document  # noqa: E402
-from docx.enum.text import WD_ALIGN_PARAGRAPH  # noqa: E402
-from docx.shared import Pt, RGBColor  # noqa: E402
+from docx import Document  # type: ignore[import-not-found]  # noqa: E402  # python-docx opsiyonel bagimliliktir
+from docx.enum.text import WD_ALIGN_PARAGRAPH  # type: ignore[import-not-found]  # noqa: E402
+from docx.shared import Pt, RGBColor  # type: ignore[import-not-found]  # noqa: E402
 
 DOCS_DIR = PROJECT_ROOT / "docs"
 DB_PATH = PROJECT_ROOT / "data" / "adil_secmeli.db"
@@ -51,7 +52,7 @@ def q(conn: sqlite3.Connection, sql: str, params=()) -> list:
         return []
 
 
-def scalar(conn: sqlite3.Connection, sql: str, params=(), default=0):
+def scalar(conn: sqlite3.Connection, sql: str, params=(), default: Any = 0) -> Any:
     rows = q(conn, sql, params)
     if rows and rows[0] and rows[0][0] is not None:
         return rows[0][0]

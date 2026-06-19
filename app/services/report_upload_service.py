@@ -298,7 +298,7 @@ def export_report(
             p = []
 
         try:
-            df = pd.read_sql_query(sql, conn, params=p or None)
+            df = pd.read_sql_query(sql, conn, params=tuple(p) if p else None)
         except Exception as exc:  # noqa: BLE001 - tablo/kolon yoksa anlaşılır mesaj
             return {"ok": False, "message": f"Rapor verisi okunamadı (tablo/kolon eksik olabilir): {exc}"}
     finally:

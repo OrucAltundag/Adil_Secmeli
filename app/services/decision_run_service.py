@@ -60,6 +60,7 @@ from app.services.db import get_raw_connection
 from app.services.decision_policy_service import classify_score, resolve_decision_policy
 from app.services.electre_tri_b_service import assign_course_electre_tri_b
 from app.services.electre_dt_validation_service import (
+    build_peer_comparison_features,
     evaluate_course_with_dt,
     prepare_dt_validation_context,
 )
@@ -92,7 +93,7 @@ from app.services.trend_analysis_service import (
     save_trend_analysis,
 )
 
-ALGORITHM_VERSION = "ahp-topsis-electre-tri-b-dt-lr-v4"
+ALGORITHM_VERSION = "ahp-topsis-electre-tri-b-dt-lr-peer-v5"
 
 # Statu siddet hiyerarsisi — `max()` yerine acik, surdurulebilir bir siralama.
 # Yumusatma kurali: "asagiya inebilir, fakat asla limit_status'tan agir olamaz".
@@ -577,19 +578,29 @@ def record_decision_run_for_faculty_year(
             continue
         skor_map[course_id_int] = value
 
-    metric_map = {int(k): dict(v) for k, v in dict(score_pack.get("metric_map", {})).items()}
+    metric_map_full = {int(k): dict(v) for k, v in dict(score_pack.get("metric_map", {})).items()}
     score_methods = {int(k): str(v) for k, v in dict(score_pack.get("score_methods", {})).items()}
-    # Ders Kararlari yalniz secili kapsamin mevcut mufredat derslerini icerir.
-    # Mufredat disi adaylar ayri PROMETHEE II Top-7 akisinda ele alinir.
-    curriculum_ids = [course_id for course_id in metric_map if score_methods.get(course_id) == "topsis"]
+    # H7 (2026-06-19): TOPSIS evreni fakulte capindadir. Tum fakulte curriculum
+    # dersleri faculty_curriculum_ids icinde gelir; secili bolum subset'i
+    # department_curriculum_ids'tir. A+/A- referans noktalari fakulte capinda
+    # hesaplanir, ders kararlari yalniz bolum subset'i icin uretilir.
+    curriculum_ids = [
+        course_id for course_id in metric_map_full if score_methods.get(course_id) == "topsis"
+    ]
+    department_curriculum_ids = {
+        int(d) for d in (score_pack.get("department_curriculum_ids") or [])
+    }
     meta_map = _course_meta(cur, curriculum_ids)
-    course_ids = sorted(
-        course_id
-        for course_id in curriculum_ids
-        if department_id is None or meta_map.get(course_id, {}).get("department_id") == department_id
-    )
+    if department_id is None:
+        course_ids = sorted(curriculum_ids)
+    else:
+        course_ids = sorted(
+            cid for cid in curriculum_ids if cid in department_curriculum_ids
+        )
     skor_map = {course_id: score for course_id, score in skor_map.items() if course_id in course_ids}
-    metric_map = {course_id: metric_map[course_id] for course_id in course_ids}
+    # metric_map ders karari donguleri icin bolume daraltilir; ancak breakdowns
+    # hesabinda metric_map_full kullanilir ki A+/A- fakulte capinda olsun.
+    metric_map = {course_id: metric_map_full[course_id] for course_id in course_ids if course_id in metric_map_full}
 
     # Policy snapshot: yeni kolon eklemek mevcut DB'leri kirar; bunun yerine
     # input_hash'e ve summary_json'a politikanin tam halini gomeruz. Boylece
@@ -663,12 +674,42 @@ def record_decision_run_for_faculty_year(
         if not criteria_keys:
             criteria_keys = list(DEFAULT_CRITERIA_KEYS)
         weights = {key: float(ahp_profile["weights"].get(key, 0.0)) for key in criteria_keys}
-        course_rows = []
-        for course_id in course_ids:
+        # H7: Breakdown A+/A- noktalari bolum yerine fakulte capinda hesaplanir.
+        # Bu kucuk bolumlerde sahte 0/100 ekstremlerini engeller ve audit'te
+        # gosterilen ideal noktalar TOPSIS skoruyla tutarli olur.
+        faculty_course_rows = []
+        for course_id in sorted(curriculum_ids):
             row = {"course_id": course_id, "ders_id": course_id}
-            row.update(metric_map.get(course_id, {}))
-            course_rows.append(row)
-        breakdowns = calculate_topsis_breakdowns(course_rows, weights=weights, criteria_keys=criteria_keys)
+            row.update(metric_map_full.get(course_id, {}))
+            faculty_course_rows.append(row)
+        breakdowns = calculate_topsis_breakdowns(
+            faculty_course_rows, weights=weights, criteria_keys=criteria_keys
+        )
+
+        # DT akran baglami ancak kapsamdaki BUTUN TOPSIS puanlari belli olduktan
+        # sonra hesaplanabilir. Her ders kendi referans grubundan cikarilir;
+        # boylece sekiz derslik bir bolumde hedef ders diger yedi dersle
+        # karsilastirilir. ELECTRE etiketleri bu ozelliklere kesinlikle girmez.
+        peer_features_by_course = build_peer_comparison_features(
+            [
+                {
+                    "course_id": int(course_id),
+                    "topsis_score": skor_map[course_id],
+                    "raw_values": dict(metric_map.get(course_id, {})),
+                }
+                for course_id in course_ids
+                if course_id in skor_map
+            ]
+        )
+        # LR de DT dongusunden once hazirlanir. Servis sadece hedef yildan onceki
+        # kesinlesmis puanlari kullanir; veri yoksa seffaf notr deger (0.50) verir.
+        lr_forecasts_by_course = {
+            int(course_id): predict_next_year_trend(cur, int(course_id), int(year)).get(
+                "trend_score_normalized", 0.5
+            )
+            for course_id in course_ids
+            if course_id in skor_map
+        }
 
         # ELECTRE'den bagimsiz DT ikinci gorusu bir kez hazirlanir ve tum derslere
         # uygulanir. Model sadece hedef yildan ONCEKI tamamlanmis final kararlarini
@@ -738,9 +779,8 @@ def record_decision_run_for_faculty_year(
             dt_validation = evaluate_course_with_dt(
                 dt_context,
                 raw_values=dict(breakdown.get("raw_values") or metric_map.get(course_id, {})),
-                lr_trend_forecast=predict_next_year_trend(
-                    cur, int(course_id), int(year)
-                ).get("trend_score_normalized", 0.5),
+                lr_trend_forecast=lr_forecasts_by_course.get(int(course_id), 0.5),
+                peer_features=peer_features_by_course.get(int(course_id)),
                 topsis_score=score,
                 data_confidence=float(confidence.get("score") or 0.0),
                 old_status=old_status,

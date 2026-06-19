@@ -1138,7 +1138,7 @@ class ToolsTab(ttk.Frame):
             return
 
         def _preview():
-            conn = open_sqlite_connection(os.path.abspath(self.db_path), row_factory=False)
+            conn = open_sqlite_connection(os.path.abspath(str(self.db_path)), row_factory=False)
             try:
                 return preview_reset(conn)
             finally:
@@ -1177,7 +1177,7 @@ class ToolsTab(ttk.Frame):
             return
 
         def _reset():
-            conn = open_sqlite_connection(os.path.abspath(self.db_path), row_factory=False)
+            conn = open_sqlite_connection(os.path.abspath(str(self.db_path)), row_factory=False)
             try:
                 res = reset_system(conn, user="desktop-ui")
                 from app.services.ahp_profile_service import seed_default_profile

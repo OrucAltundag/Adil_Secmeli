@@ -1134,10 +1134,24 @@ def get_faculty_year_topsis_results(
             return set()
         return filter_elective_course_ids(cur, normalized) if has_elective_filter else normalized
 
+    # H7 (2026-06-19): TOPSIS evreni daima fakulte capindadir; secili bolum
+    # filtresi yalniz GORUNTU / KARAR cikti kapsamini daraltir. A+ ve A- gibi
+    # ideal noktalar kucuk bir bolumun 5-10 dersine sikistirilirsa hemen her
+    # kriterde tepe ve dip ayni 1-2 derse oturup yapay 0/100 skorlarina yol
+    # acar. Tum fakultenin secmeli mufredati uzerinden hesaplandiginda referans
+    # kume genisler ve goreli yakinlik puanlari anlamli sekilde dagilir.
     curriculum_ids = _get_curriculum_course_ids(
-        cur, fakulte_id, akademik_yil, donem, department_id=department_id
+        cur, fakulte_id, akademik_yil, donem
     )
     curriculum_ids = _elective_filter(curriculum_ids)
+
+    if department_id is not None:
+        department_curriculum_ids = _get_curriculum_course_ids(
+            cur, fakulte_id, akademik_yil, donem, department_id=department_id
+        )
+        department_curriculum_ids = _elective_filter(department_curriculum_ids)
+    else:
+        department_curriculum_ids = set(curriculum_ids)
 
     aday_dersler = set(curriculum_ids)
     candidate_predicate = elective_predicate if has_elective_filter else "1=1"
@@ -1297,9 +1311,9 @@ def get_faculty_year_topsis_results(
         m["ders"] = ders_meta.get(ders_id, {}).get("ad", str(ders_id))
         metric_map[ders_id] = m
 
+    # H7: Evren fakulte capinda; bolum filtresi cikti tarafinda uygulanir.
     curriculum_course_ids = _get_curriculum_course_ids(
         cur=cur, fakulte_id=fakulte_id, akademik_yil=akademik_yil, donem=donem,
-        department_id=department_id,
     )
     curriculum_course_ids = _elective_filter(curriculum_course_ids)
 
@@ -1384,6 +1398,9 @@ def get_faculty_year_topsis_results(
         "ahp_fallback_reason": ahp_fallback_reason,
         "topsis_course_count": len(curriculum_courses),
         "pool_only_course_count": len(pool_courses),
+        # H7: Bolum filtresi yalniz cikti kapsamini belirler; A+ / A- evrenini degistirmez.
+        "department_curriculum_ids": sorted(int(d) for d in department_curriculum_ids),
+        "faculty_curriculum_ids": sorted(int(d) for d in curriculum_courses),
     }
 
 def _get_curriculum_course_ids(

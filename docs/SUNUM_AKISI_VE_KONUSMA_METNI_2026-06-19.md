@@ -216,11 +216,14 @@ Raporu`, `Veri Olgunluğu`, `Eksik Veri Matrisi` ve `Doğrulama Sorunları` böl
 
 > Eski statü, ELECTRE önerisi, göreli TOPSIS puanı, ELECTRE güvenilirliği,
 > Decision Tree ikinci görüşü, ELECTRE–DT karşılaştırması, final statü, trend,
-> veri güveni ve gerekçe aynı satırda görülebilir. DT yalnız hedef yıldan önceki
-> tamamlanmış final kararlarla eğitilir; başarı, trend, LR trend tahmini, doluluk,
-> anket, TOPSIS, veri güveni ve eski statüyü kullanır. En az 100 geçmiş örnek,
-> en az iki sınıf ve sınıf başına 10 kayıt yoksa “Veri yetersiz” yazar. Bu durumda
-> sistem tahmin uydurmaz ve ELECTRE kararını değiştirmez.
+> veri güveni ve gerekçe aynı satırda görülebilir. DT yalnız hedef yıldan önce kurulca
+> onaylanmış gerçek kararlarla eğitilir; başarı, trend, LR trend tahmini, doluluk,
+> anket, TOPSIS, veri güveni ve eski statüye ek olarak her dersi aynı kapsamdaki diğer
+> derslerle karşılaştırır. Sekiz ders varsa hedef ders hariç diğer yedi ders üzerinden
+> TOPSIS yüzdeliği, medyan farkları ve en yüksek/en düşük puana uzaklık hesaplanır.
+> En az 100 geçmiş örnek, en az iki sınıf ve sınıf başına 10 kayıt yoksa “Veri
+> yetersiz” yazar; fakat şeffaf akran kontrolünü güçlü, dengeli veya zayıf olarak
+> gösterir. Sistem tahmin uydurmaz ve ELECTRE kararını değiştirmez.
 
 ### Adım 13 — Karar Merkezi → Önerilen Dersler
 
@@ -289,4 +292,3 @@ ile önerilen bir dersi seçin; değiştirmeden bırakmanın da mümkün olduğu
 > çok kriterli sıralama, bağımsız ikinci görüş ve insan onayı katmanlarından geçirir.
 > Üretilen her sonuç kapsamı, kullanılan profil ve politika, algoritma çıktısı ve
 > gerekçesiyle izlenebilir; nihai akademik yetki her zaman kurulda kalır.
-

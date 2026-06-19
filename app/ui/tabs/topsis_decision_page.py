@@ -153,9 +153,15 @@ class TopsisDecisionPage(ttk.Frame):
                 methods = {int(k): v for k, v in dict(pack.get("score_methods") or {}).items()}
                 meta = {int(k): v for k, v in dict(pack.get("ders_meta") or {}).items()}
                 metrics = {int(k): v for k, v in dict(pack.get("metric_map") or {}).items()}
+                # H7: A+/A- fakulte capinda hesaplansin diye TUM fakultenin secmeli
+                # mufredat dersleri TOPSIS girisine eklenir. Ekranda yalnizca secili
+                # bolume ait dersler gosterilir; boylece kucuk bolumlerde sahte
+                # 0/100 ekstremleri olusmaz.
+                department_curriculum_ids = {
+                    int(d) for d in (pack.get("department_curriculum_ids") or [])
+                }
                 course_rows = []
                 for course_id, values in metrics.items():
-                    course_meta = meta.get(course_id, {})
                     if methods.get(course_id) != "topsis":
                         continue
                     course_rows.append({"course_id": course_id, "ders_id": course_id, **values})
@@ -177,6 +183,8 @@ class TopsisDecisionPage(ttk.Frame):
                 for course_id, breakdown in sorted(
                     breakdowns.items(), key=lambda item: float(item[1].get("final_score") or 0), reverse=True
                 ):
+                    if department_id is not None and course_id not in department_curriculum_ids:
+                        continue
                     course_meta = meta.get(course_id, {})
                     raw = breakdown["raw_values"]
                     weighted = breakdown["weighted_values"]
